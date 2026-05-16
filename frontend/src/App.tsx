@@ -14,15 +14,22 @@ import {
   Upload as UploadIcon, 
   Moon, 
   Sun,
-  Plus
+  Plus,
+  PieChart as PieChartIcon,
+  Layers
 } from 'lucide-react';
+import { XRayView } from './components/Analytics/XRayView';
+import { IntersectionView } from './components/Analytics/IntersectionView';
 import './App.css';
 
 const API_BASE = 'http://localhost:3001/api/portfolio';
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection'>('overview');
   const [portfolio, setPortfolio] = useState<any>(null);
+  const [xrayData, setXRayData] = useState<any>(null);
+  const [exposures, setExposures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -33,6 +40,16 @@ function App() {
       setLoading(true);
       const res = await axios.get(`${API_BASE}/summary`);
       setPortfolio(res.data);
+      
+      // Fetch analytical data if portfolio exists
+      if (res.data.id) {
+        const [xrayRes, exposuresRes] = await Promise.all([
+          axios.get(`${API_BASE}/${res.data.id}/xray`),
+          axios.get(`${API_BASE}/${res.data.id}/exposures`),
+        ]);
+        setXRayData(xrayRes.data);
+        setExposures(exposuresRes.data);
+      }
     } catch (err) {
       console.error('Failed to fetch portfolio:', err);
     } finally {
@@ -115,87 +132,123 @@ function App() {
           </div>
         ) : (
           <>
-            <div className="stats-grid">
-              <div className="card">
-                <div className="stat-label">Net Worth</div>
-                <div className="stat-value">{formatCurrency(portfolio.metrics.totalValue)}</div>
-                <div className={`stat-change ${portfolio.metrics.totalGain >= 0 ? 'positive' : 'negative'}`}>
-                  {formatCurrency(portfolio.metrics.totalGain)} ({formatPercent(portfolio.metrics.absoluteReturn)})
-                </div>
-              </div>
-              <div className="card">
-                <div className="stat-label">Invested Amount</div>
-                <div className="stat-value">{formatCurrency(portfolio.metrics.totalInvested)}</div>
-              </div>
-              <div className="card">
-                <div className="stat-label">Overall XIRR</div>
-                <div className={`stat-value ${portfolio.metrics.xirr >= 0 ? 'positive' : 'negative'}`}>
-                  {formatPercent(portfolio.metrics.xirr)}
-                </div>
-              </div>
-              <div className="card">
-                <div className="stat-label">Total Assets</div>
-                <div className="stat-value">{portfolio.folios.length} Schemes</div>
-              </div>
+            <div className="tabs">
+              <button 
+                className={`tab ${activeTab === 'overview' ? 'active' : ''}`}
+                onClick={() => setActiveTab('overview')}
+              >
+                <LayoutDashboard size={16} style={{ marginRight: '0.5rem' }} /> Overview
+              </button>
+              <button 
+                className={`tab ${activeTab === 'xray' ? 'active' : ''}`}
+                onClick={() => setActiveTab('xray')}
+              >
+                <PieChartIcon size={16} style={{ marginRight: '0.5rem' }} /> Portfolio X-Ray
+              </button>
+              <button 
+                className={`tab ${activeTab === 'intersection' ? 'active' : ''}`}
+                onClick={() => setActiveTab('intersection')}
+              >
+                <Layers size={16} style={{ marginRight: '0.5rem' }} /> Stock Intersection
+              </button>
             </div>
 
-            <div className="dashboard-sections">
-              <div className="card">
-                <h3>Asset Allocation</h3>
-                <div className="chart-container" style={{ marginTop: '1rem' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={portfolio.folios.map((f: any) => ({ name: f.asset.name, value: f.metrics.currentValue }))}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                      <XAxis dataKey="name" hide />
-                      <YAxis hide />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                        formatter={(val: any) => formatCurrency(Number(val))}
-                      />
-                      <Bar dataKey="value" fill="var(--accent-color)" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+            {activeTab === 'overview' && (
+              <>
+                <div className="stats-grid">
+                  <div className="card">
+                    <div className="stat-label">Net Worth</div>
+                    <div className="stat-value">{formatCurrency(portfolio.metrics.totalValue)}</div>
+                    <div className={`stat-change ${portfolio.metrics.totalGain >= 0 ? 'positive' : 'negative'}`}>
+                      {formatCurrency(portfolio.metrics.totalGain)} ({formatPercent(portfolio.metrics.absoluteReturn)})
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="stat-label">Invested Amount</div>
+                    <div className="stat-value">{formatCurrency(portfolio.metrics.totalInvested)}</div>
+                  </div>
+                  <div className="card">
+                    <div className="stat-label">Overall XIRR</div>
+                    <div className={`stat-value ${portfolio.metrics.xirr >= 0 ? 'positive' : 'negative'}`}>
+                      {formatPercent(portfolio.metrics.xirr)}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="stat-label">Total Assets</div>
+                    <div className="stat-value">{portfolio.folios.length} Schemes</div>
+                  </div>
                 </div>
-              </div>
-              <div className="card">
-                <h3>Key Indicators</h3>
-                <div style={{ marginTop: '1rem' }}>
-                  {/* Summary list or other widgets */}
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                    Your top performing asset is {portfolio.folios[0]?.asset.name} with an XIRR of {formatPercent(portfolio.folios[0]?.metrics.xirr)}.
-                  </p>
-                </div>
-              </div>
-            </div>
 
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Scheme Name</th>
-                    <th>Invested</th>
-                    <th>Current Value</th>
-                    <th>Gain/Loss</th>
-                    <th>XIRR</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {portfolio.folios.map((folio: any) => (
-                    <tr key={folio.id}>
-                      <td style={{ fontWeight: 500 }}>{folio.asset.name}</td>
-                      <td>{formatCurrency(folio.metrics.investedAmount)}</td>
-                      <td>{formatCurrency(folio.metrics.currentValue)}</td>
-                      <td className={folio.metrics.totalGain >= 0 ? 'positive' : 'negative'}>
-                        {formatCurrency(folio.metrics.totalGain)}
-                      </td>
-                      <td className={folio.metrics.xirr >= 0 ? 'positive' : 'negative'}>
-                        {formatPercent(folio.metrics.xirr)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                <div className="dashboard-sections">
+                  <div className="card">
+                    <h3>Scheme Breakdown</h3>
+                    <div className="chart-container" style={{ marginTop: '1rem' }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={portfolio.folios.map((f: any) => ({ name: f.asset.name, value: f.metrics.currentValue }))}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                          <XAxis dataKey="name" hide />
+                          <YAxis hide />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                            formatter={(val: any) => formatCurrency(Number(val))}
+                          />
+                          <Bar dataKey="value" fill="var(--accent-color)" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <h3>Key Insights</h3>
+                    <div style={{ marginTop: '1rem' }}>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                        Your top performing asset is <strong>{portfolio.folios[0]?.asset.name}</strong> with an XIRR of <span className="positive">{formatPercent(portfolio.folios[0]?.metrics.xirr)}</span>.
+                      </p>
+                      <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+                        <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>Top Stock Exposure</p>
+                        {exposures[0] && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+                            <span style={{ fontSize: '0.875rem' }}>{exposures[0].name}</span>
+                            <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{formatPercent(exposures[0].percentage)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Scheme Name</th>
+                        <th>Invested</th>
+                        <th>Current Value</th>
+                        <th>Gain/Loss</th>
+                        <th>XIRR</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portfolio.folios.map((folio: any) => (
+                        <tr key={folio.id}>
+                          <td style={{ fontWeight: 500 }}>{folio.asset.name}</td>
+                          <td>{formatCurrency(folio.metrics.investedAmount)}</td>
+                          <td>{formatCurrency(folio.metrics.currentValue)}</td>
+                          <td className={folio.metrics.totalGain >= 0 ? 'positive' : 'negative'}>
+                            {formatCurrency(folio.metrics.totalGain)}
+                          </td>
+                          <td className={folio.metrics.xirr >= 0 ? 'positive' : 'negative'}>
+                            {formatPercent(folio.metrics.xirr)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {activeTab === 'xray' && <XRayView data={xrayData} />}
+            {activeTab === 'intersection' && <IntersectionView exposures={exposures} />}
           </>
         )}
       </main>
@@ -211,7 +264,7 @@ function App() {
               type="password" 
               placeholder="PDF Password" 
               className="card" 
-              style={{ width: '100%', marginBottom: '1rem' }} 
+              style={{ width: '100%', marginBottom: '1rem', background: 'var(--bg-secondary)', outline: 'none' }} 
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -220,7 +273,7 @@ function App() {
                 {uploading ? 'Parsing...' : 'Select File & Upload'}
                 <input type="file" hidden onChange={handleFileUpload} disabled={uploading} />
               </label>
-              <button className="btn" onClick={() => setShowUpload(false)} disabled={uploading}>
+              <button className="btn" onClick={() => setShowUpload(false)} disabled={uploading} style={{ border: '1px solid var(--border-color)' }}>
                 Cancel
               </button>
             </div>
@@ -232,3 +285,4 @@ function App() {
 }
 
 export default App;
+
