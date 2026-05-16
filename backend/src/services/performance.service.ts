@@ -33,6 +33,9 @@ export class PerformanceService {
       });
     }
 
+    // Sort flows by date - critical for solver stability
+    flows.sort((a, b) => a.date.getTime() - b.date.getTime());
+
     // XIRR requires at least one positive and one negative flow
     const hasPositive = flows.some(f => f.amount > 0);
     const hasNegative = flows.some(f => f.amount < 0);
@@ -108,46 +111,57 @@ export class PerformanceService {
     // Standardize signs: Money Out of pocket (Negative), Money In to pocket (Positive)
     const normalizedTransactions = transactions.map((tx) => {
       const type = tx.type.toLowerCase();
-      
-      // Money Out (Investment)
+
+      // Money Out (Investment / Charges / Taxes)
       const isOutflow = type.includes('buy') || 
                         type.includes('purchase') ||
                         type.includes('sip') ||
                         type.includes('switch_in') ||
                         type.includes('reinvestment') ||
                         type.includes('balance_stmt') ||
-                        type.includes('opening_balance');
-      
-      // Money In (Redemption/Dividend Payout)
+                        type.includes('opening_balance') ||
+                        type.includes('tax') ||
+                        type.includes('duty') ||
+                        type.includes('charge') ||
+                        type.includes('stt');
+
+      // Money In (Redemption / Dividend Payout / Switch Out)
       const isInflow = type.includes('sell') ||
                        type.includes('redemption') ||
                        type.includes('switch_out') ||
-                       type.includes('payout');
+                       type.includes('payout') ||
+                       type.includes('dividend');
+
+      let amount = Math.abs(tx.amount);
+      if (isOutflow) amount = -amount;
+      else if (!isInflow && tx.amount < 0) amount = tx.amount; // Fallback to original sign if unknown
 
       return {
-        amount: isOutflow ? -Math.abs(tx.amount) : Math.abs(tx.amount),
+        amount,
         date: new Date(tx.date),
       };
     });
 
     const investedAmount = transactions.reduce((acc, tx) => {
       const type = tx.type.toLowerCase();
-      // Invested amount is strictly out-of-pocket money. 
       const isOutflow = type.includes('buy') || 
                         type.includes('purchase') ||
                         type.includes('sip') ||
                         type.includes('switch_in') ||
                         type.includes('reinvestment') ||
                         type.includes('balance_stmt') ||
-                        type.includes('opening_balance');
-      
+                        type.includes('opening_balance') ||
+                        type.includes('tax') ||
+                        type.includes('duty') ||
+                        type.includes('charge') ||
+                        type.includes('stt');
+
       const isInflow = type.includes('sell') ||
                        type.includes('redemption') ||
                        type.includes('switch_out');
-                       
+
       return isOutflow ? acc + Math.abs(tx.amount) : isInflow ? acc - Math.abs(tx.amount) : acc;
     }, 0);
-
     const currentValue = currentUnits * currentPrice;
     const totalGain = currentValue - investedAmount;
 

@@ -128,13 +128,30 @@ export class SyncService {
         const anchorCost = Math.max(0, (schemeData.valuation?.cost || 0) - totalRealCost);
 
         if (anchorUnits > 0.001 || anchorCost > 0) {
-          // Legacy Fix: Date the anchor 365 days before the first real transaction (or today)
-          // This ensures XIRR reflects a realistic annualized return for legacy holdings
-          // instead of blowing up due to a short 1-month statement window.
+          // FINANCIAL INTELLIGENCE: Intelligent Anchor Dating
+          // Instead of guessing 1 year, we estimate the holding period based on the gain 
+          // and the expected return for the asset class.
+          const assetType = (schemeData.type || 'EQUITY').toUpperCase();
+          const expectedAnnualReturn = assetType.includes('EQUITY') ? 0.12 : 
+                                       assetType.includes('DEBT') ? 0.07 : 
+                                       assetType.includes('LIQUID') ? 0.05 : 0.10;
+          
+          const avgCostPrice = anchorUnits > 0 ? anchorCost / anchorUnits : 0;
+          const currentPrice = schemeData.valuation?.nav || avgCostPrice;
+          
+          let impliedYears = 1; // Default
+          if (avgCostPrice > 0 && currentPrice > avgCostPrice) {
+            const totalGainRatio = currentPrice / avgCostPrice;
+            // Formula: years = ln(gainRatio) / ln(1 + r)
+            impliedYears = Math.log(totalGainRatio) / Math.log(1 + expectedAnnualReturn);
+            // Cap at 10 years for sanity
+            impliedYears = Math.min(10, Math.max(0.5, impliedYears));
+          }
+
           const firstRealTxDate = realTxs.length > 0 
             ? new Date(Math.min(...realTxs.map(t => t.date.getTime())))
             : new Date();
-          const anchorDate = new Date(firstRealTxDate.getTime() - 365 * 24 * 60 * 60 * 1000);
+          const anchorDate = new Date(firstRealTxDate.getTime() - (impliedYears * 365.25 * 24 * 60 * 60 * 1000));
 
           await prisma.transaction.upsert({
             where: { externalId: `ANCHOR-${folio.id}` },
@@ -142,7 +159,7 @@ export class SyncService {
               amount: anchorCost,
               units: anchorUnits,
               nav: anchorUnits > 0 ? anchorCost / anchorUnits : 0,
-              balance: anchorUnits, // This is a legacy anchor, balance is just the units
+              balance: anchorUnits,
               date: anchorDate,
             },
             create: {
