@@ -24,6 +24,7 @@ import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
 import { TaxView } from './components/Tax/TaxView';
 import { SimulationModal } from './components/Tax/SimulationModal';
+import { FamilyManager } from './components/Family/FamilyManager';
 import './App.css';
 
 const API_BASE = 'http://localhost:3001/api/portfolio';
@@ -31,7 +32,8 @@ const API_TAX = 'http://localhost:3001/api/tax';
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'family'>('overview');
+  const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<any>(null);
   const [xrayData, setXRayData] = useState<any>(null);
   const [exposures, setExposures] = useState<any[]>([]);
@@ -46,10 +48,10 @@ function App() {
   const fetchSummary = async () => {
     try {
       setLoading(true);
-      const res = await axios.get(`${API_BASE}/summary`);
+      const params = selectedFamilyId ? { familyGroupId: selectedFamilyId } : {};
+      const res = await axios.get(`${API_BASE}/summary`, { params });
       setPortfolio(res.data);
       
-      // Fetch analytical data if portfolio exists
       if (res.data.id) {
         const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.all([
           axios.get(`${API_BASE}/${res.data.id}/xray`),
@@ -71,7 +73,7 @@ function App() {
 
   useEffect(() => {
     fetchSummary();
-  }, []);
+  }, [selectedFamilyId]);
 
   const toggleTheme = () => {
     const nextTheme = theme === 'light' ? 'dark' : 'light';
@@ -134,6 +136,11 @@ function App() {
       </header>
 
       <main className="main-content">
+        <FamilyManager 
+          onSelect={(id) => setSelectedFamilyId(id)} 
+          selectedId={selectedFamilyId} 
+        />
+
         {!portfolio ? (
           <div className="empty-state">
             <h2>No portfolio data found</h2>

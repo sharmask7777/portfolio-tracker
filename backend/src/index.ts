@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import portfolioRoutes from './routes/portfolio.routes';
 import taxRoutes from './routes/tax.routes';
+import familyRoutes from './routes/family.routes';
 import { NAVRefreshJob } from './jobs/nav-refresh.job';
 
 dotenv.config();
@@ -19,6 +20,7 @@ app.use(express.json());
 
 app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/tax', taxRoutes);
+app.use('/api/family', familyRoutes);
 
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });

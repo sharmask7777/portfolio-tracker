@@ -7,6 +7,7 @@ import { MarketDataService } from '../services/market-data.service';
 import { OverlapService } from '../services/overlap.service';
 import { XRayService } from '../services/xray.service';
 import { TaxService } from '../services/tax.service';
+import { FamilyService } from '../services/family.service';
 import { prisma } from '../services/db.service';
 import fs from 'fs';
 
@@ -39,63 +40,62 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 
 router.get('/summary', async (req: Request, res: Response) => {
   try {
-    const { userId = 'mock-user-123' } = req.query;
+    const { userId = 'mock-user-123', familyGroupId } = req.query;
 
-    const portfolio = await prisma.portfolio.findFirst({
-      where: { userId: userId as string },
-      include: {
-        folios: {
-          include: {
-            asset: true,
-            transactions: {
-              orderBy: { date: 'asc' },
+    let portfolios: any[] = [];
+
+    if (familyGroupId) {
+      portfolios = await FamilyService.getFamilyPortfolios(familyGroupId as string);
+    } else {
+      const singlePortfolio = await prisma.portfolio.findFirst({
+        where: { userId: userId as string },
+        include: {
+          folios: {
+            include: {
+              asset: true,
+              transactions: {
+                orderBy: { date: 'asc' },
+              },
             },
           },
         },
-      },
-    });
+      });
+      if (singlePortfolio) portfolios = [singlePortfolio];
+    }
 
-    if (!portfolio) {
+    if (portfolios.length === 0) {
       return res.status(404).json({ error: 'Portfolio not found' });
     }
 
+    // Aggregate all folios across all portfolios
+    const allFolios = portfolios.flatMap(p => p.folios);
+
     // Enrich with performance metrics
-    const enrichedFolios = await Promise.all(portfolio.folios.map(async (folio) => {
+    const enrichedFolios = await Promise.all(allFolios.map(async (folio) => {
       const lastTx = folio.transactions[folio.transactions.length - 1];
       let currentPrice = lastTx?.nav || 0;
       
-      // Try to get real-time NAV if AMFI code is available
       if (folio.asset.amfiCode) {
         const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode);
-        if (liveNav > 0) {
-          currentPrice = liveNav;
-        }
+        if (liveNav > 0) currentPrice = liveNav;
       }
 
       const currentUnits = lastTx?.balance || 0;
+      const metrics = PerformanceService.getMetrics(folio.transactions, currentPrice, currentUnits);
 
-      const metrics = PerformanceService.getMetrics(
-        folio.transactions,
-        currentPrice,
-        currentUnits,
-      );
-
-      return {
-        ...folio,
-        metrics,
-      };
+      return { ...folio, metrics };
     }));
 
-    // Overall portfolio metrics
     const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
     const totalValue = enrichedFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
     
-    // For overall XIRR, we need to aggregate all transactions across all folios
-    const allTransactions = portfolio.folios.flatMap((f) => 
-      f.transactions.map((tx) => ({
+    const allTransactions = allFolios.flatMap((f) => 
+      f.transactions.map((tx: any) => ({
         amount: tx.type.toLowerCase().includes('buy') || 
                 tx.type.toLowerCase().includes('purchase') ||
-                tx.type.toLowerCase().includes('sip') 
+                tx.type.toLowerCase().includes('sip') ||
+                tx.type.toLowerCase().includes('switch_in') ||
+                tx.type.toLowerCase().includes('reinvestment')
                 ? -Math.abs(tx.amount) : Math.abs(tx.amount),
         date: new Date(tx.date),
       }))
@@ -104,7 +104,8 @@ router.get('/summary', async (req: Request, res: Response) => {
     const overallXirr = PerformanceService.calculateXIRR(allTransactions, totalValue);
 
     res.status(200).json({
-      ...portfolio,
+      id: familyGroupId || portfolios[0].id,
+      name: familyGroupId ? 'Family Portfolio' : portfolios[0].name,
       folios: enrichedFolios,
       metrics: {
         totalInvested,

@@ -7,12 +7,37 @@ datasource db {
 }
 
 model User {
-  id         String      @id @default(uuid())
-  email      String      @unique
-  password   String
-  portfolios Portfolio[]
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id              String         @id @default(uuid())
+  email           String         @unique
+  password        String
+  portfolios      Portfolio[]
+  familyMemberOf  FamilyMember[]
+  ownedFamilies   FamilyGroup[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model FamilyGroup {
+  id        String         @id @default(uuid())
+  name      String
+  ownerId   String
+  owner     User           @relation(fields: [ownerId], references: [id])
+  members   FamilyMember[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+model FamilyMember {
+  id        String      @id @default(uuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id])
+  groupId   String
+  group     FamilyGroup @relation(fields: [groupId], references: [id])
+  role      String      @default("MEMBER") // OWNER, MEMBER
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([userId, groupId])
 }
 
 model Portfolio {
