@@ -139,20 +139,21 @@ router.get('/summary', async (req: Request, res: Response) => {
         // Alternative Assets
         const altMetrics = await AlternativeAssetService.calculateValue(
           folio.asset.type,
-          lastUnitTx?.balance || 0,
-          lastUnitTx?.date
+          currentUnits,
+          folio.transactions[folio.transactions.length - 1]?.date
         );
         metrics = {
-          investedAmount: lastUnitTx?.amount || 0,
+          investedAmount: folio.transactions[folio.transactions.length - 1]?.amount || 0,
           currentValue: altMetrics.currentValue,
-          totalGain: altMetrics.accruedInterest || (altMetrics.currentValue - (lastUnitTx?.amount || 0)),
-          absoluteReturn: lastUnitTx?.amount ? (altMetrics.currentValue - lastUnitTx.amount) / lastUnitTx.amount : 0,
+          totalGain: altMetrics.accruedInterest || (altMetrics.currentValue - (folio.transactions[folio.transactions.length - 1]?.amount || 0)),
+          absoluteReturn: folio.transactions[folio.transactions.length - 1]?.amount ? (altMetrics.currentValue - folio.transactions[folio.transactions.length - 1].amount) / folio.transactions[folio.transactions.length - 1].amount : 0,
           xirr: altMetrics.annualRate,
           cagr: altMetrics.annualRate,
         };
+        currentPrice = altMetrics.currentValue / (currentUnits || 1);
       }
 
-      return { ...folio, metrics };
+      return { ...folio, metrics: { ...metrics, currentPrice } };
     }));
 
     const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);

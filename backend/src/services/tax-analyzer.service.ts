@@ -1,6 +1,7 @@
 import { prisma } from './db.service';
 import { TaxService, RealizedGain } from './tax.service';
 import { MarketDataService } from './market-data.service';
+import { PortfolioUtils } from '../utils/portfolio.utils';
 
 export interface SimulationResult {
   assetName: string;
@@ -32,8 +33,8 @@ export class TaxAnalyzerService {
     if (!folio) throw new Error('Folio not found');
 
     const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-    const lastTx = folio.transactions[folio.transactions.length - 1];
-    const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+    const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
+    const currentPrice = liveNav > 0 ? liveNav : lastNav;
 
     // Get current buy lots
     const activeLots = TaxService.getActiveBuyLots(folio.transactions);
