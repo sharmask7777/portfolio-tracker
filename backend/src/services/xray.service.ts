@@ -2,6 +2,7 @@ import { AssetType } from '@prisma/client';
 import { prisma } from './db.service';
 import { MarketDataService } from './market-data.service';
 import { AlternativeAssetService } from './alternative-assets.service';
+import { PortfolioUtils } from '../utils/portfolio.utils';
 
 export interface XRayData {
   sectors: { name: string; percentage: number; value: number }[];
@@ -38,8 +39,7 @@ export class XRayService {
     // 1. Calculate values for all folios in parallel
     const folioCalculations = await Promise.all(
       portfolio.folios.map(async (folio) => {
-        const lastTx = folio.transactions[folio.transactions.length - 1];
-        const currentUnits = lastTx?.balance || 0;
+        const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
         if (currentUnits <= 0) return null;
 
         let value = 0;

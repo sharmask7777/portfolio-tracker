@@ -1,4 +1,5 @@
 import { xirr } from 'node-irr';
+import { PortfolioUtils } from '../utils/portfolio.utils';
 
 export interface PerformanceMetrics {
   absoluteReturn: number;
@@ -106,8 +107,9 @@ export class PerformanceService {
   public static getMetrics(
     transactions: any[],
     currentPrice: number,
-    currentUnits: number,
+    currentUnitsOverride?: number,
   ): PerformanceMetrics {
+    const currentUnits = currentUnitsOverride !== undefined ? currentUnitsOverride : PortfolioUtils.getLatestUnits(transactions);
     // Standardize signs: Money Out of pocket (Negative), Money In to pocket (Positive)
     const normalizedTransactions = transactions.map((tx) => {
       const type = tx.type.toLowerCase();

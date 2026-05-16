@@ -64,7 +64,7 @@ export class TaxService {
     for (const tx of sortedTxs) {
       const type = tx.type.toLowerCase();
       const isBuy = type.includes('buy') || type.includes('purchase') || type.includes('sip') || 
-                    type.includes('switch_in') || type.includes('reinvestment');
+                    type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance');
       const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
       const isBonus = type.includes('bonus');
       
@@ -217,7 +217,7 @@ export class TaxService {
     for (const tx of sortedTxs) {
       const type = tx.type.toLowerCase();
       const isBuy = type.includes('buy') || type.includes('purchase') || type.includes('sip') || 
-                    type.includes('switch_in') || type.includes('reinvestment');
+                    type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance');
       const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
       const isBonus = type.includes('bonus');
       if (isBuy || isBonus) {

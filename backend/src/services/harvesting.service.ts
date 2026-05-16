@@ -2,6 +2,7 @@ import { prisma } from './db.service';
 import { TaxService } from './tax.service';
 import { MarketDataService } from './market-data.service';
 import { AssetType } from '@prisma/client';
+import { PortfolioUtils } from '../utils/portfolio.utils';
 
 export interface HarvestingOpportunity {
   folioId: string;
@@ -46,8 +47,8 @@ export class HarvestingService {
 
     for (const folio of portfolio.folios) {
       const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-      const lastTx = folio.transactions[folio.transactions.length - 1];
-      const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+      const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
+      const currentPrice = liveNav > 0 ? liveNav : lastNav;
 
       const taxSummary = TaxService.calculatePortfolioTax(
         folio.asset.name,
@@ -74,8 +75,8 @@ export class HarvestingService {
         if (folio.asset.type !== AssetType.MUTUAL_FUND && folio.asset.type !== AssetType.STOCK) continue;
 
         const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-        const lastTx = folio.transactions[folio.transactions.length - 1];
-        const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+        const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
+        const currentPrice = liveNav > 0 ? liveNav : lastNav;
 
         const activeLots = TaxService.getActiveBuyLots(folio.transactions);
         const now = new Date();

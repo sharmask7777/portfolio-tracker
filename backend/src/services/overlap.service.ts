@@ -1,6 +1,7 @@
 import { prisma } from './db.service';
 import { MarketDataService } from './market-data.service';
 import { PerformanceService } from './performance.service';
+import { PortfolioUtils } from '../utils/portfolio.utils';
 
 export interface StockExposure {
   name: string;
@@ -47,8 +48,7 @@ export class OverlapService {
     // 1. Calculate folio values and filter out closed positions in parallel
     const activeFolioData = await Promise.all(
       portfolio.folios.map(async (folio) => {
-        const lastTx = folio.transactions[folio.transactions.length - 1];
-        const currentUnits = lastTx?.balance || 0;
+        const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
         if (currentUnits <= 0) return null;
 
         const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');

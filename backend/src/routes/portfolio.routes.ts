@@ -4,6 +4,7 @@ import { ParserService } from '../services/parser.service';
 import { SyncService } from '../services/sync.service';
 import { PerformanceService } from '../services/performance.service';
 import { MarketDataService } from '../services/market-data.service';
+import { PortfolioUtils } from '../utils/portfolio.utils';
 import { OverlapService } from '../services/overlap.service';
 import { XRayService } from '../services/xray.service';
 import { TaxService } from '../services/tax.service';
@@ -114,20 +115,10 @@ router.get('/summary', async (req: Request, res: Response) => {
 
     // Enrich with performance metrics
     const enrichedFolios = await Promise.all(allFolios.map(async (folio) => {
-      // Find the last transaction that actually has units/balance
-      // Some detailed statements end with tax/charges which have 0 units.
-      // MUST SORT by date because the DB fetch order is non-deterministic
-      const sortedTxs = [...folio.transactions].sort((a, b) => a.date.getTime() - b.date.getTime());
+      const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
       
-      // Find the last transaction that isn't just a tax/charge record
-      // These often have 0 balance in statements, which confuses the "current units" lookup.
-      const lastUnitTx = [...sortedTxs].reverse().find(t => {
-        const type = t.type.toLowerCase();
-        return !type.includes('tax') && !type.includes('duty') && !type.includes('charge') && !type.includes('stt');
-      });
-      
-      const currentUnits = lastUnitTx?.balance || 0;
-      let currentPrice = lastUnitTx?.nav || 0;
+      const lastTx = folio.transactions[folio.transactions.length - 1];
+      let currentPrice = lastTx?.nav || 0;
       let metrics: any = null;
 
       if (folio.asset.type === 'MUTUAL_FUND' || folio.asset.type === 'STOCK') {
@@ -236,8 +227,8 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
 
     const summaries = await Promise.all(portfolio.folios.map(async (folio) => {
       const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-      const lastTx = folio.transactions[folio.transactions.length - 1];
-      const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+      const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
+      const currentPrice = liveNav > 0 ? liveNav : lastNav;
 
       return TaxService.calculatePortfolioTax(
         folio.asset.name,
