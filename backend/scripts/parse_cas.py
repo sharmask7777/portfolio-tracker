@@ -2,11 +2,14 @@ import sys
 import json
 import casparser
 from datetime import date, datetime
+from decimal import Decimal
 
-class DateTimeEncoder(json.JSONEncoder):
+class CASDataEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, (date, datetime)):
             return obj.isoformat()
+        if isinstance(obj, Decimal):
+            return float(obj)
         return super().default(obj)
 
 def parse_cas(file_path, password):
@@ -27,7 +30,7 @@ def parse_cas(file_path, password):
         if "investor_info" not in data_dict and "investor" in data_dict:
             data_dict["investor_info"] = data_dict["investor"]
 
-        print(json.dumps(data_dict, cls=DateTimeEncoder, indent=2))
+        print(json.dumps(data_dict, cls=CASDataEncoder, indent=2))
     except Exception as e:
         # Always return a JSON error so ParserService can parse it
         print(json.dumps({"error": str(e), "type": type(e).__name__}), file=sys.stderr)

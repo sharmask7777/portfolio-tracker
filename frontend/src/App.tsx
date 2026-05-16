@@ -100,8 +100,9 @@ function App() {
       setShowUpload(false);
       setPassword('');
       fetchSummary();
-    } catch (err) {
-      alert('Upload failed. Please check your password or file format.');
+    } catch (err: any) {
+      const msg = err.response?.data?.error || 'Upload failed. Please check your password or file format.';
+      alert(msg);
     } finally {
       setUploading(false);
     }

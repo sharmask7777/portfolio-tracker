@@ -22,6 +22,8 @@ export class ParserService {
 
       child.on('close', (code) => {
         if (code !== 0) {
+          console.error(`Python parser process exited with code ${code}`);
+          console.error(`Stderr: ${stderr}`);
           try {
             const errorObj = JSON.parse(stderr);
             return reject(new Error(errorObj.error || 'Parsing failed'));
