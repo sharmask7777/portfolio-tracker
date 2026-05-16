@@ -116,7 +116,15 @@ router.get('/summary', async (req: Request, res: Response) => {
     const enrichedFolios = await Promise.all(allFolios.map(async (folio) => {
       // Find the last transaction that actually has units/balance
       // Some detailed statements end with tax/charges which have 0 units.
-      const lastUnitTx = [...folio.transactions].reverse().find(t => t.units !== 0 && t.balance !== 0);
+      // MUST SORT by date because the DB fetch order is non-deterministic
+      const sortedTxs = [...folio.transactions].sort((a, b) => a.date.getTime() - b.date.getTime());
+      
+      // Find the last transaction that isn't just a tax/charge record
+      // These often have 0 balance in statements, which confuses the "current units" lookup.
+      const lastUnitTx = [...sortedTxs].reverse().find(t => {
+        const type = t.type.toLowerCase();
+        return !type.includes('tax') && !type.includes('duty') && !type.includes('charge') && !type.includes('stt');
+      });
       
       const currentUnits = lastUnitTx?.balance || 0;
       let currentPrice = lastUnitTx?.nav || 0;
@@ -129,13 +137,12 @@ router.get('/summary', async (req: Request, res: Response) => {
         }
         
         // If the fund is closed (zero units), current value is always 0
-        const finalValue = currentUnits > 0 ? (currentUnits * currentPrice) : 0;
         metrics = PerformanceService.getMetrics(folio.transactions, currentPrice, currentUnits);
         
-        // Ensure closed positions have zero current value and gain
+        // Ensure closed positions have zero current value
         if (currentUnits <= 0) {
           metrics.currentValue = 0;
-          metrics.totalGain = -metrics.investedAmount; // Realized loss/gain is handled by XIRR/CAGR
+          // Note: totalGain will reflect the realized profit/loss
         }
       } else {
         // Alternative Assets
