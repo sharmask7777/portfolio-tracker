@@ -68,7 +68,7 @@ export class XRayService {
 
     // 2. Aggregate from holdings data
     for (const fv of folioValues) {
-      const weightFactor = fv.value / totalPortfolioValue;
+      const weightFactor = fv.value / (totalPortfolioValue || 1);
 
       if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
         const data = await MarketDataService.getHoldings(fv.isin);
@@ -79,7 +79,7 @@ export class XRayService {
 
         if (data.sectors) {
           for (const s of data.sectors) {
-            let sName = s.name || s.sectorName;
+            let sName = s.sector || s.name || s.sectorName;
             sName = this.normalizeSector(sName);
             const sWeight = parseFloat(s.weightage || s.percent || '0');
             sectorMap[sName] = (sectorMap[sName] || 0) + sWeight * weightFactor;
@@ -95,15 +95,15 @@ export class XRayService {
 
         if (data.portfolio?.assetAllocation) {
           const aa = data.portfolio.assetAllocation;
-          assetAllocation.equity += parseFloat(aa.equity || '0') * weightFactor;
-          assetAllocation.debt += parseFloat(aa.debt || '0') * weightFactor;
-          assetAllocation.cash += parseFloat(aa.cash || '0') * weightFactor;
-          assetAllocation.other += parseFloat(aa.other || '0') * weightFactor;
+          assetAllocation.equity += parseFloat(aa.equity || aa.equityAllocation || '0') * weightFactor;
+          assetAllocation.debt += parseFloat(aa.debt || aa.debtAllocation || '0') * weightFactor;
+          assetAllocation.cash += parseFloat(aa.cash || aa.cashAllocation || '0') * weightFactor;
+          assetAllocation.other += parseFloat(aa.other || aa.otherAllocation || '0') * weightFactor;
         }
       } else {
-        if (fv.type === 'EPF' || fv.type === 'PPF' || fv.type === 'FIXED_DEPOSIT') {
+        if (fv.type === AssetType.EPF || fv.type === AssetType.PPF || fv.type === AssetType.FIXED_DEPOSIT) {
           assetAllocation.debt += 100 * weightFactor;
-        } else if (fv.type === 'SGB' || fv.type === 'PHYSICAL_GOLD') {
+        } else if (fv.type === AssetType.SGB || fv.type === AssetType.PHYSICAL_GOLD) {
           assetAllocation.gold += 100 * weightFactor;
         }
       }
@@ -133,7 +133,8 @@ export class XRayService {
     };
   }
 
-  private static normalizeSector(name: string): string {
+  private static normalizeSector(name: any): string {
+    if (typeof name !== 'string') return 'Other';
     const map: Record<string, string> = {
       'Financial': 'Financial Services',
       'Banking': 'Financial Services',

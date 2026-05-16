@@ -117,9 +117,9 @@ router.get('/summary', async (req: Request, res: Response) => {
       // Find the last transaction that actually has units/balance
       // Some detailed statements end with tax/charges which have 0 units.
       const lastUnitTx = [...folio.transactions].reverse().find(t => t.units !== 0 && t.balance !== 0);
-      const lastTx = lastUnitTx || folio.transactions[folio.transactions.length - 1];
       
-      let currentPrice = lastTx?.nav || 0;
+      const currentUnits = lastUnitTx?.balance || 0;
+      let currentPrice = lastUnitTx?.nav || 0;
       let metrics: any = null;
 
       if (folio.asset.type === 'MUTUAL_FUND' || folio.asset.type === 'STOCK') {
@@ -127,8 +127,16 @@ router.get('/summary', async (req: Request, res: Response) => {
           const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode);
           if (liveNav > 0) currentPrice = liveNav;
         }
-        const currentUnits = lastTx?.balance || 0;
+        
+        // If the fund is closed (zero units), current value is always 0
+        const finalValue = currentUnits > 0 ? (currentUnits * currentPrice) : 0;
         metrics = PerformanceService.getMetrics(folio.transactions, currentPrice, currentUnits);
+        
+        // Ensure closed positions have zero current value and gain
+        if (currentUnits <= 0) {
+          metrics.currentValue = 0;
+          metrics.totalGain = -metrics.investedAmount; // Realized loss/gain is handled by XIRR/CAGR
+        }
       } else {
         // Alternative Assets
         const altMetrics = await AlternativeAssetService.calculateValue(
@@ -148,11 +156,14 @@ router.get('/summary', async (req: Request, res: Response) => {
 
       return { ...folio, metrics };
     }));
+const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
+const totalValue = enrichedFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
 
-    const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
-    const totalValue = enrichedFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
-    
-    const allTransactions = allFolios.flatMap((f) => 
+// Filter for active folios or those with significant remaining invested amount (realized gains/losses)
+const activeFolios = enrichedFolios.filter(f => Math.abs(f.metrics.currentValue) > 0.01 || Math.abs(f.metrics.investedAmount) > 0.01);
+
+const allTransactions = allFolios.flatMap((f) => 
+...
       f.transactions.map((tx: any) => ({
         amount: tx.type.toLowerCase().includes('buy') || 
                 tx.type.toLowerCase().includes('purchase') ||
@@ -169,7 +180,7 @@ router.get('/summary', async (req: Request, res: Response) => {
     res.status(200).json({
       id: familyGroupId || portfolios[0].id,
       name: familyGroupId ? 'Family Portfolio' : portfolios[0].name,
-      folios: enrichedFolios,
+      folios: activeFolios,
       metrics: {
         totalInvested,
         totalValue,

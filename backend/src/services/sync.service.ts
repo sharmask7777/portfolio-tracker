@@ -127,7 +127,12 @@ export class SyncService {
         const anchorUnits = Math.max(0, schemeData.close - totalRealUnits);
         const anchorCost = Math.max(0, (schemeData.valuation?.cost || 0) - totalRealCost);
 
-        if (anchorUnits > 0.001 || anchorCost > 0) {
+        // If closing balance is zero, we MUST NOT have an anchor
+        if (schemeData.close === 0 || (anchorUnits <= 0.001 && anchorCost <= 0)) {
+          await prisma.transaction.deleteMany({
+            where: { externalId: `ANCHOR-${folio.id}` }
+          });
+        } else {
           // FINANCIAL INTELLIGENCE: Intelligent Anchor Dating
           // Instead of guessing 1 year, we estimate the holding period based on the gain 
           // and the expected return for the asset class.
@@ -172,11 +177,6 @@ export class SyncService {
               folioId: folio.id,
               externalId: `ANCHOR-${folio.id}`,
             }
-          });
-        } else {
-          // If all units are accounted for by real transactions, remove the anchor
-          await prisma.transaction.deleteMany({
-            where: { externalId: `ANCHOR-${folio.id}` }
           });
         }
       }
