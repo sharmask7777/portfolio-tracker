@@ -114,7 +114,11 @@ router.get('/summary', async (req: Request, res: Response) => {
 
     // Enrich with performance metrics
     const enrichedFolios = await Promise.all(allFolios.map(async (folio) => {
-      const lastTx = folio.transactions[folio.transactions.length - 1];
+      // Find the last transaction that actually has units/balance
+      // Some detailed statements end with tax/charges which have 0 units.
+      const lastUnitTx = [...folio.transactions].reverse().find(t => t.units !== 0 && t.balance !== 0);
+      const lastTx = lastUnitTx || folio.transactions[folio.transactions.length - 1];
+      
       let currentPrice = lastTx?.nav || 0;
       let metrics: any = null;
 
