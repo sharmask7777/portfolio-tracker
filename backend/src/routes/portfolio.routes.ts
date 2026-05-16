@@ -5,6 +5,7 @@ import { SyncService } from '../services/sync.service';
 import { PerformanceService } from '../services/performance.service';
 import { MarketDataService } from '../services/market-data.service';
 import { OverlapService } from '../services/overlap.service';
+import { XRayService } from '../services/xray.service';
 import { prisma } from '../services/db.service';
 import fs from 'fs';
 
@@ -112,6 +113,20 @@ router.get('/summary', async (req: Request, res: Response) => {
         xirr: overallXirr,
       },
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/:id/overlap', async (req: Request, res: Response) => {
+  // Not used in this turn, but good for context
+});
+
+router.get('/:id/xray', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const xrayData = await XRayService.getXRayData(id as string);
+    res.status(200).json(xrayData);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
