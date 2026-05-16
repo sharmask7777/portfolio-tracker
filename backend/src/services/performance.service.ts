@@ -95,7 +95,9 @@ export class PerformanceService {
                         type.includes('purchase') ||
                         type.includes('sip') ||
                         type.includes('switch_in') ||
-                        type.includes('reinvestment');
+                        type.includes('reinvestment') ||
+                        type.includes('balance_stmt') ||
+                        type.includes('opening_balance');
       
       // Money In (Redemption/Dividend Payout)
       const isInflow = type.includes('sell') ||
@@ -112,12 +114,13 @@ export class PerformanceService {
     const investedAmount = transactions.reduce((acc, tx) => {
       const type = tx.type.toLowerCase();
       // Invested amount is strictly out-of-pocket money. 
-      // Reinvestments are technically gains reinvested, but in Indian CAS they are counted as acquisitions.
       const isOutflow = type.includes('buy') || 
                         type.includes('purchase') ||
                         type.includes('sip') ||
                         type.includes('switch_in') ||
-                        type.includes('reinvestment');
+                        type.includes('reinvestment') ||
+                        type.includes('balance_stmt') ||
+                        type.includes('opening_balance');
       
       const isInflow = type.includes('sell') ||
                        type.includes('redemption') ||

@@ -76,6 +76,32 @@ export class SyncService {
 
         // Add Transactions
         const transactions = [...(schemeData.transactions || [])];
+        const originalCount = transactions.length;
+        
+        // Handle Opening Balance in Detailed CAS
+        if (schemeData.open > 0 && originalCount > 0) {
+          const firstTxDate = new Date(transactions.reduce((min, t) => (t.date < min ? t.date : min), transactions[0].date));
+          const openingDate = new Date(firstTxDate.getTime() - 24 * 60 * 60 * 1000); // 1 day before first transaction
+          
+          // Calculate cost of the opening units
+          const periodBuyCost = transactions.reduce((acc, t) => {
+            const type = t.type.toLowerCase();
+            return (type.includes('buy') || type.includes('purchase') || type.includes('sip') || type.includes('reinvestment')) 
+              ? acc + Math.abs(t.amount) : acc;
+          }, 0);
+          
+          const openingCost = Math.max(0, (schemeData.valuation?.cost || 0) - periodBuyCost);
+          
+          transactions.unshift({
+            date: openingDate.toISOString().split('T')[0],
+            type: 'OPENING_BALANCE',
+            description: 'Opening Balance from Statement',
+            amount: openingCost,
+            units: schemeData.open,
+            nav: schemeData.open > 0 ? openingCost / schemeData.open : 0,
+            balance: schemeData.open,
+          });
+        }
         
         // Handle Summary CAS: If no transactions but there is a balance/valuation, create a synthetic transaction
         if (transactions.length === 0 && (schemeData.close > 0 || (schemeData.valuation && schemeData.valuation.value > 0))) {
@@ -92,29 +118,39 @@ export class SyncService {
         }
 
         for (const tx of transactions) {
-          // Generate a deterministic hash for deduplication
-          // Include folio and asset identifiers to make it more unique
-          const txString = `${folioData.folio}-${schemeData.isin}-${tx.date}-${tx.type}-${tx.amount}-${tx.units}-${tx.nav}-${tx.balance}`;
-          const externalId = crypto.createHash('md5').update(txString).digest('hex');
+          try {
+            // Generate a deterministic hash for deduplication
+            // Include portfolioId to prevent collisions between different users/portfolios
+            const txString = `${portfolio.id}-${folioData.folio}-${schemeData.isin}-${tx.date}-${tx.type}-${tx.amount}-${tx.units}-${tx.nav}-${tx.balance}`;
+            const externalId = crypto.createHash('md5').update(txString).digest('hex');
 
-          await prisma.transaction.upsert({
-            where: { externalId },
-            update: {
-               // Update balance/nav even if tx exists, in case of summary refreshes
-               nav: parseFloat(tx.nav) || 0,
-               balance: parseFloat(tx.balance) || 0,
-            },
-            create: {
+            const cleanValue = (val: any) => {
+              const parsed = parseFloat(val);
+              return isNaN(parsed) ? 0 : parsed;
+            };
+
+            const txData = {
               date: new Date(tx.date),
               type: tx.type,
-              amount: parseFloat(tx.amount) || 0,
-              units: parseFloat(tx.units) || 0,
-              nav: parseFloat(tx.nav) || 0,
-              balance: parseFloat(tx.balance) || 0,
+              amount: cleanValue(tx.amount),
+              units: cleanValue(tx.units),
+              nav: cleanValue(tx.nav),
+              balance: cleanValue(tx.balance),
               folioId: folio.id,
               externalId,
-            },
-          });
+            };
+
+            await prisma.transaction.upsert({
+              where: { externalId },
+              update: {
+                nav: txData.nav,
+                balance: txData.balance,
+              },
+              create: txData,
+            });
+          } catch (txError) {
+            console.error(`Failed to sync transaction for ${schemeData.isin}:`, txError);
+          }
         }
       }
     }
