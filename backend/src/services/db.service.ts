@@ -1,6 +1,13 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
+import dotenv from 'dotenv';
 
-export const prisma = new PrismaClient({
-  // Prisma 7+ handles connection pooling and adapters differently, 
-  // but for standard PG, this basic init should work if DATABASE_URL is in env.
-});
+dotenv.config();
+
+const connectionString = process.env.DATABASE_URL;
+
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+
+export const prisma = new PrismaClient({ adapter });
