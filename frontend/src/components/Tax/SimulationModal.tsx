@@ -106,14 +106,30 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
             <div className="card" style={{ background: 'var(--bg-secondary)', border: 'none' }}>
               <h4 style={{ marginBottom: '1rem' }}>Tax Breakdown</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>LTCG Tax (12.5%):</span>
-                  <strong>{formatCurrency(result.taxBreakdown.ltcg.tax)}</strong>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>STCG Tax (20%):</span>
-                  <strong>{formatCurrency(result.taxBreakdown.stcg.tax)}</strong>
-                </div>
+                {result.taxBreakdown.ltcg.amount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>LTCG Tax:</span>
+                    <strong>{formatCurrency(result.taxBreakdown.ltcg.tax)}</strong>
+                  </div>
+                )}
+                {result.taxBreakdown.stcg.amount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>STCG Tax:</span>
+                    <strong>{formatCurrency(result.taxBreakdown.stcg.tax)}</strong>
+                  </div>
+                )}
+                {result.taxBreakdown.slab.amount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Slab Rate Gains (Added to Income):</span>
+                    <strong>{formatCurrency(result.taxBreakdown.slab.amount)}</strong>
+                  </div>
+                )}
+                {(result.taxBreakdown.ltcg.amount === 0 && result.taxBreakdown.stcg.amount === 0 && result.taxBreakdown.slab.amount === 0) && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>No Taxable Gains:</span>
+                    <strong>{formatCurrency(0)}</strong>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
                   <span>Total Realized Gain:</span>
                   <span>{formatCurrency(result.totalGain)}</span>
