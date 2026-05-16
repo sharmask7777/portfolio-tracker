@@ -21,13 +21,14 @@ export interface RealizedGain {
   holdingPeriodDays: number;
   isGrandfathered: boolean;
   taxRate: number;
+  estimatedTax: number;
 }
 
 export interface TaxSummary {
   realized: {
     stcg: number;
     ltcg: number;
-    slab: number; // For new debt funds
+    slab: number;
     total: number;
     details: RealizedGain[];
   };
@@ -44,9 +45,6 @@ export class TaxService {
   private static BUDGET_2024_DATE = new Date('2024-07-23');
   private static DEBT_NEW_REGIME_DATE = new Date('2023-04-01');
 
-  /**
-   * Calculates realized and unrealized gains with refined 2024 budget rules.
-   */
   public static calculatePortfolioTax(
     assetName: string,
     assetType: AssetType,
@@ -75,7 +73,6 @@ export class TaxService {
       if (isBuy || isBonus) {
         buyLots.push({ date, units, nav, originalUnits: units, isBonus });
       } else if (isSell) {
-        // Sell logic (FIFO)
         let unitsToSell = units;
         while (unitsToSell > 0 && buyLots.length > 0) {
           const lot = buyLots[0];
@@ -101,7 +98,6 @@ export class TaxService {
       }
     }
 
-    // Calculate Unrealized Gains
     const now = new Date();
     let uSTCG = 0;
     let uLTCG = 0;
@@ -109,10 +105,8 @@ export class TaxService {
 
     for (const lot of buyLots) {
       if (lot.units <= 0) continue;
-      
       const gain = (currentNav - lot.nav) * lot.units;
       const taxType = this.getTaxType(lot.date, now, assetType);
-      
       if (taxType === 'LTCG') uLTCG += gain;
       else if (taxType === 'STCG') uSTCG += gain;
       else uSlab += gain;
@@ -139,7 +133,7 @@ export class TaxService {
     };
   }
 
-  private static calculateGain(
+  public static calculateGain(
     assetName: string,
     assetType: AssetType,
     lot: BuyLot,
@@ -151,7 +145,6 @@ export class TaxService {
     let effectiveBuyNav = lot.nav;
     let isGrandfathered = false;
 
-    // Grandfathering Logic for Equity (Jan 31, 2018)
     if (this.isEquity(assetType, assetName) && lot.date < this.GRANDFATHER_DATE && grandfatherNav) {
       isGrandfathered = true;
       effectiveBuyNav = Math.max(lot.nav, Math.min(grandfatherNav, sellNav));
@@ -176,30 +169,53 @@ export class TaxService {
       holdingPeriodDays,
       isGrandfathered,
       taxRate,
+      estimatedTax: gain > 0 ? gain * taxRate : 0,
     };
+  }
+
+  /**
+   * Returns current holding lots for an asset.
+   */
+  public static getActiveBuyLots(transactions: any[]): BuyLot[] {
+    const sortedTxs = [...transactions].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
+    const buyLots: BuyLot[] = [];
+    for (const tx of sortedTxs) {
+      const type = tx.type.toLowerCase();
+      const isBuy = type.includes('buy') || type.includes('purchase') || type.includes('sip') || 
+                    type.includes('switch_in') || type.includes('reinvestment');
+      const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
+      const isBonus = type.includes('bonus');
+      if (isBuy || isBonus) {
+        buyLots.push({ date: new Date(tx.date), units: Math.abs(tx.units), nav: isBonus ? 0 : Math.abs(tx.nav), originalUnits: Math.abs(tx.units), isBonus });
+      } else if (isSell) {
+        let unitsToSell = Math.abs(tx.units);
+        while (unitsToSell > 0 && buyLots.length > 0) {
+          const lot = buyLots[0];
+          const soldFromLot = Math.min(unitsToSell, lot.units);
+          lot.units -= soldFromLot;
+          unitsToSell -= soldFromLot;
+          if (lot.units <= 0) buyLots.shift();
+        }
+      }
+    }
+    return buyLots;
   }
 
   private static getTaxType(buyDate: Date, sellDate: Date, assetType: AssetType): 'STCG' | 'LTCG' | 'SLAB' {
     const diffTime = Math.abs(sellDate.getTime() - buyDate.getTime());
     const diffMonths = diffTime / (1000 * 60 * 60 * 24 * 30.44);
-    
     if (this.isEquity(assetType, '')) {
       return diffMonths >= 12 ? 'LTCG' : 'STCG';
     }
-
-    // Debt Fund Logic
-    if (buyDate >= this.DEBT_NEW_REGIME_DATE) {
-      return 'SLAB'; // All new debt funds are taxed at slab rate
-    }
-
-    // Old Debt Funds (Grandfathered)
+    if (buyDate >= this.DEBT_NEW_REGIME_DATE) return 'SLAB';
     const ltThreshold = sellDate >= this.BUDGET_2024_DATE ? 24 : 36;
     return diffMonths >= ltThreshold ? 'LTCG' : 'STCG';
   }
 
   private static getTaxRate(taxType: 'STCG' | 'LTCG' | 'SLAB', sellDate: Date): number {
-    if (taxType === 'SLAB') return 0; // Depends on user's income
-
+    if (taxType === 'SLAB') return 0;
     if (sellDate >= this.BUDGET_2024_DATE) {
       return taxType === 'LTCG' ? 0.125 : 0.20;
     }
@@ -207,8 +223,6 @@ export class TaxService {
   }
 
   private static isEquity(assetType: AssetType, assetName: string): boolean {
-    // Basic heuristic: STOCKS and typical MFs in our CAS parser are equity-oriented.
-    // In a real system, we'd check the AMFI category.
     return assetType === AssetType.STOCK || assetType === AssetType.MUTUAL_FUND;
   }
 }
