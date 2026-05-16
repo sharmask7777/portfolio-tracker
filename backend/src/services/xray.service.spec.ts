@@ -39,7 +39,7 @@ describe('XRayService', () => {
     const xray = await XRayService.getXRayData('p1');
     
     expect(xray.totalValue).toBe(1000);
-    expect(xray.sectors[0].name).toBe('Banking');
+    expect(xray.sectors[0].name).toBe('Financial Services');
     expect(xray.sectors[0].percentage).toBe(0.2);
     expect(xray.marketCap.large.percentage).toBe(0.6);
     expect(xray.assetAllocation.equity.percentage).toBe(0.9);

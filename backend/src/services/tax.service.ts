@@ -63,7 +63,9 @@ export class TaxService {
 
     for (const tx of sortedTxs) {
       const type = tx.type.toLowerCase();
-      const isBuy = type.includes('buy') || type.includes('purchase') || type.includes('sip');
+      const isBuy = type.includes('buy') || type.includes('purchase') || type.includes('sip') || 
+                    type.includes('switch_in') || type.includes('reinvestment');
+      const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
       const isBonus = type.includes('bonus');
       
       const units = Math.abs(tx.units);
@@ -72,7 +74,7 @@ export class TaxService {
 
       if (isBuy || isBonus) {
         buyLots.push({ date, units, nav, originalUnits: units, isBonus });
-      } else {
+      } else if (isSell) {
         // Sell logic (FIFO)
         let unitsToSell = units;
         while (unitsToSell > 0 && buyLots.length > 0) {

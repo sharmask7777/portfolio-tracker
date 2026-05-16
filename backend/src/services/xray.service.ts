@@ -61,7 +61,8 @@ export class XRayService {
       // Sector Aggregation
       if (data.sectors) {
         for (const s of data.sectors) {
-          const sName = s.name || s.sectorName;
+          let sName = s.name || s.sectorName;
+          sName = this.normalizeSector(sName);
           const sWeight = parseFloat(s.weightage || s.percent || '0');
           sectorMap[sName] = (sectorMap[sName] || 0) + sWeight * weightFactor;
         }
@@ -111,5 +112,24 @@ export class XRayService {
         other: { percentage: assetAllocation.other / 100, value: (assetAllocation.other / 100) * totalPortfolioValue },
       },
     };
+  }
+
+  private static normalizeSector(name: string): string {
+    const map: Record<string, string> = {
+      'Financial': 'Financial Services',
+      'Banking': 'Financial Services',
+      'Finance': 'Financial Services',
+      'FMCG': 'Consumer Goods',
+      'Consumer Non-Durables': 'Consumer Goods',
+      'Information Technology': 'Technology',
+      'IT': 'Technology',
+      'Pharma': 'Healthcare',
+      'Pharmaceuticals': 'Healthcare',
+      'Automobile': 'Automotive',
+      'Auto': 'Automotive',
+    };
+
+    const trimmed = name.trim();
+    return map[trimmed] || trimmed;
   }
 }

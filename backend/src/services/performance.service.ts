@@ -1,4 +1,4 @@
-import xirr from 'xirr';
+import { xirr } from 'node-irr';
 
 export interface PerformanceMetrics {
   absoluteReturn: number;
@@ -11,11 +11,7 @@ export interface PerformanceMetrics {
 
 export class PerformanceService {
   /**
-   * Calculates XIRR for a set of transactions.
-   * @param transactions Array of transactions with amount and date. 
-   *                    Amount should be negative for investments and positive for redemptions.
-   * @param currentValue Current market value of the holdings (treated as a final positive cash flow).
-   * @param asOfDate The date for the current valuation (default: now).
+   * Calculates XIRR for a set of transactions using node-irr for better stability.
    */
   public static calculateXIRR(
     transactions: { amount: number; date: Date }[],
@@ -26,21 +22,21 @@ export class PerformanceService {
 
     const flows = transactions.map((t) => ({
       amount: t.amount,
-      when: t.date,
+      date: t.date,
     }));
 
     // Add final "redemption" of the current value
     if (currentValue > 0) {
       flows.push({
         amount: currentValue,
-        when: asOfDate,
+        date: asOfDate,
       });
     }
 
     try {
-      // xirr returns a decimal (e.g., 0.1 for 10%). 
-      // Some libraries throw if IRR cannot be found (Newton-Raphson doesn't converge).
-      return xirr(flows);
+      const result = xirr(flows);
+      // node-irr returns the daily rate. Annualize it: (1 + r)^365 - 1
+      return Math.pow(1 + result.rate, 365) - 1;
     } catch (e) {
       console.error('XIRR calculation failed:', e);
       return 0;
@@ -83,12 +79,23 @@ export class PerformanceService {
     currentPrice: number,
     currentUnits: number,
   ): PerformanceMetrics {
-    // Standardize signs: Purchase is money out (Negative), Redemption is money in (Positive)
+    // Standardize signs: Money Out of pocket (Negative), Money In to pocket (Positive)
     const normalizedTransactions = transactions.map((tx) => {
-      const isOutflow = tx.type.toLowerCase().includes('buy') || 
-                        tx.type.toLowerCase().includes('purchase') ||
-                        tx.type.toLowerCase().includes('sip');
+      const type = tx.type.toLowerCase();
       
+      // Money Out (Investment)
+      const isOutflow = type.includes('buy') || 
+                        type.includes('purchase') ||
+                        type.includes('sip') ||
+                        type.includes('switch_in') ||
+                        type.includes('reinvestment');
+      
+      // Money In (Redemption/Dividend Payout)
+      const isInflow = type.includes('sell') ||
+                       type.includes('redemption') ||
+                       type.includes('switch_out') ||
+                       type.includes('payout');
+
       return {
         amount: isOutflow ? -Math.abs(tx.amount) : Math.abs(tx.amount),
         date: new Date(tx.date),
@@ -96,10 +103,20 @@ export class PerformanceService {
     });
 
     const investedAmount = transactions.reduce((acc, tx) => {
-      const isOutflow = tx.type.toLowerCase().includes('buy') || 
-                        tx.type.toLowerCase().includes('purchase') ||
-                        tx.type.toLowerCase().includes('sip');
-      return isOutflow ? acc + Math.abs(tx.amount) : acc - Math.abs(tx.amount);
+      const type = tx.type.toLowerCase();
+      // Invested amount is strictly out-of-pocket money. 
+      // Reinvestments are technically gains reinvested, but in Indian CAS they are counted as acquisitions.
+      const isOutflow = type.includes('buy') || 
+                        type.includes('purchase') ||
+                        type.includes('sip') ||
+                        type.includes('switch_in') ||
+                        type.includes('reinvestment');
+      
+      const isInflow = type.includes('sell') ||
+                       type.includes('redemption') ||
+                       type.includes('switch_out');
+                       
+      return isOutflow ? acc + Math.abs(tx.amount) : isInflow ? acc - Math.abs(tx.amount) : acc;
     }, 0);
 
     const currentValue = currentUnits * currentPrice;
