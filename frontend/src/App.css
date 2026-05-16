@@ -256,6 +256,16 @@
   text-transform: uppercase;
 }
 
+.contribution-tag {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .progress-bar-container {
   height: 8px;
   background-color: var(--bg-secondary);

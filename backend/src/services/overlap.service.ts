@@ -44,22 +44,39 @@ export class OverlapService {
     const stockMap: Record<string, StockExposure> = {};
     let totalPortfolioValue = 0;
 
-    for (const folio of portfolio.folios) {
-      if (!folio.asset.isin) continue;
+    // 1. Calculate folio values and filter out closed positions in parallel
+    const activeFolioData = await Promise.all(
+      portfolio.folios.map(async (folio) => {
+        const lastTx = folio.transactions[folio.transactions.length - 1];
+        const currentUnits = lastTx?.balance || 0;
+        if (currentUnits <= 0) return null;
 
-      const holdingsData = await MarketDataService.getHoldings(folio.asset.isin);
-      if (!holdingsData || !holdingsData.holdings) continue;
+        const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
+        const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+        const folioValue = currentUnits * currentPrice;
 
-      // Calculate current value of this folio
-      const lastTx = folio.transactions[folio.transactions.length - 1];
-      const currentUnits = lastTx?.balance || 0;
-      const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-      const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
-      const folioValue = currentUnits * currentPrice;
-      
-      totalPortfolioValue += folioValue;
+        return { folio, folioValue };
+      })
+    );
 
-      for (const holding of holdingsData.holdings) {
+    const validFolios = activeFolioData.filter((f): f is NonNullable<typeof f> => f !== null && f.folioValue > 0);
+    totalPortfolioValue = validFolios.reduce((acc, f) => acc + f.folioValue, 0);
+
+    // 2. Fetch all holdings in parallel
+    const holdingsResults = await Promise.all(
+      validFolios.map(async ({ folio, folioValue }) => {
+        if (!folio.asset.isin) return null;
+        const data = await MarketDataService.getHoldings(folio.asset.isin);
+        return { folio, folioValue, data };
+      })
+    );
+
+    // 3. Aggregate results
+    for (const result of holdingsResults) {
+      if (!result || !result.data || !result.data.holdings) continue;
+      const { folio, folioValue, data } = result;
+
+      for (const holding of data.holdings) {
         const weight = parseFloat(holding.weightage) / 100;
         const absoluteValue = folioValue * weight;
 
