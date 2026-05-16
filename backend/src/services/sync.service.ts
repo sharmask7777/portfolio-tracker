@@ -75,10 +75,10 @@ export class SyncService {
         });
 
         // Add Transactions
-        const transactions = schemeData.transactions || [];
+        const transactions = [...(schemeData.transactions || [])];
         
         // Handle Summary CAS: If no transactions but there is a balance/valuation, create a synthetic transaction
-        if (transactions.length === 0 && (schemeData.close > 0 || schemeData.valuation?.value > 0)) {
+        if (transactions.length === 0 && (schemeData.close > 0 || (schemeData.valuation && schemeData.valuation.value > 0))) {
           const balanceDate = schemeData.valuation?.date ? new Date(schemeData.valuation.date) : new Date();
           transactions.push({
             date: balanceDate.toISOString().split('T')[0],
