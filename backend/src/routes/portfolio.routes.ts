@@ -3,6 +3,7 @@ import multer from 'multer';
 import { ParserService } from '../services/parser.service';
 import { SyncService } from '../services/sync.service';
 import { PerformanceService } from '../services/performance.service';
+import { MarketDataService } from '../services/market-data.service';
 import { prisma } from '../services/db.service';
 import fs from 'fs';
 
@@ -56,9 +57,18 @@ router.get('/summary', async (req: Request, res: Response) => {
     }
 
     // Enrich with performance metrics
-    const enrichedFolios = portfolio.folios.map((folio) => {
+    const enrichedFolios = await Promise.all(portfolio.folios.map(async (folio) => {
       const lastTx = folio.transactions[folio.transactions.length - 1];
-      const currentPrice = lastTx?.nav || 0; // Mock: using last known NAV
+      let currentPrice = lastTx?.nav || 0;
+      
+      // Try to get real-time NAV if AMFI code is available
+      if (folio.asset.amfiCode) {
+        const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode);
+        if (liveNav > 0) {
+          currentPrice = liveNav;
+        }
+      }
+
       const currentUnits = lastTx?.balance || 0;
 
       const metrics = PerformanceService.getMetrics(
@@ -71,7 +81,7 @@ router.get('/summary', async (req: Request, res: Response) => {
         ...folio,
         metrics,
       };
-    });
+    }));
 
     // Overall portfolio metrics
     const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
