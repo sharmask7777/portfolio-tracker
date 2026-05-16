@@ -30,23 +30,25 @@ export class SyncService {
     }
 
     const results = [];
+    const investor = parsedData.investor_info || parsedData.investor || {};
 
     // 2. Loop through Folios and Transactions
     // casparser JSON structure: { folios: [ { folio: "...", amc: "...", schemes: [ { isin: "...", transactions: [...] } ] } ] }
     for (const folioData of parsedData.folios || []) {
-      for (const scheme of folioData.schemes || []) {
+      for (const schemeData of folioData.schemes || []) {
+        const fundName = schemeData.scheme || schemeData.name;
         // Upsert Asset
         const asset = await prisma.asset.upsert({
-          where: { isin: scheme.isin || scheme.amfi || scheme.name },
+          where: { isin: schemeData.isin || schemeData.amfi || fundName },
           update: {
-            name: scheme.name,
-            amfiCode: scheme.amfi,
+            name: fundName,
+            amfiCode: schemeData.amfi,
           },
           create: {
             type: 'MUTUAL_FUND',
-            name: scheme.name,
-            isin: scheme.isin,
-            amfiCode: scheme.amfi,
+            name: fundName,
+            isin: schemeData.isin,
+            amfiCode: schemeData.amfi,
           },
         });
 
@@ -61,21 +63,22 @@ export class SyncService {
           },
           update: {
             amc: folioData.amc,
-            pan: parsedData.investor_info?.pan,
+            pan: investor.pan,
           },
           create: {
             number: folioData.folio,
             amc: folioData.amc,
-            pan: parsedData.investor_info?.pan,
+            pan: investor.pan,
             assetId: asset.id,
             portfolioId: portfolio.id,
           },
         });
 
         // Add Transactions
-        for (const tx of scheme.transactions || []) {
+        for (const tx of schemeData.transactions || []) {
           // Generate a deterministic hash for deduplication
-          const txString = `${tx.date}-${tx.type}-${tx.amount}-${tx.units}-${tx.nav}-${tx.balance}`;
+          // Include folio and asset identifiers to make it more unique
+          const txString = `${folioData.folio}-${schemeData.isin}-${tx.date}-${tx.type}-${tx.amount}-${tx.units}-${tx.nav}-${tx.balance}`;
           const externalId = crypto.createHash('md5').update(txString).digest('hex');
 
           await prisma.transaction.upsert({
