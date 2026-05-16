@@ -52,7 +52,7 @@ export class OverlapService {
         if (currentUnits <= 0) return null;
 
         const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-        const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+        const currentPrice = liveNav > 0 ? liveNav : PortfolioUtils.getLatestNAV(folio.transactions);
         const folioValue = currentUnits * currentPrice;
 
         return { folio, folioValue };

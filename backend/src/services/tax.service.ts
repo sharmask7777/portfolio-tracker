@@ -188,7 +188,7 @@ export class TaxService {
     const holdingPeriodDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
     const taxType = this.getTaxType(lot.date, sellDate, assetType);
-    const taxRate = this.getTaxRate(taxType, sellDate);
+    const taxRate = this.getTaxRate(taxType, sellDate, assetType);
 
     return {
       assetName,
@@ -244,15 +244,26 @@ export class TaxService {
     }
     if (buyDate >= this.DEBT_NEW_REGIME_DATE) return 'SLAB';
     const ltThreshold = sellDate >= this.BUDGET_2024_DATE ? 24 : 36;
-    return diffMonths >= ltThreshold ? 'LTCG' : 'STCG';
+    return diffMonths >= ltThreshold ? 'LTCG' : 'SLAB'; // Debt STCG is always taxed at Slab rates
   }
 
-  private static getTaxRate(taxType: 'STCG' | 'LTCG' | 'SLAB', sellDate: Date): number {
+  private static getTaxRate(taxType: 'STCG' | 'LTCG' | 'SLAB', sellDate: Date, assetType: AssetType): number {
     if (taxType === 'SLAB') return 0;
+    const isEq = this.isEquity(assetType, '');
+
     if (sellDate >= this.BUDGET_2024_DATE) {
-      return taxType === 'LTCG' ? 0.125 : 0.20;
+      if (isEq) {
+        return taxType === 'LTCG' ? 0.125 : 0.20;
+      }
+      return taxType === 'LTCG' ? 0.125 : 0; // Debt LTCG post-budget is 12.5%
     }
-    return taxType === 'LTCG' ? 0.10 : 0.15;
+    
+    // Pre-Budget 2024
+    if (isEq) {
+      return taxType === 'LTCG' ? 0.10 : 0.15;
+    }
+    // Debt LTCG pre-budget was 20% (with indexation)
+    return taxType === 'LTCG' ? 0.20 : 0;
   }
 
   private static isEquity(assetType: AssetType, assetName: string): boolean {

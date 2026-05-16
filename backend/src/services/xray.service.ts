@@ -45,9 +45,10 @@ export class XRayService {
         let value = 0;
         if (folio.asset.type === 'MUTUAL_FUND' || folio.asset.type === 'STOCK') {
           const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-          const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+          const currentPrice = liveNav > 0 ? liveNav : PortfolioUtils.getLatestNAV(folio.transactions);
           value = currentUnits * currentPrice;
         } else {
+          const lastTx = folio.transactions[folio.transactions.length - 1];
           const alt = await AlternativeAssetService.calculateValue(folio.asset.type, currentUnits, lastTx?.date);
           value = alt.currentValue;
         }
