@@ -30,6 +30,8 @@ export interface TaxSummary {
     ltcg: number;
     slab: number;
     total: number;
+    taxableSTCG: number;
+    taxableLTCG: number;
     details: RealizedGain[];
   };
   unrealized: {
@@ -116,12 +118,43 @@ export class TaxService {
     const ltcgRealized = realizedGains.filter(g => g.taxType === 'LTCG').reduce((acc, g) => acc + g.gain, 0);
     const slabRealized = realizedGains.filter(g => g.taxType === 'SLAB').reduce((acc, g) => acc + g.gain, 0);
 
+    // Set-off Logic Implementation
+    let taxableSTCG = 0;
+    let taxableLTCG = 0;
+
+    const stcl = stcgRealized < 0 ? Math.abs(stcgRealized) : 0;
+    const ltcl = ltcgRealized < 0 ? Math.abs(ltcgRealized) : 0;
+    const stcg = stcgRealized > 0 ? stcgRealized : 0;
+    const ltcg = ltcgRealized > 0 ? ltcgRealized : 0;
+
+    // 1. LTCL can ONLY set off LTCG
+    let remainingLTCG = Math.max(0, ltcg - ltcl);
+
+    // 2. STCL can set off both STCG and LTCG
+    let remainingSTCG = stcg;
+    let remainingSTCL = stcl;
+
+    // First set off STCL against STCG
+    const setOffST = Math.min(remainingSTCG, remainingSTCL);
+    remainingSTCG -= setOffST;
+    remainingSTCL -= setOffST;
+
+    // Then set off remaining STCL against remaining LTCG
+    const setOffLT = Math.min(remainingLTCG, remainingSTCL);
+    remainingLTCG -= setOffLT;
+    remainingSTCL -= setOffLT;
+
+    taxableSTCG = remainingSTCG;
+    taxableLTCG = remainingLTCG;
+
     return {
       realized: {
         stcg: stcgRealized,
         ltcg: ltcgRealized,
         slab: slabRealized,
         total: stcgRealized + ltcgRealized + slabRealized,
+        taxableSTCG,
+        taxableLTCG,
         details: realizedGains,
       },
       unrealized: {

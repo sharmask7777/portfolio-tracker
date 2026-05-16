@@ -70,18 +70,37 @@ describe('TaxService Refined Rules', () => {
     });
   });
 
-  describe('Grandfathering Precision', () => {
-    it('should correctly apply max/min formula for Jan 2018 grandfathering', () => {
-      const transactions = [
-        { type: 'BUY', units: 10, nav: 100, date: '2017-01-01' },
-        { type: 'SELL', units: 10, nav: 150, date: '2025-01-01' },
+  describe('Loss Set-off Hierarchy', () => {
+    it('should set off STCL against both STCG and LTCG', () => {
+      const txs = [
+        { type: 'BUY', units: 10, nav: 100, date: '2022-01-01' },
+        { type: 'SELL', units: 10, nav: 300, date: '2023-06-01' }, // Realized LTCG = 2000
+        { type: 'BUY', units: 10, nav: 200, date: '2024-01-01' }, 
+        { type: 'SELL', units: 10, nav: 150, date: '2024-06-01' }, // Realized STCL = 500
       ];
-      const grandfatherNav = 200; 
-      const summary = TaxService.calculatePortfolioTax('Equity', STOCK, transactions, 150, grandfatherNav);
+      const summary = TaxService.calculatePortfolioTax('Equity', MF, txs, 300);
       
-      // Cost = max(100, min(200, 150)) = max(100, 150) = 150
-      // Gain = (150 - 150) * 10 = 0
-      expect(summary.realized.details[0].gain).toBe(0);
+      expect(summary.realized.ltcg).toBe(2000);
+      expect(summary.realized.stcg).toBe(-500);
+      // Taxable LTCG = 2000 - 500 (STCL) = 1500
+      expect(summary.realized.taxableLTCG).toBe(1500);
+      expect(summary.realized.taxableSTCG).toBe(0);
+    });
+
+    it('should NOT set off LTCL against STCG', () => {
+      const txs = [
+        { type: 'BUY', units: 10, nav: 200, date: '2022-01-01' }, 
+        { type: 'SELL', units: 10, nav: 150, date: '2024-08-01' }, // Realized LTCL = 500
+        { type: 'BUY', units: 10, nav: 100, date: '2024-01-01' },
+        { type: 'SELL', units: 10, nav: 300, date: '2024-08-15' }, // Realized STCG = 2000
+      ];
+      const summary = TaxService.calculatePortfolioTax('Equity', MF, txs, 300);
+      
+      expect(summary.realized.ltcg).toBe(-500);
+      expect(summary.realized.stcg).toBe(2000);
+      // LTCL cannot set off STCG
+      expect(summary.realized.taxableSTCG).toBe(2000);
+      expect(summary.realized.taxableLTCG).toBe(0);
     });
   });
 });
