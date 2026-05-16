@@ -49,8 +49,8 @@ describe('OverlapService', () => {
         id: 'p1',
         folios: [
           {
-            asset: { isin: 'ISIN1', amfiCode: '101', name: 'Fund A' },
-            transactions: [{ balance: 100, nav: 10, date: new Date() }],
+            asset: { isin: 'ISIN1', amfiCode: '101', name: 'Fund A', type: 'MUTUAL_FUND' },
+            transactions: [{ type: 'BUY', units: 100, balance: 100, nav: 10, date: new Date() }],
           },
         ],
       });

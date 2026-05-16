@@ -22,7 +22,7 @@ describe('XRayService', () => {
       folios: [
         {
           asset: { isin: 'ISIN1', amfiCode: '101', name: 'Fund A', type: 'MUTUAL_FUND' },
-          transactions: [{ balance: 100, nav: 10, date: new Date() }],
+          transactions: [{ type: 'BUY', units: 100, balance: 100, nav: 10, date: new Date() }],
         },
       ],
     });

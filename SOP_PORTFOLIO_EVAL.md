@@ -17,12 +17,51 @@ Before requesting user data, run a script to scan the database for obvious mathe
 
 ### Detection Command:
 ```bash
-cd backend && ./node_modules/.bin/ts-node -e "
-import { prisma } from './src/services/db.service';
-import { PerformanceService } from './src/services/performance.service';
-import { PortfolioUtils } from './src/utils/portfolio.utils';
-// Script to iterate all folios and print 'RED FLAG' for any above criteria
-"
+cd backend && cat << 'EOF' > scripts/eval.ts && ./node_modules/.bin/ts-node scripts/eval.ts
+import { prisma } from '../src/services/db.service';
+import { PerformanceService } from '../src/services/performance.service';
+import { PortfolioUtils } from '../src/utils/portfolio.utils';
+
+async function evaluate() {
+  const folios = await prisma.folio.findMany({
+    include: { asset: true, transactions: { orderBy: { date: 'asc' } } }
+  });
+  let redFlags = 0;
+  for (const folio of folios) {
+    const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
+    const activeTxs = folio.transactions.filter(tx => {
+       const type = tx.type.toLowerCase();
+       return !type.includes('tax') && !type.includes('duty') && !type.includes('charge') && !type.includes('stt');
+    });
+    const lastTx = activeTxs[activeTxs.length - 1];
+    if (!lastTx) continue;
+    if (folio.asset.name === 'TRACE_SCHEME' || folio.asset.name === 'LOG_SCHEME' || folio.asset.name === 'Test Fund') continue;
+
+    const metrics = PerformanceService.getMetrics(folio.transactions, lastTx.nav || 100, currentUnits);
+    if (metrics.xirr > 1) console.log(`[WARNING] XIRR > 100% for folio ${folio.id}`);
+
+    const isOnlyZeroCostOpening = activeTxs.every(tx => tx.type === 'OPENING_BALANCE' && tx.amount === 0);
+    if (metrics.investedAmount === 0 && metrics.currentValue > 0 && !isOnlyZeroCostOpening) redFlags++;
+    if (metrics.investedAmount !== 0 && currentUnits === 0) redFlags++;
+    if (metrics.currentValue < 0) redFlags++;
+  }
+
+  const portfolios = await prisma.portfolio.findMany({ include: { folios: { include: { asset: true } } } });
+  for (const portfolio of portfolios) {
+    const schemeCounts = new Map<string, number>();
+    for (const folio of portfolio.folios) {
+      const key = folio.number + '-' + folio.asset.name;
+      schemeCounts.set(key, (schemeCounts.get(key) || 0) + 1);
+    }
+    for (const count of schemeCounts.values()) {
+      if (count > 1) redFlags++;
+    }
+  }
+  console.log(`Evaluation complete. Found ${redFlags} red flags.`);
+  if (redFlags > 0) process.exit(1);
+}
+evaluate().catch(console.error);
+EOF
 ```
 
 ## 2. Synthetic Stress Testing (Mock Eval)

@@ -58,7 +58,7 @@ describe('SyncService Ingestion Logic', () => {
     expect(portfolio?.folios.length).toBe(4); // 2 folios * 2 schemes each
     
     const totalTxs = portfolio?.folios.reduce((acc, f) => acc + f.transactions.length, 0);
-    expect(totalTxs).toBe(20); // 4 schemes * 5 txs each
+    expect(totalTxs).toBe(24); // 4 schemes * (5 txs + 1 anchor)
   });
 
   it('should handle duplicate imports gracefully (idempotency)', async () => {
@@ -86,10 +86,7 @@ describe('SyncService Ingestion Logic', () => {
 
     // Should not have double transactions
     const totalTxs = portfolio?.folios.reduce((acc, f) => acc + f.transactions.length, 0);
-    // 20 from previous test + 3 from this test = 23
-    // Wait, the beforeAll cleaned up. So it should be exactly 3.
-    // Actually, I should probably check for a specific folio.
     const latestFolio = portfolio?.folios.find(f => f.number === mockData.folios[0].folio);
-    expect(latestFolio?.transactions.length).toBe(3);
+    expect(latestFolio?.transactions.length).toBe(4); // 3 txs + 1 anchor
   });
 });

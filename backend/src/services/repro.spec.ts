@@ -6,6 +6,6 @@ describe('XRayService Reproduction', () => {
     // However, we need a portfolio in the DB.
     // Instead, I'll just check if the code has the identified bug.
     const serviceCode = require('fs').readFileSync(__dirname + '/xray.service.ts', 'utf8');
-    expect(serviceCode).toContain('let sName = s.name || s.sectorName;');
+    expect(serviceCode).toContain('let sName = s.sector || s.name || s.sectorName;');
   });
 });
