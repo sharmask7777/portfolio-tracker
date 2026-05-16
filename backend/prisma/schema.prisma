@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id         String      @id @default(uuid())
+  email      String      @unique
+  password   String
+  portfolios Portfolio[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+model Portfolio {
+  id        String   @id @default(uuid())
+  name      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  folios    Folio[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum AssetType {
+  MUTUAL_FUND
+  STOCK
+  FIXED_DEPOSIT
+}
+
+model Asset {
+  id        String      @id @default(uuid())
+  type      AssetType
+  name      String
+  isin      String?     @unique
+  amfiCode  String?     @unique
+  symbol    String?     @unique
+  folios    Folio[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model Folio {
+  id           String        @id @default(uuid())
+  number       String
+  amc          String?
+  pan          String?
+  portfolioId  String
+  portfolio    Portfolio     @relation(fields: [portfolioId], references: [id])
+  assetId      String
+  asset        Asset         @relation(fields: [assetId], references: [id])
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([number, assetId, portfolioId])
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  date        DateTime
+  type        String
+  amount      Float
+  units       Float
+  nav         Float
+  balance     Float
+  folioId     String
+  folio       Folio    @relation(fields: [folioId], references: [id])
+  externalId  String?  @unique // Hash of record to prevent duplicates
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
