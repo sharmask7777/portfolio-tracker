@@ -6,6 +6,7 @@ import { PerformanceService } from '../services/performance.service';
 import { MarketDataService } from '../services/market-data.service';
 import { OverlapService } from '../services/overlap.service';
 import { XRayService } from '../services/xray.service';
+import { TaxService } from '../services/tax.service';
 import { prisma } from '../services/db.service';
 import fs from 'fs';
 
@@ -127,6 +128,60 @@ router.get('/:id/xray', async (req: Request, res: Response) => {
     const { id } = req.params;
     const xrayData = await XRayService.getXRayData(id as string);
     res.status(200).json(xrayData);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/:id/tax-summary', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const portfolio = await prisma.portfolio.findUnique({
+      where: { id: id as string },
+      include: {
+        folios: {
+          include: {
+            asset: true,
+            transactions: { orderBy: { date: 'asc' } },
+          },
+        },
+      },
+    });
+
+    if (!portfolio) {
+      return res.status(404).json({ error: 'Portfolio not found' });
+    }
+
+    const summaries = await Promise.all(portfolio.folios.map(async (folio) => {
+      const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
+      const lastTx = folio.transactions[folio.transactions.length - 1];
+      const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+
+      return TaxService.calculatePortfolioTax(
+        folio.asset.name,
+        folio.asset.type,
+        folio.transactions,
+        currentPrice
+      );
+    }));
+
+    // Aggregate overall
+    const aggregate = {
+      realized: { stcg: 0, ltcg: 0, total: 0 },
+      unrealized: { stcg: 0, ltcg: 0, total: 0 },
+      details: summaries.flatMap(s => s.realized.details),
+    };
+
+    for (const s of summaries) {
+      aggregate.realized.stcg += s.realized.stcg;
+      aggregate.realized.ltcg += s.realized.ltcg;
+      aggregate.realized.total += s.realized.total;
+      aggregate.unrealized.stcg += s.unrealized.stcg;
+      aggregate.unrealized.ltcg += s.unrealized.ltcg;
+      aggregate.unrealized.total += s.unrealized.total;
+    }
+
+    res.status(200).json(aggregate);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
