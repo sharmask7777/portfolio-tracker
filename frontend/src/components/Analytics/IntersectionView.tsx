@@ -33,7 +33,7 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({ exposures })
             </tr>
           </thead>
           <tbody>
-            {exposures.slice(0, 20).map((item, idx) => (
+            {exposures.map((item, idx) => (
               <tr key={idx}>
                 <td style={{ fontWeight: 600 }}>{item.name}</td>
                 <td>{item.sector}</td>
