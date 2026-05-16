@@ -148,14 +148,14 @@ router.get('/summary', async (req: Request, res: Response) => {
         // Alternative Assets
         const altMetrics = await AlternativeAssetService.calculateValue(
           folio.asset.type,
-          lastTx?.balance || 0,
-          lastTx?.date
+          lastUnitTx?.balance || 0,
+          lastUnitTx?.date
         );
         metrics = {
-          investedAmount: lastTx?.amount || 0,
+          investedAmount: lastUnitTx?.amount || 0,
           currentValue: altMetrics.currentValue,
-          totalGain: altMetrics.accruedInterest || (altMetrics.currentValue - lastTx?.amount),
-          absoluteReturn: lastTx?.amount ? (altMetrics.currentValue - lastTx.amount) / lastTx.amount : 0,
+          totalGain: altMetrics.accruedInterest || (altMetrics.currentValue - (lastUnitTx?.amount || 0)),
+          absoluteReturn: lastUnitTx?.amount ? (altMetrics.currentValue - lastUnitTx.amount) / lastUnitTx.amount : 0,
           xirr: altMetrics.annualRate,
           cagr: altMetrics.annualRate,
         };
@@ -163,14 +163,14 @@ router.get('/summary', async (req: Request, res: Response) => {
 
       return { ...folio, metrics };
     }));
-const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
-const totalValue = enrichedFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
 
-// Filter for active folios or those with significant remaining invested amount (realized gains/losses)
-const activeFolios = enrichedFolios.filter(f => Math.abs(f.metrics.currentValue) > 0.01 || Math.abs(f.metrics.investedAmount) > 0.01);
+    const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
+    const totalValue = enrichedFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
 
-const allTransactions = allFolios.flatMap((f) => 
-...
+    // Filter for active folios or those with significant remaining invested amount (realized gains/losses)
+    const activeFolios = enrichedFolios.filter(f => Math.abs(f.metrics.currentValue) > 0.01 || Math.abs(f.metrics.investedAmount) > 0.01);
+
+    const allTransactions = allFolios.flatMap((f) => 
       f.transactions.map((tx: any) => ({
         amount: tx.type.toLowerCase().includes('buy') || 
                 tx.type.toLowerCase().includes('purchase') ||

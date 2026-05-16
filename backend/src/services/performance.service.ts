@@ -163,7 +163,12 @@ export class PerformanceService {
       return isOutflow ? acc + Math.abs(tx.amount) : isInflow ? acc - Math.abs(tx.amount) : acc;
     }, 0);
     const currentValue = currentUnits * currentPrice;
-    const totalGain = currentValue - investedAmount;
+    
+    // If the fund is closed (zero units), we don't have an "active" invested amount.
+    // The historical net cash flow (realized profit/loss) is still preserved in normalizedTransactions 
+    // for XIRR calculation, but for the summary view, invested should be 0.
+    const activeInvestedAmount = currentUnits > 0 ? investedAmount : 0;
+    const totalGain = currentValue - activeInvestedAmount;
 
     const firstTxDate = normalizedTransactions.reduce(
       (min, tx) => (tx.date < min ? tx.date : min),
@@ -171,11 +176,11 @@ export class PerformanceService {
     );
 
     return {
-      investedAmount,
+      investedAmount: activeInvestedAmount,
       currentValue,
       totalGain,
-      absoluteReturn: this.calculateAbsoluteReturn(investedAmount, currentValue),
-      cagr: this.calculateCAGR(investedAmount, currentValue, firstTxDate),
+      absoluteReturn: this.calculateAbsoluteReturn(activeInvestedAmount, currentValue),
+      cagr: this.calculateCAGR(activeInvestedAmount, currentValue, firstTxDate),
       xirr: this.calculateXIRR(normalizedTransactions, currentValue),
     };
   }
