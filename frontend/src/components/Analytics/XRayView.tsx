@@ -20,18 +20,7 @@ interface XRayViewProps {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1'];
 
-export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
-  if (!data || !data.sectors) return <div className="loading-state">Loading X-Ray data...</div>;
-
-  if (data.totalValue === 0) {
-    return (
-      <div className="empty-state">
-        <h3>No X-Ray Data Available</h3>
-        <p>Ensure your portfolio has active holdings with valid ISINs.</p>
-      </div>
-    );
-  }
-
+const XRayDashboard = ({ data, title }: { data: any, title: string }) => {
   const sectorData = data.sectors.map((s: any) => ({
     name: s.name,
     size: s.value,
@@ -49,10 +38,12 @@ export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
     { name: 'Debt', value: data.assetAllocation?.debt?.percentage || 0 },
     { name: 'Cash', value: data.assetAllocation?.cash?.percentage || 0 },
     { name: 'Gold', value: data.assetAllocation?.gold?.percentage || 0 },
+    { name: 'Arbitrage', value: data.assetAllocation?.arbitrage?.percentage || 0 },
   ].filter(a => a.value > 0);
 
   return (
-    <div className="xray-view animate-fade">
+    <div style={{ marginBottom: '3rem' }}>
+      <h2 style={{ marginBottom: '1.5rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>{title}</h2>
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <h3>Sector Allocation</h3>
         <div className="treemap-container" style={{ marginTop: '1rem', height: '400px' }}>
@@ -116,6 +107,28 @@ export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
+  if (!data || !data.sectors) return <div className="loading-state">Loading X-Ray data...</div>;
+
+  if (data.totalValue === 0) {
+    return (
+      <div className="empty-state">
+        <h3>No X-Ray Data Available</h3>
+        <p>Ensure your portfolio has active holdings with valid ISINs.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="xray-view animate-fade">
+      <XRayDashboard data={data} title="Standard View" />
+      {data.exArbitrage && data.exArbitrage.assetAllocation.arbitrage.value > 0 && (
+        <XRayDashboard data={data.exArbitrage} title="Excluding Arbitrage (Black Box)" />
+      )}
     </div>
   );
 };

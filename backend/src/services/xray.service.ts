@@ -57,7 +57,8 @@ export class XRayService {
           isin: folio.asset.isin || '',
           amfi: folio.asset.amfiCode || '',
           value,
-          type: folio.asset.type
+          type: folio.asset.type,
+          name: folio.asset.name
         } : null;
       })
     );
@@ -68,6 +69,10 @@ export class XRayService {
     const sectorMap: Record<string, number> = {};
     const marketCap = { large: 0, mid: 0, small: 0 };
     const assetAllocation = { equity: 0, debt: 0, cash: 0, gold: 0, other: 0 };
+
+    const exArbSectorMap: Record<string, number> = {};
+    const exArbMarketCap = { large: 0, mid: 0, small: 0 };
+    const exArbAssetAllocation = { equity: 0, debt: 0, cash: 0, gold: 0, arbitrage: 0, other: 0 };
 
     // 2. Fetch all holdings in parallel
     const holdingsResults = await Promise.all(
@@ -83,10 +88,16 @@ export class XRayService {
     // 3. Aggregate from holdings data
     for (const { fv, data } of holdingsResults) {
       const weightFactor = fv.value / (totalPortfolioValue || 1);
+      const isArbitrage = fv.type === 'MUTUAL_FUND' && (fv.name?.toLowerCase().includes('arbitrage') || false);
 
       if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
         if (!data) {
           assetAllocation.equity += 100 * weightFactor;
+          if (isArbitrage) {
+             exArbAssetAllocation.arbitrage += 100 * weightFactor;
+          } else {
+             exArbAssetAllocation.equity += 100 * weightFactor;
+          }
           continue;
         }
 
@@ -96,6 +107,9 @@ export class XRayService {
             sName = this.normalizeSector(sName);
             const sWeight = parseFloat(s.weightage || s.percent || '0');
             sectorMap[sName] = (sectorMap[sName] || 0) + sWeight * weightFactor;
+            if (!isArbitrage) {
+              exArbSectorMap[sName] = (exArbSectorMap[sName] || 0) + sWeight * weightFactor;
+            }
           }
         }
 
@@ -104,6 +118,11 @@ export class XRayService {
           marketCap.large += parseFloat(mc.largeCap || mc.giant || '0') * weightFactor;
           marketCap.mid += parseFloat(mc.midCap || '0') * weightFactor;
           marketCap.small += parseFloat(mc.smallCap || mc.tiny || '0') * weightFactor;
+          if (!isArbitrage) {
+            exArbMarketCap.large += parseFloat(mc.largeCap || mc.giant || '0') * weightFactor;
+            exArbMarketCap.mid += parseFloat(mc.midCap || '0') * weightFactor;
+            exArbMarketCap.small += parseFloat(mc.smallCap || mc.tiny || '0') * weightFactor;
+          }
         }
 
         if (data.portfolio?.assetAllocation) {
@@ -112,12 +131,23 @@ export class XRayService {
           assetAllocation.debt += parseFloat(aa.debt || aa.debtAllocation || '0') * weightFactor;
           assetAllocation.cash += parseFloat(aa.cash || aa.cashAllocation || '0') * weightFactor;
           assetAllocation.other += parseFloat(aa.other || aa.otherAllocation || '0') * weightFactor;
+
+          if (isArbitrage) {
+            exArbAssetAllocation.arbitrage += 100 * weightFactor; // Treating it as a black box 100% arbitrage
+          } else {
+            exArbAssetAllocation.equity += parseFloat(aa.equity || aa.equityAllocation || '0') * weightFactor;
+            exArbAssetAllocation.debt += parseFloat(aa.debt || aa.debtAllocation || '0') * weightFactor;
+            exArbAssetAllocation.cash += parseFloat(aa.cash || aa.cashAllocation || '0') * weightFactor;
+            exArbAssetAllocation.other += parseFloat(aa.other || aa.otherAllocation || '0') * weightFactor;
+          }
         }
       } else {
         if (fv.type === AssetType.EPF || fv.type === AssetType.PPF || fv.type === AssetType.FIXED_DEPOSIT) {
           assetAllocation.debt += 100 * weightFactor;
+          exArbAssetAllocation.debt += 100 * weightFactor;
         } else if (fv.type === AssetType.SGB || fv.type === AssetType.PHYSICAL_GOLD) {
           assetAllocation.gold += 100 * weightFactor;
+          exArbAssetAllocation.gold += 100 * weightFactor;
         }
       }
     }
@@ -143,6 +173,28 @@ export class XRayService {
         gold: { percentage: assetAllocation.gold / 100, value: (assetAllocation.gold / 100) * totalPortfolioValue },
         other: { percentage: assetAllocation.other / 100, value: (assetAllocation.other / 100) * totalPortfolioValue },
       },
+      exArbitrage: {
+        sectors: Object.entries(exArbSectorMap)
+          .map(([name, percentage]) => ({
+            name,
+            percentage: percentage / 100,
+            value: (percentage / 100) * totalPortfolioValue,
+          }))
+          .sort((a, b) => b.percentage - a.percentage),
+        marketCap: {
+          large: { percentage: exArbMarketCap.large / 100, value: (exArbMarketCap.large / 100) * totalPortfolioValue },
+          mid: { percentage: exArbMarketCap.mid / 100, value: (exArbMarketCap.mid / 100) * totalPortfolioValue },
+          small: { percentage: exArbMarketCap.small / 100, value: (exArbMarketCap.small / 100) * totalPortfolioValue },
+        },
+        assetAllocation: {
+          equity: { percentage: exArbAssetAllocation.equity / 100, value: (exArbAssetAllocation.equity / 100) * totalPortfolioValue },
+          debt: { percentage: exArbAssetAllocation.debt / 100, value: (exArbAssetAllocation.debt / 100) * totalPortfolioValue },
+          cash: { percentage: exArbAssetAllocation.cash / 100, value: (exArbAssetAllocation.cash / 100) * totalPortfolioValue },
+          gold: { percentage: exArbAssetAllocation.gold / 100, value: (exArbAssetAllocation.gold / 100) * totalPortfolioValue },
+          arbitrage: { percentage: exArbAssetAllocation.arbitrage / 100, value: (exArbAssetAllocation.arbitrage / 100) * totalPortfolioValue },
+          other: { percentage: exArbAssetAllocation.other / 100, value: (exArbAssetAllocation.other / 100) * totalPortfolioValue },
+        },
+      }
     };
   }
 
