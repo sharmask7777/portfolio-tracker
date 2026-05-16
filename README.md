@@ -39,14 +39,23 @@ docker-compose up -d
 ```bash
 cd backend
 npm install
+
+# Setup environment variables
+# Copy .env.example to .env and update with your local credentials
+cp .env.example .env
+
 # Setup Python virtual environment
 python3 -m venv venv
 ./venv/bin/pip install casparser rapidfuzz
+
 # Run migrations
 npx prisma db push
+
 # Start dev server
 npm run dev
 ```
+
+> **⚠️ Security Note:** Never commit your `.env` file to version control. It is already included in `.gitignore`. Use `.env.example` as a template for new environments.
 
 ### 3. Frontend Setup
 ```bash
