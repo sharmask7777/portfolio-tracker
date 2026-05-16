@@ -39,13 +39,18 @@ export class PerformanceService {
     
     if (!hasPositive || !hasNegative) return 0;
 
-    // Safety: If duration is extremely short (e.g., < 1 day), XIRR explodes.
+    // Safety: If duration is extremely short (e.g., < 30 days), XIRR is highly volatile.
     const firstDate = flows.reduce((min, f) => (f.date < min ? f.date : min), flows[0].date);
     const lastDate = flows.reduce((max, f) => (f.date > max ? f.date : max), flows[0].date);
     const diffDays = (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24);
     
-    // If it's a summary statement with only 1 day difference, XIRR is misleading.
-    if (diffDays < 1) return 0;
+    // If period is < 30 days, annualization is mathematically correct but financially useless.
+    // Return Absolute Return instead as a proxy.
+    if (diffDays < 30) {
+      const totalInvested = flows.filter(f => f.amount < 0).reduce((acc, f) => acc + Math.abs(f.amount), 0);
+      const totalRedeemed = flows.filter(f => f.amount > 0).reduce((acc, f) => acc + f.amount, 0);
+      return totalInvested > 0 ? (totalRedeemed - totalInvested) / totalInvested : 0;
+    }
 
     try {
       const result = xirr(flows);
@@ -53,7 +58,9 @@ export class PerformanceService {
       const annualized = Math.pow(1 + result.rate, 365) - 1;
       
       // Cap astronomical XIRR values (usually data errors or ultra-short terms)
-      if (annualized > 1000) return 10; // Cap at 1000% for display sanity
+      // annualized is a decimal (e.g. 0.15 = 15%). 10.0 = 1000%.
+      if (annualized > 10.0) return 10.0; 
+      if (annualized < -1.0) return -1.0; // Max loss is 100%
       
       return isFinite(annualized) ? annualized : 0;
     } catch (e) {

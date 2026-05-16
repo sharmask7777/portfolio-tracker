@@ -128,11 +128,13 @@ export class SyncService {
         const anchorCost = Math.max(0, (schemeData.valuation?.cost || 0) - totalRealCost);
 
         if (anchorUnits > 0.001 || anchorCost > 0) {
-          // Date the anchor 1 day before the earliest real transaction, or today if none
+          // Legacy Fix: Date the anchor 365 days before the first real transaction (or today)
+          // This ensures XIRR reflects a realistic annualized return for legacy holdings
+          // instead of blowing up due to a short 1-month statement window.
           const firstRealTxDate = realTxs.length > 0 
             ? new Date(Math.min(...realTxs.map(t => t.date.getTime())))
             : new Date();
-          const anchorDate = new Date(firstRealTxDate.getTime() - 24 * 60 * 60 * 1000);
+          const anchorDate = new Date(firstRealTxDate.getTime() - 365 * 24 * 60 * 60 * 1000);
 
           await prisma.transaction.upsert({
             where: { externalId: `ANCHOR-${folio.id}` },
