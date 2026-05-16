@@ -9,14 +9,18 @@ Before requesting user data, run a script to scan the database for obvious mathe
 ### Anomaly Checklist:
 - [ ] **XIRR > 100%:** High probability of "Time Compression" (short window annualization).
 - [ ] **Invested == 0 AND Current Value > 0:** Missing cost basis or failed "Anchor" injection.
+- [ ] **Invested != 0 AND Current Units == 0:** Basis erasure bug. Closed positions MUST show ₹0 invested to keep the active view clean.
 - [ ] **Net Worth < 0:** Invalid transaction signs (Redemptions/Charges recorded as purchases).
+- [ ] **Missing Opening Balance:** If a fund has an `OPENING_BALANCE` but 0 STCG/LTCG in simulations, the parser or tax engine is skipping the opening lot.
 - [ ] **Duplicate Folios:** Same scheme appearing in multiple rows (Sync collision).
+- [ ] **Ghost Balance:** If `Current Units > 0` but the fund is redeemed, check if the last transaction was an auxiliary tax/duty record with 0 balance that was incorrectly used as the "latest balance".
 
 ### Detection Command:
 ```bash
 cd backend && ./node_modules/.bin/ts-node -e "
 import { prisma } from './src/services/db.service';
 import { PerformanceService } from './src/services/performance.service';
+import { PortfolioUtils } from './src/utils/portfolio.utils';
 // Script to iterate all folios and print 'RED FLAG' for any above criteria
 "
 ```
@@ -66,7 +70,9 @@ An evaluation is only complete when:
 1.  **Zero Duplicates:** Each fund appears exactly once in the dashboard.
 2.  **Sane XIRR:** All XIRR values are between -100% and +100% (unless verified otherwise by PDF).
 3.  **Lot Integrity:** The sum of units in the database matches the PDF closing units to 3 decimal places.
-4.  **Idempotency:** Re-uploading the exact same PDF results in **0 new database records**.
+4.  **Auxiliary Neutrality:** Unit balances and NAVs are NEVER derived from `STAMP_DUTY_TAX`, `STT_TAX`, or `CHARGE` transactions.
+5.  **FY Accuracy:** Realized gains and tax exemptions (1L vs 1.25L) correctly shift based on the selected Financial Year (Budget 2024 compliance).
+6.  **Idempotency:** Re-uploading the exact same PDF results in **0 new database records**.
 
 ---
 *Created: May 2026 | Standard: Strands Financial Integrity Protocol*
