@@ -15,6 +15,8 @@ model User {
   ownedFamilies   FamilyGroup[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+
+  @@index([email])
 }
 
 model FamilyGroup {
@@ -25,6 +27,8 @@ model FamilyGroup {
   members   FamilyMember[]
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
+
+  @@index([ownerId])
 }
 
 model FamilyMember {
@@ -38,6 +42,8 @@ model FamilyMember {
   updatedAt DateTime    @updatedAt
 
   @@unique([userId, groupId])
+  @@index([userId])
+  @@index([groupId])
 }
 
 model Portfolio {
@@ -49,6 +55,8 @@ model Portfolio {
   goals     Goal[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Goal {
@@ -60,6 +68,8 @@ model Goal {
   portfolio    Portfolio @relation(fields: [portfolioId], references: [id])
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+  @@index([portfolioId])
 }
 
 enum AssetType {
@@ -82,6 +92,9 @@ model Asset {
   folios    Folio[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+
+  @@index([isin])
+  @@index([amfiCode])
 }
 
 model Folio {
@@ -98,6 +111,8 @@ model Folio {
   updatedAt    DateTime      @updatedAt
 
   @@unique([number, assetId, portfolioId])
+  @@index([portfolioId])
+  @@index([assetId])
 }
 
 model Transaction {
@@ -113,4 +128,7 @@ model Transaction {
   externalId  String?  @unique // Hash of record to prevent duplicates
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([folioId])
+  @@index([date])
 }
