@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { ParserService } from '../services/parser.service';
 import { SyncService } from '../services/sync.service';
+import { PerformanceService } from '../services/performance.service';
 import { prisma } from '../services/db.service';
 import fs from 'fs';
 
@@ -43,7 +44,7 @@ router.get('/summary', async (req: Request, res: Response) => {
           include: {
             asset: true,
             transactions: {
-              orderBy: { date: 'desc' },
+              orderBy: { date: 'asc' },
             },
           },
         },
@@ -54,7 +55,52 @@ router.get('/summary', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Portfolio not found' });
     }
 
-    res.status(200).json(portfolio);
+    // Enrich with performance metrics
+    const enrichedFolios = portfolio.folios.map((folio) => {
+      const lastTx = folio.transactions[folio.transactions.length - 1];
+      const currentPrice = lastTx?.nav || 0; // Mock: using last known NAV
+      const currentUnits = lastTx?.balance || 0;
+
+      const metrics = PerformanceService.getMetrics(
+        folio.transactions,
+        currentPrice,
+        currentUnits,
+      );
+
+      return {
+        ...folio,
+        metrics,
+      };
+    });
+
+    // Overall portfolio metrics
+    const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
+    const totalValue = enrichedFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
+    
+    // For overall XIRR, we need to aggregate all transactions across all folios
+    const allTransactions = portfolio.folios.flatMap((f) => 
+      f.transactions.map((tx) => ({
+        amount: tx.type.toLowerCase().includes('buy') || 
+                tx.type.toLowerCase().includes('purchase') ||
+                tx.type.toLowerCase().includes('sip') 
+                ? -Math.abs(tx.amount) : Math.abs(tx.amount),
+        date: new Date(tx.date),
+      }))
+    );
+
+    const overallXirr = PerformanceService.calculateXIRR(allTransactions, totalValue);
+
+    res.status(200).json({
+      ...portfolio,
+      folios: enrichedFolios,
+      metrics: {
+        totalInvested,
+        totalValue,
+        totalGain: totalValue - totalInvested,
+        absoluteReturn: totalInvested > 0 ? (totalValue - totalInvested) / totalInvested : 0,
+        xirr: overallXirr,
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
