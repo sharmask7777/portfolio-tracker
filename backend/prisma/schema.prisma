@@ -46,8 +46,20 @@ model Portfolio {
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   folios    Folio[]
+  goals     Goal[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Goal {
+  id           String    @id @default(uuid())
+  name         String
+  targetAmount Float
+  targetDate   DateTime
+  portfolioId  String
+  portfolio    Portfolio @relation(fields: [portfolioId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 enum AssetType {

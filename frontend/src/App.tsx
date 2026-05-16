@@ -19,6 +19,7 @@ import {
   Layers,
   Calculator,
   ShieldCheck,
+  BrainCircuit
 } from 'lucide-react';
 import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
@@ -26,6 +27,8 @@ import { TaxView } from './components/Tax/TaxView';
 import { SimulationModal } from './components/Tax/SimulationModal';
 import { FamilyManager } from './components/Family/FamilyManager';
 import { AddAssetModal } from './components/Dashboard/AddAssetModal';
+import { InsightsSidebar } from './components/Insights/InsightsSidebar';
+import { GoalTracker } from './components/Insights/GoalTracker';
 import './App.css';
 
 const API_BASE = 'http://localhost:3001/api/portfolio';
@@ -33,7 +36,7 @@ const API_TAX = 'http://localhost:3001/api/tax';
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<any>(null);
   const [xrayData, setXRayData] = useState<any>(null);
@@ -186,6 +189,12 @@ function App() {
               >
                 <ShieldCheck size={16} style={{ marginRight: '0.5rem' }} /> Tax Optimization
               </button>
+              <button 
+                className={`tab ${activeTab === 'insights' ? 'active' : ''}`}
+                onClick={() => setActiveTab('insights')}
+              >
+                <BrainCircuit size={16} style={{ marginRight: '0.5rem' }} /> Health & Goals
+              </button>
             </div>
 
             {activeTab === 'overview' && (
@@ -293,6 +302,12 @@ function App() {
             {activeTab === 'xray' && <XRayView data={xrayData} />}
             {activeTab === 'intersection' && <IntersectionView exposures={exposures} />}
             {activeTab === 'tax' && <TaxView summary={taxSummary} harvesting={harvesting} />}
+            {activeTab === 'insights' && (
+              <div className="xray-grid">
+                <InsightsSidebar portfolioId={portfolio.id} />
+                <GoalTracker portfolioId={portfolio.id} currentValue={portfolio.metrics.totalValue} />
+              </div>
+            )}
           </>
         )}
       </main>

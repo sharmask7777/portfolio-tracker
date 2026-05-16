@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { X, Briefcase } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface AddAssetModalProps {
   onClose: () => void;
