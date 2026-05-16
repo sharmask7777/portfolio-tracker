@@ -108,7 +108,7 @@ export class TaxService {
     for (const lot of buyLots) {
       if (lot.units <= 0) continue;
       const gain = (currentNav - lot.nav) * lot.units;
-      const taxType = this.getTaxType(lot.date, now, assetType);
+      const taxType = this.getTaxType(lot.date, now, assetType, assetName);
       if (taxType === 'LTCG') uLTCG += gain;
       else if (taxType === 'STCG') uSTCG += gain;
       else uSlab += gain;
@@ -187,8 +187,8 @@ export class TaxService {
     const diffTime = Math.abs(sellDate.getTime() - lot.date.getTime());
     const holdingPeriodDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    const taxType = this.getTaxType(lot.date, sellDate, assetType);
-    const taxRate = this.getTaxRate(taxType, sellDate, assetType);
+    const taxType = this.getTaxType(lot.date, sellDate, assetType, assetName);
+    const taxRate = this.getTaxRate(taxType, sellDate, assetType, assetName);
 
     return {
       assetName,
@@ -236,10 +236,10 @@ export class TaxService {
     return buyLots;
   }
 
-  private static getTaxType(buyDate: Date, sellDate: Date, assetType: AssetType): 'STCG' | 'LTCG' | 'SLAB' {
+  private static getTaxType(buyDate: Date, sellDate: Date, assetType: AssetType, assetName: string): 'STCG' | 'LTCG' | 'SLAB' {
     const diffTime = Math.abs(sellDate.getTime() - buyDate.getTime());
     const diffMonths = diffTime / (1000 * 60 * 60 * 24 * 30.44);
-    if (this.isEquity(assetType, '')) {
+    if (this.isEquity(assetType, assetName)) {
       return diffMonths >= 12 ? 'LTCG' : 'STCG';
     }
     if (buyDate >= this.DEBT_NEW_REGIME_DATE) return 'SLAB';
@@ -247,9 +247,9 @@ export class TaxService {
     return diffMonths >= ltThreshold ? 'LTCG' : 'SLAB'; // Debt STCG is always taxed at Slab rates
   }
 
-  private static getTaxRate(taxType: 'STCG' | 'LTCG' | 'SLAB', sellDate: Date, assetType: AssetType): number {
+  private static getTaxRate(taxType: 'STCG' | 'LTCG' | 'SLAB', sellDate: Date, assetType: AssetType, assetName: string): number {
     if (taxType === 'SLAB') return 0;
-    const isEq = this.isEquity(assetType, '');
+    const isEq = this.isEquity(assetType, assetName);
 
     if (sellDate >= this.BUDGET_2024_DATE) {
       if (isEq) {
@@ -267,6 +267,13 @@ export class TaxService {
   }
 
   private static isEquity(assetType: AssetType, assetName: string): boolean {
-    return assetType === AssetType.STOCK || assetType === AssetType.MUTUAL_FUND;
+    if (assetType === AssetType.STOCK) return true;
+    if (assetType === AssetType.MUTUAL_FUND) {
+      const name = assetName.toLowerCase();
+      const debtKeywords = ['debt', 'bond', 'liquid', 'gilt', 'money market', 'overnight', 'credit risk', 'conservative', 'income', 'duration', 'treasury'];
+      const isDebt = debtKeywords.some(keyword => name.includes(keyword));
+      return !isDebt;
+    }
+    return false;
   }
 }
