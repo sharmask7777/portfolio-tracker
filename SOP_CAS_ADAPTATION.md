@@ -41,9 +41,12 @@ Never trust the parser alone during a failure. Establish a "Ground Truth" by ext
 - **Key Mapping:** RTAs often change keys like `investor` vs `investor_info` or `scheme` vs `name`. Normalize these in the Python script to keep `SyncService` stable.
 
 ### B. Sync Logic (`SyncService.ts`)
-- **Summary statements:** If `transactions` is empty but `close` > 0, inject a `BALANCE_STMT` transaction.
-- **Detailed statements:** If `open` > 0, inject an `OPENING_BALANCE` transaction using `valuation.cost` minus the period's purchases.
-- **Deduplication:** The `externalId` must be `${portfolioId}-${folioNumber}-${isin}-${date}-${type}-${amount}-${units}-${nav}-${balance}` to prevent cross-user collisions and handle SIP duplicates.
+- **Deduplication Hash:** The `externalId` must be `${portfolioId}-${folioNumber}-${isin}-${date}-${type}-${amount}-${units}-${nav}`. **DO NOT** include the trailing balance in the hash, as the same transaction might appear in different statements with different cumulative balances, leading to duplication.
+- **Anchor-Based Gap Filling:** The latest CAS upload is the absolute authority on current units and cost. The system calculates an "Anchor" legacy transaction for each folio:
+  - `Anchor Units = PDF Closing Units - Sum(Units of all Real Txs in DB)`
+  - `Anchor Cost = PDF Valuation Cost - Sum(Cost of all Real Txs in DB)`
+  - This ensures that as more historical PDFs are uploaded, the anchor automatically shrinks, preventing double-counting while maintaining perfect valuation.
+- **Anchor Identification:** Use a fixed `externalId` like `ANCHOR-${folioId}` to ensure only one anchor exists per fund and is updated incrementally.
 
 ### C. Performance Engine (`PerformanceService.ts`)
 - **Inclusion:** Ensure `BALANCE_STMT` and `OPENING_BALANCE` are treated as **outflows** (investments) in `investedAmount` and `XIRR` calculations.

@@ -77,80 +77,88 @@ export class SyncService {
         // Add Transactions
         const transactions = [...(schemeData.transactions || [])];
         const originalCount = transactions.length;
-        
-        // Handle Opening Balance in Detailed CAS
-        if (schemeData.open > 0 && originalCount > 0) {
-          const firstTxDate = new Date(transactions.reduce((min, t) => (t.date < min ? t.date : min), transactions[0].date));
-          const openingDate = new Date(firstTxDate.getTime() - 24 * 60 * 60 * 1000); // 1 day before first transaction
-          
-          // Calculate cost of the opening units
-          const periodBuyCost = transactions.reduce((acc, t) => {
-            const type = t.type.toLowerCase();
-            return (type.includes('buy') || type.includes('purchase') || type.includes('sip') || type.includes('reinvestment')) 
-              ? acc + Math.abs(t.amount) : acc;
-          }, 0);
-          
-          const openingCost = Math.max(0, (schemeData.valuation?.cost || 0) - periodBuyCost);
-          
-          transactions.unshift({
-            date: openingDate.toISOString().split('T')[0],
-            type: 'OPENING_BALANCE',
-            description: 'Opening Balance from Statement',
-            amount: openingCost,
-            units: schemeData.open,
-            nav: schemeData.open > 0 ? openingCost / schemeData.open : 0,
-            balance: schemeData.open,
-          });
-        }
-        
-        // Handle Summary CAS: If no transactions but there is a balance/valuation, create a synthetic transaction
-        if (transactions.length === 0 && (schemeData.close > 0 || (schemeData.valuation && schemeData.valuation.value > 0))) {
-          const balanceDate = schemeData.valuation?.date ? new Date(schemeData.valuation.date) : new Date();
-          transactions.push({
-            date: balanceDate.toISOString().split('T')[0],
-            type: 'BALANCE_STMT',
-            description: 'Summary Balance',
-            amount: schemeData.valuation?.cost || (schemeData.close * (schemeData.valuation?.nav || 0)),
-            units: schemeData.close,
-            nav: schemeData.valuation?.nav || 0,
-            balance: schemeData.close,
-          });
-        }
 
+        // 1. First, upsert all REAL transactions to establish current DB state
         for (const tx of transactions) {
           try {
-            // Generate a deterministic hash for deduplication
-            // Include portfolioId to prevent collisions between different users/portfolios
-            const txString = `${portfolio.id}-${folioData.folio}-${schemeData.isin}-${tx.date}-${tx.type}-${tx.amount}-${tx.units}-${tx.nav}-${tx.balance}`;
+            // Deduplication hash: Do NOT include trailing balance, as that changes between statements
+            const txString = `${portfolio.id}-${folioData.folio}-${schemeData.isin}-${tx.date}-${tx.type}-${tx.amount}-${tx.units}-${tx.nav}`;
             const externalId = crypto.createHash('md5').update(txString).digest('hex');
-
+            
             const cleanValue = (val: any) => {
               const parsed = parseFloat(val);
               return isNaN(parsed) ? 0 : parsed;
             };
 
-            const txData = {
-              date: new Date(tx.date),
-              type: tx.type,
-              amount: cleanValue(tx.amount),
-              units: cleanValue(tx.units),
-              nav: cleanValue(tx.nav),
-              balance: cleanValue(tx.balance),
-              folioId: folio.id,
-              externalId,
-            };
-
             await prisma.transaction.upsert({
               where: { externalId },
-              update: {
-                nav: txData.nav,
-                balance: txData.balance,
+              update: { nav: cleanValue(tx.nav), balance: cleanValue(tx.balance) },
+              create: {
+                date: new Date(tx.date),
+                type: tx.type,
+                amount: cleanValue(tx.amount),
+                units: cleanValue(tx.units),
+                nav: cleanValue(tx.nav),
+                balance: cleanValue(tx.balance),
+                folioId: folio.id,
+                externalId,
               },
-              create: txData,
             });
-          } catch (txError) {
-            console.error(`Failed to sync transaction for ${schemeData.isin}:`, txError);
-          }
+          } catch (e) { console.error('Failed to sync real tx:', e); }
+        }
+
+        // 2. Now, calculate the "Anchor" (Missing Cost/Units)
+        // The latest statement is our ground truth for total current units and cost.
+        const allTxsForFolio = await prisma.transaction.findMany({
+          where: { folioId: folio.id }
+        });
+
+        // Filter for "Real" transactions (those that actually happened)
+        const realTxs = allTxsForFolio.filter(t => !['OPENING_BALANCE', 'BALANCE_STMT'].includes(t.type));
+        
+        const totalRealUnits = realTxs.reduce((acc, t) => acc + t.units, 0);
+        const totalRealCost = realTxs.reduce((acc, t) => {
+          const type = t.type.toLowerCase();
+          const isOutflow = type.includes('buy') || type.includes('purchase') || type.includes('sip') || type.includes('reinvestment') || type.includes('switch_in');
+          const isInflow = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
+          return isOutflow ? acc + Math.abs(t.amount) : isInflow ? acc - Math.abs(t.amount) : acc;
+        }, 0);
+
+        const anchorUnits = Math.max(0, schemeData.close - totalRealUnits);
+        const anchorCost = Math.max(0, (schemeData.valuation?.cost || 0) - totalRealCost);
+
+        if (anchorUnits > 0.001 || anchorCost > 0) {
+          // Date the anchor 1 day before the earliest real transaction, or today if none
+          const firstRealTxDate = realTxs.length > 0 
+            ? new Date(Math.min(...realTxs.map(t => t.date.getTime())))
+            : new Date();
+          const anchorDate = new Date(firstRealTxDate.getTime() - 24 * 60 * 60 * 1000);
+
+          await prisma.transaction.upsert({
+            where: { externalId: `ANCHOR-${folio.id}` },
+            update: {
+              amount: anchorCost,
+              units: anchorUnits,
+              nav: anchorUnits > 0 ? anchorCost / anchorUnits : 0,
+              balance: anchorUnits, // This is a legacy anchor, balance is just the units
+              date: anchorDate,
+            },
+            create: {
+              date: anchorDate,
+              type: 'OPENING_BALANCE',
+              amount: anchorCost,
+              units: anchorUnits,
+              nav: anchorUnits > 0 ? anchorCost / anchorUnits : 0,
+              balance: anchorUnits,
+              folioId: folio.id,
+              externalId: `ANCHOR-${folio.id}`,
+            }
+          });
+        } else {
+          // If all units are accounted for by real transactions, remove the anchor
+          await prisma.transaction.deleteMany({
+            where: { externalId: `ANCHOR-${folio.id}` }
+          });
         }
       }
     }
