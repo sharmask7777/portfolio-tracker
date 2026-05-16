@@ -21,7 +21,16 @@ interface XRayViewProps {
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1'];
 
 export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
-  if (!data) return <div>Loading X-Ray data...</div>;
+  if (!data || !data.sectors) return <div className="loading-state">Loading X-Ray data...</div>;
+
+  if (data.totalValue === 0) {
+    return (
+      <div className="empty-state">
+        <h3>No X-Ray Data Available</h3>
+        <p>Ensure your portfolio has active holdings with valid ISINs.</p>
+      </div>
+    );
+  }
 
   const sectorData = data.sectors.map((s: any) => ({
     name: s.name,
@@ -30,22 +39,23 @@ export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
   }));
 
   const marketCapData = [
-    { name: 'Large Cap', value: data.marketCap.large.percentage * 100 },
-    { name: 'Mid Cap', value: data.marketCap.mid.percentage * 100 },
-    { name: 'Small Cap', value: data.marketCap.small.percentage * 100 },
+    { name: 'Large Cap', value: (data.marketCap?.large?.percentage || 0) * 100 },
+    { name: 'Mid Cap', value: (data.marketCap?.mid?.percentage || 0) * 100 },
+    { name: 'Small Cap', value: (data.marketCap?.small?.percentage || 0) * 100 },
   ];
 
   const assetData = [
-    { name: 'Equity', value: data.assetAllocation.equity.percentage },
-    { name: 'Debt', value: data.assetAllocation.debt.percentage },
-    { name: 'Cash', value: data.assetAllocation.cash.percentage },
+    { name: 'Equity', value: data.assetAllocation?.equity?.percentage || 0 },
+    { name: 'Debt', value: data.assetAllocation?.debt?.percentage || 0 },
+    { name: 'Cash', value: data.assetAllocation?.cash?.percentage || 0 },
+    { name: 'Gold', value: data.assetAllocation?.gold?.percentage || 0 },
   ].filter(a => a.value > 0);
 
   return (
-    <div className="xray-view">
+    <div className="xray-view animate-fade">
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <h3>Sector Allocation</h3>
-        <div className="treemap-container" style={{ marginTop: '1rem' }}>
+        <div className="treemap-container" style={{ marginTop: '1rem', height: '400px' }}>
           <ResponsiveContainer width="100%" height="100%">
             <Treemap
               data={sectorData}
@@ -68,7 +78,7 @@ export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
       <div className="xray-grid">
         <div className="card">
           <h3>Market Cap Breakdown</h3>
-          <div className="chart-container" style={{ marginTop: '1rem' }}>
+          <div className="chart-container" style={{ marginTop: '1rem', height: '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={marketCapData} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border-color)" />
@@ -83,7 +93,7 @@ export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
 
         <div className="card">
           <h3>Asset Allocation</h3>
-          <div className="pie-container" style={{ marginTop: '1rem' }}>
+          <div className="pie-container" style={{ marginTop: '1rem', height: '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie

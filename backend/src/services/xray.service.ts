@@ -34,44 +34,56 @@ export class XRayService {
     if (!portfolio) throw new Error('Portfolio not found');
 
     let totalPortfolioValue = 0;
-    const folioValues: { isin: string; amfi: string; value: number; type: AssetType }[] = [];
+    
+    // 1. Calculate values for all folios in parallel
+    const folioCalculations = await Promise.all(
+      portfolio.folios.map(async (folio) => {
+        const lastTx = folio.transactions[folio.transactions.length - 1];
+        const currentUnits = lastTx?.balance || 0;
+        if (currentUnits <= 0) return null;
 
-    // 1. Calculate values for all folios
-    for (const folio of portfolio.folios) {
-      const lastTx = folio.transactions[folio.transactions.length - 1];
-      const currentUnits = lastTx?.balance || 0;
-      let value = 0;
+        let value = 0;
+        if (folio.asset.type === 'MUTUAL_FUND' || folio.asset.type === 'STOCK') {
+          const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
+          const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+          value = currentUnits * currentPrice;
+        } else {
+          const alt = await AlternativeAssetService.calculateValue(folio.asset.type, currentUnits, lastTx?.date);
+          value = alt.currentValue;
+        }
 
-      if (folio.asset.type === 'MUTUAL_FUND' || folio.asset.type === 'STOCK') {
-        const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-        const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
-        value = currentUnits * currentPrice;
-      } else {
-        const alt = await AlternativeAssetService.calculateValue(folio.asset.type, currentUnits, lastTx?.date);
-        value = alt.currentValue;
-      }
-
-      if (value > 0) {
-        totalPortfolioValue += value;
-        folioValues.push({ 
-          isin: folio.asset.isin || '', 
-          amfi: folio.asset.amfiCode || '', 
+        return value > 0 ? {
+          isin: folio.asset.isin || '',
+          amfi: folio.asset.amfiCode || '',
           value,
-          type: folio.asset.type 
-        });
-      }
-    }
+          type: folio.asset.type
+        } : null;
+      })
+    );
+
+    const folioValues = folioCalculations.filter((v): v is NonNullable<typeof v> => v !== null);
+    totalPortfolioValue = folioValues.reduce((acc, fv) => acc + fv.value, 0);
 
     const sectorMap: Record<string, number> = {};
     const marketCap = { large: 0, mid: 0, small: 0 };
     const assetAllocation = { equity: 0, debt: 0, cash: 0, gold: 0, other: 0 };
 
-    // 2. Aggregate from holdings data
-    for (const fv of folioValues) {
+    // 2. Fetch all holdings in parallel
+    const holdingsResults = await Promise.all(
+      folioValues.map(async (fv) => {
+        if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
+          const data = await MarketDataService.getHoldings(fv.isin);
+          return { fv, data };
+        }
+        return { fv, data: null };
+      })
+    );
+
+    // 3. Aggregate from holdings data
+    for (const { fv, data } of holdingsResults) {
       const weightFactor = fv.value / (totalPortfolioValue || 1);
 
       if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
-        const data = await MarketDataService.getHoldings(fv.isin);
         if (!data) {
           assetAllocation.equity += 100 * weightFactor;
           continue;

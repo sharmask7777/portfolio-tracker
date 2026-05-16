@@ -10,12 +10,13 @@ export class MarketDataService {
    * Fetches the latest NAV for a mutual fund.
    */
   public static async getLatestNAV(amfiCode: string): Promise<number> {
+    if (!amfiCode) return 0;
     const cacheKey = `nav:${amfiCode}`;
     const cached = await CacheService.get<number>(cacheKey);
     if (cached !== null) return cached;
 
     try {
-      const response = await axios.get(`${this.MFAPI_BASE}/${amfiCode}/latest`);
+      const response = await axios.get(`${this.MFAPI_BASE}/${amfiCode}/latest`, { timeout: 5000 });
       const nav = parseFloat(response.data.data[0].nav);
       
       if (!isNaN(nav)) {
@@ -32,12 +33,13 @@ export class MarketDataService {
    * Fetches underlying portfolio holdings and sector breakdown.
    */
   public static async getHoldings(isin: string): Promise<any> {
+    if (!isin) return null;
     const cacheKey = `holdings:${isin}`;
     const cached = await CacheService.get<any>(cacheKey);
     if (cached) return cached;
 
     try {
-      const response = await axios.get(`${this.FINAPI_BASE}/isin/${isin}`);
+      const response = await axios.get(`${this.FINAPI_BASE}/isin/${isin}`, { timeout: 10000 });
       const holdings = response.data.data;
 
       if (holdings) {
