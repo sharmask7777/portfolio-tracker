@@ -16,22 +16,30 @@ import {
   Sun,
   Plus,
   PieChart as PieChartIcon,
-  Layers
+  Layers,
+  Calculator,
+  ShieldCheck
 } from 'lucide-react';
 import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
+import { TaxView } from './components/Tax/TaxView';
+import { SimulationModal } from './components/Tax/SimulationModal';
 import './App.css';
 
 const API_BASE = 'http://localhost:3001/api/portfolio';
+const API_TAX = 'http://localhost:3001/api/tax';
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax'>('overview');
   const [portfolio, setPortfolio] = useState<any>(null);
   const [xrayData, setXRayData] = useState<any>(null);
   const [exposures, setExposures] = useState<any[]>([]);
+  const [taxSummary, setTaxSummary] = useState<any>(null);
+  const [harvesting, setHarvesting] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
+  const [simFolio, setSimFolio] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [password, setPassword] = useState('');
 
@@ -43,15 +51,19 @@ function App() {
       
       // Fetch analytical data if portfolio exists
       if (res.data.id) {
-        const [xrayRes, exposuresRes] = await Promise.all([
+        const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.all([
           axios.get(`${API_BASE}/${res.data.id}/xray`),
           axios.get(`${API_BASE}/${res.data.id}/exposures`),
+          axios.get(`${API_BASE}/${res.data.id}/tax-summary`),
+          axios.get(`${API_TAX}/harvesting-opportunities`),
         ]);
         setXRayData(xrayRes.data);
         setExposures(exposuresRes.data);
+        setTaxSummary(taxRes.data);
+        setHarvesting(harvestingRes.data);
       }
     } catch (err) {
-      console.error('Failed to fetch portfolio:', err);
+      console.error('Failed to fetch data:', err);
     } finally {
       setLoading(false);
     }
@@ -151,6 +163,12 @@ function App() {
               >
                 <Layers size={16} style={{ marginRight: '0.5rem' }} /> Stock Intersection
               </button>
+              <button 
+                className={`tab ${activeTab === 'tax' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tax')}
+              >
+                <ShieldCheck size={16} style={{ marginRight: '0.5rem' }} /> Tax Optimization
+              </button>
             </div>
 
             {activeTab === 'overview' && (
@@ -223,21 +241,28 @@ function App() {
                         <th>Scheme Name</th>
                         <th>Invested</th>
                         <th>Current Value</th>
-                        <th>Gain/Loss</th>
                         <th>XIRR</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {portfolio.folios.map((folio: any) => (
                         <tr key={folio.id}>
-                          <td style={{ fontWeight: 500 }}>{folio.asset.name}</td>
+                          <td style={{ fontWeight: 500 }}>
+                            {folio.asset.name}
+                            <div style={{ fontSize: '0.65rem', marginTop: '0.25rem' }}>
+                              <span className="badge badge-lt" style={{ marginRight: '0.25rem' }}>LTCG Eligible</span>
+                            </div>
+                          </td>
                           <td>{formatCurrency(folio.metrics.investedAmount)}</td>
                           <td>{formatCurrency(folio.metrics.currentValue)}</td>
-                          <td className={folio.metrics.totalGain >= 0 ? 'positive' : 'negative'}>
-                            {formatCurrency(folio.metrics.totalGain)}
-                          </td>
                           <td className={folio.metrics.xirr >= 0 ? 'positive' : 'negative'}>
                             {formatPercent(folio.metrics.xirr)}
+                          </td>
+                          <td>
+                            <button className="theme-toggle" title="Simulate Sell Tax" onClick={() => setSimFolio(folio)}>
+                              <Calculator size={16} />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -249,9 +274,12 @@ function App() {
 
             {activeTab === 'xray' && <XRayView data={xrayData} />}
             {activeTab === 'intersection' && <IntersectionView exposures={exposures} />}
+            {activeTab === 'tax' && <TaxView summary={taxSummary} harvesting={harvesting} />}
           </>
         )}
       </main>
+
+      {simFolio && <SimulationModal folio={simFolio} onClose={() => setSimFolio(null)} />}
 
       {showUpload && (
         <div className="modal-overlay">
@@ -285,4 +313,3 @@ function App() {
 }
 
 export default App;
-
