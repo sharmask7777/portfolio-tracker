@@ -7,7 +7,48 @@ interface TaxViewProps {
 }
 
 export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting }) => {
+  const [selectedFY, setSelectedFY] = React.useState(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const startYear = month >= 3 ? year : year - 1;
+    return `${startYear}-${(startYear + 1).toString().slice(-2)}`;
+  });
+
   if (!summary) return <div>Loading tax data...</div>;
+
+  const getRecentFYs = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    let startYear = month >= 3 ? year : year - 1;
+    const fys = [];
+    for (let i = 0; i < 3; i++) {
+      fys.push(`${startYear}-${(startYear + 1).toString().slice(-2)}`);
+      startYear--;
+    }
+    return fys;
+  };
+
+  const recentFYs = getRecentFYs();
+
+  const getFYDates = (fy: string) => {
+    const startYear = parseInt(fy.split('-')[0]);
+    return {
+      start: new Date(startYear, 3, 1),
+      end: new Date(startYear + 1, 2, 31, 23, 59, 59)
+    };
+  };
+
+  const dates = getFYDates(selectedFY);
+  const filteredDetails = summary.details.filter((g: any) => {
+    const sellDate = new Date(g.sellDate);
+    return sellDate >= dates.start && sellDate <= dates.end;
+  });
+
+  const realizedLTCG = filteredDetails.filter((g: any) => g.taxType === 'LTCG').reduce((acc: number, g: any) => acc + g.gain, 0);
+  const realizedSTCG = filteredDetails.filter((g: any) => g.taxType === 'STCG').reduce((acc: number, g: any) => acc + g.gain, 0);
+  const realizedSlab = filteredDetails.filter((g: any) => g.taxType === 'SLAB').reduce((acc: number, g: any) => acc + g.gain, 0);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -18,10 +59,10 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting }) => {
   };
 
   const exportCSV = () => {
-    if (!summary.details || summary.details.length === 0) return;
+    if (filteredDetails.length === 0) return;
     
     const headers = ['Scheme Name', 'Buy Date', 'Sell Date', 'Units', 'Buy NAV', 'Sell NAV', 'Gain', 'Tax Type', 'Grandfathered'];
-    const rows = summary.details.map((g: any) => [
+    const rows = filteredDetails.map((g: any) => [
       g.assetName,
       new Date(g.buyDate).toLocaleDateString(),
       new Date(g.sellDate).toLocaleDateString(),
@@ -38,22 +79,34 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting }) => {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", "capital_gains_report.csv");
+    link.setAttribute("download", `capital_gains_report_FY_${selectedFY}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const ltcgUsed = summary.realized.ltcg;
-  const ltcgLimit = 125000;
+  // LTCG limit changed from 1L to 1.25L in Budget 2024
+  const ltcgLimit = selectedFY >= '2024-25' ? 125000 : 100000;
+  const ltcgUsed = Math.max(0, realizedLTCG);
   const ltcgPercent = Math.min(100, (ltcgUsed / ltcgLimit) * 100);
 
   return (
-    <div className="tax-view">
+    <div className="tax-view animate-fade">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+        <select 
+          className="card" 
+          style={{ padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+          value={selectedFY}
+          onChange={(e) => setSelectedFY(e.target.value)}
+        >
+          {recentFYs.map(fy => <option key={fy} value={fy}>Financial Year {fy}</option>)}
+        </select>
+      </div>
+
       <div className="xray-grid">
         <div className="card">
-          <h3>LTCG Exemption Tracker (FY 2024-25)</h3>
+          <h3>LTCG Exemption Tracker (FY {selectedFY})</h3>
           <div style={{ marginTop: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Used: {formatCurrency(ltcgUsed)}</span>
@@ -68,7 +121,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting }) => {
           </div>
         </div>
 
-        {harvesting && harvesting.opportunities.length > 0 && (
+        {selectedFY === recentFYs[0] && harvesting && harvesting.opportunities.length > 0 && (
           <div className="card harvest-card">
             <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <TrendingDown size={20} /> Tax Harvesting Opportunity
@@ -110,19 +163,19 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting }) => {
           <tbody>
             <tr>
               <td><span className="badge badge-lt">LTCG (Equity)</span></td>
-              <td>{formatCurrency(summary.realized.ltcg)}</td>
-              <td>{formatCurrency(Math.max(0, (summary.realized.ltcg - 125000) * 0.125))}</td>
-              <td style={{ fontSize: '0.75rem' }}>Exempt up to ₹1.25L</td>
+              <td>{formatCurrency(realizedLTCG)}</td>
+              <td>{formatCurrency(Math.max(0, (realizedLTCG - ltcgLimit) * 0.125))}</td>
+              <td style={{ fontSize: '0.75rem' }}>Exempt up to ₹{formatCurrency(ltcgLimit).replace('₹', '')}</td>
             </tr>
             <tr>
               <td><span className="badge badge-st">STCG (Equity)</span></td>
-              <td>{formatCurrency(summary.realized.stcg)}</td>
-              <td>{formatCurrency(summary.realized.stcg * 0.20)}</td>
-              <td style={{ fontSize: '0.75rem' }}>Taxed at 20%</td>
+              <td>{formatCurrency(realizedSTCG)}</td>
+              <td>{formatCurrency(Math.max(0, realizedSTCG * (selectedFY >= '2024-25' ? 0.20 : 0.15)))}</td>
+              <td style={{ fontSize: '0.75rem' }}>Taxed at {selectedFY >= '2024-25' ? '20%' : '15%'}</td>
             </tr>
             <tr>
               <td><span className="badge badge-slab">Debt / Others</span></td>
-              <td>{formatCurrency(summary.realized.slab)}</td>
+              <td>{formatCurrency(realizedSlab)}</td>
               <td>---</td>
               <td style={{ fontSize: '0.75rem' }}>Taxed at Slab Rate</td>
             </tr>
@@ -131,7 +184,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting }) => {
       </div>
 
       <div className="card">
-        <h3>Recent Tax-Impactful Transactions</h3>
+        <h3>Recent Tax-Impactful Transactions (FY {selectedFY})</h3>
         <div className="table-container" style={{ marginTop: '1rem', maxHeight: '400px', overflowY: 'auto' }}>
           <table className="data-table">
             <thead>
@@ -144,15 +197,21 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting }) => {
               </tr>
             </thead>
             <tbody>
-              {summary.details.slice(0, 10).map((g: any, i: number) => (
-                <tr key={i}>
-                  <td>{g.assetName}</td>
-                  <td>{g.units.toFixed(2)}</td>
-                  <td>{new Date(g.sellDate).toLocaleDateString()}</td>
-                  <td className={g.gain >= 0 ? 'positive' : 'negative'}>{formatCurrency(g.gain)}</td>
-                  <td><span className={`badge badge-${g.taxType.toLowerCase()}`}>{g.taxType}</span></td>
+              {filteredDetails.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>No realized gains found for this period.</td>
                 </tr>
-              ))}
+              ) : (
+                filteredDetails.slice(0, 20).map((g: any, i: number) => (
+                  <tr key={i}>
+                    <td>{g.assetName}</td>
+                    <td>{g.units.toFixed(2)}</td>
+                    <td>{new Date(g.sellDate).toLocaleDateString()}</td>
+                    <td className={g.gain >= 0 ? 'positive' : 'negative'}>{formatCurrency(g.gain)}</td>
+                    <td><span className={`badge badge-${g.taxType.toLowerCase()}`}>{g.taxType}</span></td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
