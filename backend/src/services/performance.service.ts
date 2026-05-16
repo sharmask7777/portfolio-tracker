@@ -39,10 +39,22 @@ export class PerformanceService {
     
     if (!hasPositive || !hasNegative) return 0;
 
+    // Safety: If duration is extremely short (e.g., < 1 day), XIRR explodes.
+    const firstDate = flows.reduce((min, f) => (f.date < min ? f.date : min), flows[0].date);
+    const lastDate = flows.reduce((max, f) => (f.date > max ? f.date : max), flows[0].date);
+    const diffDays = (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24);
+    
+    // If it's a summary statement with only 1 day difference, XIRR is misleading.
+    if (diffDays < 1) return 0;
+
     try {
       const result = xirr(flows);
       // node-irr returns the daily rate. Annualize it: (1 + r)^365 - 1
       const annualized = Math.pow(1 + result.rate, 365) - 1;
+      
+      // Cap astronomical XIRR values (usually data errors or ultra-short terms)
+      if (annualized > 1000) return 10; // Cap at 1000% for display sanity
+      
       return isFinite(annualized) ? annualized : 0;
     } catch (e) {
       console.error('XIRR calculation failed:', e);
