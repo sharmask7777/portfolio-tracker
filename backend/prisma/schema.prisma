@@ -54,6 +54,10 @@ enum AssetType {
   MUTUAL_FUND
   STOCK
   FIXED_DEPOSIT
+  EPF
+  PPF
+  SGB
+  PHYSICAL_GOLD
 }
 
 model Asset {

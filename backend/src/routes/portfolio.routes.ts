@@ -8,6 +8,7 @@ import { OverlapService } from '../services/overlap.service';
 import { XRayService } from '../services/xray.service';
 import { TaxService } from '../services/tax.service';
 import { FamilyService } from '../services/family.service';
+import { AlternativeAssetService } from '../services/alternative-assets.service';
 import { prisma } from '../services/db.service';
 import fs from 'fs';
 
@@ -34,6 +35,47 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     if (req.file) {
       fs.unlinkSync(req.file.path);
     }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/manual-asset', async (req: Request, res: Response) => {
+  try {
+    const { userId = 'mock-user-123', type, name, units, balanceDate } = req.body;
+
+    const portfolio = await prisma.portfolio.findFirst({ where: { userId } });
+    if (!portfolio) throw new Error('Portfolio not found');
+
+    const asset = await prisma.asset.create({
+      data: {
+        type,
+        name,
+        symbol: `${type}_${Date.now()}`,
+      },
+    });
+
+    const folio = await prisma.folio.create({
+      data: {
+        number: `MANUAL_${Date.now()}`,
+        portfolioId: portfolio.id,
+        assetId: asset.id,
+      },
+    });
+
+    await prisma.transaction.create({
+      data: {
+        date: new Date(balanceDate || new Date()),
+        type: 'PURCHASE',
+        amount: parseFloat(units),
+        units: parseFloat(units),
+        nav: 1,
+        balance: parseFloat(units),
+        folioId: folio.id,
+      },
+    });
+
+    res.status(200).json({ status: 'success', assetId: asset.id });
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
@@ -74,14 +116,31 @@ router.get('/summary', async (req: Request, res: Response) => {
     const enrichedFolios = await Promise.all(allFolios.map(async (folio) => {
       const lastTx = folio.transactions[folio.transactions.length - 1];
       let currentPrice = lastTx?.nav || 0;
-      
-      if (folio.asset.amfiCode) {
-        const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode);
-        if (liveNav > 0) currentPrice = liveNav;
-      }
+      let metrics: any = null;
 
-      const currentUnits = lastTx?.balance || 0;
-      const metrics = PerformanceService.getMetrics(folio.transactions, currentPrice, currentUnits);
+      if (folio.asset.type === 'MUTUAL_FUND' || folio.asset.type === 'STOCK') {
+        if (folio.asset.amfiCode) {
+          const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode);
+          if (liveNav > 0) currentPrice = liveNav;
+        }
+        const currentUnits = lastTx?.balance || 0;
+        metrics = PerformanceService.getMetrics(folio.transactions, currentPrice, currentUnits);
+      } else {
+        // Alternative Assets
+        const altMetrics = await AlternativeAssetService.calculateValue(
+          folio.asset.type,
+          lastTx?.balance || 0,
+          lastTx?.date
+        );
+        metrics = {
+          investedAmount: lastTx?.amount || 0,
+          currentValue: altMetrics.currentValue,
+          totalGain: altMetrics.accruedInterest || (altMetrics.currentValue - lastTx?.amount),
+          absoluteReturn: lastTx?.amount ? (altMetrics.currentValue - lastTx.amount) / lastTx.amount : 0,
+          xirr: altMetrics.annualRate,
+          cagr: altMetrics.annualRate,
+        };
+      }
 
       return { ...folio, metrics };
     }));

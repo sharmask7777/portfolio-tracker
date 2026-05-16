@@ -18,13 +18,14 @@ import {
   PieChart as PieChartIcon,
   Layers,
   Calculator,
-  ShieldCheck
+  ShieldCheck,
 } from 'lucide-react';
 import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
 import { TaxView } from './components/Tax/TaxView';
 import { SimulationModal } from './components/Tax/SimulationModal';
 import { FamilyManager } from './components/Family/FamilyManager';
+import { AddAssetModal } from './components/Dashboard/AddAssetModal';
 import './App.css';
 
 const API_BASE = 'http://localhost:3001/api/portfolio';
@@ -32,7 +33,7 @@ const API_TAX = 'http://localhost:3001/api/tax';
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'family'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<any>(null);
   const [xrayData, setXRayData] = useState<any>(null);
@@ -41,6 +42,7 @@ function App() {
   const [harvesting, setHarvesting] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
+  const [showAddAsset, setShowAddAsset] = useState(false);
   const [simFolio, setSimFolio] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [password, setPassword] = useState('');
@@ -126,6 +128,9 @@ function App() {
           <span>Portfolio Tracker</span>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <button className="btn" style={{ border: '1px solid var(--border-color)' }} onClick={() => setShowAddAsset(true)}>
+            <Plus size={18} /> Add Other Asset
+          </button>
           <button className="btn btn-primary" onClick={() => setShowUpload(true)}>
             <Plus size={18} /> Import CAS
           </button>
@@ -145,9 +150,14 @@ function App() {
           <div className="empty-state">
             <h2>No portfolio data found</h2>
             <p>Upload your CAMS CAS statement to get started.</p>
-            <button className="btn btn-primary" onClick={() => setShowUpload(true)} style={{ marginTop: '1rem' }}>
-              <UploadIcon size={18} /> Upload Now
-            </button>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+              <button className="btn" style={{ border: '1px solid var(--border-color)' }} onClick={() => setShowAddAsset(true)}>
+                <Plus size={18} /> Add Other Asset
+              </button>
+              <button className="btn btn-primary" onClick={() => setShowUpload(true)}>
+                <UploadIcon size={18} /> Upload CAS
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -246,6 +256,7 @@ function App() {
                     <thead>
                       <tr>
                         <th>Scheme Name</th>
+                        <th>Type</th>
                         <th>Invested</th>
                         <th>Current Value</th>
                         <th>XIRR</th>
@@ -257,9 +268,9 @@ function App() {
                         <tr key={folio.id}>
                           <td style={{ fontWeight: 500 }}>
                             {folio.asset.name}
-                            <div style={{ fontSize: '0.65rem', marginTop: '0.25rem' }}>
-                              <span className="badge badge-lt" style={{ marginRight: '0.25rem' }}>LTCG Eligible</span>
-                            </div>
+                          </td>
+                          <td>
+                            <span className="badge badge-slab">{folio.asset.type.replace('_', ' ')}</span>
                           </td>
                           <td>{formatCurrency(folio.metrics.investedAmount)}</td>
                           <td>{formatCurrency(folio.metrics.currentValue)}</td>
@@ -287,6 +298,8 @@ function App() {
       </main>
 
       {simFolio && <SimulationModal folio={simFolio} onClose={() => setSimFolio(null)} />}
+
+      {showAddAsset && <AddAssetModal onClose={() => setShowAddAsset(false)} onSuccess={fetchSummary} />}
 
       {showUpload && (
         <div className="modal-overlay">

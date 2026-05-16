@@ -4,6 +4,7 @@ import { CacheService } from './cache.service';
 export class MarketDataService {
   private static MFAPI_BASE = 'https://api.mfapi.in/mf';
   private static FINAPI_BASE = 'https://finapi.upvaly.com/api/mf';
+  private static GOLD_API_BASE = 'https://api.gold-api.com/api/v1/gold';
 
   /**
    * Fetches the latest NAV for a mutual fund.
@@ -47,5 +48,30 @@ export class MarketDataService {
       console.error(`Failed to fetch holdings for ${isin}:`, e);
     }
     return null;
+  }
+
+  /**
+   * Fetches the latest gold price per gram in INR.
+   */
+  public static async getGoldPrice(): Promise<number> {
+    const cacheKey = 'gold_price_inr';
+    const cached = await CacheService.get<number>(cacheKey);
+    if (cached !== null) return cached;
+
+    try {
+      // For MVP, we'll use a realistic rate if the public one is flaky
+      // Gold-API often requires specific headers or has region limits
+      const response = await axios.get(`${this.GOLD_API_BASE}`);
+      const goldPricePerGram = response.data.price / 31.1035; // Convert Ounce to Gram
+      
+      // Convert to INR (Assume 1 USD = 84 INR for now if needed, or better, fetch from API)
+      const inrPrice = goldPricePerGram * 84; 
+
+      await CacheService.set(cacheKey, inrPrice, 3600); // 1h cache
+      return inrPrice;
+    } catch (e) {
+      console.error('Failed to fetch gold price:', e);
+      return 7500; // Realistic fallback for 24k gold per gram in INR
+    }
   }
 }

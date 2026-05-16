@@ -1,5 +1,7 @@
+import { AssetType } from '@prisma/client';
 import { prisma } from './db.service';
 import { MarketDataService } from './market-data.service';
+import { AlternativeAssetService } from './alternative-assets.service';
 
 export interface XRayData {
   sectors: { name: string; percentage: number; value: number }[];
@@ -12,6 +14,7 @@ export interface XRayData {
     equity: { percentage: number; value: number };
     debt: { percentage: number; value: number };
     cash: { percentage: number; value: number };
+    gold: { percentage: number; value: number };
     other: { percentage: number; value: number };
   };
   totalValue: number;
@@ -31,63 +34,78 @@ export class XRayService {
     if (!portfolio) throw new Error('Portfolio not found');
 
     let totalPortfolioValue = 0;
-    const folioValues: { isin: string; amfi: string; value: number }[] = [];
+    const folioValues: { isin: string; amfi: string; value: number; type: AssetType }[] = [];
 
     // 1. Calculate values for all folios
     for (const folio of portfolio.folios) {
       const lastTx = folio.transactions[folio.transactions.length - 1];
       const currentUnits = lastTx?.balance || 0;
-      const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-      const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
-      const value = currentUnits * currentPrice;
+      let value = 0;
 
-      if (value > 0 && folio.asset.isin) {
+      if (folio.asset.type === 'MUTUAL_FUND' || folio.asset.type === 'STOCK') {
+        const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
+        const currentPrice = liveNav > 0 ? liveNav : (lastTx?.nav || 0);
+        value = currentUnits * currentPrice;
+      } else {
+        const alt = await AlternativeAssetService.calculateValue(folio.asset.type, currentUnits, lastTx?.date);
+        value = alt.currentValue;
+      }
+
+      if (value > 0) {
         totalPortfolioValue += value;
-        folioValues.push({ isin: folio.asset.isin, amfi: folio.asset.amfiCode || '', value });
+        folioValues.push({ 
+          isin: folio.asset.isin || '', 
+          amfi: folio.asset.amfiCode || '', 
+          value,
+          type: folio.asset.type 
+        });
       }
     }
 
     const sectorMap: Record<string, number> = {};
     const marketCap = { large: 0, mid: 0, small: 0 };
-    const assetAllocation = { equity: 0, debt: 0, cash: 0, other: 0 };
+    const assetAllocation = { equity: 0, debt: 0, cash: 0, gold: 0, other: 0 };
 
     // 2. Aggregate from holdings data
     for (const fv of folioValues) {
-      const data = await MarketDataService.getHoldings(fv.isin);
-      if (!data) continue;
-
       const weightFactor = fv.value / totalPortfolioValue;
 
-      // Sector Aggregation
-      if (data.sectors) {
-        for (const s of data.sectors) {
-          let sName = s.name || s.sectorName;
-          sName = this.normalizeSector(sName);
-          const sWeight = parseFloat(s.weightage || s.percent || '0');
-          sectorMap[sName] = (sectorMap[sName] || 0) + sWeight * weightFactor;
+      if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
+        const data = await MarketDataService.getHoldings(fv.isin);
+        if (!data) {
+          assetAllocation.equity += 100 * weightFactor;
+          continue;
         }
-      }
 
-      // Market Cap Aggregation
-      if (data.portfolio?.marketCapWeightage) {
-        const mc = data.portfolio.marketCapWeightage;
-        marketCap.large += parseFloat(mc.largeCap || mc.giant || '0') * weightFactor;
-        marketCap.mid += parseFloat(mc.midCap || '0') * weightFactor;
-        marketCap.small += parseFloat(mc.smallCap || mc.tiny || '0') * weightFactor;
-      } else if (data.marketCapWeightage) {
-          const mc = data.marketCapWeightage;
+        if (data.sectors) {
+          for (const s of data.sectors) {
+            let sName = s.name || s.sectorName;
+            sName = this.normalizeSector(sName);
+            const sWeight = parseFloat(s.weightage || s.percent || '0');
+            sectorMap[sName] = (sectorMap[sName] || 0) + sWeight * weightFactor;
+          }
+        }
+
+        if (data.portfolio?.marketCapWeightage) {
+          const mc = data.portfolio.marketCapWeightage;
           marketCap.large += parseFloat(mc.largeCap || mc.giant || '0') * weightFactor;
           marketCap.mid += parseFloat(mc.midCap || '0') * weightFactor;
           marketCap.small += parseFloat(mc.smallCap || mc.tiny || '0') * weightFactor;
-      }
+        }
 
-      // Asset Allocation Aggregation
-      if (data.portfolio?.assetAllocation) {
-        const aa = data.portfolio.assetAllocation;
-        assetAllocation.equity += parseFloat(aa.equity || '0') * weightFactor;
-        assetAllocation.debt += parseFloat(aa.debt || '0') * weightFactor;
-        assetAllocation.cash += parseFloat(aa.cash || '0') * weightFactor;
-        assetAllocation.other += parseFloat(aa.other || '0') * weightFactor;
+        if (data.portfolio?.assetAllocation) {
+          const aa = data.portfolio.assetAllocation;
+          assetAllocation.equity += parseFloat(aa.equity || '0') * weightFactor;
+          assetAllocation.debt += parseFloat(aa.debt || '0') * weightFactor;
+          assetAllocation.cash += parseFloat(aa.cash || '0') * weightFactor;
+          assetAllocation.other += parseFloat(aa.other || '0') * weightFactor;
+        }
+      } else {
+        if (fv.type === 'EPF' || fv.type === 'PPF' || fv.type === 'FIXED_DEPOSIT') {
+          assetAllocation.debt += 100 * weightFactor;
+        } else if (fv.type === 'SGB' || fv.type === 'PHYSICAL_GOLD') {
+          assetAllocation.gold += 100 * weightFactor;
+        }
       }
     }
 
@@ -109,6 +127,7 @@ export class XRayService {
         equity: { percentage: assetAllocation.equity / 100, value: (assetAllocation.equity / 100) * totalPortfolioValue },
         debt: { percentage: assetAllocation.debt / 100, value: (assetAllocation.debt / 100) * totalPortfolioValue },
         cash: { percentage: assetAllocation.cash / 100, value: (assetAllocation.cash / 100) * totalPortfolioValue },
+        gold: { percentage: assetAllocation.gold / 100, value: (assetAllocation.gold / 100) * totalPortfolioValue },
         other: { percentage: assetAllocation.other / 100, value: (assetAllocation.other / 100) * totalPortfolioValue },
       },
     };
@@ -128,7 +147,6 @@ export class XRayService {
       'Automobile': 'Automotive',
       'Auto': 'Automotive',
     };
-
     const trimmed = name.trim();
     return map[trimmed] || trimmed;
   }
