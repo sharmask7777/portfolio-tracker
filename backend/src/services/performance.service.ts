@@ -26,17 +26,24 @@ export class PerformanceService {
     }));
 
     // Add final "redemption" of the current value
-    if (currentValue > 0) {
+    if (currentValue !== 0) {
       flows.push({
         amount: currentValue,
         date: asOfDate,
       });
     }
 
+    // XIRR requires at least one positive and one negative flow
+    const hasPositive = flows.some(f => f.amount > 0);
+    const hasNegative = flows.some(f => f.amount < 0);
+    
+    if (!hasPositive || !hasNegative) return 0;
+
     try {
       const result = xirr(flows);
       // node-irr returns the daily rate. Annualize it: (1 + r)^365 - 1
-      return Math.pow(1 + result.rate, 365) - 1;
+      const annualized = Math.pow(1 + result.rate, 365) - 1;
+      return isFinite(annualized) ? annualized : 0;
     } catch (e) {
       console.error('XIRR calculation failed:', e);
       return 0;
