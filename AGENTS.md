@@ -15,7 +15,7 @@ This document provides instructions for future agents to maintain the high stand
 - **Grandfathering:** The Jan 31, 2018 price rule is critical for equity assets. Always verify the `max(actual_cost, min(fmv, sale_price))` formula.
 
 ### 3. Data Ingestion
-- **CAS Schema:** We follow the `casparser` JSON standard. When adding support for new RTA fields, update the `MockCASGenerator.ts` to ensure synthetic tests remain valid.
+- **CAS Schema:** We follow the `casparser` JSON standard. When adding support for new RTA fields, update the `MockCASGenerator.ts` to ensure synthetic tests remain valid. See `SOP_CAS_ADAPTATION.md` for the full validation and adaptation protocol.
 - **Deduplication:** Always use the MD5 transaction hashing logic in `SyncService` to prevent data duplication on re-imports.
 
 ### 4. Quality Standards
