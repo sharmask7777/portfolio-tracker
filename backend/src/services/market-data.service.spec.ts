@@ -40,7 +40,7 @@ describe('MarketDataService', () => {
     it('should fetch from FinAPI and cache if not in cache', async () => {
       (CacheService.get as jest.Mock).mockResolvedValue(null);
       (axios.get as jest.Mock).mockResolvedValue({
-        data: { isin: 'INF123', sector_breakdown: {} }
+        data: { data: { isin: 'INF123', sector_breakdown: {} } }
       });
 
       const holdings = await MarketDataService.getHoldings('INF123');

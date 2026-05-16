@@ -4,6 +4,7 @@ import { ParserService } from '../services/parser.service';
 import { SyncService } from '../services/sync.service';
 import { PerformanceService } from '../services/performance.service';
 import { MarketDataService } from '../services/market-data.service';
+import { OverlapService } from '../services/overlap.service';
 import { prisma } from '../services/db.service';
 import fs from 'fs';
 
@@ -111,6 +112,29 @@ router.get('/summary', async (req: Request, res: Response) => {
         xirr: overallXirr,
       },
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/:id/exposures', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const exposures = await OverlapService.getPortfolioExposures(id as string);
+    res.status(200).json(exposures);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/compare-overlap', async (req: Request, res: Response) => {
+  try {
+    const { isinA, isinB } = req.query;
+    if (!isinA || !isinB) {
+      return res.status(400).json({ error: 'isinA and isinB are required' });
+    }
+    const overlap = await OverlapService.getFundOverlap(isinA as string, isinB as string);
+    res.status(200).json(overlap);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

@@ -37,7 +37,7 @@ export class MarketDataService {
 
     try {
       const response = await axios.get(`${this.FINAPI_BASE}/isin/${isin}`);
-      const holdings = response.data;
+      const holdings = response.data.data;
 
       if (holdings) {
         await CacheService.set(cacheKey, holdings, 86400 * 7); // Cache holdings for 7 days
