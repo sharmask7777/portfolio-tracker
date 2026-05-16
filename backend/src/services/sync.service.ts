@@ -75,7 +75,23 @@ export class SyncService {
         });
 
         // Add Transactions
-        for (const tx of schemeData.transactions || []) {
+        const transactions = schemeData.transactions || [];
+        
+        // Handle Summary CAS: If no transactions but there is a balance/valuation, create a synthetic transaction
+        if (transactions.length === 0 && (schemeData.close > 0 || schemeData.valuation?.value > 0)) {
+          const balanceDate = schemeData.valuation?.date ? new Date(schemeData.valuation.date) : new Date();
+          transactions.push({
+            date: balanceDate.toISOString().split('T')[0],
+            type: 'BALANCE_STMT',
+            description: 'Summary Balance',
+            amount: schemeData.valuation?.cost || (schemeData.close * (schemeData.valuation?.nav || 0)),
+            units: schemeData.close,
+            nav: schemeData.valuation?.nav || 0,
+            balance: schemeData.close,
+          });
+        }
+
+        for (const tx of transactions) {
           // Generate a deterministic hash for deduplication
           // Include folio and asset identifiers to make it more unique
           const txString = `${folioData.folio}-${schemeData.isin}-${tx.date}-${tx.type}-${tx.amount}-${tx.units}-${tx.nav}-${tx.balance}`;
@@ -83,14 +99,18 @@ export class SyncService {
 
           await prisma.transaction.upsert({
             where: { externalId },
-            update: {}, // No update needed if it exists
+            update: {
+               // Update balance/nav even if tx exists, in case of summary refreshes
+               nav: parseFloat(tx.nav) || 0,
+               balance: parseFloat(tx.balance) || 0,
+            },
             create: {
               date: new Date(tx.date),
               type: tx.type,
-              amount: parseFloat(tx.amount),
-              units: parseFloat(tx.units),
-              nav: parseFloat(tx.nav),
-              balance: parseFloat(tx.balance),
+              amount: parseFloat(tx.amount) || 0,
+              units: parseFloat(tx.units) || 0,
+              nav: parseFloat(tx.nav) || 0,
+              balance: parseFloat(tx.balance) || 0,
               folioId: folio.id,
               externalId,
             },
