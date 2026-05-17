@@ -26,6 +26,15 @@ This document provides instructions for future agents to maintain the high stand
 - **Type Safety:** Avoid `any` where possible. Use Prisma-generated types for all DB operations.
 - **Analytics Performance:** Ensure `XRayService` and `OverlapService` maintain weighted-aggregation accuracy. Use database indexes for performance.
 
+## Agent Skills
+The project includes a suite of specialized SOPs and scripts in the root `skills/` directory. These are designed to be AI-agnostic—any agent can read these Markdown files to learn how to perform complex tasks.
+
+- **[quality-audit](./skills/quality-audit/SKILL.md)**: Mathematical and UI integrity checks.
+- **[pdd](./skills/pdd/SKILL.md)**: Architectural planning and design.
+- **[code-assist](./skills/code-assist/SKILL.md)**: TDD implementation guidance.
+
+Refer to [skills/README.md](./skills/README.md) for the full manifest.
+
 ## Maintaining the Test Suite
 - **Run Unit Tests:** `cd backend && npm test`
 - **Run Robustness Tests:** `cd backend && npm test src/services/robustness.pbt.spec.ts`
