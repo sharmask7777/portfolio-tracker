@@ -141,6 +141,9 @@ function App() {
           <button onClick={toggleTheme} className="theme-toggle">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
+          <button className="btn" style={{ marginLeft: '0.5rem' }} onClick={() => setPortfolio(null)}>
+            Logout
+          </button>
         </div>
       </header>
 

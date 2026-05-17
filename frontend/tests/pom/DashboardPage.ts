@@ -6,6 +6,7 @@ export class DashboardPage {
   readonly schemesTable: Locator;
   readonly emptyState: Locator;
   readonly loadingState: Locator;
+  readonly logoutButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -14,6 +15,7 @@ export class DashboardPage {
     this.schemesTable = page.locator('.data-table');
     this.emptyState = page.locator('.empty-state');
     this.loadingState = page.locator('.loading-state');
+    this.logoutButton = page.getByRole('button', { name: 'Logout' });
   }
 
   async getNetWorth() {
@@ -30,5 +32,9 @@ export class DashboardPage {
 
   async waitForData() {
     await this.schemesTable.waitFor({ state: 'visible' });
+  }
+
+  async logout() {
+    await this.logoutButton.click();
   }
 }
