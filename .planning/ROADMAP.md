@@ -40,7 +40,7 @@
 **Goal:** Enable multi-member tracking from a single CAS and support for manual alternative assets.
 **Plans:** 0/3 plans executed
 
-- [ ] 10-01-PLAN.md — Multi-PAN Detection & Member Mapping
-- [ ] 10-02-PLAN.md — Family Filtering UI & Sidebar
-- [ ] 10-03-PLAN.md — Alternative Asset Engine (EPF/PPF/Gold)
+- [ ] 10-01-PLAN.md — Managed Profiles Schema & Backend Service
+- [ ] 10-02-PLAN.md — Multi-PAN CAS Splitting & Aggregation
+- [ ] 10-03-PLAN.md — Family Dashboard & Navigation
 
