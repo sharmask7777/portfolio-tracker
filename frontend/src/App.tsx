@@ -36,7 +36,7 @@ const API_BASE = 'http://localhost:3001/api/portfolio';
 const API_TAX = 'http://localhost:3001/api/tax';
 
 function App() {
-  const { theme, toggleTheme } = useSettings();
+  const { theme, toggleTheme, performanceMode, setPerformanceMode } = useSettings();
   const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<any>(null);
@@ -127,6 +127,20 @@ function App() {
           <span>Portfolio Tracker</span>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <div className="segmented-control">
+            <button 
+              className={performanceMode === 'XIRR' ? 'active' : ''} 
+              onClick={() => setPerformanceMode('XIRR')}
+            >
+              XIRR
+            </button>
+            <button 
+              className={performanceMode === 'ABS' ? 'active' : ''} 
+              onClick={() => setPerformanceMode('ABS')}
+            >
+              ABS
+            </button>
+          </div>
           <button className="btn" style={{ border: '1px solid var(--border-color)' }} onClick={() => setShowAddAsset(true)}>
             <Plus size={18} /> Add Other Asset
           </button>
@@ -211,9 +225,9 @@ function App() {
                     <div className="stat-value">{formatCurrency(portfolio.metrics.totalInvested)}</div>
                   </div>
                   <div className="card">
-                    <div className="stat-label">Overall XIRR</div>
-                    <div className={`stat-value ${portfolio.metrics.xirr >= 0 ? 'positive' : 'negative'}`}>
-                      {formatPercent(portfolio.metrics.xirr)}
+                    <div className="stat-label">{performanceMode === 'XIRR' ? 'Overall XIRR' : 'Total Return'}</div>
+                    <div className={`stat-value ${(performanceMode === 'XIRR' ? portfolio.metrics.xirr : portfolio.metrics.absoluteReturn) >= 0 ? 'positive' : 'negative'}`}>
+                      {formatPercent(performanceMode === 'XIRR' ? portfolio.metrics.xirr : portfolio.metrics.absoluteReturn)}
                     </div>
                   </div>
                   <div className="card">
@@ -244,7 +258,7 @@ function App() {
                     <h3>Key Insights</h3>
                     <div style={{ marginTop: '1rem' }}>
                       <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                        Your top performing asset is <strong>{portfolio.folios[0]?.asset.name}</strong> with an XIRR of <span className="positive">{formatPercent(portfolio.folios[0]?.metrics.xirr)}</span>.
+                        Your top performing asset is <strong>{portfolio.folios[0]?.asset.name}</strong> with {performanceMode === 'XIRR' ? 'an XIRR' : 'a return'} of <span className="positive">{formatPercent(performanceMode === 'XIRR' ? portfolio.folios[0]?.metrics.xirr : portfolio.folios[0]?.metrics.absoluteReturn)}</span>.
                       </p>
                       <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
                         <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>Top Stock Exposure</p>
@@ -267,7 +281,7 @@ function App() {
                         <th>Type</th>
                         <th>Invested</th>
                         <th>Current Value</th>
-                        <th>XIRR</th>
+                        <th>{performanceMode === 'XIRR' ? 'XIRR' : 'Return'}</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -282,8 +296,8 @@ function App() {
                           </td>
                           <td>{formatCurrency(folio.metrics.investedAmount)}</td>
                           <td>{formatCurrency(folio.metrics.currentValue)}</td>
-                          <td className={folio.metrics.xirr >= 0 ? 'positive' : 'negative'}>
-                            {formatPercent(folio.metrics.xirr)}
+                          <td className={(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn) >= 0 ? 'positive' : 'negative'}>
+                            {formatPercent(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn)}
                           </td>
                           <td>
                             <button className="theme-toggle" title="Simulate Sell Tax" onClick={() => setSimFolio(folio)}>
