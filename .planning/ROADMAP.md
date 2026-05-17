@@ -15,10 +15,10 @@
 
 ## Phase 7: Dynamic Returns & UX
 **Goal:** Implement the ability to toggle between performance metrics.
-**Plans:** 2 plans
+**Plans:** 2/2 plans executed
 
-- [ ] 07-01-PLAN.md — Infrastructure & Settings Context
-- [ ] 07-02-PLAN.md — Header Toggle & Reactive Swapping
+- [x] 07-01-PLAN.md — Infrastructure & Settings Context
+- [x] 07-02-PLAN.md — Header Toggle & Reactive Swapping
 
 ## Phase 8: Advanced Metrics: Post-Tax XIRR
 **Goal:** Introduce tax-aware performance tracking.
