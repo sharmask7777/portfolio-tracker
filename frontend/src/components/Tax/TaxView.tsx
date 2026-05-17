@@ -4,9 +4,10 @@ import { Download, TrendingDown } from 'lucide-react';
 interface TaxViewProps {
   summary: any;
   harvesting: any;
+  onSimulateHarvest?: (folioId: string, units: number) => void;
 }
 
-export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting }) => {
+export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulateHarvest }) => {
   const [selectedFY, setSelectedFY] = React.useState(() => {
     const now = new Date();
     const year = now.getFullYear();
@@ -134,8 +135,12 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting }) => {
             </div>
             <div style={{ marginTop: '1rem' }}>
               {harvesting.opportunities.slice(0, 2).map((op: any, i: number) => (
-                <div key={i} style={{ fontSize: '0.75rem', padding: '0.25rem 0', borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-                  {op.schemeName}: Sell {op.unitsToHarvest.toFixed(3)} units
+                <div 
+                  key={i} 
+                  style={{ fontSize: '0.75rem', padding: '0.25rem 0', borderTop: '1px solid rgba(0,0,0,0.1)', cursor: 'pointer' }}
+                  onClick={() => onSimulateHarvest && onSimulateHarvest(op.folioId, op.unitsToHarvest)}
+                >
+                  <span className="btn-link">{op.schemeName}: Sell {op.unitsToHarvest.toFixed(3)} units</span>
                 </div>
               ))}
             </div>

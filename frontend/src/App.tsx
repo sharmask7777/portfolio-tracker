@@ -36,7 +36,7 @@ const API_BASE = 'http://localhost:3001/api/portfolio';
 const API_TAX = 'http://localhost:3001/api/tax';
 
 function App() {
-  const { theme, toggleTheme, performanceMode, setPerformanceMode } = useSettings();
+  const { theme, toggleTheme, performanceMode, setPerformanceMode, taxSlab, setTaxSlab } = useSettings();
   const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<any>(null);
@@ -48,13 +48,17 @@ function App() {
   const [showUpload, setShowUpload] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
   const [simFolio, setSimFolio] = useState<any>(null);
+  const [simUnits, setSimUnits] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [password, setPassword] = useState('');
 
   const fetchSummary = async () => {
     try {
       setLoading(true);
-      const params = selectedFamilyId ? { familyGroupId: selectedFamilyId } : {};
+      const params = {
+        ...(selectedFamilyId ? { familyGroupId: selectedFamilyId } : {}),
+        taxSlab: taxSlab
+      };
       const res = await axios.get(`${API_BASE}/summary`, { params });
       setPortfolio(res.data);
       
@@ -79,7 +83,7 @@ function App() {
 
   useEffect(() => {
     fetchSummary();
-  }, [selectedFamilyId]);
+  }, [selectedFamilyId, taxSlab]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -140,6 +144,18 @@ function App() {
             >
               ABS
             </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-card)', padding: '0.25rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>TAX SLAB</span>
+            <input 
+              type="number" 
+              step="0.05"
+              min="0"
+              max="1"
+              value={taxSlab}
+              onChange={(e) => setTaxSlab(parseFloat(e.target.value))}
+              style={{ width: '60px', background: 'none', border: 'none', color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.875rem', outline: 'none' }}
+            />
           </div>
           <button className="btn" style={{ border: '1px solid var(--border-color)' }} onClick={() => setShowAddAsset(true)}>
             <Plus size={18} /> Add Other Asset
@@ -282,6 +298,7 @@ function App() {
                         <th>Invested</th>
                         <th>Current Value</th>
                         <th>{performanceMode === 'XIRR' ? 'XIRR' : 'Return'}</th>
+                        <th>Post-Tax {performanceMode === 'XIRR' ? 'XIRR' : 'Return'}</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -299,8 +316,18 @@ function App() {
                           <td className={(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn) >= 0 ? 'positive' : 'negative'}>
                             {formatPercent(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn)}
                           </td>
+                          <td className={(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn) >= 0 ? 'positive' : 'negative'}>
+                            {formatPercent(performanceMode === 'XIRR' ? (folio.metrics.postTaxXirr ?? 0) : (folio.metrics.postTaxAbsoluteReturn ?? 0))}
+                          </td>
                           <td>
-                            <button className="theme-toggle" title="Simulate Sell Tax" onClick={() => setSimFolio(folio)}>
+                            <button 
+                              className="theme-toggle" 
+                              title="Simulate Sell Tax" 
+                              onClick={() => {
+                                setSimFolio(folio);
+                                setSimUnits(null);
+                              }}
+                            >
                               <Calculator size={16} />
                             </button>
                           </td>
@@ -314,7 +341,19 @@ function App() {
 
             {activeTab === 'xray' && <XRayView data={xrayData} />}
             {activeTab === 'intersection' && <IntersectionView exposures={exposures} />}
-            {activeTab === 'tax' && <TaxView summary={taxSummary} harvesting={harvesting} />}
+            {activeTab === 'tax' && (
+              <TaxView 
+                summary={taxSummary} 
+                harvesting={harvesting} 
+                onSimulateHarvest={(folioId, units) => {
+                  const folio = portfolio.folios.find((f: any) => f.id === folioId);
+                  if (folio) {
+                    setSimFolio(folio);
+                    setSimUnits(units);
+                  }
+                }}
+              />
+            )}
             {activeTab === 'insights' && (
               <div className="xray-grid">
                 <InsightsSidebar portfolioId={portfolio.id} />
@@ -325,7 +364,16 @@ function App() {
         )}
       </main>
 
-      {simFolio && <SimulationModal folio={simFolio} onClose={() => setSimFolio(null)} />}
+      {simFolio && (
+        <SimulationModal 
+          folio={simFolio} 
+          initialUnits={simUnits || undefined} 
+          onClose={() => {
+            setSimFolio(null);
+            setSimUnits(null);
+          }} 
+        />
+      )}
 
       {showAddAsset && <AddAssetModal onClose={() => setShowAddAsset(false)} onSuccess={fetchSummary} />}
 

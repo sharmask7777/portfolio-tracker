@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { X, AlertCircle } from 'lucide-react';
 
 interface SimulationModalProps {
   folio: any;
   onClose: () => void;
+  initialUnits?: number;
 }
 
-export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose }) => {
+export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose, initialUnits }) => {
   const [amount, setAmount] = useState('');
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -16,15 +17,16 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
   const currentPrice = folio.metrics.currentPrice || 0;
   const unitsToSell = currentPrice > 0 ? (parseFloat(amount) / currentPrice) : 0;
 
-  const handleSimulate = async () => {
-    if (!amount || parseFloat(amount) <= 0) return;
+  const handleSimulate = async (overrideUnits?: number) => {
+    const units = overrideUnits !== undefined ? overrideUnits : unitsToSell;
+    if (units <= 0) return;
 
     try {
       setLoading(true);
       setError('');
       const res = await axios.post('http://localhost:3001/api/tax/simulate-sell', {
         folioId: folio.id,
-        units: unitsToSell,
+        units: units,
       });
       setResult(res.data);
     } catch (err: any) {
@@ -33,6 +35,13 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (initialUnits && currentPrice > 0) {
+      setAmount((initialUnits * currentPrice).toFixed(2));
+      handleSimulate(initialUnits);
+    }
+  }, [initialUnits, currentPrice]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
