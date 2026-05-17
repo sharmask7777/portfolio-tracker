@@ -29,13 +29,14 @@ import { FamilyManager } from './components/Family/FamilyManager';
 import { AddAssetModal } from './components/Dashboard/AddAssetModal';
 import { InsightsSidebar } from './components/Insights/InsightsSidebar';
 import { GoalTracker } from './components/Insights/GoalTracker';
+import { useSettings } from './contexts/SettingsContext';
 import './App.css';
 
 const API_BASE = 'http://localhost:3001/api/portfolio';
 const API_TAX = 'http://localhost:3001/api/tax';
 
 function App() {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const { theme, toggleTheme } = useSettings();
   const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<any>(null);
@@ -79,12 +80,6 @@ function App() {
   useEffect(() => {
     fetchSummary();
   }, [selectedFamilyId]);
-
-  const toggleTheme = () => {
-    const nextTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(nextTheme);
-    document.documentElement.setAttribute('data-theme', nextTheme);
-  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
