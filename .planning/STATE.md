@@ -16,8 +16,8 @@ progress:
 # Project State Memory
 
 *   **Current Phase:** Phase 8 (Advanced Metrics: Post-Tax XIRR)
-*   **Status:** Phase 7 complete and verified. Ready for Phase 8 discussion.
-*   **Next Steps:** Run \`/gsd:discuss-phase 8\` to clarify Post-Tax XIRR calculations.
+*   **Status:** Context gathered. Ready for planning.
+*   **Next Steps:** Run \`/gsd:plan-phase 8\` to generate execution plans.
 
 *   **Key Decisions:**
     *   E2E: Using Playwright with mocked API layer for frontend stability.
