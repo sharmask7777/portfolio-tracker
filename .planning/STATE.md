@@ -2,22 +2,22 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: v3.0 Milestone
-current_phase: Phase 10 (Next Milestone Planning)
-status: completed
-last_updated: "2026-05-17T17:15:00.000Z"
+current_phase: Phase 10 (Family View & Alternative Assets)
+status: researching
+last_updated: "2026-05-17T17:30:00.000Z"
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
-  total_plans: 10
+  total_plans: 13
   completed_plans: 10
-  percent: 100
+  percent: 77
 ---
 
 # Project State Memory
 
-*   **Current Phase:** Phase 9 (Milestone v2.0 Polish & Verification)
-*   **Status:** Milestone v2.0 complete.
-*   **Next Steps:** Start Phase 10: Family View & Alternative Assets.
+*   **Current Phase:** Phase 10 (Family View & Alternative Assets)
+*   **Status:** Researching multi-PAN splitting logic.
+*   **Next Steps:** Run \`/gsd:discuss-phase 10\` to lock implementation details.
 
 *   **Key Decisions:**
     *   E2E: Using Playwright with mocked API layer for frontend stability.
@@ -27,3 +27,5 @@ progress:
     *   Settings: Using `SettingsContext` with `localStorage` persistence for UI preferences and tax slab (D-03, D-05, D-06).
     *   Harvesting Flow: Integrated Tax Harvesting clicks with SimulationModal auto-trigger (D-01, D-02).
     *   UX Reactivity: Added isRefetching visual state (opacity 0.5) for Post-Tax metrics (D-04).
+    *   Family View (v3.0): Decided to solve for "Single CAS, Multiple PANs" by grouping folios by PAN (V3-FAM-01).
+

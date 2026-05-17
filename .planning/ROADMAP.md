@@ -33,3 +33,14 @@
 
 - [x] 09-01-PLAN.md — UI Polish & Harvesting Flow
 - [x] 09-02-PLAN.md — Augmented Verification & Audit
+
+## Milestone v3.0: Family & Alternatives
+
+## Phase 10: Family View & Alternative Assets
+**Goal:** Enable multi-member tracking from a single CAS and support for manual alternative assets.
+**Plans:** 0/3 plans executed
+
+- [ ] 10-01-PLAN.md — Multi-PAN Detection & Member Mapping
+- [ ] 10-02-PLAN.md — Family Filtering UI & Sidebar
+- [ ] 10-03-PLAN.md — Alternative Asset Engine (EPF/PPF/Gold)
+
