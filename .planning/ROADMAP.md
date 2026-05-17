@@ -4,9 +4,12 @@
 
 ## Phase 6: E2E Testing Foundation
 **Goal:** Establish a robust End-to-End testing suite for the frontend.
-*   Setup Playwright in the `frontend/` directory.
-*   Implement basic page-object models for the dashboard.
-*   Create E2E tests for the CAMS CAS upload and parsing flow.
+**Plans:** 4 plans
+
+- [ ] 06-01-PLAN.md — Playwright Infrastructure & Setup
+- [ ] 06-02-PLAN.md — Mocking Infrastructure & POMs
+- [ ] 06-03-PLAN.md — Core E2E Flow - CAS Upload
+- [ ] 06-04-PLAN.md — CI Integration
 
 ## Phase 7: Dynamic Returns & UX
 **Goal:** Implement the ability to toggle between performance metrics.
