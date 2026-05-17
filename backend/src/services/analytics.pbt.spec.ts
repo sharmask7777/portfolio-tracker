@@ -87,34 +87,39 @@ describe('Analytics Property-Based Tests', () => {
           const result = await XRayService.getXRayData('test-p-id');
 
           // 3. Verify Invariants
-          
-          // Sector Sum ≈ 100% (or 1.0)
-          const sectorSum = result.sectors.reduce((acc, s) => acc + s.percentage, 0);
-          expect(sectorSum).toBeCloseTo(1.0, 5);
+          if (result.totalValue > 0) {
+            // Sector Sum ≈ 100% (or 1.0)
+            const sectorSum = result.sectors.reduce((acc, s) => acc + s.percentage, 0);
+            expect(sectorSum).toBeCloseTo(1.0, 5);
 
-          // Market Cap Sum ≈ 100%
-          const mcSum = result.marketCap.large.percentage + result.marketCap.mid.percentage + result.marketCap.small.percentage;
-          expect(mcSum).toBeCloseTo(1.0, 5);
+            // Market Cap Sum ≈ 100%
+            const mcSum = result.marketCap.large.percentage + result.marketCap.mid.percentage + result.marketCap.small.percentage;
+            expect(mcSum).toBeCloseTo(1.0, 5);
 
-          // Asset Allocation Sum ≈ 100%
-          const aaSum = result.assetAllocation.equity.percentage + 
-                        result.assetAllocation.debt.percentage + 
-                        result.assetAllocation.cash.percentage + 
-                        result.assetAllocation.gold.percentage + 
-                        result.assetAllocation.other.percentage;
-          expect(aaSum).toBeCloseTo(1.0, 5);
+            // Asset Allocation Sum ≈ 100%
+            const aaSum = result.assetAllocation.equity.percentage + 
+                          result.assetAllocation.debt.percentage + 
+                          result.assetAllocation.cash.percentage + 
+                          result.assetAllocation.gold.percentage + 
+                          result.assetAllocation.other.percentage;
+            expect(aaSum).toBeCloseTo(1.0, 5);
 
-          // Value Consistency: totalValue ≈ sum(categoryValues)
-          const sectorValueSum = result.sectors.reduce((acc, s) => acc + s.value, 0);
-          expect(sectorValueSum).toBeCloseTo(result.totalValue, 2);
+            // Value Consistency: totalValue ≈ sum(categoryValues)
+            const sectorValueSum = result.sectors.reduce((acc, s) => acc + s.value, 0);
+            expect(sectorValueSum).toBeCloseTo(result.totalValue, 2);
 
-          // Ex-Arbitrage Consistency
-          if (result.exArbitrage) {
-             const exArbAA = result.exArbitrage.assetAllocation;
-             const exArbSum = exArbAA.equity.percentage + exArbAA.debt.percentage + 
-                              exArbAA.cash.percentage + exArbAA.gold.percentage + 
-                              exArbAA.arbitrage.percentage + exArbAA.other.percentage;
-             expect(exArbSum).toBeCloseTo(1.0, 5);
+            // Ex-Arbitrage Consistency
+            if (result.exArbitrage) {
+               const exArbAA = result.exArbitrage.assetAllocation;
+               const exArbSum = exArbAA.equity.percentage + exArbAA.debt.percentage + 
+                                exArbAA.cash.percentage + exArbAA.gold.percentage + 
+                                exArbAA.arbitrage.percentage + exArbAA.other.percentage;
+               expect(exArbSum).toBeCloseTo(1.0, 5);
+            }
+          } else {
+            // Empty portfolio invariants
+            expect(result.sectors.length).toBe(0);
+            expect(result.marketCap.large.percentage).toBe(0);
           }
         }),
         { numRuns: 50 }
@@ -148,7 +153,7 @@ describe('Analytics Property-Based Tests', () => {
               portfolios.map(async (p) => {
                 const enrichedFolios = p.folios.map((folio) => {
                   const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
-                  const metrics = PerformanceService.getMetrics(folio.transactions, mockPrice, currentUnits);
+                  const metrics = PerformanceService.getMetrics(folio.transactions, mockPrice, { currentUnitsOverride: currentUnits });
                   return { metrics };
                 });
 
@@ -179,7 +184,7 @@ describe('Analytics Property-Based Tests', () => {
             const allFolios = portfolios.flatMap((p) => p.folios);
             const enrichedFoliosFamily = allFolios.map((folio) => {
               const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
-              const metrics = PerformanceService.getMetrics(folio.transactions, mockPrice, currentUnits);
+              const metrics = PerformanceService.getMetrics(folio.transactions, mockPrice, { currentUnitsOverride: currentUnits });
               return { metrics };
             });
 

@@ -68,15 +68,15 @@ export class TaxService {
       const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
       const isBonus = type.includes('bonus');
       
-      const units = Math.abs(tx.units);
-      const nav = isBonus ? 0 : Math.abs(tx.nav);
+      const units = Math.abs(tx.units) || 0;
+      const nav = isBonus ? 0 : (Math.abs(tx.nav) || 0);
       const date = new Date(tx.date);
 
       if (isBuy || isBonus) {
         buyLots.push({ date, units, nav, originalUnits: units, isBonus });
       } else if (isSell) {
         let unitsToSell = units;
-        while (unitsToSell > 0 && buyLots.length > 0) {
+        while (unitsToSell > 0.000001 && buyLots.length > 0) {
           const lot = buyLots[0];
           const soldFromLot = Math.min(unitsToSell, lot.units);
           
@@ -85,7 +85,7 @@ export class TaxService {
             assetType,
             lot,
             soldFromLot,
-            Math.abs(tx.nav),
+            nav,
             date,
             grandfatherNav
           ));
@@ -93,7 +93,7 @@ export class TaxService {
           lot.units -= soldFromLot;
           unitsToSell -= soldFromLot;
 
-          if (lot.units <= 0) {
+          if (lot.units <= 0.000001) {
             buyLots.shift();
           }
         }
@@ -248,16 +248,18 @@ export class TaxService {
                     type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance');
       const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
       const isBonus = type.includes('bonus');
+      const units = Math.abs(tx.units) || 0;
+      const nav = isBonus ? 0 : (Math.abs(tx.nav) || 0);
       if (isBuy || isBonus) {
-        buyLots.push({ date: new Date(tx.date), units: Math.abs(tx.units), nav: isBonus ? 0 : Math.abs(tx.nav), originalUnits: Math.abs(tx.units), isBonus });
+        buyLots.push({ date: new Date(tx.date), units, nav, originalUnits: units, isBonus });
       } else if (isSell) {
-        let unitsToSell = Math.abs(tx.units);
-        while (unitsToSell > 0 && buyLots.length > 0) {
+        let unitsToSell = units;
+        while (unitsToSell > 0.000001 && buyLots.length > 0) {
           const lot = buyLots[0];
           const soldFromLot = Math.min(unitsToSell, lot.units);
           lot.units -= soldFromLot;
           unitsToSell -= soldFromLot;
-          if (lot.units <= 0) buyLots.shift();
+          if (lot.units <= 0.000001) buyLots.shift();
         }
       }
     }

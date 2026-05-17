@@ -92,7 +92,8 @@ export class HarvestingService {
             // We can only harvest up to the remaining exemption across all lots
             const harvestableGain = Math.min(unrealizedGain, remainingExemption - totalPotentialHarvest);
             
-            if (harvestableGain > 0) {
+            // Ignore negligible gains (less than ₹1) to avoid precision noise
+            if (harvestableGain >= 1.0) {
               const unitsToHarvest = harvestableGain / (currentPrice - lot.nav);
               
               opportunities.push({
