@@ -71,12 +71,23 @@ You can also run both servers from the root directory after completing the setup
 npm run dev
 ```
 
-## 🧪 Testing & Robustness
+## 🧪 Testing & Quality
 
-We use a combination of **Unit Testing** and **Property-Based Testing (PBT)** to ensure mathematical and logical integrity.
+We prioritize mathematical integrity and system stability through a multi-layered approach:
 
-- **Run all tests:** `npm test --prefix backend`
-- **Run robustness stress-tests:** `npm test --prefix backend src/services/robustness.pbt.spec.ts`
+- **Unit & Property-Based Testing (PBT):** Rigorous math validation using `fast-check`. Run via `npm test --prefix backend`.
+- **E2E Testing:** Playwright-based frontend flows. Run via `npx playwright test` in the `frontend/` folder.
+- **Quality Audit Skill:** A specialized agentic workflow that performs deep mathematical audits (XIRR anomalies, cost basis leaks) and UI consistency checks.
+
+## 🤖 AI & Agent Support
+
+This project is built for collaboration with AI agents. It includes specialized "Agent Skills" (SOPs and scripts) to automate complex tasks.
+
+- **[skills/](./skills/)**: Self-contained agentic workflows.
+    - `quality-audit`: Mathematical and functional integrity checks.
+    - `pdd`: Architectural planning and design.
+    - `code-assist`: TDD-based implementation guidance.
+- **[AGENTS.md](./AGENTS.md)**: A comprehensive guide for AI collaborators on maintenance, math standards, and tax rules.
 
 ## 📖 Maintenance
 
