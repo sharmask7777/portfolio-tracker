@@ -22,9 +22,10 @@
 
 ## Phase 8: Advanced Metrics: Post-Tax XIRR
 **Goal:** Introduce tax-aware performance tracking.
-*   Extend the `TaxService` to calculate estimated tax liability on current holdings.
-*   Implement the "Post-Tax XIRR" calculation logic in the backend.
-*   Update the frontend holdings table to include the new Post-Tax XIRR metric.
+**Plans:** 2 plans
+
+- [ ] 08-01-PLAN.md — Backend Extension: Tax Service & XIRR Logic
+- [ ] 08-02-PLAN.md — Frontend Integration: Marginal Slab Setting & Table Updates
 
 ## Phase 9: Milestone v2.0 Polish & Verification
 **Goal:** Finalize v2.0 features and ensure E2E coverage.
