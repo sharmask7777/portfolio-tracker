@@ -13,6 +13,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "prisma": {
+    "schema": "backend/prisma/schema.prisma"
+  },
   "devDependencies": {
     "concurrently": "^9.2.1"
   }
