@@ -2,9 +2,13 @@ import { test, expect } from '@playwright/test';
 import { DashboardPage } from './pom/DashboardPage';
 import { UploadPage } from './pom/UploadPage';
 import { setupAuth } from './utils/auth-setup';
-import { mockCASUpload } from './utils/cas-mock';
+import { mockCASUpload, mockPortfolioSummary } from './utils/cas-mock';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const DUMMY_PDF = path.join(__dirname, 'logout-dummy.pdf');
 
@@ -28,7 +32,9 @@ test.describe('Logout Flow', () => {
     const uploadPage = new UploadPage(page);
     
     // 1. Setup: Upload data first to be on dashboard
-    await mockCASUpload(page);
+    const mockData = await mockCASUpload(page);
+    await mockPortfolioSummary(page, mockData);
+    
     await uploadPage.goto();
     await uploadPage.uploadFile(DUMMY_PDF);
     await dashboardPage.waitForData();
