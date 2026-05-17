@@ -5,6 +5,7 @@ status: draft
 shadcn_initialized: false
 preset: none
 created: 2026-05-17
+updated: 2026-05-20
 ---
 
 # Phase 10 — UI Design Contract
@@ -27,8 +28,6 @@ created: 2026-05-17
 
 ## Spacing Scale
 
-Declared values (must be multiples of 4):
-
 | Token | Value | Usage |
 |-------|-------|-------|
 | xs | 4px | Icon gaps, badge padding |
@@ -45,12 +44,22 @@ Exceptions: none
 
 ## Typography
 
+Standardized on 2 weights (400 and 700) per UI checker feedback. Label size reduced to 12px for better contrast.
+
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body | 14px | 400 | 1.6 |
-| Label | 13px | 600 | 1.2 |
-| Heading | 20px | 800 | 1.2 |
+| Label | 12px | 700 | 1.2 |
+| Heading | 20px | 700 | 1.2 |
 | Display | 28px | 700 | 1.1 |
+
+---
+
+## Layout & Visual Hierarchy
+
+- **Primary Focal Point:** Consolidated Performance Card. Located at the top of the dashboard, spanning the full width or using a distinct background/border to signify "Total Family Wealth."
+- **Secondary Focus:** Family Member Grid/List. Below the consolidated view, showing individual contributions and performance.
+- **Emphasis:** Use the Accent color sparingly to guide the eye toward "Aggregated Returns" (focal point) and the "Sync All" action.
 
 ---
 
