@@ -1,0 +1,73 @@
+import { test, expect } from '@playwright/test';
+import { UploadPage } from './pom/UploadPage';
+import { DashboardPage } from './pom/DashboardPage';
+import { mockCASUpload, mockAPIError } from './utils/cas-mock';
+import { setupAuth } from './utils/auth-setup';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const DUMMY_PDF = path.join(__dirname, 'dummy.pdf');
+
+test.beforeAll(async () => {
+  fs.writeFileSync(DUMMY_PDF, 'dummy pdf content');
+});
+
+test.afterAll(async () => {
+  if (fs.existsSync(DUMMY_PDF)) {
+    fs.unlinkSync(DUMMY_PDF);
+  }
+});
+
+test.describe('CAS Upload Flow', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupAuth(page);
+  });
+
+  test('happy path: upload CAS and see dashboard metrics', async ({ page }) => {
+    const uploadPage = new UploadPage(page);
+    const dashboardPage = new DashboardPage(page);
+    
+    // 1. Mock the CAS upload
+    const mockData = await mockCASUpload(page);
+    
+    // 2. Navigate and upload
+    await uploadPage.goto();
+    await uploadPage.uploadFile(DUMMY_PDF);
+    
+    // 3. Wait for upload to complete
+    await uploadPage.waitForUploadComplete();
+    
+    // 4. Verify Dashboard displays data
+    await dashboardPage.waitForData();
+    const netWorth = await dashboardPage.getNetWorth();
+    
+    // Verify net worth is present (contains currency symbol)
+    expect(netWorth).toContain('₹');
+    
+    // Verify scheme count matches mock data
+    const schemeCount = await dashboardPage.getSchemesCount();
+    const expectedSchemes = mockData.folios.reduce((acc, f) => acc + f.schemes.length, 0);
+    expect(schemeCount).toBe(expectedSchemes);
+  });
+
+  test('error handling: show message on 500 error', async ({ page }) => {
+    const uploadPage = new UploadPage(page);
+    
+    // 1. Mock a 500 error
+    await mockAPIError(page, '**/api/portfolio/upload', 500, 'Invalid PDF format');
+    
+    // 2. Setup dialog listener (App.tsx uses alert())
+    let alertMessage = '';
+    page.on('dialog', async dialog => {
+      alertMessage = dialog.message();
+      await dialog.accept();
+    });
+    
+    // 3. Navigate and upload
+    await uploadPage.goto();
+    await uploadPage.uploadFile(DUMMY_PDF);
+    
+    // 4. Verify error message
+    await expect.poll(() => alertMessage).toContain('Invalid PDF format');
+  });
+});
