@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: v3.0 Milestone
 current_phase: Phase 10 (Family View & Alternative Assets)
-status: researching
-last_updated: "2026-05-17T17:30:00.000Z"
+status: Researching multi-PAN splitting logic.
+last_updated: "2026-05-17T17:48:57.920Z"
 progress:
   total_phases: 5
   completed_phases: 4
@@ -28,4 +28,3 @@ progress:
     *   Harvesting Flow: Integrated Tax Harvesting clicks with SimulationModal auto-trigger (D-01, D-02).
     *   UX Reactivity: Added isRefetching visual state (opacity 0.5) for Post-Tax metrics (D-04).
     *   Family View (v3.0): Decided to solve for "Single CAS, Multiple PANs" by grouping folios by PAN (V3-FAM-01).
-
