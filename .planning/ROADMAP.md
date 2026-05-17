@@ -2,6 +2,8 @@
 
 ## v1.0 Milestone - [Archived Roadmap](./milestones/v1.0-ROADMAP.md)
 
+## v2.0 Milestone
+
 ## Phase 6: E2E Testing Foundation
 **Goal:** Establish a robust End-to-End testing suite for the frontend.
 **Plans:** 4/4 plans executed
@@ -13,9 +15,10 @@
 
 ## Phase 7: Dynamic Returns & UX
 **Goal:** Implement the ability to toggle between performance metrics.
-*   Add a global "Performance Mode" toggle to the main dashboard.
-*   Refactor frontend components to reactively switch between XIRR and Absolute Return.
-*   Implement local storage persistence for user metric preferences.
+**Plans:** 2 plans
+
+- [ ] 07-01-PLAN.md — Infrastructure & Settings Context
+- [ ] 07-02-PLAN.md — Header Toggle & Reactive Swapping
 
 ## Phase 8: Advanced Metrics: Post-Tax XIRR
 **Goal:** Introduce tax-aware performance tracking.
