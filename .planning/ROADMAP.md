@@ -22,13 +22,14 @@
 
 ## Phase 8: Advanced Metrics: Post-Tax XIRR
 **Goal:** Introduce tax-aware performance tracking.
-**Plans:** 2 plans
+**Plans:** 2/2 plans executed
 
-- [ ] 08-01-PLAN.md — Backend Extension: Tax Service & XIRR Logic
-- [ ] 08-02-PLAN.md — Frontend Integration: Marginal Slab Setting & Table Updates
+- [x] 08-01-PLAN.md — Backend Extension: Tax Service & XIRR Logic
+- [x] 08-02-PLAN.md — Frontend Integration: Marginal Slab Setting & Table Updates
 
 ## Phase 9: Milestone v2.0 Polish & Verification
 **Goal:** Finalize v2.0 features and ensure E2E coverage.
-*   Complete E2E test coverage for Tax and Family views.
-*   Final UI/UX refinements for the new metric columns.
-*   Milestone audit and completion.
+**Plans:** 2 plans
+
+- [ ] 09-01-PLAN.md — UI Polish & Harvesting Flow
+- [ ] 09-02-PLAN.md — Augmented Verification & Audit
