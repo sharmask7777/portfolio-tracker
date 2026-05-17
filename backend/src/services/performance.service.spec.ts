@@ -53,12 +53,34 @@ describe('PerformanceService', () => {
       const transactions = [
         { type: 'BUY', amount: 100, date: '2023-01-01' },
       ];
-      const metrics = PerformanceService.getMetrics(transactions, 110, 1);
+      const metrics = PerformanceService.getMetrics(transactions, 110, { currentUnitsOverride: 1 });
       
       expect(metrics.investedAmount).toBe(100);
       expect(metrics.currentValue).toBe(110);
       expect(metrics.totalGain).toBe(10);
       expect(metrics.absoluteReturn).toBe(0.1);
+    });
+
+    it('should calculate post-tax metrics when taxSlab is provided', () => {
+      const transactions = [
+        { type: 'BUY', amount: 1000, units: 10, nav: 100, date: '2026-01-01' }, // Equity < 1yr
+      ];
+      // Today is 2026-05-17. Holding is < 1 year -> STCG 20%
+      const currentPrice = 150;
+      const metrics = PerformanceService.getMetrics(transactions, currentPrice, {
+        currentUnitsOverride: 10,
+        taxSlab: 0.3,
+        assetType: 'MUTUAL_FUND' as any,
+        assetName: 'Equity Fund'
+      });
+
+      // Gain = (150 - 100) * 10 = 500
+      // Estimated Tax = 500 * 0.20 = 100
+      // Post-Tax Value = 1500 - 100 = 1400
+      // Post-Tax Absolute Return = (1400 - 1000) / 1000 = 0.4
+      expect(metrics.estimatedTax).toBe(100);
+      expect(metrics.postTaxAbsoluteReturn).toBe(0.4);
+      expect(metrics.postTaxXirr).toBeDefined();
     });
   });
 });

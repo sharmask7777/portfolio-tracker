@@ -166,6 +166,34 @@ export class TaxService {
     };
   }
 
+  public static calculateUnrealizedTax(
+    assetName: string,
+    assetType: AssetType,
+    transactions: any[],
+    currentNav: number,
+    taxSlab: number = 0,
+    grandfatherNav?: number,
+  ): number {
+    const summary = this.calculatePortfolioTax(assetName, assetType, transactions, currentNav, grandfatherNav);
+    const now = new Date();
+    
+    let estimatedTax = 0;
+    
+    if (summary.unrealized.stcg > 0) {
+      estimatedTax += summary.unrealized.stcg * this.getTaxRate('STCG', now, assetType, assetName, taxSlab);
+    }
+    
+    if (summary.unrealized.ltcg > 0) {
+      estimatedTax += summary.unrealized.ltcg * this.getTaxRate('LTCG', now, assetType, assetName, taxSlab);
+    }
+    
+    if (summary.unrealized.slab > 0) {
+      estimatedTax += summary.unrealized.slab * this.getTaxRate('SLAB', now, assetType, assetName, taxSlab);
+    }
+    
+    return estimatedTax;
+  }
+
   public static calculateGain(
     assetName: string,
     assetType: AssetType,
@@ -247,15 +275,21 @@ export class TaxService {
     return diffMonths >= ltThreshold ? 'LTCG' : 'SLAB'; // Debt STCG is always taxed at Slab rates
   }
 
-  private static getTaxRate(taxType: 'STCG' | 'LTCG' | 'SLAB', sellDate: Date, assetType: AssetType, assetName: string): number {
-    if (taxType === 'SLAB') return 0;
+  private static getTaxRate(
+    taxType: 'STCG' | 'LTCG' | 'SLAB', 
+    sellDate: Date, 
+    assetType: AssetType, 
+    assetName: string,
+    taxSlab: number = 0
+  ): number {
+    if (taxType === 'SLAB') return taxSlab;
     const isEq = this.isEquity(assetType, assetName);
 
     if (sellDate >= this.BUDGET_2024_DATE) {
       if (isEq) {
         return taxType === 'LTCG' ? 0.125 : 0.20;
       }
-      return taxType === 'LTCG' ? 0.125 : 0; // Debt LTCG post-budget is 12.5%
+      return taxType === 'LTCG' ? 0.125 : taxSlab; // Debt LTCG post-budget is 12.5%
     }
     
     // Pre-Budget 2024
@@ -263,7 +297,7 @@ export class TaxService {
       return taxType === 'LTCG' ? 0.10 : 0.15;
     }
     // Debt LTCG pre-budget was 20% (with indexation)
-    return taxType === 'LTCG' ? 0.20 : 0;
+    return taxType === 'LTCG' ? 0.20 : taxSlab;
   }
 
   private static isEquity(assetType: AssetType, assetName: string): boolean {

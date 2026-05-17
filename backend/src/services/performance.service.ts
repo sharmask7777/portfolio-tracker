@@ -1,5 +1,7 @@
 import { xirr } from 'node-irr';
+import { AssetType } from '@prisma/client';
 import { PortfolioUtils } from '../utils/portfolio.utils';
+import { TaxService } from './tax.service';
 
 export interface PerformanceMetrics {
   absoluteReturn: number;
@@ -8,6 +10,9 @@ export interface PerformanceMetrics {
   investedAmount: number;
   currentValue: number;
   totalGain: number;
+  postTaxXirr?: number;
+  postTaxAbsoluteReturn?: number;
+  estimatedTax?: number;
 }
 
 export class PerformanceService {
@@ -40,14 +45,14 @@ export class PerformanceService {
     // XIRR requires at least one positive and one negative flow
     const hasPositive = flows.some(f => f.amount > 0);
     const hasNegative = flows.some(f => f.amount < 0);
-    
+
     if (!hasPositive || !hasNegative) return 0;
 
     // Safety: If duration is extremely short (e.g., < 30 days), XIRR is highly volatile.
     const firstDate = flows.reduce((min, f) => (f.date < min ? f.date : min), flows[0].date);
     const lastDate = flows.reduce((max, f) => (f.date > max ? f.date : max), flows[0].date);
     const diffDays = (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24);
-    
+
     // If period is < 30 days, annualization is mathematically correct but financially useless.
     // Return Absolute Return instead as a proxy.
     if (diffDays < 30) {
@@ -55,17 +60,16 @@ export class PerformanceService {
       const totalRedeemed = flows.filter(f => f.amount > 0).reduce((acc, f) => acc + f.amount, 0);
       return totalInvested > 0 ? (totalRedeemed - totalInvested) / totalInvested : 0;
     }
-
     try {
       const result = xirr(flows);
       // node-irr returns the daily rate. Annualize it: (1 + r)^365 - 1
       const annualized = Math.pow(1 + result.rate, 365) - 1;
-      
+
       // Cap astronomical XIRR values (usually data errors or ultra-short terms)
       // annualized is a decimal (e.g. 0.15 = 15%). 10.0 = 1000%.
       if (annualized > 10.0) return 10.0; 
       if (annualized < -1.0) return -1.0; // Max loss is 100%
-      
+
       return isFinite(annualized) ? annualized : 0;
     } catch (e) {
       console.error('XIRR calculation failed:', e);
@@ -107,9 +111,14 @@ export class PerformanceService {
   public static getMetrics(
     transactions: any[],
     currentPrice: number,
-    currentUnitsOverride?: number,
+    options?: { 
+      currentUnitsOverride?: number;
+      taxSlab?: number;
+      assetType?: AssetType;
+      assetName?: string;
+    },
   ): PerformanceMetrics {
-    const currentUnits = currentUnitsOverride !== undefined ? currentUnitsOverride : PortfolioUtils.getLatestUnits(transactions);
+    const currentUnits = options?.currentUnitsOverride !== undefined ? options.currentUnitsOverride : PortfolioUtils.getLatestUnits(transactions);
     // Standardize signs: Money Out of pocket (Negative), Money In to pocket (Positive)
     const normalizedTransactions = transactions.map((tx) => {
       const type = tx.type.toLowerCase();
@@ -165,7 +174,7 @@ export class PerformanceService {
       return isOutflow ? acc + Math.abs(tx.amount) : isInflow ? acc - Math.abs(tx.amount) : acc;
     }, 0);
     const currentValue = currentUnits * currentPrice;
-    
+
     // If the fund is closed (zero units), we don't have an "active" invested amount.
     // The historical net cash flow (realized profit/loss) is still preserved in normalizedTransactions 
     // for XIRR calculation, but for the summary view, invested should be 0.
@@ -177,7 +186,7 @@ export class PerformanceService {
       normalizedTransactions[0]?.date || new Date(),
     );
 
-    return {
+    const metrics: PerformanceMetrics = {
       investedAmount: activeInvestedAmount,
       currentValue,
       totalGain,
@@ -185,5 +194,21 @@ export class PerformanceService {
       cagr: this.calculateCAGR(activeInvestedAmount, currentValue, firstTxDate),
       xirr: this.calculateXIRR(normalizedTransactions, currentValue),
     };
+
+    if (options?.taxSlab !== undefined && options.assetType && options.assetName) {
+      const estimatedTax = TaxService.calculateUnrealizedTax(
+        options.assetName,
+        options.assetType,
+        transactions,
+        currentPrice,
+        options.taxSlab
+      );
+      const postTaxCurrentValue = Math.max(0, currentValue - estimatedTax);
+      metrics.postTaxXirr = this.calculateXIRR(normalizedTransactions, postTaxCurrentValue);
+      metrics.postTaxAbsoluteReturn = this.calculateAbsoluteReturn(activeInvestedAmount, postTaxCurrentValue);
+      metrics.estimatedTax = estimatedTax;
+    }
+
+    return metrics;
   }
 }

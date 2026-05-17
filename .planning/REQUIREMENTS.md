@@ -24,7 +24,7 @@
 |---|---|---|---|
 | V2-DYN-01 | Global XIRR/Absolute toggle | v2.0 | [x] |
 | V2-TAX-01 | Post-Tax XIRR Calculation | v2.0 | [x] |
-| V2-TAX-02 | Tax liability deduction from final value | v2.0 | [ ] |
-| V2-E2E-01 | Playwright Integration | v2.0 | [ ] |
-| V2-E2E-02 | CAS Upload E2E Test | v2.0 | [ ] |
-| V2-E2E-03 | Dashboard/Tax View E2E Tests | v2.0 | [ ] |
+| V2-TAX-02 | Tax liability deduction from final value | v2.0 | [x] |
+| V2-E2E-01 | Playwright Integration | v2.0 | [x] |
+| V2-E2E-02 | CAS Upload E2E Test | v2.0 | [x] |
+| V2-E2E-03 | Dashboard/Tax View E2E Tests | v2.0 | [x] |

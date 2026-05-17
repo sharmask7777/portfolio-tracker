@@ -103,4 +103,43 @@ describe('TaxService Refined Rules', () => {
       expect(summary.realized.taxableLTCG).toBe(0);
     });
   });
+
+  describe('Unrealized Tax Estimation', () => {
+    it('should calculate estimated tax for debt funds using marginal slab', () => {
+      const transactions = [
+        { type: 'BUY', units: 10, nav: 100, date: '2023-05-01' }, // Debt fund post-2023 -> SLAB
+      ];
+      const currentNav = 150;
+      const taxSlab = 0.30;
+      const estimatedTax = TaxService.calculateUnrealizedTax(
+        'Debt Fund', AssetType.FIXED_DEPOSIT, transactions, currentNav, taxSlab
+      );
+      // Gain = (150 - 100) * 10 = 500. Tax = 500 * 0.30 = 150.
+      expect(estimatedTax).toBe(150);
+    });
+
+    it('should calculate estimated tax for equity funds using 12.5% LTCG', () => {
+      const transactions = [
+        { type: 'BUY', units: 10, nav: 100, date: '2022-01-01' }, // > 1 year -> LTCG
+      ];
+      const currentNav = 200;
+      const estimatedTax = TaxService.calculateUnrealizedTax(
+        'Equity Fund', MF, transactions, currentNav, 0.30
+      );
+      // Gain = (200 - 100) * 10 = 1000. Tax = 1000 * 0.125 = 125.
+      expect(estimatedTax).toBe(125);
+    });
+
+    it('should calculate estimated tax for equity funds using 20% STCG', () => {
+      const transactions = [
+        { type: 'BUY', units: 10, nav: 100, date: '2026-01-01' }, // < 1 year (since "now" is May 2026)
+      ];
+      const currentNav = 150;
+      const estimatedTax = TaxService.calculateUnrealizedTax(
+        'Equity Fund', MF, transactions, currentNav, 0.30
+      );
+      // Gain = (150 - 100) * 10 = 500. Tax = 500 * 0.20 = 100.
+      expect(estimatedTax).toBe(100);
+    });
+  });
 });

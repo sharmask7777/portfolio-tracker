@@ -83,7 +83,8 @@ router.post('/manual-asset', async (req: Request, res: Response) => {
 
 router.get('/summary', async (req: Request, res: Response) => {
   try {
-    const { userId = 'mock-user-123', familyGroupId } = req.query;
+    const { userId = 'mock-user-123', familyGroupId, taxSlab } = req.query;
+    const slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
 
     let portfolios: any[] = [];
 
@@ -128,7 +129,12 @@ router.get('/summary', async (req: Request, res: Response) => {
         }
         
         // If the fund is closed (zero units), current value is always 0
-        metrics = PerformanceService.getMetrics(folio.transactions, currentPrice, currentUnits);
+        metrics = PerformanceService.getMetrics(folio.transactions, currentPrice, {
+          currentUnitsOverride: currentUnits,
+          taxSlab: slabValue,
+          assetType: folio.asset.type,
+          assetName: folio.asset.name,
+        });
         
         // Ensure closed positions have zero current value
         if (currentUnits <= 0) {
@@ -149,6 +155,8 @@ router.get('/summary', async (req: Request, res: Response) => {
           absoluteReturn: folio.transactions[folio.transactions.length - 1]?.amount ? (altMetrics.currentValue - folio.transactions[folio.transactions.length - 1].amount) / folio.transactions[folio.transactions.length - 1].amount : 0,
           xirr: altMetrics.annualRate,
           cagr: altMetrics.annualRate,
+          postTaxXirr: altMetrics.annualRate, // Simple proxy for Alts for now
+          postTaxAbsoluteReturn: folio.transactions[folio.transactions.length - 1]?.amount ? (altMetrics.currentValue - folio.transactions[folio.transactions.length - 1].amount) / folio.transactions[folio.transactions.length - 1].amount : 0,
         };
         currentPrice = altMetrics.currentValue / (currentUnits || 1);
       }
@@ -158,6 +166,7 @@ router.get('/summary', async (req: Request, res: Response) => {
 
     const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
     const totalValue = enrichedFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
+    const totalEstimatedTax = enrichedFolios.reduce((acc, f) => acc + (f.metrics.estimatedTax || 0), 0);
 
     // Filter for active folios or those with significant remaining invested amount (realized gains/losses)
     const activeFolios = enrichedFolios.filter(f => Math.abs(f.metrics.currentValue) > 0.01 || Math.abs(f.metrics.investedAmount) > 0.01);
@@ -175,6 +184,8 @@ router.get('/summary', async (req: Request, res: Response) => {
     );
 
     const overallXirr = PerformanceService.calculateXIRR(allTransactions, totalValue);
+    const postTaxTotalValue = Math.max(0, totalValue - totalEstimatedTax);
+    const overallPostTaxXirr = PerformanceService.calculateXIRR(allTransactions, postTaxTotalValue);
 
     res.status(200).json({
       id: familyGroupId || portfolios[0].id,
@@ -186,6 +197,8 @@ router.get('/summary', async (req: Request, res: Response) => {
         totalGain: totalValue - totalInvested,
         absoluteReturn: totalInvested > 0 ? (totalValue - totalInvested) / totalInvested : 0,
         xirr: overallXirr,
+        postTaxXirr: overallPostTaxXirr,
+        estimatedTax: totalEstimatedTax,
       },
     });
   } catch (error: any) {
