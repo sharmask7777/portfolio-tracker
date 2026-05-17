@@ -49,12 +49,17 @@ function App() {
   const [showAddAsset, setShowAddAsset] = useState(false);
   const [simFolio, setSimFolio] = useState<any>(null);
   const [simUnits, setSimUnits] = useState<number | null>(null);
+  const [isRefetching, setIsRefetching] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [password, setPassword] = useState('');
 
   const fetchSummary = async () => {
     try {
-      setLoading(true);
+      if (!portfolio) {
+        setLoading(true);
+      } else {
+        setIsRefetching(true);
+      }
       const params = {
         ...(selectedFamilyId ? { familyGroupId: selectedFamilyId } : {}),
         taxSlab: taxSlab
@@ -78,6 +83,7 @@ function App() {
       console.error('Failed to fetch data:', err);
     } finally {
       setLoading(false);
+      setIsRefetching(false);
     }
   };
 
@@ -316,7 +322,10 @@ function App() {
                           <td className={(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn) >= 0 ? 'positive' : 'negative'}>
                             {formatPercent(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn)}
                           </td>
-                          <td className={(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn) >= 0 ? 'positive' : 'negative'}>
+                          <td 
+                            className={(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn) >= 0 ? 'positive' : 'negative'}
+                            style={{ opacity: isRefetching ? 0.5 : 1, transition: 'opacity 0.2s' }}
+                          >
                             {formatPercent(performanceMode === 'XIRR' ? (folio.metrics.postTaxXirr ?? 0) : (folio.metrics.postTaxAbsoluteReturn ?? 0))}
                           </td>
                           <td>
