@@ -19,7 +19,7 @@ A deep-analytics portfolio tracking platform for Indian investors. Supports CAMS
 ## 🛠️ Tech Stack
 
 - **Frontend:** React, TypeScript, Vite, Recharts, Lucide Icons.
-- **Backend:** Node.js, Express, TypeScript, Prisma (PostgreSQL).
+- **Backend:** Node.js, Express, TypeScript, Prisma 7 (PostgreSQL).
 - **Caching:** Redis.
 - **Parsing:** Python 3 + `casparser` library.
 
@@ -31,36 +31,43 @@ A deep-analytics portfolio tracking platform for Indian investors. Supports CAMS
 - Docker & Docker Compose
 
 ### 1. Setup Infrastructure
+Start the PostgreSQL and Redis containers:
 ```bash
 docker-compose up -d
 ```
 
 ### 2. Backend Setup
+The backend uses Prisma 7 with a specific configuration. **Prisma commands MUST be run from the `backend/` directory.**
+
 ```bash
 cd backend
 npm install
 
 # Setup environment variables
-# Copy .env.example to .env and update with your local credentials
 cp .env.example .env
 
-# Setup Python virtual environment
+# Setup Python virtual environment for PDF parsing
 python3 -m venv venv
 ./venv/bin/pip install casparser rapidfuzz
 
-# Run migrations
-npx prisma db push
+# Database Setup (Prisma 7)
+npx prisma migrate dev --name init
+npx prisma generate
 
 # Start dev server
 npm run dev
 ```
 
-> **⚠️ Security Note:** Never commit your `.env` file to version control. It is already included in `.gitignore`. Use `.env.example` as a template for new environments.
-
 ### 3. Frontend Setup
 ```bash
 cd frontend
 npm install
+npm run dev
+```
+
+### 4. Running Everything Together
+You can also run both servers from the root directory after completing the setup:
+```bash
 npm run dev
 ```
 
@@ -73,9 +80,9 @@ We use a combination of **Unit Testing** and **Property-Based Testing (PBT)** to
 
 ## 📖 Maintenance
 
-- **Adding Asset Types:** Update `prisma/schema.prisma` and the `AlternativeAssetService`.
+- **Adding Asset Types:** Update `backend/prisma/schema.prisma` and the `AlternativeAssetService`.
 - **Updating Tax Rules:** Modify the logic in `TaxService.ts`.
-- **API Performance:** Use the established indexes in `schema.prisma` for analytical query optimization.
+- **Prisma Configuration:** The project uses `backend/prisma.config.ts`. If you add new models, always run `npx prisma generate` inside the `backend/` folder to update the client.
 
 ---
 Created with ❤️ by Gemini CLI.
