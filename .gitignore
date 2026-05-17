@@ -6,3 +6,16 @@ dist/
 uploads/
 backend/venv/
 venv/
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!prisma.config.ts
+!eslint.config.mjs
+!eslint.config.js
+!.prettierrc
+!vite.config.ts
+!playwright.config.ts
+!tsconfig.app.json
+!tsconfig.node.json
+!*.toml
