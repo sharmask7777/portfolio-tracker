@@ -50,7 +50,7 @@ Exceptions: none
 | Body | 14px | 400 | 1.6 |
 | Label | 12px | 700 | 1.2 |
 | Heading | 20px | 700 | 1.2 |
-| Display | 28px | 800 | 1.1 |
+| Display | 28px | 700 | 1.1 |
 
 ---
 
@@ -64,6 +64,14 @@ Exceptions: none
 | Destructive | var(--danger-color) | Negative returns, destructive actions |
 
 Accent reserved for: Primary Action buttons (Import CAS, Add Asset), Active Tab indicators, Performance Mode toggle (active), Logo icon.
+
+---
+
+## Phase Focal Point
+
+| Screen | Primary Visual Anchor | Reasoning |
+|--------|-----------------------|-----------|
+| Main Dashboard (Tax View) | Tax Harvesting Card | Central hub for v2.0 simulation flows; highest user interaction priority for this phase. |
 
 ---
 
