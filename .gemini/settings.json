@@ -97,12 +97,12 @@
     ]
   },
   "mcpServers": {
-    "strands-sops": {
+    "strands-skills": {
       "command": "/opt/homebrew/Caskroom/miniconda/base/bin/strands-agents-sops",
       "args": [
         "mcp",
         "--sop-paths",
-        "strands-skills"
+        "skills"
       ],
       "trust": true
     }
