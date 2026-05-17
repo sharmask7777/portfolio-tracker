@@ -16,8 +16,9 @@ progress:
 # Project State Memory
 
 *   **Current Phase:** Phase 7 (Dynamic Returns & UX)
-*   **Status:** Phase 6 complete and verified. Ready for Phase 7 discussion.
-*   **Next Steps:** Run `/gsd:discuss-phase 7` to clarify dynamic return toggles and UX.
+*   **Status:** Context gathered. Ready for planning.
+*   **Next Steps:** Run \`/gsd:plan-phase 7\` to generate execution plans.
+
 *   **Key Decisions:**
     *   E2E: Using Playwright with mocked API layer for frontend stability.
     *   CI: GitHub Actions configured for PR smoke tests and merge full suite.
