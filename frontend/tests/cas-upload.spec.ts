@@ -1,10 +1,14 @@
 import { test, expect } from '@playwright/test';
 import { UploadPage } from './pom/UploadPage';
 import { DashboardPage } from './pom/DashboardPage';
-import { mockCASUpload, mockAPIError } from './utils/cas-mock';
+import { mockCASUpload, mockPortfolioSummary, mockAPIError } from './utils/cas-mock';
 import { setupAuth } from './utils/auth-setup';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const DUMMY_PDF = path.join(__dirname, 'dummy.pdf');
 
@@ -27,8 +31,9 @@ test.describe('CAS Upload Flow', () => {
     const uploadPage = new UploadPage(page);
     const dashboardPage = new DashboardPage(page);
     
-    // 1. Mock the CAS upload
+    // 1. Mock the CAS upload and subsequent summary fetch
     const mockData = await mockCASUpload(page);
+    await mockPortfolioSummary(page, mockData);
     
     // 2. Navigate and upload
     await uploadPage.goto();
