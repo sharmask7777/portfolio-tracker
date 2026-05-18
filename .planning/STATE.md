@@ -24,3 +24,7 @@ progress:
     *   Backend: Historical data calculation will involve cumulative unit tracking and historical NAV lookup (D-V4-02).
     *   UI Fixes: Identified that `input` elements lack color variables, leading to "black text" issues in dark mode (D-V4-03).
     *   UI Fixes: "Scheme Breakdown" chart axes are currently hidden, which may contribute to the "empty" appearance (D-V4-04).
+
+# Session History
+
+- **2026-05-18:** Phase 11 context gathered. Decisions locked for daily history engine, AMFI source, and DB caching.
