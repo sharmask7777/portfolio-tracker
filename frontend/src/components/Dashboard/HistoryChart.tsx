@@ -114,20 +114,20 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ portfolioId }) => {
       const isPositive = gain >= 0;
 
       return (
-        <div className="card" style={{ padding: '0.75rem', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)', minWidth: '200px' }}>
-          <p style={{ margin: '0 0 0.5rem 0', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>{formatDate(label)}</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <div className="card" style={{ padding: '1rem', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)', minWidth: '220px' }}>
+          <p style={{ margin: '0 0 0.75rem 0', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>{formatDate(label)}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Value:</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(data.value)}</span>
+              <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Current Value</span>
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(data.value)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Invested:</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(data.investedAmount)}</span>
+              <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Invested Amount</span>
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(data.investedAmount)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', borderTop: '1px solid var(--border-color)', marginTop: '0.25rem', paddingTop: '0.25rem' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Gain:</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isPositive ? 'var(--success-color)' : 'var(--danger-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', borderTop: '1px solid var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
+              <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Unrealized Gain</span>
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: isPositive ? 'var(--success-color)' : 'var(--danger-color)' }}>
                 {formatCurrency(gain)} ({gainPercent.toFixed(2)}%)
               </span>
             </div>
