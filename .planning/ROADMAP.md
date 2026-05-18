@@ -68,7 +68,7 @@
 
 ## Phase 14: UI/UX Refinement & Polish
 **Goal:** Resolve existing UI bugs and improve dark mode accessibility.
-**Plans:** 0/2 plans pending
+**Plans:** 2 plans
 
 - [ ] 14-01-PLAN.md — Scheme Breakdown Fix & Data Validation
 - [ ] 14-02-PLAN.md — Dark Mode Contrast & Input Styling Fixes
