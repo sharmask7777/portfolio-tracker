@@ -128,6 +128,7 @@ function App() {
       fetchSummary();
     } catch (error) {
       console.error('Error renaming profile:', error);
+      alert('Failed to rename member profile. Please try again.');
     }
   };
 
