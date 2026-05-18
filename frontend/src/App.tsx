@@ -354,9 +354,20 @@ function App() {
                   <div className="card">
                     <h3>Key Insights</h3>
                     <div style={{ marginTop: '1rem' }}>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                        Your top performing asset is <strong>{portfolio.folios[0]?.asset.name}</strong> with {performanceMode === 'XIRR' ? 'an XIRR' : 'a return'} of <span className="positive">{formatPercent(performanceMode === 'XIRR' ? portfolio.folios[0]?.metrics.xirr : portfolio.folios[0]?.metrics.absoluteReturn)}</span>.
-                      </p>
+                      {portfolio.folios.length > 0 && (() => {
+                        const sorted = [...portfolio.folios].sort((a, b) => {
+                          const aVal = performanceMode === 'XIRR' ? (a.metrics.xirr ?? 0) : (a.metrics.absoluteReturn ?? 0);
+                          const bVal = performanceMode === 'XIRR' ? (b.metrics.xirr ?? 0) : (b.metrics.absoluteReturn ?? 0);
+                          return bVal - aVal;
+                        });
+                        const top = sorted[0];
+                        const value = performanceMode === 'XIRR' ? top.metrics.xirr : top.metrics.absoluteReturn;
+                        return (
+                          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                            Your top performing asset is <strong>{top.asset.name}</strong> with {performanceMode === 'XIRR' ? 'an XIRR' : 'a return'} of <span className="positive">{formatPercent(value || 0)}</span>.
+                          </p>
+                        );
+                      })()}
                       <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
                         <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>Top Stock Exposure</p>
                         {exposures[0] && (
