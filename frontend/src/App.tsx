@@ -32,13 +32,20 @@ import { GoalTracker } from './components/Insights/GoalTracker';
 import { useSettings } from './contexts/SettingsContext';
 import './App.css';
 
+import { FamilySelector } from './components/Family/FamilySelector';
+import { StatsGrid } from './components/Dashboard/StatsGrid';
+import { X } from 'lucide-react';
+
 const API_BASE = 'http://localhost:3001/api/portfolio';
 const API_TAX = 'http://localhost:3001/api/tax';
+const API_FAMILY = 'http://localhost:3001/api/family';
 
 function App() {
   const { theme, toggleTheme, performanceMode, setPerformanceMode, taxSlab, setTaxSlab } = useSettings();
   const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<any>(null);
   const [xrayData, setXRayData] = useState<any>(null);
   const [exposures, setExposures] = useState<any[]>([]);
@@ -52,6 +59,8 @@ function App() {
   const [isRefetching, setIsRefetching] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [password, setPassword] = useState('');
+  const [renamingProfile, setRenamingProfile] = useState<any>(null);
+  const [newName, setNewName] = useState('');
 
   const fetchSummary = async () => {
     try {
@@ -60,24 +69,40 @@ function App() {
       } else {
         setIsRefetching(true);
       }
-      const params = {
-        ...(selectedFamilyId ? { familyGroupId: selectedFamilyId } : {}),
-        taxSlab: taxSlab
-      };
-      const res = await axios.get(`${API_BASE}/summary`, { params });
-      setPortfolio(res.data);
+      const [summaryRes, profilesRes] = await Promise.all([
+        axios.get(`${API_BASE}/summary`, {
+          params: {
+            userId: 'mock-user-123',
+            familyGroupId: selectedFamilyId,
+            profileId: selectedProfileId,
+            taxSlab: taxSlab
+          }
+        }),
+        axios.get(`${API_FAMILY}/profiles`, {
+          params: { userId: 'mock-user-123' }
+        })
+      ]);
       
-      if (res.data.id) {
+      setPortfolio(summaryRes.data);
+      setProfiles(profilesRes.data);
+      
+      if (summaryRes.data.id && summaryRes.data.id !== 'consolidated') {
         const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.all([
-          axios.get(`${API_BASE}/${res.data.id}/xray`),
-          axios.get(`${API_BASE}/${res.data.id}/exposures`),
-          axios.get(`${API_BASE}/${res.data.id}/tax-summary`),
+          axios.get(`${API_BASE}/${summaryRes.data.id}/xray`),
+          axios.get(`${API_BASE}/${summaryRes.data.id}/exposures`),
+          axios.get(`${API_BASE}/${summaryRes.data.id}/tax-summary`),
           axios.get(`${API_TAX}/harvesting-opportunities`),
         ]);
         setXRayData(xrayRes.data);
         setExposures(exposuresRes.data);
         setTaxSummary(taxRes.data);
         setHarvesting(harvestingRes.data);
+      } else {
+        // Consolidated X-Ray/Exposures logic can be complex, skipping for now
+        setXRayData(null);
+        setExposures([]);
+        setTaxSummary(null);
+        setHarvesting(null);
       }
     } catch (err) {
       console.error('Failed to fetch data:', err);
@@ -89,7 +114,22 @@ function App() {
 
   useEffect(() => {
     fetchSummary();
-  }, [selectedFamilyId, taxSlab]);
+  }, [selectedFamilyId, selectedProfileId, taxSlab]);
+
+  const handleRename = async () => {
+    if (!renamingProfile || !newName) return;
+    try {
+      await axios.patch(`${API_FAMILY}/profile/${renamingProfile.id}`, {
+        name: newName,
+        userId: 'mock-user-123'
+      });
+      setRenamingProfile(null);
+      setNewName('');
+      fetchSummary();
+    } catch (error) {
+      console.error('Error renaming profile:', error);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -101,7 +141,9 @@ function App() {
 
     try {
       setUploading(true);
-      await axios.post(`${API_BASE}/upload`, formData);
+      await axios.post(`${API_BASE}/upload`, formData, {
+        params: { userId: 'mock-user-123' }
+      });
       setShowUpload(false);
       setPassword('');
       fetchSummary();
@@ -179,9 +221,17 @@ function App() {
       </header>
 
       <main className="main-content">
-        <FamilyManager 
-          onSelect={(id) => setSelectedFamilyId(id)} 
-          selectedId={selectedFamilyId} 
+        <FamilySelector 
+          profiles={profiles}
+          selectedProfileId={selectedProfileId}
+          onSelect={(id) => {
+            setSelectedProfileId(id);
+            setSelectedFamilyId(null);
+          }}
+          onRename={(p) => {
+            setRenamingProfile(p);
+            setNewName(p.name);
+          }}
         />
 
         {!portfolio ? (
@@ -234,29 +284,10 @@ function App() {
 
             {activeTab === 'overview' && (
               <>
-                <div className="stats-grid">
-                  <div className="card">
-                    <div className="stat-label">Net Worth</div>
-                    <div className="stat-value">{formatCurrency(portfolio.metrics.totalValue)}</div>
-                    <div className={`stat-change ${portfolio.metrics.totalGain >= 0 ? 'positive' : 'negative'}`}>
-                      {formatCurrency(portfolio.metrics.totalGain)} ({formatPercent(portfolio.metrics.absoluteReturn)})
-                    </div>
-                  </div>
-                  <div className="card">
-                    <div className="stat-label">Invested Amount</div>
-                    <div className="stat-value">{formatCurrency(portfolio.metrics.totalInvested)}</div>
-                  </div>
-                  <div className="card">
-                    <div className="stat-label">{performanceMode === 'XIRR' ? 'Overall XIRR' : 'Total Return'}</div>
-                    <div className={`stat-value ${(performanceMode === 'XIRR' ? portfolio.metrics.xirr : portfolio.metrics.absoluteReturn) >= 0 ? 'positive' : 'negative'}`}>
-                      {formatPercent(performanceMode === 'XIRR' ? portfolio.metrics.xirr : portfolio.metrics.absoluteReturn)}
-                    </div>
-                  </div>
-                  <div className="card">
-                    <div className="stat-label">Total Assets</div>
-                    <div className="stat-value">{portfolio.folios.length} Schemes</div>
-                  </div>
-                </div>
+                <StatsGrid 
+                  metrics={portfolio.metrics}
+                  performanceMode={performanceMode}
+                />
 
                 <div className="dashboard-sections">
                   <div className="card">
@@ -382,6 +413,40 @@ function App() {
             setSimUnits(null);
           }} 
         />
+      )}
+
+      {renamingProfile && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ margin: 0 }}>Rename Member</h2>
+              <button onClick={() => setRenamingProfile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                <X size={24} />
+              </button>
+            </div>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                DISPLAY NAME
+              </label>
+              <input 
+                type="text" 
+                className="card" 
+                style={{ width: '100%', padding: '0.75rem', background: 'var(--bg-secondary)', outline: 'none' }}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button className="btn" style={{ flex: 1, border: '1px solid var(--border-color)' }} onClick={() => setRenamingProfile(null)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleRename}>
+                Save Name
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showAddAsset && <AddAssetModal onClose={() => setShowAddAsset(false)} onSuccess={fetchSummary} />}
