@@ -229,7 +229,10 @@ function App() {
               min="0"
               max="1"
               value={taxSlab}
-              onChange={(e) => setTaxSlab(parseFloat(e.target.value))}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                setTaxSlab(isNaN(val) ? 0 : val);
+              }}
               style={{ width: '60px', background: 'none', border: 'none', color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.875rem', outline: 'none' }}
             />
           </div>
