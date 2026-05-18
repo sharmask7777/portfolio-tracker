@@ -1,9 +1,10 @@
 import { prisma } from './db.service';
+import { FamilyService } from './family.service';
 import crypto from 'crypto';
 
 export class SyncService {
   public static async syncPortfolio(userId: string, parsedData: any) {
-    // 1. Ensure User and Portfolio exist
+    // Ensure User exists
     let user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       // For now, auto-create a user if it doesn't exist (mocking auth)
@@ -16,19 +17,6 @@ export class SyncService {
       });
     }
 
-    let portfolio = await prisma.portfolio.findFirst({
-      where: { userId },
-    });
-
-    if (!portfolio) {
-      portfolio = await prisma.portfolio.create({
-        data: {
-          name: 'Default Portfolio',
-          userId,
-        },
-      });
-    }
-
     const results = [];
     const investor = parsedData.investor_info || parsedData.investor || {};
 
@@ -37,6 +25,27 @@ export class SyncService {
     for (const folioData of parsedData.folios || []) {
       for (const schemeData of folioData.schemes || []) {
         const fundName = schemeData.scheme || schemeData.name;
+        
+        // FINANCIAL INTELLIGENCE: Multi-PAN Splitting (REQ-10.1, D-02)
+        // Extract PAN from scheme or folio level
+        const currentPan = schemeData.pan || folioData.pan || investor.pan || 'UNKNOWN';
+        const profile = await FamilyService.getOrCreateManagedProfile(userId, currentPan);
+        
+        // Find or Create Portfolio for this profile
+        let currentPortfolio = await prisma.portfolio.findFirst({
+          where: { userId, managedProfileId: profile.id },
+        });
+
+        if (!currentPortfolio) {
+          currentPortfolio = await prisma.portfolio.create({
+            data: {
+              name: `${profile.name}'s Portfolio`,
+              userId,
+              managedProfileId: profile.id,
+            },
+          });
+        }
+
         // Upsert Asset
         const asset = await prisma.asset.upsert({
           where: { isin: schemeData.isin || schemeData.amfi || fundName },
@@ -52,25 +61,25 @@ export class SyncService {
           },
         });
 
-        // Upsert Folio
+        // Upsert Folio (Now scoped to the specific portfolio for this profile)
         const folio = await prisma.folio.upsert({
           where: {
             number_assetId_portfolioId: {
               number: folioData.folio,
               assetId: asset.id,
-              portfolioId: portfolio.id,
+              portfolioId: currentPortfolio.id,
             },
           },
           update: {
             amc: folioData.amc,
-            pan: investor.pan,
+            pan: currentPan,
           },
           create: {
             number: folioData.folio,
             amc: folioData.amc,
-            pan: investor.pan,
+            pan: currentPan,
             assetId: asset.id,
-            portfolioId: portfolio.id,
+            portfolioId: currentPortfolio.id,
           },
         });
 
@@ -82,7 +91,7 @@ export class SyncService {
         for (const tx of transactions) {
           try {
             // Deduplication hash: Do NOT include trailing balance, as that changes between statements
-            const txString = `${portfolio.id}-${folioData.folio}-${schemeData.isin}-${tx.date}-${tx.type}-${tx.amount}-${tx.units}-${tx.nav}`;
+            const txString = `${currentPortfolio.id}-${folioData.folio}-${schemeData.isin}-${tx.date}-${tx.type}-${tx.amount}-${tx.units}-${tx.nav}`;
             const externalId = crypto.createHash('md5').update(txString).digest('hex');
             
             const cleanValue = (val: any) => {
@@ -182,6 +191,6 @@ export class SyncService {
       }
     }
 
-    return { status: 'success', portfolioId: portfolio.id };
+    return { status: 'success' };
   }
 }

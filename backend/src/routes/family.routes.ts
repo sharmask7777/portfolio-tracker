@@ -1,35 +1,41 @@
 import { Router, Request, Response } from 'express';
 import { FamilyService } from '../services/family.service';
+import { prisma } from '../services/db.service';
 
 const router = Router();
 
-router.post('/create', async (req: Request, res: Response) => {
-  try {
-    const { name, userId = 'mock-user-123' } = req.body;
-    const group = await FamilyService.createFamilyGroup(name, userId);
-    res.status(200).json(group);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/:id/add-member', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { email } = req.body;
-    const membership = await FamilyService.addMember(id as string, email);
-    res.status(200).json(membership);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get('/list', async (req: Request, res: Response) => {
+/**
+ * Lists all managed profiles for the current user.
+ */
+router.get('/profiles', async (req: Request, res: Response) => {
   try {
     const { userId = 'mock-user-123' } = req.query;
-    const families = await FamilyService.getUserFamilies(userId as string);
-    res.status(200).json(families);
+    const profiles = await FamilyService.getManagedProfiles(userId as string);
+    res.status(200).json(profiles);
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Renames a managed profile.
+ */
+router.patch('/profile/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, userId = 'mock-user-123' } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+
+    // Verify ownership and update
+    const updated = await FamilyService.updateManagedProfileName(userId as string, id, name);
+    res.status(200).json(updated);
+  } catch (error: any) {
+    if (error.message.includes('unauthorized') || error.message.includes('not found')) {
+      return res.status(403).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });

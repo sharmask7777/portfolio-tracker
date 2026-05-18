@@ -83,35 +83,46 @@ router.post('/manual-asset', async (req: Request, res: Response) => {
 
 router.get('/summary', async (req: Request, res: Response) => {
   try {
-    const { userId = 'mock-user-123', familyGroupId, taxSlab } = req.query;
+    const { userId = 'mock-user-123', familyGroupId, profileId, taxSlab } = req.query;
     const slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
 
     let portfolios: any[] = [];
 
     if (familyGroupId) {
       portfolios = await FamilyService.getFamilyPortfolios(familyGroupId as string);
+    } else if (profileId) {
+      // FINANCIAL INTELLIGENCE: Individual Member Filtering (REQ-10.4, V3-FAM-03)
+      portfolios = await prisma.portfolio.findMany({
+        where: { userId: userId as string, managedProfileId: profileId as string },
+        include: {
+          folios: {
+            include: {
+              asset: true,
+              transactions: { orderBy: { date: 'asc' } },
+            },
+          },
+        },
+      });
     } else {
-      const singlePortfolio = await prisma.portfolio.findFirst({
+      // Consolidated Family View
+      portfolios = await prisma.portfolio.findMany({
         where: { userId: userId as string },
         include: {
           folios: {
             include: {
               asset: true,
-              transactions: {
-                orderBy: { date: 'asc' },
-              },
+              transactions: { orderBy: { date: 'asc' } },
             },
           },
         },
       });
-      if (singlePortfolio) portfolios = [singlePortfolio];
     }
 
     if (portfolios.length === 0) {
-      return res.status(404).json({ error: 'Portfolio not found' });
+      return res.status(200).json({ folios: [], metrics: { totalInvested: 0, totalValue: 0, totalGain: 0, xirr: 0, postTaxXirr: 0 } });
     }
 
-    // Aggregate all folios across all portfolios
+    // Aggregate all folios across all selected portfolios
     const allFolios = portfolios.flatMap(p => p.folios);
 
     // Enrich with performance metrics
@@ -128,7 +139,6 @@ router.get('/summary', async (req: Request, res: Response) => {
           if (liveNav > 0) currentPrice = liveNav;
         }
         
-        // If the fund is closed (zero units), current value is always 0
         metrics = PerformanceService.getMetrics(folio.transactions, currentPrice, {
           currentUnitsOverride: currentUnits,
           taxSlab: slabValue,
@@ -136,10 +146,8 @@ router.get('/summary', async (req: Request, res: Response) => {
           assetName: folio.asset.name,
         });
         
-        // Ensure closed positions have zero current value
         if (currentUnits <= 0) {
           metrics.currentValue = 0;
-          // Note: totalGain will reflect the realized profit/loss
         }
       } else {
         // Alternative Assets
@@ -155,8 +163,9 @@ router.get('/summary', async (req: Request, res: Response) => {
           absoluteReturn: folio.transactions[folio.transactions.length - 1]?.amount ? (altMetrics.currentValue - folio.transactions[folio.transactions.length - 1].amount) / folio.transactions[folio.transactions.length - 1].amount : 0,
           xirr: altMetrics.annualRate,
           cagr: altMetrics.annualRate,
-          postTaxXirr: altMetrics.annualRate, // Simple proxy for Alts for now
+          postTaxXirr: altMetrics.annualRate,
           postTaxAbsoluteReturn: folio.transactions[folio.transactions.length - 1]?.amount ? (altMetrics.currentValue - folio.transactions[folio.transactions.length - 1].amount) / folio.transactions[folio.transactions.length - 1].amount : 0,
+          estimatedTax: 0,
         };
         currentPrice = altMetrics.currentValue / (currentUnits || 1);
       }
@@ -168,32 +177,33 @@ router.get('/summary', async (req: Request, res: Response) => {
     const totalValue = enrichedFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
     const totalEstimatedTax = enrichedFolios.reduce((acc, f) => acc + (f.metrics.estimatedTax || 0), 0);
 
-    // Filter for active folios or those with significant remaining invested amount (realized gains/losses)
     const activeFolios = enrichedFolios.filter(f => Math.abs(f.metrics.currentValue) > 0.01 || Math.abs(f.metrics.investedAmount) > 0.01);
 
     const allTransactions = allFolios.flatMap((f) => 
-      f.transactions.map((tx: any) => ({
-        amount: tx.type.toLowerCase().includes('buy') || 
-                tx.type.toLowerCase().includes('purchase') ||
-                tx.type.toLowerCase().includes('sip') ||
-                tx.type.toLowerCase().includes('switch_in') ||
-                tx.type.toLowerCase().includes('reinvestment')
-                ? -Math.abs(tx.amount) : Math.abs(tx.amount),
-        date: new Date(tx.date),
-      }))
+      f.transactions.map((tx: any) => {
+        const type = tx.type.toLowerCase();
+        const isOutflow = type.includes('buy') || type.includes('purchase') || type.includes('sip') || type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance');
+        return {
+          amount: isOutflow ? -Math.abs(tx.amount) : Math.abs(tx.amount),
+          date: new Date(tx.date),
+        };
+      })
     );
 
     const overallXirr = PerformanceService.calculateXIRR(allTransactions, totalValue);
+    
+    // D-05: Post-Tax Total & XIRR
     const postTaxTotalValue = Math.max(0, totalValue - totalEstimatedTax);
     const overallPostTaxXirr = PerformanceService.calculateXIRR(allTransactions, postTaxTotalValue);
 
     res.status(200).json({
-      id: familyGroupId || portfolios[0].id,
-      name: familyGroupId ? 'Family Portfolio' : portfolios[0].name,
+      id: profileId || familyGroupId || 'consolidated',
+      name: profileId ? 'Member View' : familyGroupId ? 'Family Portfolio' : 'Consolidated Portfolio',
       folios: activeFolios,
       metrics: {
         totalInvested,
         totalValue,
+        postTaxTotalValue,
         totalGain: totalValue - totalInvested,
         absoluteReturn: totalInvested > 0 ? (totalValue - totalInvested) / totalInvested : 0,
         xirr: overallXirr,
