@@ -77,6 +77,10 @@ We prioritize mathematical integrity and system stability through a multi-layere
 
 - **Unit & Property-Based Testing (PBT):** Rigorous math validation using `fast-check`. Run via `npm test --prefix backend`.
 - **E2E Testing:** Playwright-based frontend flows. Run via `npx playwright test` in the `frontend/` folder.
+- **Skills:**
+    - `quality-audit`: Mathematical and functional integrity checks.
+    - `pdd`: Architectural planning and design.
+    - `code-assist`: TDD-based implementation guidance.
 
 ## 📖 Maintenance
 
