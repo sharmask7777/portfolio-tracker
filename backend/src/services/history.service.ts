@@ -138,4 +138,82 @@ export class HistoryService {
       skipDuplicates: true,
     });
   }
+
+  /**
+   * Calculates portfolio statistics (ATH, Max Invested, Yearly peaks)
+   */
+  public static async getPortfolioStats(portfolioIds: string[]) {
+    const historyData = await prisma.portfolioHistory.findMany({
+      where: {
+        portfolioId: { in: portfolioIds },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    if (historyData.length === 0) {
+      return {
+        ath: { value: 0, date: null },
+        maxInvested: { value: 0, date: null },
+        yearly: [],
+      };
+    }
+
+    // Aggregate by date
+    const aggregated = historyData.reduce((acc: any, curr) => {
+      const dateKey = curr.date.toISOString().split('T')[0];
+      if (!acc[dateKey]) {
+        acc[dateKey] = { date: curr.date, value: 0, investedAmount: 0 };
+      }
+      acc[dateKey].value += curr.value;
+      acc[dateKey].investedAmount += curr.investedAmount;
+      return acc;
+    }, {});
+
+    const dailyPoints = Object.values(aggregated) as { date: Date; value: number; investedAmount: number }[];
+
+    let ath = { value: 0, date: null as Date | null };
+    let maxInvested = { value: 0, date: null as Date | null };
+    const yearlyMap = new Map<number, { year: number; ath: { value: number; date: Date | null }; maxInvested: { value: number; date: Date | null } }>();
+
+    const currentYear = new Date().getFullYear();
+    const last5Years = Array.from({ length: 5 }, (_, i) => currentYear - i);
+
+    dailyPoints.forEach(point => {
+      // Global ATH
+      if (point.value > ath.value) {
+        ath = { value: point.value, date: point.date };
+      }
+
+      // Global Max Invested
+      if (point.investedAmount > maxInvested.value) {
+        maxInvested = { value: point.investedAmount, date: point.date };
+      }
+
+      // Yearly breakdowns
+      const year = point.date.getFullYear();
+      if (last5Years.includes(year)) {
+        if (!yearlyMap.has(year)) {
+          yearlyMap.set(year, {
+            year,
+            ath: { value: 0, date: null },
+            maxInvested: { value: 0, date: null },
+          });
+        }
+
+        const yearStats = yearlyMap.get(year)!;
+        if (point.value > yearStats.ath.value) {
+          yearStats.ath = { value: point.value, date: point.date };
+        }
+        if (point.investedAmount > yearStats.maxInvested.value) {
+          yearStats.maxInvested = { value: point.investedAmount, date: point.date };
+        }
+      }
+    });
+
+    return {
+      ath,
+      maxInvested,
+      yearly: Array.from(yearlyMap.values()).sort((a, b) => b.year - a.year),
+    };
+  }
 }
