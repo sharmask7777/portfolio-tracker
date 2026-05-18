@@ -216,14 +216,22 @@ router.get('/summary', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id/overlap', async (req: Request, res: Response) => {
-  // Not used in this turn, but good for context
+router.get('/:id/exposures', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { userId = 'mock-user-123' } = req.query;
+    const exposures = await OverlapService.getPortfolioExposures(id as string, userId as string);
+    res.status(200).json(exposures);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 router.get('/:id/xray', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const xrayData = await XRayService.getXRayData(id as string);
+    const { userId = 'mock-user-123' } = req.query;
+    const xrayData = await XRayService.getXRayData(id as string, userId as string);
     res.status(200).json(xrayData);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -233,23 +241,60 @@ router.get('/:id/xray', async (req: Request, res: Response) => {
 router.get('/:id/tax-summary', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const portfolio = await prisma.portfolio.findUnique({
-      where: { id: id as string },
-      include: {
-        folios: {
-          include: {
-            asset: true,
-            transactions: { orderBy: { date: 'asc' } },
+    const { taxSlab, userId = 'mock-user-123' } = req.query;
+    const slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
+
+    let portfolios: any[] = [];
+
+    if (id === 'consolidated') {
+      portfolios = await prisma.portfolio.findMany({
+        where: { userId: userId as string },
+        include: {
+          folios: {
+            include: {
+              asset: true,
+              transactions: { orderBy: { date: 'asc' } },
+            },
           },
         },
-      },
-    });
+      });
+    } else {
+      const p = await prisma.portfolio.findUnique({
+        where: { id },
+        include: {
+          folios: {
+            include: {
+              asset: true,
+              transactions: { orderBy: { date: 'asc' } },
+            },
+          },
+        },
+      });
 
-    if (!portfolio) {
+      if (p) {
+        portfolios = [p];
+      } else {
+        portfolios = await prisma.portfolio.findMany({
+          where: { managedProfileId: id },
+          include: {
+            folios: {
+              include: {
+                asset: true,
+                transactions: { orderBy: { date: 'asc' } },
+              },
+            },
+          },
+        });
+      }
+    }
+
+    if (portfolios.length === 0) {
       return res.status(404).json({ error: 'Portfolio not found' });
     }
 
-    const summaries = await Promise.all(portfolio.folios.map(async (folio) => {
+    const allFolios = portfolios.flatMap(p => p.folios);
+
+    const summaries = await Promise.all(allFolios.map(async (folio) => {
       const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
       const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
       const currentPrice = liveNav > 0 ? liveNav : lastNav;
@@ -258,25 +303,27 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
         folio.asset.name,
         folio.asset.type,
         folio.transactions,
-        currentPrice
+        currentPrice,
+        slabValue
       );
     }));
 
     // Aggregate overall
     const aggregate = {
-      realized: { stcg: 0, ltcg: 0, total: 0 },
-      unrealized: { stcg: 0, ltcg: 0, total: 0 },
-      details: summaries.flatMap(s => s.realized.details),
+      realized: {
+        stcg: summaries.reduce((acc, s) => acc + s.realized.stcg, 0),
+        ltcg: summaries.reduce((acc, s) => acc + s.realized.ltcg, 0),
+        slab: summaries.reduce((acc, s) => acc + s.realized.slab, 0),
+        total: summaries.reduce((acc, s) => acc + s.realized.total, 0),
+      },
+      unrealized: {
+        stcg: summaries.reduce((acc, s) => acc + s.unrealized.stcg, 0),
+        ltcg: summaries.reduce((acc, s) => acc + s.unrealized.ltcg, 0),
+        slab: summaries.reduce((acc, s) => acc + s.unrealized.slab, 0),
+        total: summaries.reduce((acc, s) => acc + s.unrealized.total, 0),
+      },
+      details: summaries.flatMap(s => s.realized.details).sort((a, b) => new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime()),
     };
-
-    for (const s of summaries) {
-      aggregate.realized.stcg += s.realized.stcg;
-      aggregate.realized.ltcg += s.realized.ltcg;
-      aggregate.realized.total += s.realized.total;
-      aggregate.unrealized.stcg += s.unrealized.stcg;
-      aggregate.unrealized.ltcg += s.unrealized.ltcg;
-      aggregate.unrealized.total += s.unrealized.total;
-    }
 
     res.status(200).json(aggregate);
   } catch (error: any) {
@@ -284,24 +331,35 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id/exposures', async (req: Request, res: Response) => {
+router.delete('/purge', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const exposures = await OverlapService.getPortfolioExposures(id as string);
-    res.status(200).json(exposures);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    const { userId = 'mock-user-123' } = req.query;
 
-router.get('/compare-overlap', async (req: Request, res: Response) => {
-  try {
-    const { isinA, isinB } = req.query;
-    if (!isinA || !isinB) {
-      return res.status(400).json({ error: 'isinA and isinB are required' });
-    }
-    const overlap = await OverlapService.getFundOverlap(isinA as string, isinB as string);
-    res.status(200).json(overlap);
+    // Use a transaction to ensure all-or-nothing deletion
+    await prisma.$transaction([
+      // 1. Delete all goals associated with portfolios of this user
+      prisma.goal.deleteMany({
+        where: { portfolio: { userId: userId as string } }
+      }),
+      // 2. Delete all transactions associated with folios of this user
+      prisma.transaction.deleteMany({
+        where: { folio: { portfolio: { userId: userId as string } } }
+      }),
+      // 3. Delete all folios associated with portfolios of this user
+      prisma.folio.deleteMany({
+        where: { portfolio: { userId: userId as string } }
+      }),
+      // 4. Delete all portfolios for this user
+      prisma.portfolio.deleteMany({
+        where: { userId: userId as string }
+      }),
+      // 5. Delete all managed profiles for this user
+      prisma.managedProfile.deleteMany({
+        where: { userId: userId as string }
+      }),
+    ]);
+
+    res.status(200).json({ status: 'success', message: 'All user data has been purged.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

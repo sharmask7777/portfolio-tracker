@@ -38,23 +38,53 @@ export interface XRayData {
 }
 
 export class XRayService {
-  public static async getXRayData(portfolioId: string): Promise<XRayData> {
-    const portfolio = await prisma.portfolio.findUnique({
-      where: { id: portfolioId },
-      include: {
-        folios: {
-          include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
-        },
-      },
-    });
+  public static async getXRayData(portfolioId: string, userId: string = 'mock-user-123'): Promise<XRayData> {
+    let portfolios: any[] = [];
 
-    if (!portfolio) throw new Error('Portfolio not found');
+    if (portfolioId === 'consolidated') {
+      portfolios = await prisma.portfolio.findMany({
+        where: { userId },
+        include: {
+          folios: {
+            include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
+          },
+        },
+      });
+    } else {
+      // Try fetching as portfolio ID first
+      const p = await prisma.portfolio.findUnique({
+        where: { id: portfolioId },
+        include: {
+          folios: {
+            include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
+          },
+        },
+      });
+
+      if (p) {
+        portfolios = [p];
+      } else {
+        // Fallback: Check if it's a profile ID
+        portfolios = await prisma.portfolio.findMany({
+          where: { managedProfileId: portfolioId },
+          include: {
+            folios: {
+              include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
+            },
+          },
+        });
+      }
+    }
+
+    if (portfolios.length === 0) throw new Error('Portfolio/Profile not found');
+
+    const allFolios = portfolios.flatMap(p => p.folios);
 
     let totalPortfolioValue = 0;
     
     // 1. Calculate values for all folios in parallel
     const folioCalculations = await Promise.all(
-      portfolio.folios.map(async (folio) => {
+      allFolios.map(async (folio) => {
         const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
         if (currentUnits <= 0) return null;
 
@@ -110,9 +140,9 @@ export class XRayService {
         if (!data) {
           assetAllocation.equity += 100 * weightFactor;
           if (isArbitrage) {
-             exArbAssetAllocation.arbitrage += 100 * weightFactor;
+            exArbAssetAllocation.arbitrage += 100 * weightFactor;
           } else {
-             exArbAssetAllocation.equity += 100 * weightFactor;
+            exArbAssetAllocation.equity += 100 * weightFactor;
           }
           continue;
         }
@@ -139,25 +169,33 @@ export class XRayService {
             exArbMarketCap.mid += parseFloat(mc.midCap || '0') * weightFactor;
             exArbMarketCap.small += parseFloat(mc.smallCap || mc.tiny || '0') * weightFactor;
           }
+        } else if (fv.type === 'STOCK') {
+          // Default individual stocks to Large Cap if no data
+          marketCap.large += 100 * weightFactor;
+          exArbMarketCap.large += 100 * weightFactor;
         }
 
         if (data.portfolio?.assetAllocation) {
           const aa = data.portfolio.assetAllocation;
-          assetAllocation.equity += parseFloat(aa.equity || aa.equityAllocation || '0') * weightFactor;
-          assetAllocation.debt += parseFloat(aa.debt || aa.debtAllocation || '0') * weightFactor;
-          assetAllocation.cash += parseFloat(aa.cash || aa.cashAllocation || '0') * weightFactor;
-          assetAllocation.other += parseFloat(aa.other || aa.otherAllocation || '0') * weightFactor;
+          assetAllocation.equity += Math.max(0, parseFloat(aa.equity || aa.equityAllocation || '0')) * weightFactor;
+          assetAllocation.debt += Math.max(0, parseFloat(aa.debt || aa.debtAllocation || '0')) * weightFactor;
+          assetAllocation.cash += Math.max(0, parseFloat(aa.cash || aa.cashAllocation || '0')) * weightFactor;
+          assetAllocation.other += Math.max(0, parseFloat(aa.other || aa.otherAllocation || '0')) * weightFactor;
 
           if (isArbitrage) {
-            exArbAssetAllocation.arbitrage += 100 * weightFactor; // Treating it as a black box 100% arbitrage
+            exArbAssetAllocation.arbitrage += 100 * weightFactor;
           } else {
-            exArbAssetAllocation.equity += parseFloat(aa.equity || aa.equityAllocation || '0') * weightFactor;
-            exArbAssetAllocation.debt += parseFloat(aa.debt || aa.debtAllocation || '0') * weightFactor;
-            exArbAssetAllocation.cash += parseFloat(aa.cash || aa.cashAllocation || '0') * weightFactor;
-            exArbAssetAllocation.other += parseFloat(aa.other || aa.otherAllocation || '0') * weightFactor;
+            exArbAssetAllocation.equity += Math.max(0, parseFloat(aa.equity || aa.equityAllocation || '0')) * weightFactor;
+            exArbAssetAllocation.debt += Math.max(0, parseFloat(aa.debt || aa.debtAllocation || '0')) * weightFactor;
+            exArbAssetAllocation.cash += Math.max(0, parseFloat(aa.cash || aa.cashAllocation || '0')) * weightFactor;
+            exArbAssetAllocation.other += Math.max(0, parseFloat(aa.other || aa.otherAllocation || '0')) * weightFactor;
           }
+        } else if (fv.type === 'STOCK') {
+          assetAllocation.equity += 100 * weightFactor;
+          exArbAssetAllocation.equity += 100 * weightFactor;
         }
-      } else {
+      }
+ else {
         if (fv.type === AssetType.EPF || fv.type === AssetType.PPF || fv.type === AssetType.FIXED_DEPOSIT) {
           assetAllocation.debt += 100 * weightFactor;
           exArbAssetAllocation.debt += 100 * weightFactor;

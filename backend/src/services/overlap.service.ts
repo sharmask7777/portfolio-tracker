@@ -30,24 +30,51 @@ export class OverlapService {
   /**
    * Calculates aggregated stock exposures for a portfolio.
    */
-  public static async getPortfolioExposures(portfolioId: string): Promise<StockExposure[]> {
-    const portfolio = await prisma.portfolio.findUnique({
-      where: { id: portfolioId },
-      include: {
-        folios: {
-          include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
+  public static async getPortfolioExposures(portfolioId: string, userId: string = 'mock-user-123'): Promise<StockExposure[]> {
+    let portfolios: any[] = [];
+
+    if (portfolioId === 'consolidated') {
+      portfolios = await prisma.portfolio.findMany({
+        where: { userId },
+        include: {
+          folios: {
+            include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
+          },
         },
-      },
-    });
+      });
+    } else {
+      const p = await prisma.portfolio.findUnique({
+        where: { id: portfolioId },
+        include: {
+          folios: {
+            include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
+          },
+        },
+      });
 
-    if (!portfolio) throw new Error('Portfolio not found');
+      if (p) {
+        portfolios = [p];
+      } else {
+        portfolios = await prisma.portfolio.findMany({
+          where: { managedProfileId: portfolioId },
+          include: {
+            folios: {
+              include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
+            },
+          },
+        });
+      }
+    }
 
+    if (portfolios.length === 0) throw new Error('Portfolio/Profile not found');
+
+    const allFolios = portfolios.flatMap(p => p.folios);
     const stockMap: Record<string, StockExposure> = {};
     let totalPortfolioValue = 0;
 
     // 1. Calculate folio values and filter out closed positions in parallel
     const activeFolioData = await Promise.all(
-      portfolio.folios.map(async (folio) => {
+      allFolios.map(async (folio) => {
         const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
         if (currentUnits <= 0) return null;
 
@@ -65,6 +92,9 @@ export class OverlapService {
     // 2. Fetch all holdings in parallel
     const holdingsResults = await Promise.all(
       validFolios.map(async ({ folio, folioValue }) => {
+        if (folio.asset.type === 'STOCK') {
+           return { folio, folioValue, data: null };
+        }
         if (!folio.asset.isin) return null;
         const data = await MarketDataService.getHoldings(folio.asset.isin);
         return { folio, folioValue, data };
@@ -73,79 +103,102 @@ export class OverlapService {
 
     // 3. Aggregate results
     for (const result of holdingsResults) {
-      if (!result || !result.data || !result.data.holdings) continue;
-      const { folio, folioValue, data } = result;
+      const { folio, folioValue, data } = result || {};
+      if (!folio) continue;
 
-      for (const holding of data.holdings) {
-        const weight = parseFloat(holding.weightage) / 100;
-        const absoluteValue = folioValue * weight;
+      if (folio.asset.type === 'STOCK') {
+        // Individual Stock
+        const name = folio.asset.name;
+        const sector = 'Other'; 
+        const absoluteValue = folioValue || 0;
 
-        if (!stockMap[holding.name]) {
-          stockMap[holding.name] = {
-            name: holding.name,
-            sector: holding.sector,
+        if (!stockMap[name]) {
+          stockMap[name] = {
+            name,
+            sector,
             absoluteValue: 0,
             percentage: 0,
             contributions: [],
           };
         }
 
-        stockMap[holding.name].absoluteValue += absoluteValue;
-        stockMap[holding.name].contributions.push({
-          schemeName: folio.asset.name,
+        stockMap[name].absoluteValue += absoluteValue;
+        stockMap[name].contributions.push({
+          schemeName: 'Direct Holding',
           value: absoluteValue,
-          weight: weight * 100,
+          weight: 100,
         });
+      } else if (data && data.holdings) {
+        // Mutual Fund Holdings
+        for (const holding of data.holdings) {
+          const weight = parseFloat(holding.weightage) / 100;
+          const absoluteValue = (folioValue || 0) * weight;
+
+          if (!stockMap[holding.name]) {
+            stockMap[holding.name] = {
+              name: holding.name,
+              sector: holding.sector || 'Other',
+              absoluteValue: 0,
+              percentage: 0,
+              contributions: [],
+            };
+          }
+
+          stockMap[holding.name].absoluteValue += absoluteValue;
+          stockMap[holding.name].contributions.push({
+            schemeName: folio.asset.name,
+            value: absoluteValue,
+            weight: weight * 100,
+          });
+        }
       }
     }
 
     // Calculate final percentages
     const exposures = Object.values(stockMap).map((exposure) => ({
       ...exposure,
-      percentage: totalPortfolioValue > 0 ? (exposure.absoluteValue / totalPortfolioValue) : 0,
+      percentage: exposure.absoluteValue / (totalPortfolioValue || 1),
     }));
 
-    // Sort by absolute value descending
     return exposures.sort((a, b) => b.absoluteValue - a.absoluteValue);
   }
 
   /**
-   * Calculates overlap between two mutual funds.
+   * Calculates intersection between two specific funds.
    */
-  public static async getFundOverlap(isinA: string, isinB: string): Promise<FundOverlap | null> {
-    const [holdingsA, holdingsB] = await Promise.all([
+  public static async getFundOverlap(isinA: string, isinB: string): Promise<FundOverlap> {
+    const [dataA, dataB] = await Promise.all([
       MarketDataService.getHoldings(isinA),
       MarketDataService.getHoldings(isinB),
     ]);
 
-    if (!holdingsA || !holdingsB || !holdingsA.holdings || !holdingsB.holdings) return null;
-
-    const commonStocks = [];
-    let overlapPercentage = 0;
-
-    const mapB: Record<string, number> = {};
-    for (const h of holdingsB.holdings) {
-      mapB[h.name] = parseFloat(h.weightage);
+    if (!dataA || !dataB || !dataA.holdings || !dataB.holdings) {
+      throw new Error('Holdings data not available for one or both funds');
     }
 
-    for (const hA of holdingsA.holdings) {
-      const weightA = parseFloat(hA.weightage);
-      const weightB = mapB[hA.name];
+    const mapA: Record<string, number> = {};
+    dataA.holdings.forEach((h: any) => (mapA[h.name] = parseFloat(h.weightage)));
 
-      if (weightB) {
-        const minWeight = Math.min(weightA, weightB);
-        overlapPercentage += minWeight;
+    const commonStocks: any[] = [];
+    let overlapPercentage = 0;
+
+    dataB.holdings.forEach((hB: any) => {
+      if (mapA[hB.name]) {
+        const weightA = mapA[hB.name];
+        const weightB = parseFloat(hB.weightage);
+        const commonWeight = Math.min(weightA, weightB);
+        overlapPercentage += commonWeight;
         commonStocks.push({
-          name: hA.name,
+          name: hB.name,
           weightA,
           weightB,
         });
       }
-    }
+    });
 
     return {
-      fundA: holdingsA.schemeName,
-      fundB: holdingsB.schemeName,
+      fundA: dataA.schemeName,
+      fundB: dataB.schemeName,
       overlapPercentage,
       commonStocks: commonStocks.sort((a, b) => Math.max(b.weightA, b.weightB) - Math.max(a.weightA, a.weightB)),
     };

@@ -35,10 +35,7 @@ import './App.css';
 import { FamilySelector } from './components/Family/FamilySelector';
 import { StatsGrid } from './components/Dashboard/StatsGrid';
 import { X } from 'lucide-react';
-
-const API_BASE = 'http://localhost:3001/api/portfolio';
-const API_TAX = 'http://localhost:3001/api/tax';
-const API_FAMILY = 'http://localhost:3001/api/family';
+import { API_ENDPOINTS, API_CONFIG } from './config';
 
 function App() {
   const { theme, toggleTheme, performanceMode, setPerformanceMode, taxSlab, setTaxSlab } = useSettings();
@@ -70,39 +67,41 @@ function App() {
         setIsRefetching(true);
       }
       const [summaryRes, profilesRes] = await Promise.all([
-        axios.get(`${API_BASE}/summary`, {
+        axios.get(`${API_ENDPOINTS.PORTFOLIO}/summary`, {
           params: {
-            userId: 'mock-user-123',
+            userId: API_CONFIG.MOCK_USER_ID,
             familyGroupId: selectedFamilyId,
             profileId: selectedProfileId,
             taxSlab: taxSlab
           }
         }),
-        axios.get(`${API_FAMILY}/profiles`, {
-          params: { userId: 'mock-user-123' }
+        axios.get(`${API_ENDPOINTS.FAMILY}/profiles`, {
+          params: { userId: API_CONFIG.MOCK_USER_ID }
         })
       ]);
       
       setPortfolio(summaryRes.data);
       setProfiles(profilesRes.data);
       
-      if (summaryRes.data.id && summaryRes.data.id !== 'consolidated') {
+      if (summaryRes.data.id) {
         const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.all([
-          axios.get(`${API_BASE}/${summaryRes.data.id}/xray`),
-          axios.get(`${API_BASE}/${summaryRes.data.id}/exposures`),
-          axios.get(`${API_BASE}/${summaryRes.data.id}/tax-summary`),
-          axios.get(`${API_TAX}/harvesting-opportunities`),
+          axios.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/xray`, {
+            params: { userId: API_CONFIG.MOCK_USER_ID }
+          }),
+          axios.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/exposures`, {
+            params: { userId: API_CONFIG.MOCK_USER_ID }
+          }),
+          axios.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/tax-summary`, {
+            params: { taxSlab, userId: API_CONFIG.MOCK_USER_ID }
+          }),
+          axios.get(`${API_ENDPOINTS.TAX}/harvesting-opportunities`, {
+            params: { scopeId: summaryRes.data.id, userId: API_CONFIG.MOCK_USER_ID }
+          }),
         ]);
         setXRayData(xrayRes.data);
         setExposures(exposuresRes.data);
         setTaxSummary(taxRes.data);
         setHarvesting(harvestingRes.data);
-      } else {
-        // Consolidated X-Ray/Exposures logic can be complex, skipping for now
-        setXRayData(null);
-        setExposures([]);
-        setTaxSummary(null);
-        setHarvesting(null);
       }
     } catch (err) {
       console.error('Failed to fetch data:', err);
@@ -119,15 +118,43 @@ function App() {
   const handleRename = async () => {
     if (!renamingProfile || !newName) return;
     try {
-      await axios.patch(`${API_FAMILY}/profile/${renamingProfile.id}`, {
+      await axios.patch(`${API_ENDPOINTS.FAMILY}/profile/${renamingProfile.id}`, {
         name: newName,
-        userId: 'mock-user-123'
+        userId: API_CONFIG.MOCK_USER_ID
       });
       setRenamingProfile(null);
       setNewName('');
       fetchSummary();
     } catch (error) {
       console.error('Error renaming profile:', error);
+    }
+  };
+
+  const handlePurge = async () => {
+    if (!window.confirm('⚠️ CRITICAL ACTION: This will permanently delete ALL portfolios, transactions, goals, and family members. This cannot be undone. Proceed?')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await axios.delete(`${API_ENDPOINTS.PORTFOLIO}/purge`, {
+        params: { userId: API_CONFIG.MOCK_USER_ID }
+      });
+      // Reset all state to clean environment
+      setPortfolio(null);
+      setProfiles([]);
+      setXRayData(null);
+      setExposures([]);
+      setTaxSummary(null);
+      setHarvesting(null);
+      setSelectedProfileId(null);
+      setSelectedFamilyId(null);
+      alert('Environment has been reset successfully.');
+    } catch (error) {
+      console.error('Failed to purge data:', error);
+      alert('Failed to clear data.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -141,8 +168,8 @@ function App() {
 
     try {
       setUploading(true);
-      await axios.post(`${API_BASE}/upload`, formData, {
-        params: { userId: 'mock-user-123' }
+      await axios.post(`${API_ENDPOINTS.PORTFOLIO}/upload`, formData, {
+        params: { userId: API_CONFIG.MOCK_USER_ID }
       });
       setShowUpload(false);
       setPassword('');
@@ -214,8 +241,12 @@ function App() {
           <button onClick={toggleTheme} className="theme-toggle">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
-          <button className="btn" style={{ marginLeft: '0.5rem' }} onClick={() => setPortfolio(null)}>
-            Logout
+          <button 
+            className="btn btn-danger" 
+            style={{ marginLeft: '0.5rem', backgroundColor: 'var(--danger-color)', color: 'white' }} 
+            onClick={handlePurge}
+          >
+            Purge All Data
           </button>
         </div>
       </header>

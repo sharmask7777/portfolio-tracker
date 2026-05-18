@@ -44,12 +44,48 @@ export class GoalService {
   }
 
   /**
-   * Lists all goals for a portfolio.
+   * Lists all goals for a portfolio/profile with progress metrics.
    */
-  public static async listGoals(portfolioId: string) {
-    return prisma.goal.findMany({
-      where: { portfolioId },
-      orderBy: { targetDate: 'asc' },
+  public static async listGoals(portfolioId: string, currentPortfolioValue: number, userId: string = 'mock-user-123') {
+    let goals: any[] = [];
+
+    if (portfolioId === 'consolidated') {
+       goals = await prisma.goal.findMany({
+         where: { portfolio: { userId } },
+         orderBy: { targetDate: 'asc' },
+       });
+    } else {
+      const p = await prisma.portfolio.findUnique({ where: { id: portfolioId } });
+      if (p) {
+        goals = await prisma.goal.findMany({
+          where: { portfolioId },
+          orderBy: { targetDate: 'asc' },
+        });
+      } else {
+        // Assume profile ID
+        goals = await prisma.goal.findMany({
+          where: { portfolio: { managedProfileId: portfolioId } },
+          orderBy: { targetDate: 'asc' },
+        });
+      }
+    }
+
+    return goals.map(goal => {
+      const progressPercentage = goal.targetAmount > 0 ? (currentPortfolioValue / goal.targetAmount) : 0;
+      const shortfall = Math.max(0, goal.targetAmount - currentPortfolioValue);
+      
+      const diffTime = goal.targetDate.getTime() - new Date().getTime();
+      const remainingDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      return {
+        ...goal,
+        metrics: {
+          currentValue: currentPortfolioValue,
+          progressPercentage,
+          shortfall,
+          remainingDays,
+        }
+      };
     });
   }
 }

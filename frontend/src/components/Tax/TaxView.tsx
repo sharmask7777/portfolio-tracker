@@ -47,9 +47,17 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
     return sellDate >= dates.start && sellDate <= dates.end;
   });
 
-  const realizedLTCG = filteredDetails.filter((g: any) => g.taxType === 'LTCG').reduce((acc: number, g: any) => acc + g.gain, 0);
+  const realizedLTCG = filteredDetails.filter((g: any) => g.taxType === 'LTCG' && !g.isGrandfathered).reduce((acc: number, g: any) => acc + g.gain, 0);
   const realizedSTCG = filteredDetails.filter((g: any) => g.taxType === 'STCG').reduce((acc: number, g: any) => acc + g.gain, 0);
   const realizedSlab = filteredDetails.filter((g: any) => g.taxType === 'SLAB').reduce((acc: number, g: any) => acc + g.gain, 0);
+  
+  // Separate Grandfathered Equity (Pre-2018) and Grandfathered Debt (Pre-2023)
+  // Note: Backend currently sets isGrandfathered for both
+  const realizedGrandfatheredDebt = filteredDetails.filter((g: any) => g.isGrandfathered && g.taxType === 'LTCG' && g.taxRate === 0.20).reduce((acc: number, g: any) => acc + g.gain, 0);
+  const realizedGrandfatheredEquity = filteredDetails.filter((g: any) => g.isGrandfathered && g.taxType === 'LTCG' && g.taxRate === 0.10).reduce((acc: number, g: any) => acc + g.gain, 0);
+
+  // Total Equity LTCG includes both standard and grandfathered
+  const totalLTCGEquity = realizedLTCG + realizedGrandfatheredEquity;
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -168,8 +176,8 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
           <tbody>
             <tr>
               <td><span className="badge badge-lt">LTCG (Equity)</span></td>
-              <td>{formatCurrency(realizedLTCG)}</td>
-              <td>{formatCurrency(Math.max(0, (realizedLTCG - ltcgLimit) * 0.125))}</td>
+              <td>{formatCurrency(totalLTCGEquity)}</td>
+              <td>{formatCurrency(Math.max(0, (totalLTCGEquity - ltcgLimit) * 0.125))}</td>
               <td style={{ fontSize: '0.75rem' }}>Exempt up to ₹{formatCurrency(ltcgLimit).replace('₹', '')}</td>
             </tr>
             <tr>
@@ -179,7 +187,13 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
               <td style={{ fontSize: '0.75rem' }}>Taxed at {selectedFY >= '2024-25' ? '20%' : '15%'}</td>
             </tr>
             <tr>
-              <td><span className="badge badge-slab">Debt / Others</span></td>
+              <td><span className="badge badge-slab" style={{ backgroundColor: 'var(--accent-color)', color: 'white' }}>Grandfathered Debt</span></td>
+              <td>{formatCurrency(realizedGrandfatheredDebt)}</td>
+              <td>{formatCurrency(Math.max(0, realizedGrandfatheredDebt * 0.20))}</td>
+              <td style={{ fontSize: '0.75rem' }}>20% with Indexation (Pre-2023)</td>
+            </tr>
+            <tr>
+              <td><span className="badge badge-slab">Other Slab Assets</span></td>
               <td>{formatCurrency(realizedSlab)}</td>
               <td>---</td>
               <td style={{ fontSize: '0.75rem' }}>Taxed at Slab Rate</td>
@@ -213,7 +227,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
                     <td>{g.units.toFixed(2)}</td>
                     <td>{new Date(g.sellDate).toLocaleDateString()}</td>
                     <td className={g.gain >= 0 ? 'positive' : 'negative'}>{formatCurrency(g.gain)}</td>
-                    <td><span className={`badge badge-${g.taxType.toLowerCase()}`}>{g.taxType}</span></td>
+                    <td><span className={`badge badge-${g.taxType.toLowerCase()}${g.isGrandfathered ? '-grandfathered' : ''}`}>{g.isGrandfathered ? 'GF-' : ''}{g.taxType}</span></td>
                   </tr>
                 ))
               )}

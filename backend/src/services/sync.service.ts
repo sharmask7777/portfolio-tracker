@@ -27,8 +27,8 @@ export class SyncService {
         const fundName = schemeData.scheme || schemeData.name;
         
         // FINANCIAL INTELLIGENCE: Multi-PAN Splitting (REQ-10.1, D-02)
-        // Extract PAN from scheme or folio level
-        const currentPan = schemeData.pan || folioData.pan || investor.pan || 'UNKNOWN';
+        // Extract PAN from scheme or folio level (Handling both casing from different parser versions)
+        const currentPan = schemeData.pan || schemeData.PAN || folioData.pan || folioData.PAN || investor.pan || investor.PAN || 'UNKNOWN';
         const profile = await FamilyService.getOrCreateManagedProfile(userId, currentPan);
         
         // Find or Create Portfolio for this profile
@@ -48,7 +48,7 @@ export class SyncService {
 
         // Upsert Asset
         const asset = await prisma.asset.upsert({
-          where: { isin: schemeData.isin || schemeData.amfi || fundName },
+          where: { isin: schemeData.isin || 'MISSING-' + (schemeData.amfi || fundName) },
           update: {
             name: fundName,
             amfiCode: schemeData.amfi,

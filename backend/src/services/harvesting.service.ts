@@ -24,28 +24,53 @@ export class HarvestingService {
   private static LTCG_EXEMPTION_LIMIT = 125000;
 
   /**
-   * Identifies LTCG harvesting opportunities for a user.
+   * Identifies LTCG harvesting opportunities for a portfolio/profile.
    */
-  public static async getHarvestingOpportunities(userId: string): Promise<HarvestingSummary> {
-    const portfolio = await prisma.portfolio.findFirst({
-      where: { userId },
-      include: {
-        folios: {
-          include: {
-            asset: true,
-            transactions: { orderBy: { date: 'asc' } },
+  public static async getHarvestingOpportunities(scopeId: string, userId: string = 'mock-user-123'): Promise<HarvestingSummary> {
+    let portfolios: any[] = [];
+
+    if (scopeId === 'consolidated') {
+      portfolios = await prisma.portfolio.findMany({
+        where: { userId },
+        include: {
+          folios: {
+            include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
           },
         },
-      },
-    });
+      });
+    } else {
+      const p = await prisma.portfolio.findUnique({
+        where: { id: scopeId },
+        include: {
+          folios: {
+            include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
+          },
+        },
+      });
 
-    if (!portfolio) throw new Error('Portfolio not found');
+      if (p) {
+        portfolios = [p];
+      } else {
+        portfolios = await prisma.portfolio.findMany({
+          where: { managedProfileId: scopeId },
+          include: {
+            folios: {
+              include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
+            },
+          },
+        });
+      }
+    }
+
+    if (portfolios.length === 0) throw new Error('Portfolio/Profile not found');
+
+    const allFolios = portfolios.flatMap(p => p.folios);
 
     // 1. Calculate Realized LTCG for current FY
     const fyDates = this.getCurrentFYDates();
     let realizedLTCG_FY = 0;
 
-    for (const folio of portfolio.folios) {
+    for (const folio of allFolios) {
       const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
       const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
       const currentPrice = liveNav > 0 ? liveNav : lastNav;
@@ -71,7 +96,7 @@ export class HarvestingService {
 
     // 2. Scan for Unrealized LTCG in Equity Holdings
     if (remainingExemption > 0) {
-      for (const folio of portfolio.folios) {
+      for (const folio of allFolios) {
         if (folio.asset.type !== AssetType.MUTUAL_FUND && folio.asset.type !== AssetType.STOCK) continue;
 
         const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
@@ -82,8 +107,12 @@ export class HarvestingService {
         const now = new Date();
 
         for (const lot of activeLots) {
-          const diffTime = Math.abs(now.getTime() - lot.date.getTime());
+          const diffTime = now.getTime() - lot.date.getTime();
           const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
+
+          // ELSS Lock-in: 3 years
+          const isELSS = TaxService.isELSS(folio.asset.name);
+          if (isELSS && diffYears < 3.0) continue;
 
           // Only LTCG lots (> 1 year) with gains
           if (diffYears >= 1.0 && currentPrice > lot.nav) {

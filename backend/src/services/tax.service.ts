@@ -1,4 +1,5 @@
 import { AssetType } from '@prisma/client';
+import { PortfolioUtils } from '../utils/portfolio.utils';
 
 export interface BuyLot {
   date: Date;
@@ -28,6 +29,7 @@ export interface TaxSummary {
   realized: {
     stcg: number;
     ltcg: number;
+    ltcgGrandfatheredDebt: number;
     slab: number;
     total: number;
     taxableSTCG: number;
@@ -37,6 +39,7 @@ export interface TaxSummary {
   unrealized: {
     stcg: number;
     ltcg: number;
+    ltcgGrandfatheredDebt: number;
     slab: number;
     total: number;
   };
@@ -52,11 +55,10 @@ export class TaxService {
     assetType: AssetType,
     transactions: any[],
     currentNav: number,
+    taxSlab: number = 0,
     grandfatherNav?: number,
   ): TaxSummary {
-    const sortedTxs = [...transactions].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-    );
+    const sortedTxs = PortfolioUtils.sortTransactions(transactions);
 
     const buyLots: BuyLot[] = [];
     const realizedGains: RealizedGain[] = [];
@@ -87,6 +89,7 @@ export class TaxService {
             soldFromLot,
             nav,
             date,
+            taxSlab,
             grandfatherNav
           ));
 
@@ -103,29 +106,37 @@ export class TaxService {
     const now = new Date();
     let uSTCG = 0;
     let uLTCG = 0;
+    let uLTCGDebt = 0;
     let uSlab = 0;
 
     for (const lot of buyLots) {
       if (lot.units <= 0) continue;
       const gain = (currentNav - lot.nav) * lot.units;
       const taxType = this.getTaxType(lot.date, now, assetType, assetName);
-      if (taxType === 'LTCG') uLTCG += gain;
+      const isEq = this.isEquity(assetType, assetName);
+
+      if (taxType === 'LTCG') {
+        if (isEq) uLTCG += gain;
+        else uLTCGDebt += gain;
+      }
       else if (taxType === 'STCG') uSTCG += gain;
       else uSlab += gain;
     }
 
+    const isEq = this.isEquity(assetType, assetName);
     const stcgRealized = realizedGains.filter(g => g.taxType === 'STCG').reduce((acc, g) => acc + g.gain, 0);
-    const ltcgRealized = realizedGains.filter(g => g.taxType === 'LTCG').reduce((acc, g) => acc + g.gain, 0);
+    const ltcgRealized = realizedGains.filter(g => g.taxType === 'LTCG' && isEq).reduce((acc, g) => acc + g.gain, 0);
+    const ltcgGrandfatheredDebtRealized = realizedGains.filter(g => g.taxType === 'LTCG' && !isEq).reduce((acc, g) => acc + g.gain, 0);
     const slabRealized = realizedGains.filter(g => g.taxType === 'SLAB').reduce((acc, g) => acc + g.gain, 0);
 
-    // Set-off Logic Implementation
+    // Set-off Logic Implementation (Standard Equity-focused for now, Debt LTCG is usually separate but let's keep it simple)
     let taxableSTCG = 0;
     let taxableLTCG = 0;
 
     const stcl = stcgRealized < 0 ? Math.abs(stcgRealized) : 0;
-    const ltcl = ltcgRealized < 0 ? Math.abs(ltcgRealized) : 0;
+    const ltcl = (ltcgRealized + ltcgGrandfatheredDebtRealized) < 0 ? Math.abs(ltcgRealized + ltcgGrandfatheredDebtRealized) : 0;
     const stcg = stcgRealized > 0 ? stcgRealized : 0;
-    const ltcg = ltcgRealized > 0 ? ltcgRealized : 0;
+    const ltcg = (ltcgRealized + ltcgGrandfatheredDebtRealized) > 0 ? (ltcgRealized + ltcgGrandfatheredDebtRealized) : 0;
 
     // 1. LTCL can ONLY set off LTCG
     let remainingLTCG = Math.max(0, ltcg - ltcl);
@@ -134,12 +145,10 @@ export class TaxService {
     let remainingSTCG = stcg;
     let remainingSTCL = stcl;
 
-    // First set off STCL against STCG
     const setOffST = Math.min(remainingSTCG, remainingSTCL);
     remainingSTCG -= setOffST;
     remainingSTCL -= setOffST;
 
-    // Then set off remaining STCL against remaining LTCG
     const setOffLT = Math.min(remainingLTCG, remainingSTCL);
     remainingLTCG -= setOffLT;
     remainingSTCL -= setOffLT;
@@ -151,8 +160,9 @@ export class TaxService {
       realized: {
         stcg: stcgRealized,
         ltcg: ltcgRealized,
+        ltcgGrandfatheredDebt: ltcgGrandfatheredDebtRealized,
         slab: slabRealized,
-        total: stcgRealized + ltcgRealized + slabRealized,
+        total: stcgRealized + ltcgRealized + ltcgGrandfatheredDebtRealized + slabRealized,
         taxableSTCG,
         taxableLTCG,
         details: realizedGains,
@@ -160,8 +170,9 @@ export class TaxService {
       unrealized: {
         stcg: uSTCG,
         ltcg: uLTCG,
+        ltcgGrandfatheredDebt: uLTCGDebt,
         slab: uSlab,
-        total: uSTCG + uLTCG + uSlab,
+        total: uSTCG + uLTCG + uLTCGDebt + uSlab,
       }
     };
   }
@@ -174,7 +185,7 @@ export class TaxService {
     taxSlab: number = 0,
     grandfatherNav?: number,
   ): number {
-    const summary = this.calculatePortfolioTax(assetName, assetType, transactions, currentNav, grandfatherNav);
+    const summary = this.calculatePortfolioTax(assetName, assetType, transactions, currentNav, taxSlab, grandfatherNav);
     const now = new Date();
     
     let estimatedTax = 0;
@@ -185,6 +196,10 @@ export class TaxService {
     
     if (summary.unrealized.ltcg > 0) {
       estimatedTax += summary.unrealized.ltcg * this.getTaxRate('LTCG', now, assetType, assetName, taxSlab);
+    }
+
+    if (summary.unrealized.ltcgGrandfatheredDebt > 0) {
+      estimatedTax += summary.unrealized.ltcgGrandfatheredDebt * this.getTaxRate('LTCG', now, assetType, assetName, taxSlab);
     }
     
     if (summary.unrealized.slab > 0) {
@@ -201,14 +216,19 @@ export class TaxService {
     unitsSold: number,
     sellNav: number,
     sellDate: Date,
+    taxSlab: number = 0,
     grandfatherNav?: number,
   ): RealizedGain {
     let effectiveBuyNav = lot.nav;
     let isGrandfathered = false;
+    const isEq = this.isEquity(assetType, assetName);
 
-    if (this.isEquity(assetType, assetName) && lot.date < this.GRANDFATHER_DATE && grandfatherNav) {
+    if (isEq && lot.date < this.GRANDFATHER_DATE && grandfatherNav) {
       isGrandfathered = true;
       effectiveBuyNav = Math.max(lot.nav, Math.min(grandfatherNav, sellNav));
+    } else if (!isEq && lot.date < this.DEBT_NEW_REGIME_DATE) {
+       // Debt grandfathered means purchased before April 1, 2023
+       isGrandfathered = true;
     }
 
     const gain = (sellNav - effectiveBuyNav) * unitsSold;
@@ -216,7 +236,7 @@ export class TaxService {
     const holdingPeriodDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
     const taxType = this.getTaxType(lot.date, sellDate, assetType, assetName);
-    const taxRate = this.getTaxRate(taxType, sellDate, assetType, assetName);
+    const taxRate = this.getTaxRate(taxType, sellDate, assetType, assetName, taxSlab);
 
     return {
       assetName,
@@ -238,9 +258,7 @@ export class TaxService {
    * Returns current holding lots for an asset.
    */
   public static getActiveBuyLots(transactions: any[]): BuyLot[] {
-    const sortedTxs = [...transactions].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-    );
+    const sortedTxs = PortfolioUtils.sortTransactions(transactions);
     const buyLots: BuyLot[] = [];
     for (const tx of sortedTxs) {
       const type = tx.type.toLowerCase();
@@ -300,6 +318,58 @@ export class TaxService {
     }
     // Debt LTCG pre-budget was 20% (with indexation)
     return taxType === 'LTCG' ? 0.20 : taxSlab;
+  }
+
+  public static isELSS(assetName: string): boolean {
+    const name = assetName.toLowerCase();
+    return name.includes('elss') || name.includes('tax saver') || name.includes('tax plan');
+  }
+
+  public static getLockedUnits(assetName: string, transactions: any[]): number {
+    if (!this.isELSS(assetName)) return 0;
+    
+    const activeLots = this.getActiveBuyLots(transactions);
+    const now = new Date();
+    let lockedUnits = 0;
+
+    for (const lot of activeLots) {
+      const diffTime = now.getTime() - lot.date.getTime();
+      const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
+      if (diffYears < 3.0) {
+        lockedUnits += lot.units;
+      }
+    }
+
+    return lockedUnits;
+  }
+
+  public static getExitLoad(
+    assetName: string,
+    assetType: AssetType,
+    buyDate: Date,
+    sellDate: Date,
+    value: number
+  ): number {
+    if (assetType !== AssetType.MUTUAL_FUND) return 0;
+
+    const name = assetName.toLowerCase();
+    const diffTime = Math.abs(sellDate.getTime() - buyDate.getTime());
+    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+    // Liquid/Overnight funds usually have 0 or very short (7 day) exit load
+    if (name.includes('liquid') || name.includes('overnight')) {
+      if (diffDays < 7 && name.includes('liquid')) return value * 0.00005; // Tiny tiered load for liquid
+      return 0;
+    }
+
+    // Standard Equity/Hybrid rule: 1% if sold before 1 year (365 days)
+    if (this.isEquity(assetType, assetName)) {
+      return diffDays < 365 ? value * 0.01 : 0;
+    }
+
+    // Default Debt rule: Many have 0 exit load or 0.25-0.5% for short periods. 
+    // We'll use 0.5% if < 90 days for general debt as a safe conservative estimate.
+    return diffDays < 90 ? value * 0.005 : 0;
   }
 
   private static isEquity(assetType: AssetType, assetName: string): boolean {
