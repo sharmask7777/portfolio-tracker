@@ -5,12 +5,14 @@
 
 ## Status
 *   **v1.0 Milestone:** Shipped (Core tracking, Tax Engine, PBT verification).
-*   **v2.0 Milestone:** In Planning (Dynamic returns, Post-Tax XIRR, E2E Testing).
+*   **v2.0 Milestone:** Shipped (Dynamic returns, Post-Tax XIRR, E2E Testing).
+*   **v3.0 Milestone:** Shipped (Family View, Alternative Assets).
+*   **v4.0 Milestone:** In Planning (Analytics Visualization, Historical Metrics).
 
-## v2.0 Goals
-1.  **Dynamic Return Toggles:** Allow users to swap between XIRR and Absolute Returns across all dashboard views.
-2.  **Post-Tax XIRR:** Implement a specialized "Post-Tax XIRR" column that accounts for estimated tax liability on unrealized gains to show a truer "money-in-pocket" return.
-3.  **E2E UI Testing:** Implement a comprehensive End-to-End test suite for the frontend (using Playwright or Cypress) to ensure UI stability across major user flows.
+## v4.0 Goals
+1.  **Interactive History Graph:** Implementation of a day-to-day corpus movement graph (Invested vs Current Value) spanning the entire investment history.
+2.  **Critical Performance Metrics:** Automated identification of All-Time High (ATH) corpus dates/values and Maximum Invested dates, with year-wise breakdowns.
+3.  **UI/UX Refinement:** Fixing the Scheme Breakdown data population and resolving accessibility/contrast issues in Dark Mode.
 
 ## Core Vision
 To provide a highly visual, investor-first dashboard that not only tracks multi-asset portfolios but also offers deep diagnostic tools (like portfolio X-Ray and stock intersection), tax optimization strategies (tax harvesting, switch analysis), and precise performance metrics (XIRR, CAGR, MWRR).

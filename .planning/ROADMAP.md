@@ -43,3 +43,33 @@
 - [x] 10-01-PLAN.md — Managed Profiles Schema & Backend Service
 - [x] 10-02-PLAN.md — Multi-PAN CAS Splitting & Aggregation
 - [x] 10-03-PLAN.md — Family Dashboard & Navigation
+
+## Milestone v4.0: Analytics & Visualization
+
+## Phase 11: Portfolio History Engine
+**Goal:** Implement backend logic to calculate and serve daily historical portfolio values.
+**Plans:** 0/2 plans pending
+
+- [ ] 11-01-PLAN.md — Historical NAV Service & Unit Tracking
+- [ ] 11-02-PLAN.md — History Endpoint & Caching
+
+## Phase 12: Interactive History Visualization
+**Goal:** Create a responsive, interactive AreaChart for corpus movement.
+**Plans:** 0/2 plans pending
+
+- [ ] 12-01-PLAN.md — Recharts AreaChart Integration
+- [ ] 12-02-PLAN.md — Interactivity & Tooltip Customization
+
+## Phase 13: Historical Insights & Metrics
+**Goal:** Surface critical performance data like ATH and Max Invested.
+**Plans:** 0/2 plans pending
+
+- [ ] 13-01-PLAN.md — Statistics Engine (ATH, Max Invested)
+- [ ] 13-02-PLAN.md — Historical Insights Dashboard Card
+
+## Phase 14: UI/UX Refinement & Polish
+**Goal:** Resolve existing UI bugs and improve dark mode accessibility.
+**Plans:** 0/2 plans pending
+
+- [ ] 14-01-PLAN.md — Scheme Breakdown Fix & Data Validation
+- [ ] 14-02-PLAN.md — Dark Mode Contrast & Input Styling Fixes

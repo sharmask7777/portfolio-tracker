@@ -1,30 +1,37 @@
-# Requirements: Milestone v2.0
+# Project Requirements
 
-## 1. Dynamic Performance View
-*   **Metric Toggle:** The UI MUST provide a global toggle (and per-asset override) to switch between Absolute Return (Gain/Invested) and XIRR.
-*   **State Persistence:** The user's choice of performance metric SHOULD be persisted (local storage or user settings).
+## Milestone v4.0: Analytics & Visualization (ACTIVE)
+Detailed requirements in [v4.0-REQUIREMENTS.md](./milestones/v4.0-REQUIREMENTS.md)
 
-## 2. Advanced Returns: Post-Tax XIRR
-*   **Net-of-Tax Calculation:** The system MUST calculate a "Post-Tax XIRR" for all holdings.
-    *   Formula: `XIRR(cashflows + (current_value - estimated_tax_liability))`.
-    *   Estimated tax must account for STCG/LTCG rates and grandfathering rules established in v1.0.
-*   **Visual Distinction:** The Post-Tax XIRR SHOULD be displayed as a distinct column or a secondary metric to avoid confusion with Pre-Tax XIRR.
+### 1. Portfolio History & Interactive Graph
+*   [ ] Daily Portfolio History Engine (Backend)
+*   [ ] Interactive History Graph (Frontend) - AreaChart showing Invested vs Current.
+*   [ ] Interactive tooltips and time-range navigation.
 
-## 3. Quality Assurance: E2E UI Testing
-*   **E2E Framework:** The project MUST integrate an E2E testing framework (Playwright preferred).
-*   **Core Flow Coverage:**
-    *   CAS Upload and Parsing flow.
-    *   Dashboard rendering and metric toggling.
-    *   Tax simulation and harvesting flows.
-    *   Family aggregation views.
-*   **CI Integration:** The E2E suite SHOULD run as part of the CI pipeline.
+### 2. Critical Performance Metrics
+*   [ ] All-Time High (ATH) Corpus detection (Date & Value).
+*   [ ] Maximum Invested Amount detection (Date & Value).
+*   [ ] Year-wise breakdown of ATH and Max Invested metrics.
 
-## 4. Documentation & Traceability
-| Req ID | Requirement | Milestone | Status |
-|---|---|---|---|
-| V2-DYN-01 | Global XIRR/Absolute toggle | v2.0 | [x] |
-| V2-TAX-01 | Post-Tax XIRR Calculation | v2.0 | [x] |
-| V2-TAX-02 | Tax liability deduction from final value | v2.0 | [x] |
-| V2-E2E-01 | Playwright Integration | v2.0 | [x] |
-| V2-E2E-02 | CAS Upload E2E Test | v2.0 | [x] |
-| V2-E2E-03 | Dashboard/Tax View E2E Tests | v2.0 | [x] |
+### 3. UI/UX Refinement & Fixes
+*   [ ] Fix Scheme Breakdown population/chart rendering.
+*   [ ] Fix Dark Mode "black text" and contrast issues.
+*   [ ] Ensure responsive behavior for new visualizations.
+
+---
+
+## Milestone v3.0: Family & Alternatives (SHIPPED)
+*   [x] Single CAS Splitting (Multi-PAN detection).
+*   [x] Family Member Assignment & Profiles.
+*   [x] Consolidated vs Individual Member Views.
+*   [x] EPF/PPF/Gold Asset Tracking.
+
+## Milestone v2.0: Advanced Metrics & Stability (SHIPPED)
+*   [x] Dynamic Return Toggles (XIRR vs Absolute).
+*   [x] Post-Tax XIRR calculation and display.
+*   [x] Playwright E2E Testing suite.
+
+## Milestone v1.0: Core Foundation (SHIPPED)
+*   [x] CAMS/Karvy CAS Parser.
+*   [x] Basic Portfolio Dashboard.
+*   [x] Tax Engine (LTCG/STCG calculation).
