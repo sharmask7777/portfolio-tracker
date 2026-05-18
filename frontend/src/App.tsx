@@ -330,8 +330,18 @@ function App() {
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={portfolio.folios.map((f: any) => ({ name: f.asset.name, value: f.metrics.currentValue }))}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                          <XAxis dataKey="name" hide />
-                          <YAxis hide />
+                          <XAxis 
+                            dataKey="name" 
+                            tick={{ fontSize: 11 }}
+                            interval={0}
+                            angle={-45}
+                            textAnchor="end"
+                            height={60}
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 11 }}
+                            tickFormatter={(val) => `₹${(val / 100000).toFixed(1)}L`}
+                          />
                           <Tooltip 
                             contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                             formatter={(val: any) => formatCurrency(Number(val))}
