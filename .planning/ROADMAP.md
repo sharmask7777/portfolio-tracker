@@ -61,7 +61,7 @@
 
 ## Phase 13: Historical Insights & Metrics
 **Goal:** Surface critical performance data like ATH and Max Invested.
-**Plans:** 2/2 plans complete
+**Plans:** 2/2 plans executed
 
 - [x] 13-01-PLAN.md — Statistics Engine (ATH, Max Invested)
 - [x] 13-02-PLAN.md — Historical Insights Dashboard Card
