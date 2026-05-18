@@ -38,30 +38,8 @@
 
 ## Phase 10: Family View & Managed Profiles
 **Goal:** Enable multi-member tracking from a single CAS via automatically created Managed Profiles and aggregated post-tax metrics.
-**Plans:** 3 plans
+**Plans:** 3/3 plans executed
 
-- [ ] 10-01-PLAN.md — Managed Profiles Schema & Backend Service
-- [ ] 10-02-PLAN.md — Multi-PAN CAS Splitting & Aggregation
-- [ ] 10-03-PLAN.md — Family Dashboard & Navigation
-
-## 1. Family View: Multi-Member Tracking
-*   **Single CAS Splitting**: The system MUST detect different PANs in a single CAS upload and group folios accordingly.
-*   **Member Mapping**: The user SHOULD be able to assign a "Name" to each unique PAN found in their data.
-*   **Consolidated vs Individual View**: The dashboard MUST allow toggling between "Consolidated Family View" and individual "Member Views".
-
-## 2. Alternative Assets
-*   **Manual Assets**: Support for adding and tracking non-CAS assets:
-    *   **EPF**: Annual compounding interest based on statutory rates.
-    *   **PPF**: Annual compounding interest with a 15-year lock-in tracker.
-    *   **SGB**: Half-yearly interest tracking and secondary market price integration.
-    *   **Physical Gold**: Tracking by weight (grams) with live spot prices.
-
-## 3. Documentation & Traceability
-| Req ID | Requirement | Milestone | Status |
-|---|---|---|---|
-| V3-FAM-01 | Group folios by PAN (Multi-Member detection) | v3.0 | [ ] |
-| V3-FAM-02 | Family Member Assignment UI | v3.0 | [ ] |
-| V3-FAM-03 | Dashboard filtering by Member | v3.0 | [ ] |
-| V3-ALT-01 | EPF Tracking (Compounding Interest) | v3.0 | [ ] |
-| V3-ALT-02 | PPF Tracking (15-year lifecycle) | v3.0 | [ ] |
-| V3-ALT-03 | Live Gold Price Integration | v3.0 | [ ] |
+- [x] 10-01-PLAN.md — Managed Profiles Schema & Backend Service
+- [x] 10-02-PLAN.md — Multi-PAN CAS Splitting & Aggregation
+- [x] 10-03-PLAN.md — Family Dashboard & Navigation
