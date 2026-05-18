@@ -9,9 +9,9 @@ Detailed requirements in [v4.0-REQUIREMENTS.md](./milestones/v4.0-REQUIREMENTS.m
 *   [ ] Interactive tooltips and time-range navigation.
 
 ### 2. Critical Performance Metrics
-*   [ ] All-Time High (ATH) Corpus detection (Date & Value).
-*   [ ] Maximum Invested Amount detection (Date & Value).
-*   [ ] Year-wise breakdown of ATH and Max Invested metrics.
+*   [x] All-Time High (ATH) Corpus detection (Date & Value).
+*   [x] Maximum Invested Amount detection (Date & Value).
+*   [x] Year-wise breakdown of ATH and Max Invested metrics.
 
 ### 3. UI/UX Refinement & Fixes
 *   [ ] Fix Scheme Breakdown population/chart rendering.
