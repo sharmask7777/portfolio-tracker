@@ -94,4 +94,68 @@ export class FamilyService {
       },
     });
   }
+
+  /**
+   * Creates a new managed profile for a family member.
+   */
+  public static async createManagedProfile(userId: string, pan: string, name: string) {
+    return prisma.managedProfile.create({
+      data: {
+        userId,
+        pan,
+        name,
+      },
+    });
+  }
+
+  /**
+   * Fetches all managed profiles for a user.
+   */
+  public static async getManagedProfiles(userId: string) {
+    return prisma.managedProfile.findMany({
+      where: { userId },
+      include: {
+        portfolios: true,
+      },
+    });
+  }
+
+  /**
+   * Updates the name of a managed profile.
+   */
+  public static async updateManagedProfileName(userId: string, profileId: string, name: string) {
+    const profile = await prisma.managedProfile.findFirst({
+      where: { id: profileId, userId },
+    });
+
+    if (!profile) {
+      throw new Error('Profile not found or unauthorized');
+    }
+
+    return prisma.managedProfile.update({
+      where: { id: profileId },
+      data: { name },
+    });
+  }
+
+  /**
+   * Gets a managed profile by PAN, or creates one if it doesn't exist.
+   */
+  public static async getOrCreateManagedProfile(userId: string, pan: string) {
+    const existing = await prisma.managedProfile.findUnique({
+      where: {
+        userId_pan: { userId, pan },
+      },
+    });
+
+    if (existing) return existing;
+
+    return prisma.managedProfile.create({
+      data: {
+        userId,
+        pan,
+        name: pan, // Default to PAN if name unknown
+      },
+    });
+  }
 }
