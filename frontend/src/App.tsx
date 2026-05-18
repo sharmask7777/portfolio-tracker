@@ -34,6 +34,7 @@ import './App.css';
 import { FamilySelector } from './components/Family/FamilySelector';
 import { StatsGrid } from './components/Dashboard/StatsGrid';
 import { HistoryChart } from './components/Dashboard/HistoryChart';
+import { HistoricalHighlightsCard } from './components/Dashboard/HistoricalHighlightsCard';
 import { X } from 'lucide-react';
 import { API_ENDPOINTS, API_CONFIG } from './config';
 
@@ -357,6 +358,7 @@ function App() {
                       </div>
                     </div>
                   </div>
+                  <HistoricalHighlightsCard portfolioId={portfolio.id} />
                 </div>
 
                 <div className="table-container">
