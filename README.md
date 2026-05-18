@@ -77,42 +77,13 @@ We prioritize mathematical integrity and system stability through a multi-layere
 
 - **Unit & Property-Based Testing (PBT):** Rigorous math validation using `fast-check`. Run via `npm test --prefix backend`.
 - **E2E Testing:** Playwright-based frontend flows. Run via `npx playwright test` in the `frontend/` folder.
-- **Quality Audit Skill:** A specialized agentic workflow that performs deep mathematical audits (XIRR anomalies, cost basis leaks) and UI consistency checks.
-
-## 🤖 AI & Agent Support
-
-This project is built for collaboration with AI agents. It includes specialized "Agent Skills" (SOPs and scripts) to automate complex tasks.
-
-- **[skills/](./skills/)**: Self-contained agentic workflows.
-    - `quality-audit`: Mathematical and functional integrity checks.
-    - `pdd`: Architectural planning and design.
-    - `code-assist`: TDD-based implementation guidance.
-- **[AGENTS.md](./AGENTS.md)**: A comprehensive guide for AI collaborators on maintenance, math standards, and tax rules.
-
-### Configuring Agent Models
-You can control the models used by child agents to balance quality and speed.
-
-- **Check Current Profile:**
-  ```bash
-  gsd-sdk query config-get model_profile
-  ```
-- **Set Quality Profile (Recommended):**
-  ```bash
-  gsd-sdk query config-set model_profile quality
-  ```
-- **Inherit Session Model:**
-  ```bash
-  gsd-sdk query config-set model_profile inherit
-  ```
-- **Advanced Overrides:** 
-  Use `/gsd:settings-advanced` to map specific models (e.g., `gemini-3-pro`) to agent tiers (Opus/Sonnet/Haiku).
-
 
 ## 📖 Maintenance
 
 - **Adding Asset Types:** Update `backend/prisma/schema.prisma` and the `AlternativeAssetService`.
 - **Updating Tax Rules:** Modify the logic in `TaxService.ts`.
 - **Prisma Configuration:** The project uses `backend/prisma.config.ts`. If you add new models, always run `npx prisma generate` inside the `backend/` folder to update the client.
+
 
 ---
 Created with ❤️ by Gemini CLI.
