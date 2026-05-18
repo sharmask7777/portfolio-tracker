@@ -400,6 +400,48 @@ router.get('/:id/history', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/:id/stats', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { userId = 'mock-user-123' } = req.query;
+
+    let portfolioIds: string[] = [];
+
+    if (id === 'consolidated') {
+      const portfolios = await prisma.portfolio.findMany({
+        where: { userId: userId as string },
+        select: { id: true },
+      });
+      portfolioIds = portfolios.map(p => p.id);
+    } else {
+      // Check if ID is a ManagedProfile or Portfolio
+      const portfolio = await prisma.portfolio.findUnique({ where: { id: id as string } });
+      if (portfolio) {
+        portfolioIds = [id as string];
+      } else {
+        const managedPortfolios = await prisma.portfolio.findMany({
+          where: { managedProfileId: id as string },
+          select: { id: true },
+        });
+        portfolioIds = managedPortfolios.map(p => p.id);
+      }
+    }
+
+    if (portfolioIds.length === 0) {
+      return res.status(200).json({
+        ath: { value: 0, date: null },
+        maxInvested: { value: 0, date: null },
+        yearly: [],
+      });
+    }
+
+    const stats = await HistoryService.getPortfolioStats(portfolioIds);
+    res.status(200).json(stats);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.delete('/purge', async (req: Request, res: Response) => {
   try {
     const { userId = 'mock-user-123' } = req.query;
