@@ -10,6 +10,9 @@
   --success-color: #10b981;
   --danger-color: #ef4444;
   --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --input-bg: #ffffff;
+  --input-border: #e2e8f0;
+  --input-text: #0f172a;
 }
 
 [data-theme='dark'] {
@@ -24,6 +27,9 @@
   --success-color: #34d399;
   --danger-color: #f87171;
   --card-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --input-bg: #1e293b;
+  --input-border: #334155;
+  --input-text: #f8fafc;
 }
 
 * {
@@ -96,4 +102,10 @@ a {
 
 .animate-slide {
   animation: slideUp 0.4s ease-out;
+}
+
+input, select, textarea {
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  border: 1px solid var(--input-border);
 }
