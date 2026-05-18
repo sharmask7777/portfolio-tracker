@@ -104,7 +104,7 @@ a {
   animation: slideUp 0.4s ease-out;
 }
 
-input, select, textarea {
+input[type="text"], input[type="number"], input[type="password"], input[type="date"], select, textarea {
   background-color: var(--input-bg);
   color: var(--input-text);
   border: 1px solid var(--input-border);

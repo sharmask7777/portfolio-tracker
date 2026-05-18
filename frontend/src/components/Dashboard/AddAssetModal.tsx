@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { X } from 'lucide-react';
-import { API_ENDPOINTS } from '../../config';
+import { API_ENDPOINTS, API_CONFIG } from '../../config';
 
 interface AddAssetModalProps {
   onClose: () => void;
@@ -26,6 +26,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
         name,
         units: parseFloat(units),
         balanceDate,
+        userId: API_CONFIG.MOCK_USER_ID
       });
       onSuccess();
       onClose();
