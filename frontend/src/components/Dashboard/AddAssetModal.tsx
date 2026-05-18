@@ -49,7 +49,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
             <label style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Asset Type</label>
             <select 
               className="card" 
-              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', background: 'var(--bg-secondary)', outline: 'none' }}
+              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
               value={type}
               onChange={(e) => setType(e.target.value)}
             >
@@ -67,7 +67,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
               type="text" 
               className="card" 
               placeholder="e.g. My EPF or 10g Gold Coin"
-              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', background: 'var(--bg-secondary)', outline: 'none' }}
+              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -82,7 +82,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
               type="number" 
               className="card" 
               placeholder="0.00"
-              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', background: 'var(--bg-secondary)', outline: 'none' }}
+              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
               value={units}
               onChange={(e) => setUnits(e.target.value)}
               required
@@ -94,7 +94,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
             <input 
               type="date" 
               className="card" 
-              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', background: 'var(--bg-secondary)', outline: 'none' }}
+              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
               value={balanceDate}
               onChange={(e) => setBalanceDate(e.target.value)}
               required

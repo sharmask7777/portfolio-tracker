@@ -507,7 +507,7 @@ function App() {
               type="password" 
               placeholder="PDF Password" 
               className="card" 
-              style={{ width: '100%', marginBottom: '1rem', background: 'var(--bg-secondary)', outline: 'none' }} 
+              style={{ width: '100%', marginBottom: '1rem', outline: 'none' }} 
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
