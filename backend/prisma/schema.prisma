@@ -7,16 +7,31 @@ datasource db {
 }
 
 model User {
-  id              String         @id @default(uuid())
-  email           String         @unique
+  id              String           @id @default(uuid())
+  email           String           @unique
   password        String
   portfolios      Portfolio[]
+  managedProfiles ManagedProfile[]
   familyMemberOf  FamilyMember[]
   ownedFamilies   FamilyGroup[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@index([email])
+}
+
+model ManagedProfile {
+  id         String      @id @default(uuid())
+  name       String
+  pan        String
+  userId     String
+  user       User        @relation(fields: [userId], references: [id])
+  portfolios Portfolio[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([userId, pan])
+  @@index([userId])
 }
 
 model FamilyGroup {
@@ -47,14 +62,16 @@ model FamilyMember {
 }
 
 model Portfolio {
-  id        String   @id @default(uuid())
-  name      String
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  folios    Folio[]
-  goals     Goal[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String          @id @default(uuid())
+  name             String
+  userId           String
+  user             User            @relation(fields: [userId], references: [id])
+  managedProfileId String?
+  managedProfile   ManagedProfile? @relation(fields: [managedProfileId], references: [id])
+  folios           Folio[]
+  goals            Goal[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@index([userId])
 }
