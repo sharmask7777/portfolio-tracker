@@ -163,11 +163,11 @@ const familyXirr = PerformanceService.calculateXIRR(mergedCashflows, totalFamily
 | A1 | `casparser` reliably extracts PAN for every folio in a consolidated statement. | Summary | Splitting might default to single portfolio if PAN is missing. |
 | A2 | Users prefer auto-splitting by PAN over manual assignment. | Architecture | Might require UI for manual reassignment if auto-split is wrong. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **How to handle "Joint" portfolios?**
+1. **How to handle "Joint" portfolios? (RESOLVED)**
    - If a folio has two PANs, which profile does it belong to?
-   - *Recommendation:* Always attribute to the primary PAN as reported by the CAS.
+   - *Resolution:* Always attribute to the primary PAN as reported by the CAS. Joint folios appearing in multiple statements will be deduplicated at the transaction level via `externalId`. Primary PAN assignment is fixed upon first ingestion.
 
 ## Environment Availability
 
