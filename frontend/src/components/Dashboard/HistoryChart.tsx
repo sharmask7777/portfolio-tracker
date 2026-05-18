@@ -80,15 +80,11 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ portfolioId }) => {
   };
 
   const getSampledData = (data: HistoryPoint[]) => {
-    if (selectedRange === 'ALL' || selectedRange === '5Y' || selectedRange === '3Y') {
-      // Sample every 7th day for ranges longer than 3 years
-      return data.filter((_, index) => index % 7 === 0 || index === data.length - 1);
-    }
-    if (selectedRange === '1Y' || selectedRange === '6M') {
-      // Sample every 2nd day for 6M - 1Y
-      return data.filter((_, index) => index % 2 === 0 || index === data.length - 1);
-    }
-    return data;
+    const MAX_POINTS = 300;
+    if (data.length <= MAX_POINTS) return data;
+    
+    const samplingInterval = Math.ceil(data.length / MAX_POINTS);
+    return data.filter((_, index) => index % samplingInterval === 0 || index === data.length - 1);
   };
 
   const filteredData = getFilteredData();

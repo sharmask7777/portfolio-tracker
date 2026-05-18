@@ -1,5 +1,5 @@
 import * as fc from 'fast-check';
-import { MockTransaction, MockScheme, MockFolio, MockCAS } from '../../test-utils/MockCASGenerator';
+import { MockTransaction, MockScheme, MockFolio, MockCAS } from '../test-utils/MockCASGenerator';
 
 /**
  * Arbitrary for a single transaction.

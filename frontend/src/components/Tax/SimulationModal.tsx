@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { X, AlertCircle, Info, TrendingDown, DollarSign } from 'lucide-react';
+import { X, AlertCircle, Info, TrendingDown } from 'lucide-react';
 import { API_ENDPOINTS } from '../../config';
 import { useSettings } from '../../contexts/SettingsContext';
 

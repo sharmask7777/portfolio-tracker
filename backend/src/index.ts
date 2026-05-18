@@ -8,6 +8,7 @@ import taxRoutes from './routes/tax.routes';
 import familyRoutes from './routes/family.routes';
 import healthRoutes from './routes/health.routes';
 import { NAVRefreshJob } from './jobs/nav-refresh.job';
+import { HistoryRefreshJob } from './jobs/history-refresh.job';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 NAVRefreshJob.start();
+HistoryRefreshJob.start();
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);

@@ -1,10 +1,51 @@
 import axios from 'axios';
 import { CacheService } from './cache.service';
+import { prisma } from './db.service';
 
 export class MarketDataService {
   private static MFAPI_BASE = 'https://api.mfapi.in/mf';
   private static FINAPI_BASE = 'https://finapi.upvaly.com/api/mf';
   private static GOLD_API_BASE = 'https://api.gold-api.com/api/v1/gold';
+
+  /**
+   * Fetches historical NAVs for a mutual fund and caches them in the database.
+   */
+  public static async getHistoricalNAVs(amfiCode: string, startDate?: Date): Promise<void> {
+    if (!amfiCode) return;
+
+    try {
+      const response = await axios.get(`${this.MFAPI_BASE}/${amfiCode}`, { timeout: 15000 });
+      const data = response.data.data;
+
+      if (!data || !Array.isArray(data)) return;
+
+      const records = data.map((item: any) => {
+        const [day, month, year] = item.date.split('-').map(Number);
+        const date = new Date(year, month - 1, day);
+        return {
+          amfiCode,
+          date,
+          nav: parseFloat(item.nav),
+        };
+      });
+
+      // Filter by startDate if provided
+      const filteredRecords = startDate 
+        ? records.filter(r => r.date >= startDate)
+        : records;
+
+      // Upsert in bulk (Prisma doesn't support bulk upsert well, so we do it in a loop or use createMany with skipDuplicates)
+      // Since we want to update if NAV changed (unlikely but possible) or just ensure it exists.
+      // createMany with skipDuplicates is efficient for initial seeding.
+      await prisma.historicalNAV.createMany({
+        data: filteredRecords,
+        skipDuplicates: true,
+      });
+
+    } catch (e) {
+      console.error(`Failed to fetch historical NAVs for ${amfiCode}:`, e);
+    }
+  }
 
   /**
    * Fetches the latest NAV for a mutual fund.

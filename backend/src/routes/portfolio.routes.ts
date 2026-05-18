@@ -10,6 +10,7 @@ import { XRayService } from '../services/xray.service';
 import { TaxService } from '../services/tax.service';
 import { FamilyService } from '../services/family.service';
 import { AlternativeAssetService } from '../services/alternative-assets.service';
+import { HistoryService } from '../services/history.service';
 import { prisma } from '../services/db.service';
 import fs from 'fs';
 
@@ -26,7 +27,16 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     const filePath = req.file.path;
 
     const parsedData = await ParserService.parseCAS(filePath, password);
-    const syncResult = await SyncService.syncPortfolio(userId, parsedData);
+    const syncResult = await SyncService.syncPortfolio(userId as string, parsedData);
+
+    // Trigger history calculation in background
+    if (syncResult.portfolioIds && Array.isArray(syncResult.portfolioIds)) {
+      syncResult.portfolioIds.forEach((pId: string) => {
+        HistoryService.calculateHistory(pId).catch(e => {
+          console.error(`Failed to calculate history for portfolio ${pId} after upload:`, e);
+        });
+      });
+    }
 
     // Clean up uploaded file
     fs.unlinkSync(filePath);
@@ -260,7 +270,7 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
       });
     } else {
       const p = await prisma.portfolio.findUnique({
-        where: { id },
+        where: { id: id as string },
         include: {
           folios: {
             include: {
@@ -275,7 +285,7 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
         portfolios = [p];
       } else {
         portfolios = await prisma.portfolio.findMany({
-          where: { managedProfileId: id },
+          where: { managedProfileId: id as string },
           include: {
             folios: {
               include: {
@@ -326,6 +336,65 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
     };
 
     res.status(200).json(aggregate);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/:id/history', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { userId = 'mock-user-123', from, to } = req.query;
+
+    let portfolioIds: string[] = [];
+
+    if (id === 'consolidated') {
+      const portfolios = await prisma.portfolio.findMany({
+        where: { userId: userId as string },
+        select: { id: true },
+      });
+      portfolioIds = portfolios.map(p => p.id);
+    } else {
+      // Check if ID is a ManagedProfile or Portfolio
+      const portfolio = await prisma.portfolio.findUnique({ where: { id: id as string } });
+      if (portfolio) {
+        portfolioIds = [id as string];
+      } else {
+        const managedPortfolios = await prisma.portfolio.findMany({
+          where: { managedProfileId: id as string },
+          select: { id: true },
+        });
+        portfolioIds = managedPortfolios.map(p => p.id);
+      }
+    }
+
+    if (portfolioIds.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    const historyData = await prisma.portfolioHistory.findMany({
+      where: {
+        portfolioId: { in: portfolioIds },
+        date: {
+          gte: from ? new Date(from as string) : undefined,
+          lte: to ? new Date(to as string) : undefined,
+        },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    // Aggregate by date
+    const aggregated = historyData.reduce((acc: any, curr) => {
+      const dateKey = curr.date.toISOString().split('T')[0];
+      if (!acc[dateKey]) {
+        acc[dateKey] = { date: curr.date, value: 0, investedAmount: 0 };
+      }
+      acc[dateKey].value += curr.value;
+      acc[dateKey].investedAmount += curr.investedAmount;
+      return acc;
+    }, {});
+
+    res.status(200).json(Object.values(aggregated));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

@@ -6,7 +6,8 @@ const tsJestTransformCfg = createDefaultPreset().transform;
 module.exports = {
   testEnvironment: "node",
   transform: {
-    ...tsJestTransformCfg,
+    "^.+\\.(ts|tsx)$": "ts-jest",
+    "^.+\\.js$": "ts-jest",
   },
   transformIgnorePatterns: [
     "node_modules/(?!@faker-js/faker)"

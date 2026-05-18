@@ -70,10 +70,37 @@ model Portfolio {
   managedProfile   ManagedProfile? @relation(fields: [managedProfileId], references: [id])
   folios           Folio[]
   goals            Goal[]
+  history          PortfolioHistory[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
   @@index([userId])
+}
+
+model PortfolioHistory {
+  id              String    @id @default(uuid())
+  portfolioId     String
+  portfolio       Portfolio @relation(fields: [portfolioId], references: [id])
+  date            DateTime
+  value           Float
+  investedAmount  Float
+  createdAt       DateTime  @default(now())
+
+  @@unique([portfolioId, date])
+  @@index([portfolioId])
+  @@index([date])
+}
+
+model HistoricalNAV {
+  id        String   @id @default(uuid())
+  amfiCode  String
+  date      DateTime
+  nav       Float
+  createdAt DateTime @default(now())
+
+  @@unique([amfiCode, date])
+  @@index([amfiCode])
+  @@index([date])
 }
 
 model Goal {

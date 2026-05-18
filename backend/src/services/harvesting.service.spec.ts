@@ -9,6 +9,7 @@ jest.mock('./db.service', () => ({
   prisma: {
     portfolio: {
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
     },
   },
 }));
@@ -16,7 +17,7 @@ jest.mock('./db.service', () => ({
 describe('HarvestingService', () => {
   it('should identify harvesting opportunities within exemption limit', async () => {
     const mockDate = new Date('2024-05-16'); // In FY 2024-25
-    (prisma.portfolio.findFirst as jest.Mock).mockResolvedValue({
+    (prisma.portfolio.findUnique as jest.Mock).mockResolvedValue({
       id: 'p1',
       folios: [
         {

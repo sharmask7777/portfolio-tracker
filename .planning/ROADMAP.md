@@ -48,17 +48,16 @@
 
 ## Phase 11: Portfolio History Engine
 **Goal:** Implement backend logic to calculate and serve daily historical portfolio values.
-**Plans:** 0/2 plans pending
+**Plans:** 1/1 plans executed
 
-- [ ] 11-01-PLAN.md — Historical NAV Service & Unit Tracking
-- [ ] 11-02-PLAN.md — History Endpoint & Caching
+- [x] 11-01-PLAN.md — Portfolio History Engine Implementation
 
 ## Phase 12: Interactive History Visualization
 **Goal:** Create a responsive, interactive AreaChart for corpus movement.
-**Plans:** 0/2 plans pending
+**Plans:** 2/2 plans executed
 
-- [ ] 12-01-PLAN.md — Recharts AreaChart Integration
-- [ ] 12-02-PLAN.md — Interactivity & Tooltip Customization
+- [x] 12-01-PLAN.md — Recharts AreaChart Integration
+- [x] 12-02-PLAN.md — Interactivity & Tooltip Customization
 
 ## Phase 13: Historical Insights & Metrics
 **Goal:** Surface critical performance data like ATH and Max Invested.

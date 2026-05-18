@@ -2,28 +2,27 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: v4.0 - Analytics & Visualization
-current_phase: Phase 11 (Portfolio History Engine)
-status: planning
-last_updated: "2026-05-18T11:53:03.075Z"
+current_phase: Phase 13 (Historical Insights & Metrics)
+status: execution
+last_updated: "2026-05-18T14:00:00.000Z"
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 2
   total_plans: 8
-  completed_plans: 0
-  percent: 0
+  completed_plans: 3
+  percent: 37.5
 ---
 
 # Project State Memory
 
-*   **Current Phase:** Phase 11 (Portfolio History Engine)
-*   **Status:** In Planning
-*   **Next Steps:** Run \`/gsd:plan-phase 11\` to start implementation of the historical data engine.
+*   **Current Phase:** Phase 13 (Historical Insights & Metrics)
+*   **Status:** Ready for Planning
+*   **Next Steps:** Run \`/gsd:plan-phase 13\` to start implementation of the statistics engine and insights dashboard card.
 
 *   **Key Decisions:**
-    *   Visualization: Using Recharts AreaChart for historical corpus movement (D-V4-01).
-    *   Backend: Historical data calculation will involve cumulative unit tracking and historical NAV lookup (D-V4-02).
-    *   UI Fixes: Identified that `input` elements lack color variables, leading to "black text" issues in dark mode (D-V4-03).
-    *   UI Fixes: "Scheme Breakdown" chart axes are currently hidden, which may contribute to the "empty" appearance (D-V4-04).
+    *   Visualization: Completed Phase 12 with Recharts AreaChart.
+    *   Backend: Historical data calculation is integrated and serving data.
+    *   UI Polish: Resolved build errors and improved tooltip fidelity.
 
 # Session History
 

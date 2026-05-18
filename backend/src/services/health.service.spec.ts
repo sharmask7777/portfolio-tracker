@@ -1,16 +1,16 @@
 import { HealthService } from './health.service';
 import { XRayService } from './xray.service';
 import { OverlapService } from './overlap.service';
+import { GoalService } from './goal.service';
 
 jest.mock('./xray.service');
 jest.mock('./overlap.service');
-jest.mock('./db.service', () => ({
-  prisma: {}
-}));
+jest.mock('./goal.service');
 
 describe('HealthService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (GoalService.listGoals as jest.Mock).mockResolvedValue([]);
   });
 
   it('should detect high sector concentration risk', async () => {

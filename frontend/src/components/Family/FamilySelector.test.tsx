@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FamilySelector } from './FamilySelector';
 import { describe, it, expect, vi } from 'vitest';
-import React from 'react';
+
 
 describe('FamilySelector', () => {
   const profiles = [

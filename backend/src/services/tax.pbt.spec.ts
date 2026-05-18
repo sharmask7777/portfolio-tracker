@@ -116,6 +116,7 @@ describe('TaxService Property-Based Tests', () => {
         10,
         200,
         sellDate,
+        0, // taxSlab
         grandfatherNav
       );
       expect(gain1.buyNav).toBe(100);
@@ -131,6 +132,7 @@ describe('TaxService Property-Based Tests', () => {
         10,
         120,
         sellDate,
+        0, // taxSlab
         grandfatherNav
       );
       expect(gain2.gain).toBe(0);
@@ -144,6 +146,7 @@ describe('TaxService Property-Based Tests', () => {
         10,
         80,
         sellDate,
+        0, // taxSlab
         grandfatherNav
       );
       expect(gain3.gain).toBe((80 - 100) * 10);

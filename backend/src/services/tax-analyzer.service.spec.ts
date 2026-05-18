@@ -18,8 +18,8 @@ describe('TaxAnalyzerService', () => {
       id: 'f1',
       asset: { name: 'Fund A', type: 'MUTUAL_FUND', amfiCode: '101' },
       transactions: [
-        { type: 'BUY', units: 10, nav: 100, date: new Date('2023-01-01'), amount: 1000 },
-        { type: 'BUY', units: 10, nav: 200, date: new Date('2024-01-01'), amount: 2000 },
+        { type: 'BUY', units: 10, nav: 100, date: new Date('2023-01-01'), amount: 1000, balance: 10 },
+        { type: 'BUY', units: 10, nav: 200, date: new Date('2024-01-01'), amount: 2000, balance: 20 },
       ],
     });
 
@@ -43,9 +43,9 @@ describe('TaxAnalyzerService', () => {
     (prisma.folio.findUnique as jest.Mock).mockResolvedValue({
       id: 'f1',
       asset: { name: 'Fund A', type: 'MUTUAL_FUND' },
-      transactions: [{ type: 'BUY', units: 10, nav: 100, date: new Date(), amount: 1000 }],
+      transactions: [{ type: 'BUY', units: 10, nav: 100, date: new Date(), amount: 1000, balance: 10 }],
     });
 
-    await expect(TaxAnalyzerService.simulateSell('f1', 20)).rejects.toThrow('Insufficient units');
+    await expect(TaxAnalyzerService.simulateSell('f1', 20)).rejects.toThrow('Insufficient sellable units');
   });
 });

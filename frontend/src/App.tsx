@@ -25,7 +25,6 @@ import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
 import { TaxView } from './components/Tax/TaxView';
 import { SimulationModal } from './components/Tax/SimulationModal';
-import { FamilyManager } from './components/Family/FamilyManager';
 import { AddAssetModal } from './components/Dashboard/AddAssetModal';
 import { InsightsSidebar } from './components/Insights/InsightsSidebar';
 import { GoalTracker } from './components/Insights/GoalTracker';
@@ -34,6 +33,7 @@ import './App.css';
 
 import { FamilySelector } from './components/Family/FamilySelector';
 import { StatsGrid } from './components/Dashboard/StatsGrid';
+import { HistoryChart } from './components/Dashboard/HistoryChart';
 import { X } from 'lucide-react';
 import { API_ENDPOINTS, API_CONFIG } from './config';
 
@@ -319,6 +319,8 @@ function App() {
                   metrics={portfolio.metrics}
                   performanceMode={performanceMode}
                 />
+
+                <HistoryChart portfolioId={portfolio.id} />
 
                 <div className="dashboard-sections">
                   <div className="card">

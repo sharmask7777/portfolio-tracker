@@ -1,6 +1,6 @@
 import { SyncService } from './sync.service';
 import { prisma } from './db.service';
-import { MockCASGenerator } from '../../test-utils/MockCASGenerator';
+import { MockCASGenerator } from '../test-utils/MockCASGenerator';
 
 describe('SyncService Ingestion Logic', () => {
   const userId = 'test-user-cas-sync';
@@ -8,21 +8,16 @@ describe('SyncService Ingestion Logic', () => {
   const cleanup = async () => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (user) {
-      const portfolios = await prisma.portfolio.findMany({ where: { userId } });
-      for (const p of portfolios) {
-        const folios = await prisma.folio.findMany({ where: { portfolioId: p.id } });
-        for (const f of folios) {
-          await prisma.transaction.deleteMany({ where: { folioId: f.id } });
-        }
-        await prisma.folio.deleteMany({ where: { portfolioId: p.id } });
-        await prisma.goal.deleteMany({ where: { portfolioId: p.id } });
-      }
+      await prisma.goal.deleteMany({ where: { portfolio: { userId } } });
+      await prisma.transaction.deleteMany({ where: { folio: { portfolio: { userId } } } });
+      await prisma.folio.deleteMany({ where: { portfolio: { userId } } });
       await prisma.portfolio.deleteMany({ where: { userId } });
+      await prisma.managedProfile.deleteMany({ where: { userId } });
       await prisma.user.delete({ where: { id: userId } });
     }
   };
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     await cleanup();
   });
 
@@ -39,7 +34,8 @@ describe('SyncService Ingestion Logic', () => {
 
     const result = await SyncService.syncPortfolio(userId, mockData);
     expect(result.status).toBe('success');
-    expect(result.portfolioId).toBeDefined();
+    expect(result.portfolioIds).toBeDefined();
+    expect(result.portfolioIds!.length).toBeGreaterThan(0);
 
     // Verify data in DB
     const portfolio = await prisma.portfolio.findFirst({

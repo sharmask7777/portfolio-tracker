@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Target, Plus, Calendar } from 'lucide-react';
-import { API_ENDPOINTS } from '../../config';
+import { API_ENDPOINTS, API_CONFIG } from '../../config';
 
 interface Goal {
   id: string;

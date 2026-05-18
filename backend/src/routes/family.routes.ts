@@ -30,7 +30,7 @@ router.patch('/profile/:id', async (req: Request, res: Response) => {
     }
 
     // Verify ownership and update
-    const updated = await FamilyService.updateManagedProfileName(userId as string, id, name);
+    const updated = await FamilyService.updateManagedProfileName(userId as string, id as string, name as string);
     res.status(200).json(updated);
   } catch (error: any) {
     if (error.message.includes('unauthorized') || error.message.includes('not found')) {

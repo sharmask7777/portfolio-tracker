@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { StatsGrid } from './StatsGrid';
 import { describe, it, expect } from 'vitest';
-import React from 'react';
+
 
 describe('StatsGrid', () => {
   const mockMetrics = {

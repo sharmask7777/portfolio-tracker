@@ -19,6 +19,7 @@ export class SyncService {
 
     const results = [];
     const investor = parsedData.investor_info || parsedData.investor || {};
+    const touchedPortfolioIds = new Set<string>();
 
     // 2. Loop through Folios and Transactions
     // casparser JSON structure: { folios: [ { folio: "...", amc: "...", schemes: [ { isin: "...", transactions: [...] } ] } ] }
@@ -45,6 +46,7 @@ export class SyncService {
             },
           });
         }
+        touchedPortfolioIds.add(currentPortfolio.id);
 
         // Upsert Asset
         const asset = await prisma.asset.upsert({
@@ -191,6 +193,6 @@ export class SyncService {
       }
     }
 
-    return { status: 'success' };
+    return { status: 'success', portfolioIds: Array.from(touchedPortfolioIds) };
   }
 }
