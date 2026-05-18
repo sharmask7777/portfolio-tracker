@@ -317,3 +317,8 @@
   color: var(--accent-color);
   box-shadow: var(--card-shadow);
 }
+
+.chart-container {
+  height: 300px;
+  width: 100%;
+}
