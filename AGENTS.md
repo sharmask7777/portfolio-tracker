@@ -29,6 +29,11 @@ This document provides instructions for future agents to maintain the high stand
 - **Type Safety:** Avoid `any` where possible. Use Prisma-generated types for all DB operations.
 - **Analytics Performance:** Ensure `XRayService` and `OverlapService` maintain weighted-aggregation accuracy. Use database indexes for performance.
 
+### 5. Docker & Deployment
+- **Image Hub:** We use `shaleenks/portfolio-backend:latest` and `shaleenks/portfolio-frontend:latest` (multi-platform: linux/amd64, linux/arm64).
+- **Push Protocol:** Whenever a significant code push is made, evaluate if the Docker images should be updated. If unsure, nudge the user for a decision.
+- **Milestone Releases:** For every major end-to-end flow implementation or milestone completion, you MUST nudge the user to tag and push updated Docker configurations.
+
 ## Agent Skills
 The project includes a suite of specialized SOPs and scripts in the root `skills/` directory. These are designed to be AI-agnostic—any agent can read these Markdown files to learn how to perform complex tasks.
 
