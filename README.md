@@ -26,6 +26,13 @@ VOLUME_PREFIX_GLOBAL=.
 VITE_API_PORT=3031
 # If accessing from another device on your network, replace localhost with your server's IP address (e.g., 192.168.1.100)
 IP_GLOBAL=localhost
+
+# Authentication (IMPORTANT: CHANGE THIS!)
+# Generate a strong secret with `openssl rand -hex 32`
+JWT_SECRET=your_secure_jwt_secret_here
+# Token expiration time (e.g., 7d, 24h, 1h)
+JWT_EXPIRES_IN=7d
+
 ```
 
 **Step B:** Create a file named `docker-compose.yml` and paste the following configuration:
@@ -66,9 +73,14 @@ services:
       NODE_ENV: production
       PYTHON_PATH: python3
       TZ: ${TZ_GLOBAL}
+      # Authentication
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   frontend:
     image: shaleenks/portfolio-frontend:latest
