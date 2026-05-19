@@ -1,37 +1,29 @@
-# Project Requirements
+# Milestone v5.0 Requirements: Distribution & Persistence
 
-## Milestone v4.0: Analytics & Visualization (ACTIVE)
-Detailed requirements in [v4.0-REQUIREMENTS.md](./milestones/v4.0-REQUIREMENTS.md)
+## Distribution & Packaging
+- [ ] **DIST-01**: Multi-stage Backend Dockerfile (Production-optimized Node.js)
+- [ ] **DIST-02**: Multi-stage Frontend Dockerfile (Static assets served via Nginx)
+- [ ] **DIST-03**: Unified `docker-compose.yml` for local production-like environment
+- [ ] **DIST-04**: `.dockerignore` files for backend/frontend to exclude local artifacts
 
-### 1. Portfolio History & Interactive Graph
-*   [ ] Daily Portfolio History Engine (Backend)
-*   [ ] Interactive History Graph (Frontend) - AreaChart showing Invested vs Current.
-*   [ ] Interactive tooltips and time-range navigation.
+## Persistence & Security
+- [ ] **PERS-01**: Persistent Named Docker Volume for PostgreSQL data (`/var/lib/postgresql/data`)
+- [ ] **PERS-02**: Postgres Healthcheck in Docker Compose for service dependency management
+- [ ] **PERS-03**: Support for `.env` files in Docker Compose to handle secrets securely
 
-### 2. Critical Performance Metrics
-*   [x] All-Time High (ATH) Corpus detection (Date & Value).
-*   [x] Maximum Invested Amount detection (Date & Value).
-*   [x] Year-wise breakdown of ATH and Max Invested metrics.
+## Setup & DX
+- [ ] **DX-01**: Cross-platform `setup.sh` script to handle environment initialization
+- [ ] **DX-02**: Automatic database migrations on container startup
 
-### 3. UI/UX Refinement & Fixes
-*   [x] Fix Scheme Breakdown population/chart rendering.
-*   [ ] Fix Dark Mode "black text" and contrast issues.
-*   [ ] Ensure responsive behavior for new visualizations.
-
----
-
-## Milestone v3.0: Family & Alternatives (SHIPPED)
-*   [x] Single CAS Splitting (Multi-PAN detection).
-*   [x] Family Member Assignment & Profiles.
-*   [x] Consolidated vs Individual Member Views.
-*   [x] EPF/PPF/Gold Asset Tracking.
-
-## Milestone v2.0: Advanced Metrics & Stability (SHIPPED)
-*   [x] Dynamic Return Toggles (XIRR vs Absolute).
-*   [x] Post-Tax XIRR calculation and display.
-*   [x] Playwright E2E Testing suite.
-
-## Milestone v1.0: Core Foundation (SHIPPED)
-*   [x] CAMS/Karvy CAS Parser.
-*   [x] Basic Portfolio Dashboard.
-*   [x] Tax Engine (LTCG/STCG calculation).
+## Traceability
+| Req ID | Phase |
+|--------|-------|
+| DIST-01| Phase 15 |
+| DIST-02| Phase 15 |
+| DIST-03| Phase 15 |
+| DIST-04| Phase 15 |
+| PERS-01| Phase 16 |
+| PERS-02| Phase 16 |
+| PERS-03| Phase 16 |
+| DX-01  | Phase 17 |
+| DX-02  | Phase 17 |
