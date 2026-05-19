@@ -2,12 +2,21 @@ import { spawn } from 'child_process';
 import path from 'path';
 
 export class ParserService {
-  private static pythonPath = path.join(__dirname, '../../venv/bin/python3');
+  private static getPythonPath(): string {
+    if (process.env.PYTHON_PATH) {
+      return process.env.PYTHON_PATH;
+    }
+    if (process.env.NODE_ENV === 'production') {
+      return 'python3';
+    }
+    return path.join(__dirname, '../../venv/bin/python3');
+  }
+
   private static scriptPath = path.join(__dirname, '../../scripts/parse_cas.py');
 
   public static async parseCAS(filePath: string, password: string = ''): Promise<any> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.pythonPath, [this.scriptPath, filePath, password]);
+      const child = spawn(this.getPythonPath(), [this.scriptPath, filePath, password]);
 
       let stdout = '';
       let stderr = '';
