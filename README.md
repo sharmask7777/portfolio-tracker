@@ -7,26 +7,31 @@ A deep-analytics portfolio tracking platform for Indian investors. Supports CAMS
 The easiest way to run the application is using the pre-built images from Docker Hub.
 
 ### 1. Setup Environment
-Create a `.env` file in your root directory:
+Create a `.env` file in your root directory from the example:
 ```bash
-# DB Credentials
-PORTFOLIO_DB_USER=portfolio_admin
-PORTFOLIO_DB_PASSWORD=select_a_strong_password
-PORTFOLIO_DB_NAME=portfolio_tracker
-
-# Network
-IP_GLOBAL=192.168.x.x  # Your machine/NAS IP
+cp .env.example .env
 ```
 
-### 2. Run with Docker Compose
-Create a `docker-compose.yml` (or use the one in this repo) and run:
+**Crucial for Linux/Docker:** Ensure `DOCKER_REGISTRY_USER` is set (e.g., `DOCKER_REGISTRY_USER=local`) to avoid tag errors.
+
+### 2. Linux System Dependencies
+If running locally on Linux (Debian/Ubuntu), install these for PDF parsing:
 ```bash
+sudo apt-get update
+sudo apt-get install -y python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev
+```
+
+### 3. Run with Docker Compose
+```bash
+# Build local images with Linux-specific fixes
+docker-compose build
+
 # Start all services
 docker-compose up -d
 ```
 
-- **Frontend UI:** `http://localhost:80` (or your NAS IP)
-- **Backend API:** `http://localhost:3001`
+- **Frontend UI:** `http://localhost:8082` (or your mapped port)
+- **Backend API:** `http://localhost:3031` (or your mapped port)
 - **Images:** [shaleenks/portfolio-backend](https://hub.docker.com/r/shaleenks/portfolio-backend) | [shaleenks/portfolio-frontend](https://hub.docker.com/r/shaleenks/portfolio-frontend)
 
 ---
