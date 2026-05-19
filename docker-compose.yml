@@ -4,49 +4,49 @@ services:
     container_name: portfolio_tracker_db
     restart: always
     environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
-      POSTGRES_DB: ${DB_NAME:-portfolio_tracker}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+      POSTGRES_USER: ${PORTFOLIO_DB_USER}
+      POSTGRES_PASSWORD: ${PORTFOLIO_DB_PASSWORD}
+      POSTGRES_DB: ${PORTFOLIO_DB_NAME}
+      TZ: ${TZ_GLOBAL}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Maps to your specific disk and appdata structure
+      - "${VOLUME_PREFIX_GLOBAL}/appdata/portfolio/db:/var/lib/postgresql/data"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-portfolio_tracker}"]
+      test: ["CMD-SHELL", "pg_isready -U ${PORTFOLIO_DB_USER} -d ${PORTFOLIO_DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
 
   redis:
     image: redis:7-alpine
     container_name: portfolio_tracker_redis
     restart: always
-    command: redis-server --save 60 1 --loglevel warning
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    environment:
+      TZ: ${TZ_GLOBAL}
     volumes:
-      - redis_data:/data
+      - "${VOLUME_PREFIX_GLOBAL}/appdata/portfolio/redis:/data"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
 
   backend:
     build:
       context: ./backend
+      dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY_USER}/portfolio-backend:latest
     container_name: portfolio_tracker_backend
     restart: always
     ports:
-      - "${BACKEND_PORT:-3001}:3001"
+      - "${VITE_API_PORT}:3001"
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-password}@postgres:5432/${DB_NAME:-portfolio_tracker}?schema=public}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      PORT: 3001
-      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      NODE_ENV: production
+      PYTHON_PATH: python3
+      TZ: ${TZ_GLOBAL}
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,15 +56,14 @@ services:
   frontend:
     build:
       context: ./frontend
+      dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY_USER}/portfolio-frontend:latest
     container_name: portfolio_tracker_frontend
     restart: always
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "8082:80" # Avoid conflict with OMV Web UI on port 80
     environment:
-      - VITE_API_URL=${VITE_API_URL:-http://localhost:3001}
+      VITE_API_URL: "http://${IP_GLOBAL}:${VITE_API_PORT}"
+      TZ: ${TZ_GLOBAL}
     depends_on:
       - backend
-
-volumes:
-  postgres_data:
-  redis_data:

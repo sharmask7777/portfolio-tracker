@@ -82,19 +82,39 @@ npm run dev
 ```
 
 ### 3. Building & Pushing Images
-To build and push your own images to a registry:
+
+The project supports both single-platform and multi-architecture builds. Multi-arch is recommended if you develop on Apple Silicon (M1/M2/M3) but deploy on an Intel-based NAS or VPS.
+
+#### Prerequisites
+Ensure `DOCKER_REGISTRY_USER` is set in your `.env` file (e.g., `DOCKER_REGISTRY_USER=shaleenks`).
+
+#### Single-Platform Build (Current Machine)
 ```bash
-# Login
-docker login
-
-# Build & Tag
-docker build -t shaleenks/portfolio-backend:latest ./backend
-docker build -t shaleenks/portfolio-frontend:latest ./frontend
-
-# Push
-docker push shaleenks/portfolio-backend:latest
-docker push shaleenks/portfolio-frontend:latest
+# Build & Push
+docker-compose build
+docker-compose push
 ```
+
+#### Multi-Architecture Build (Recommended for Deployment)
+To support both `arm64` (Mac) and `amd64` (NAS/Intel), use Docker Buildx:
+
+```bash
+# 1. Create a builder if you haven't already
+docker buildx create --use
+
+# 2. Build & Push both architectures simultaneously
+# Backend
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ${DOCKER_REGISTRY_USER}/portfolio-backend:latest ./backend --push
+
+# Frontend
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ${DOCKER_REGISTRY_USER}/portfolio-frontend:latest ./frontend --push
+```
+
+#### Verification
+Check your Docker Hub repository. It should show "OS/ARCH" as `linux/amd64` and `linux/arm64` for the latest tags.
+
 
 ---
 
