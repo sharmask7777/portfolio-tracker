@@ -81,3 +81,18 @@ npm install
 cd ..
 
 log "All dependencies installed successfully."
+
+# Docker Orchestration
+echo ""
+read -p "Setup complete. Would you like to start the application via Docker? (y/n) " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    log "Starting application via Docker..."
+    docker-compose up --build -d
+    log "Application started!"
+    log "Backend: http://localhost:3001"
+    log "Frontend: http://localhost:5173"
+    log "To view logs, run: npm run docker:logs"
+else
+    log "Setup finished. You can start the app later with 'npm start' or 'docker-compose up'."
+fi
