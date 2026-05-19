@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.git
+.gitignore
+tests
+playwright-report
+test-results
+README.md
