@@ -14,12 +14,12 @@
 2. Frontend assets are served correctly via Nginx inside a container.
 3. No local `node_modules` or `.env` files are leaked into the images.
 
-## Phase 16: Persistent Infrastructure
+## Phase 16: Persistent Infrastructure [COMPLETED]
 **Goal:** Implement reliable data persistence and service orchestration.
 
-**Plans:** 2 plans
-- [ ] 16-01-PLAN.md — Docker Compose Refinement & Named Volumes
-- [ ] 16-02-PLAN.md — Healthchecks & Dependency Management
+**Plans:** 2/2 plans complete
+- [x] 16-01-PLAN.md — Docker Compose Refinement & Named Volumes
+- [x] 16-02-PLAN.md — Healthchecks & Dependency Management
 
 **Success Criteria:**
 1. Data in PostgreSQL persists after `docker-compose down` and `docker-compose up`.
@@ -29,8 +29,9 @@
 ## Phase 17: Unified Setup & Automation
 **Goal:** Simplify the onboarding process and automate database lifecycle.
 
-- [ ] 17-01-PLAN.md — Cross-platform Setup Script (setup.sh)
-- [ ] 17-02-PLAN.md — Automatic Migrations on Startup
+**Plans:** 2 plans
+- [ ] 17-01-PLAN.md — Unified environment setup script (setup.sh)
+- [ ] 17-02-PLAN.md — Automatic migrations & one-command start
 
 **Success Criteria:**
 1. Running `sh setup.sh` initializes the environment correctly on macOS/Linux.
