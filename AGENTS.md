@@ -23,6 +23,9 @@ This document provides instructions for future agents to maintain the high stand
     - **Unit Tests:** For specific business logic and regressions.
     - **PBT (fast-check):** For mathematical invariants and edge-case discovery.
     - **Linting:** Strict ESLint and Prettier rules must be followed.
+- **Data Integrity & NaN Prevention:** 
+    - **Zero-Tolerance for NaN:** No UI element should ever display "NaN". Always use fallbacks (`0`, `N/A`, or empty states) and verify formatting functions handle undefined/null inputs gracefully.
+    - **Verification:** Every new visualization or data table must include an E2E test check specifically looking for "NaN" strings to prevent regression.
 - **Type Safety:** Avoid `any` where possible. Use Prisma-generated types for all DB operations.
 - **Analytics Performance:** Ensure `XRayService` and `OverlapService` maintain weighted-aggregation accuracy. Use database indexes for performance.
 

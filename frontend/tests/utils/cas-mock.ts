@@ -9,7 +9,7 @@ import { MockCASGenerator, MockCAS } from './MockCASGenerator';
 export async function mockCASUpload(page: Page, mockData?: MockCAS) {
   const data = mockData || MockCASGenerator.generate();
   
-  await page.route('**/api/portfolio/upload', async (route) => {
+  await page.route('**/api/portfolio/upload*', async (route) => {
     // Check if it's a POST request
     if (route.request().method() === 'POST') {
       await route.fulfill({

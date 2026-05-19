@@ -14,7 +14,7 @@ Detailed requirements in [v4.0-REQUIREMENTS.md](./milestones/v4.0-REQUIREMENTS.m
 *   [x] Year-wise breakdown of ATH and Max Invested metrics.
 
 ### 3. UI/UX Refinement & Fixes
-*   [ ] Fix Scheme Breakdown population/chart rendering.
+*   [x] Fix Scheme Breakdown population/chart rendering.
 *   [ ] Fix Dark Mode "black text" and contrast issues.
 *   [ ] Ensure responsive behavior for new visualizations.
 

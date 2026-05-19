@@ -59,7 +59,7 @@ test.describe('CAS Upload Flow', () => {
     const uploadPage = new UploadPage(page);
     
     // 1. Mock a 500 error
-    await mockAPIError(page, '**/api/portfolio/upload', 500, 'Invalid PDF format');
+    await mockAPIError(page, '**/api/portfolio/upload*', 500, 'Invalid PDF format');
     
     // 2. Setup dialog listener (App.tsx uses alert())
     let alertMessage = '';

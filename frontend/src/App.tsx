@@ -175,7 +175,7 @@ function App() {
       });
       setShowUpload(false);
       setPassword('');
-      fetchSummary();
+      await fetchSummary();
     } catch (err: any) {
       const msg = err.response?.data?.error || 'Upload failed. Please check your password or file format.';
       alert(msg);
@@ -196,8 +196,8 @@ function App() {
     return `${(val * 100).toFixed(2)}%`;
   };
 
-  if (loading) {
-    return <div className="loading-state">Loading your portfolio...</div>;
+  if (loading || uploading) {
+    return <div className="loading-state">{uploading ? 'Parsing CAS and Generating History...' : 'Loading your portfolio...'}</div>;
   }
 
   return (
@@ -234,7 +234,7 @@ function App() {
                 const val = parseFloat(e.target.value);
                 setTaxSlab(isNaN(val) ? 0 : val);
               }}
-              style={{ width: '60px', background: 'none', border: 'none', color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.875rem', outline: 'none' }}
+              style={{ width: '70px', paddingRight: '12px', background: 'none', border: 'none', color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.875rem', outline: 'none' }}
             />
           </div>
           <button className="btn" style={{ border: '1px solid var(--border-color)' }} onClick={() => setShowAddAsset(true)}>

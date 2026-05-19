@@ -1,8 +1,18 @@
 {
   "project_name": "Portfolio Tracker",
-  "frameworks": ["React", "Node.js", "TypeScript", "PostgreSQL"],
+  "frameworks": [
+    "React",
+    "Node.js",
+    "TypeScript",
+    "PostgreSQL"
+  ],
   "testing": "jest",
   "styling": "vanilla-css",
   "current_phase": 1,
-  "status": "discovery_complete"
+  "status": "discovery_complete",
+  "model_profile": "quality",
+  "workflow": {
+    "plan_bounce": true,
+    "node_repair": true
+  }
 }

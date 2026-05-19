@@ -27,7 +27,7 @@ export class MarketDataService {
           date,
           nav: parseFloat(item.nav),
         };
-      });
+      }).filter((r: any) => !isNaN(r.nav));
 
       // Filter by startDate if provided
       const filteredRecords = startDate 
