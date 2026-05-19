@@ -5,6 +5,7 @@
 ## Phase 15: Production-Ready Dockerization
 **Goal:** Create optimized, multi-stage Docker images for the backend and frontend.
 
+**Plans:** 2 plans
 - [ ] 15-01-PLAN.md — Multi-stage Backend Dockerfile & .dockerignore
 - [ ] 15-02-PLAN.md — Multi-stage Frontend Dockerfile & Nginx Config
 
