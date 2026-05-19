@@ -48,3 +48,36 @@ init_env "backend"
 init_env "frontend"
 
 log "Environment initialization complete."
+
+# Dependency Installation
+log "Installing dependencies..."
+
+# Backend Dependencies
+log "Setting up backend..."
+cd backend
+log "Installing Node.js dependencies for backend..."
+npm install
+log "Generating Prisma client..."
+npx prisma generate
+
+# Python virtual environment for backend
+if [ ! -d "venv" ]; then
+    log "Creating Python virtual environment..."
+    python3 -m venv venv
+else
+    log "Python virtual environment already exists."
+fi
+
+log "Installing Python dependencies (casparser)..."
+./venv/bin/pip install --quiet casparser
+
+cd ..
+
+# Frontend Dependencies
+log "Setting up frontend..."
+cd frontend
+log "Installing Node.js dependencies for frontend..."
+npm install
+cd ..
+
+log "All dependencies installed successfully."
