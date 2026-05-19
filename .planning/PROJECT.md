@@ -7,18 +7,41 @@
 *   **v1.0 Milestone:** Shipped (Core tracking, Tax Engine, PBT verification).
 *   **v2.0 Milestone:** Shipped (Dynamic returns, Post-Tax XIRR, E2E Testing).
 *   **v3.0 Milestone:** Shipped (Family View, Alternative Assets).
-*   **v4.0 Milestone:** In Planning (Analytics Visualization, Historical Metrics).
+*   **v4.0 Milestone:** Shipped (Analytics Visualization, Historical Metrics).
+*   **v5.0 Milestone:** In Planning (Distribution & Persistence).
 
-## v4.0 Goals
-1.  **Interactive History Graph:** Implementation of a day-to-day corpus movement graph (Invested vs Current Value) spanning the entire investment history.
-2.  **Critical Performance Metrics:** Automated identification of All-Time High (ATH) corpus dates/values and Maximum Invested dates, with year-wise breakdowns.
-3.  **UI/UX Refinement:** Fixing the Scheme Breakdown data population and resolving accessibility/contrast issues in Dark Mode.
+## Current Milestone: v5.0 Distribution & Persistence
+
+**Goal:** Package the application for cross-platform consumption via Docker and ensure data persistence.
+
+**Target features:**
+- **Docker Compose Refinement:** Unified setup for one-command startup.
+- **Data Persistence:** Implement Docker Volumes for PostgreSQL.
+- **Production-ready Dockerfiles:** Optimize builds for deployment.
+- **Setup Script:** Environment handling and initial migration.
 
 ## Core Vision
 To provide a highly visual, investor-first dashboard that not only tracks multi-asset portfolios but also offers deep diagnostic tools (like portfolio X-Ray and stock intersection), tax optimization strategies (tax harvesting, switch analysis), and precise performance metrics (XIRR, CAGR, MWRR).
 
 ## Target Audience
 Retail investors, HNIs, and power users in India who require granular insights into their mutual funds, stocks, and fixed-income assets without the clutter of "gamified" behavioral finance apps.
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd:complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
 
 ## Tech Stack
 *   **Frontend:** React (TypeScript) with Vanilla CSS. Focus on a highly visual, clean, data-dense dashboard (similar to a modern SaaS or Bloomberg Terminal light/dark mode).
