@@ -1,44 +1,41 @@
 ---
 gsd_state_version: 1.0
-milestone: v5.0
-milestone_name: Distribution & Persistence
-current_phase: Phase 17 (Unified Setup & Automation)
-status: completed
-last_updated: "2026-05-19T10:47:24.521Z"
-last_activity: 2026-05-19 — Milestone 5.0 completed and archived
+milestone: v6.0
+milestone_name: Authentication & Multi-User Support
+current_phase: Phase 18 (Backend Authentication Core)
+status: planning
+last_updated: "2026-05-19T14:34:34.816Z"
+last_activity: 2026-05-19 — Milestone v6.0 initialized
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 4
-  percent: 67
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State Memory
 
-*   **Current Phase:** Phase 17 (Unified Setup & Automation)
-*   **Status:** 5.0 milestone complete
-*   **Next Steps:** Milestone audit and lifecycle completion.
+*   **Current Phase:** Phase 18 (Backend Authentication Core)
+*   **Status:** Milestone v6.0 in planning and initialization
+*   **Next Steps:** Implement backend auth endpoints and middleware.
 
 *   **Key Decisions:**
-    *   **Dockerization (Phase 15):** Optimized multi-stage Dockerfiles for backend (185MB) and frontend (93MB).
-    *   **Persistence (Phase 16):** Named Docker volumes for Postgres/Redis. Healthchecks for dependency management.
-    *   **Automation (Phase 17):** Unified `setup.sh` script. Automatic `prisma migrate deploy` on backend startup.
+    *   **Auth Strategy (Milestone 6.0):** Use JWT for session management and Bcrypt for password hashing.
+    *   **Isolation (Milestone 6.0):** Every database query will be scoped to `req.user.id`.
 
 # Session History
 
-- **2026-05-19:** Milestone v5.0 started. Goal: Distribution & Persistence.
-- **2026-05-19:** Phase 15 completed. Multi-stage Docker builds optimized and verified.
-- **2026-05-19:** Phase 16 completed. Persistent infrastructure and orchestration implemented.
-- **2026-05-19:** Phase 17 completed. Unified setup script and auto-migrations implemented.
+- **2026-05-19:** Milestone v6.0 started. Goal: Authentication & Multi-User Support.
+- **2026-05-19:** Requirements and Roadmap for v6.0 drafted and approved.
 
 ## Current Position
 
-Phase: Milestone 5.0 complete
+Phase: Phase 18 (Backend Authentication Core)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-05-19 — Milestone 5.0 completed and archived
+Status: In Planning
+Last activity: 2026-05-19 — Milestone v6.0 initialized
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Start Phase 18 with /gsd:plan-phase 18
