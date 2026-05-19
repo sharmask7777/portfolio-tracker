@@ -52,3 +52,7 @@ Refer to [skills/README.md](./skills/README.md) for the full manifest.
 - **Python Bridge:** The PDF parsing lives in `backend/scripts/parse_cas.py`. It requires the `casparser` library in the local `venv`.
 - **Redis Caching:** Market data (NAVs, Holdings) is cached to avoid API rate limits and ensure fast UI responses.
 - **Vanilla CSS:** Maintain the data-dense, minimalist aesthetic. Avoid adding heavy UI libraries that bloat the bundle.
+
+## Troubleshooting & Common Pitfalls
+- **Browser Extensions (uBlock Origin):** Privacy/Ad-blockers may block calls to endpoints like `/api/portfolio/upload` or `/api/portfolio/summary` if they perceive them as tracking or "suspicious" due to local IP/port combinations. If uploads fail silently or with network errors, try whitelisting the application domain.
+- **Alpine Linux Dependencies:** The Python parser requires specific system libraries (`libffi`, `gcompat`, `py3-cryptography`) on Alpine-based Docker images. Always ensure these are present in the `Dockerfile` to avoid "Password or format" errors caused by library load failures.
