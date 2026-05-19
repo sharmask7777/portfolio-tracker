@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: portfolio_tracker_db
+    restart: always
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
@@ -14,8 +15,40 @@ services:
   redis:
     image: redis:7-alpine
     container_name: portfolio_tracker_redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
     ports:
       - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build:
+      context: ./backend
+    container_name: portfolio_tracker_backend
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-password}@postgres:5432/${DB_NAME:-portfolio_tracker}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 3001
+      NODE_ENV: production
+    depends_on:
+      - postgres
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: portfolio_tracker_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
+  redis_data:
