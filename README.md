@@ -8,6 +8,7 @@ A deep-analytics portfolio tracking platform for Indian investors. Supports CAMS
 - **Deep Analytics:** 
     - **Portfolio X-Ray:** Breakdown by Sector, Market Cap, and Asset Allocation.
     - **Stock Intersection:** Identify hidden overlaps and concentrated stock bets across multiple mutual funds.
+    - **Interactive History:** Day-to-day corpus movement graph (Invested vs Current Value).
 - **Financial Math:** Precise, annualized **XIRR** and **CAGR** using stable bisection-based algorithms.
 - **Tax Intelligence:** 
     - **Budget 2024 Ready:** Correct calculation for new STCG (20%) and LTCG (12.5%) rules.
@@ -18,75 +19,90 @@ A deep-analytics portfolio tracking platform for Indian investors. Supports CAMS
 
 ## 🛠️ Tech Stack
 
-- **Frontend:** React, TypeScript, Vite, Recharts, Lucide Icons.
+- **Frontend:** React, TypeScript, Vite, Recharts, Lucide Icons, Nginx (Production).
 - **Backend:** Node.js, Express, TypeScript, Prisma 7 (PostgreSQL).
 - **Caching:** Redis.
+- **Infrastructure:** Docker, Multi-stage Builds, Persistent Volumes.
 - **Parsing:** Python 3 + `casparser` library.
 
 ## 🏁 Getting Started
 
 ### Prerequisites
-- Node.js (v18+)
-- Python 3.10+
 - Docker & Docker Compose
+- Node.js (v20+) - *Optional for local dev*
+- Python 3.10+ - *Optional for local dev*
 
-### 1. Setup Infrastructure
-Start the PostgreSQL and Redis containers:
+### ⚡ One-Command Setup (Recommended)
+The fastest way to get the entire stack running is via the unified setup script. This will initialize your environment, install dependencies, and (optionally) start the Docker containers.
+
 ```bash
-docker-compose up -d
+chmod +x setup.sh
+./setup.sh
 ```
 
-### 2. Backend Setup
-The backend uses Prisma 7 with a specific configuration. **Prisma commands MUST be run from the `backend/` directory.**
+### 🐳 Docker Deployment
+The project uses production-optimized, multi-stage Docker builds. Data is persisted automatically in Docker-managed volumes.
 
+```bash
+# Start all services (Backend, Frontend, DB, Redis)
+npm start
+
+# Or directly via Docker Compose
+docker-compose up -d --build
+```
+- **Backend API:** `http://localhost:3001`
+- **Frontend UI:** `http://localhost:80` (or `http://localhost:5173` in dev mode)
+- **Persistence:** Database data survives `docker-compose down` due to the `postgres_data` volume.
+
+---
+
+## 💻 Development Setup
+
+If you prefer to run services manually for development:
+
+### 1. Environment Initialization
+```bash
+cp .env.example .env
+cp backend/.env.example backend/.env
+```
+
+### 2. Infrastructure (DB & Redis)
+```bash
+docker-compose up -d db redis
+```
+
+### 3. Backend Setup
 ```bash
 cd backend
 npm install
-
-# Setup environment variables
-cp .env.example .env
-
-# Setup Python virtual environment for PDF parsing
 python3 -m venv venv
-./venv/bin/pip install casparser rapidfuzz
-
-# Database Setup (Prisma 7)
-npx prisma migrate dev --name init
-npx prisma generate
-
-# Start dev server
+./venv/bin/pip install casparser
+npx prisma migrate dev
 npm run dev
 ```
 
-### 3. Frontend Setup
+### 4. Frontend Setup
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### 4. Running Everything Together
-You can also run both servers from the root directory after completing the setup:
-```bash
-npm run dev
-```
+---
 
 ## 🧪 Testing & Quality
 
-We prioritize mathematical integrity and system stability through a multi-layered approach:
+We prioritize mathematical integrity and system stability:
 
 - **Unit & Property-Based Testing (PBT):** Rigorous math validation using `fast-check`. Run via `npm test --prefix backend`.
-- **E2E Testing:** Playwright-based frontend flows. Run via `npx playwright test` in the `frontend/` folder.
-- **Skills:**
-    - `quality-audit`: Mathematical and functional integrity checks.
-    - `pdd`: Architectural planning and design.
-    - `code-assist`: TDD-based implementation guidance.
+- **E2E Testing:** Playwright-based frontend flows. Run via `npx playwright test --prefix frontend`.
+- **Quality Mandates:** Zero-tolerance for `NaN` displays in the UI. Every visualization is verified for data integrity.
 
 ## 📖 Maintenance
 
 - **Adding Asset Types:** Update `backend/prisma/schema.prisma` and the `AlternativeAssetService`.
 - **Updating Tax Rules:** Modify the logic in `TaxService.ts`.
-- **Prisma Configuration:** The project uses `backend/prisma.config.ts`. If you add new models, always run `npx prisma generate` inside the `backend/` folder to update the client.
+- **Database Migrations:** When updating the schema, the backend container will automatically run `prisma migrate deploy` on startup. For dev, use `npx prisma migrate dev`.
 
 
 ---
