@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api, { API_ENDPOINTS } from '../../api';
 import { X, AlertCircle, Info, TrendingDown } from 'lucide-react';
-import { API_ENDPOINTS } from '../../config';
 import { useSettings } from '../../contexts/SettingsContext';
 
 interface SimulationModalProps {
@@ -43,7 +42,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
     try {
       setLoading(true);
       setError('');
-      const res = await axios.post(`${API_ENDPOINTS.TAX}/simulate-sell`, {
+      const res = await api.post(`${API_ENDPOINTS.TAX}/simulate-sell`, {
         folioId: folio.id,
         units: units,
         taxSlab: taxSlab,

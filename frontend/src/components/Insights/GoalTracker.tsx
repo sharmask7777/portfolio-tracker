@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api, { API_ENDPOINTS } from '../../api';
 import { Target, Plus, Calendar } from 'lucide-react';
-import { API_ENDPOINTS, API_CONFIG } from '../../config';
 
 interface Goal {
   id: string;
@@ -24,9 +23,7 @@ export const GoalTracker: React.FC<GoalTrackerProps> = ({ portfolioId, currentVa
 
   const fetchGoals = async () => {
     try {
-      const res = await axios.get(`${API_ENDPOINTS.HEALTH}/${portfolioId}/goals`, {
-        params: { userId: API_CONFIG.MOCK_USER_ID }
-      });
+      const res = await api.get(`${API_ENDPOINTS.HEALTH}/${portfolioId}/goals`);
       setGoals(res.data);
     } catch (e) {
       console.error('Failed to fetch goals', e);
@@ -40,7 +37,7 @@ export const GoalTracker: React.FC<GoalTrackerProps> = ({ portfolioId, currentVa
   const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_ENDPOINTS.HEALTH}/${portfolioId}/goals`, {
+      await api.post(`${API_ENDPOINTS.HEALTH}/${portfolioId}/goals`, {
         name,
         targetAmount: amount,
         targetDate: date,

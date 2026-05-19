@@ -10,7 +10,7 @@
   "styling": "vanilla-css",
   "current_phase": 1,
   "status": "discovery_complete",
-  "model_profile": "quality",
+  "model_profile": "inherit",
   "workflow": {
     "plan_bounce": true,
     "node_repair": true

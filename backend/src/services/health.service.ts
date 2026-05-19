@@ -14,7 +14,7 @@ export class HealthService {
   /**
    * Generates health insights for a portfolio/profile.
    */
-  public static async getPortfolioHealth(portfolioId: string, userId: string = 'mock-user-123'): Promise<HealthInsight[]> {
+  public static async getPortfolioHealth(portfolioId: string, userId: string): Promise<HealthInsight[]> {
     const insights: HealthInsight[] = [];
 
     // 1. Sector Concentration Check

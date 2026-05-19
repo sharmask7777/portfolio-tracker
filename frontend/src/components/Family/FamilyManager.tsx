@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api, { API_ENDPOINTS } from '../../api';
 import { Users, Plus, Check } from 'lucide-react';
-import { API_ENDPOINTS } from '../../config';
 
 interface FamilyManagerProps {
   onSelect: (groupId: string | null) => void;
@@ -15,7 +14,7 @@ export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selected
 
   const fetchFamilies = async () => {
     try {
-      const res = await axios.get(`${API_ENDPOINTS.FAMILY}/list`);
+      const res = await api.get(`${API_ENDPOINTS.FAMILY}/list`);
       setFamilies(res.data);
     } catch (e) {
       console.error('Failed to fetch families', e);
@@ -29,7 +28,7 @@ export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selected
   const handleCreate = async () => {
     if (!name) return;
     try {
-      await axios.post(`${API_ENDPOINTS.FAMILY}/create`, { name });
+      await api.post(`${API_ENDPOINTS.FAMILY}/create`, { name });
       setName('');
       setShowCreate(false);
       fetchFamilies();

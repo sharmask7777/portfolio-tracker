@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { 
   BarChart, 
   Bar, 
@@ -19,7 +18,9 @@ import {
   Layers,
   Calculator,
   ShieldCheck,
-  BrainCircuit
+  BrainCircuit,
+  LogOut,
+  X
 } from 'lucide-react';
 import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
@@ -29,17 +30,18 @@ import { AddAssetModal } from './components/Dashboard/AddAssetModal';
 import { InsightsSidebar } from './components/Insights/InsightsSidebar';
 import { GoalTracker } from './components/Insights/GoalTracker';
 import { useSettings } from './contexts/SettingsContext';
+import { useAuth } from './contexts/AuthContext';
 import './App.css';
 
 import { FamilySelector } from './components/Family/FamilySelector';
 import { StatsGrid } from './components/Dashboard/StatsGrid';
 import { HistoryChart } from './components/Dashboard/HistoryChart';
 import { HistoricalHighlightsCard } from './components/Dashboard/HistoricalHighlightsCard';
-import { X } from 'lucide-react';
-import { API_ENDPOINTS, API_CONFIG } from './config';
+import api, { API_ENDPOINTS } from './api';
 
-function App() {
+export function Dashboard() {
   const { theme, toggleTheme, performanceMode, setPerformanceMode, taxSlab, setTaxSlab } = useSettings();
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
@@ -68,17 +70,14 @@ function App() {
         setIsRefetching(true);
       }
       const [summaryRes, profilesRes] = await Promise.all([
-        axios.get(`${API_ENDPOINTS.PORTFOLIO}/summary`, {
+        api.get(`${API_ENDPOINTS.PORTFOLIO}/summary`, {
           params: {
-            userId: API_CONFIG.MOCK_USER_ID,
             familyGroupId: selectedFamilyId,
             profileId: selectedProfileId,
             taxSlab: taxSlab
           }
         }),
-        axios.get(`${API_ENDPOINTS.FAMILY}/profiles`, {
-          params: { userId: API_CONFIG.MOCK_USER_ID }
-        })
+        api.get(`${API_ENDPOINTS.FAMILY}/profiles`)
       ]);
       
       setPortfolio(summaryRes.data);
@@ -86,17 +85,13 @@ function App() {
       
       if (summaryRes.data.id) {
         const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.all([
-          axios.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/xray`, {
-            params: { userId: API_CONFIG.MOCK_USER_ID }
+          api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/xray`),
+          api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/exposures`),
+          api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/tax-summary`, {
+            params: { taxSlab }
           }),
-          axios.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/exposures`, {
-            params: { userId: API_CONFIG.MOCK_USER_ID }
-          }),
-          axios.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/tax-summary`, {
-            params: { taxSlab, userId: API_CONFIG.MOCK_USER_ID }
-          }),
-          axios.get(`${API_ENDPOINTS.TAX}/harvesting-opportunities`, {
-            params: { scopeId: summaryRes.data.id, userId: API_CONFIG.MOCK_USER_ID }
+          api.get(`${API_ENDPOINTS.TAX}/harvesting-opportunities`, {
+            params: { scopeId: summaryRes.data.id }
           }),
         ]);
         setXRayData(xrayRes.data);
@@ -119,9 +114,8 @@ function App() {
   const handleRename = async () => {
     if (!renamingProfile || !newName) return;
     try {
-      await axios.patch(`${API_ENDPOINTS.FAMILY}/profile/${renamingProfile.id}`, {
-        name: newName,
-        userId: API_CONFIG.MOCK_USER_ID
+      await api.patch(`${API_ENDPOINTS.FAMILY}/profile/${renamingProfile.id}`, {
+        name: newName
       });
       setRenamingProfile(null);
       setNewName('');
@@ -139,9 +133,7 @@ function App() {
 
     try {
       setLoading(true);
-      await axios.delete(`${API_ENDPOINTS.PORTFOLIO}/purge`, {
-        params: { userId: API_CONFIG.MOCK_USER_ID }
-      });
+      await api.delete(`${API_ENDPOINTS.PORTFOLIO}/purge`);
       // Reset all state to clean environment
       setPortfolio(null);
       setProfiles([]);
@@ -170,9 +162,7 @@ function App() {
 
     try {
       setUploading(true);
-      await axios.post(`${API_ENDPOINTS.PORTFOLIO}/upload`, formData, {
-        params: { userId: API_CONFIG.MOCK_USER_ID }
-      });
+      await api.post(`${API_ENDPOINTS.PORTFOLIO}/upload`, formData);
       setShowUpload(false);
       setPassword('');
       await fetchSummary();
@@ -246,13 +236,28 @@ function App() {
           <button onClick={toggleTheme} className="theme-toggle">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
-          <button 
-            className="btn btn-danger" 
-            style={{ marginLeft: '0.5rem', backgroundColor: 'var(--danger-color)', color: 'white' }} 
-            onClick={handlePurge}
-          >
-            Purge All Data
-          </button>
+          <div style={{ height: '24px', width: '1px', backgroundColor: 'var(--border-color)', margin: '0 0.5rem' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{user?.email.split('@')[0]}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Free Plan</div>
+            </div>
+            <button 
+              className="theme-toggle" 
+              title="Logout" 
+              onClick={logout}
+              style={{ color: 'var(--danger-color)' }}
+            >
+              <LogOut size={20} />
+            </button>
+            <button 
+              className="btn btn-danger" 
+              style={{ marginLeft: '0.5rem', backgroundColor: 'var(--danger-color)', color: 'white', fontSize: '0.75rem', padding: '0.4rem 0.8rem' }} 
+              onClick={handlePurge}
+            >
+              Purge
+            </button>
+          </div>
         </div>
       </header>
 
@@ -539,6 +544,23 @@ function App() {
         </div>
       )}
     </div>
+  );
+}
+
+import { Routes, Route } from 'react-router-dom';
+import LoginPage from './components/Auth/LoginPage';
+import SignupPage from './components/Auth/SignupPage';
+import ProtectedRoute from './components/Auth/ProtectedRoute';
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path="/" element={<Dashboard />} />
+      </Route>
+    </Routes>
   );
 }
 

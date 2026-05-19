@@ -1,5 +1,5 @@
 import { FamilyService } from '../services/family.service';
-import { prisma } from '../services/db.service';
+import { prisma, cleanupDatabase } from '../services/db.service';
 
 describe('FamilyService Managed Profiles', () => {
   let userId: string;
@@ -19,7 +19,7 @@ describe('FamilyService Managed Profiles', () => {
     // Cleanup
     await prisma.managedProfile.deleteMany({ where: { userId } });
     await prisma.user.delete({ where: { id: userId } });
-    await prisma.$disconnect();
+    await cleanupDatabase();
   });
 
   it('should create a managed profile', async () => {

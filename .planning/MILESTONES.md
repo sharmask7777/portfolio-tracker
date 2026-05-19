@@ -1,11 +1,16 @@
 # Milestones
 
-## 5.0 5.0 (Shipped: 2026-05-19)
+## 6.0 Authentication & Multi-User Support (In Planning)
+**Phases:** 18, 19, 20
+**Goal:** Implement a robust authentication and authorization system to support multiple users with personalized views and secure data access.
 
-**Phases completed:** 3 phases, 6 plans, 0 tasks
+## 5.0 Distribution & Persistence (Shipped: 2026-05-19)
+
+**Phases completed:** 3 phases (15, 16, 17)
 
 **Key accomplishments:**
-
-- (none recorded)
+- Production-optimized Dockerfiles for backend and frontend.
+- Persistent storage for PostgreSQL.
+- Unified `setup.sh` and automated migrations.
 
 ---

@@ -30,7 +30,7 @@ export class OverlapService {
   /**
    * Calculates aggregated stock exposures for a portfolio.
    */
-  public static async getPortfolioExposures(portfolioId: string, userId: string = 'mock-user-123'): Promise<StockExposure[]> {
+  public static async getPortfolioExposures(portfolioId: string, userId: string): Promise<StockExposure[]> {
     let portfolios: any[] = [];
 
     if (portfolioId === 'consolidated') {

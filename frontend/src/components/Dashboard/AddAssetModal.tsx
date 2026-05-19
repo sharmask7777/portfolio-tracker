@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api, { API_ENDPOINTS } from '../../api';
 import { X } from 'lucide-react';
-import { API_ENDPOINTS, API_CONFIG } from '../../config';
 
 interface AddAssetModalProps {
   onClose: () => void;
@@ -21,12 +20,11 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
 
     try {
       setLoading(true);
-      await axios.post(`${API_ENDPOINTS.PORTFOLIO}/manual-asset`, {
+      await api.post(`${API_ENDPOINTS.PORTFOLIO}/manual-asset`, {
         type,
         name,
         units: parseFloat(units),
         balanceDate,
-        userId: API_CONFIG.MOCK_USER_ID
       });
       onSuccess();
       onClose();

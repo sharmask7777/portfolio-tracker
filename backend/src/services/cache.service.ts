@@ -22,7 +22,10 @@ export class CacheService {
       });
 
       this.client.on('error', (err) => {
-        console.error('Redis error:', err);
+        // Silencing error logs during tests if Redis is not available
+        if (process.env.NODE_ENV !== 'test') {
+          console.error('Redis error:', err);
+        }
       });
     }
     return this.client;
@@ -33,7 +36,6 @@ export class CacheService {
       const data = await this.getClient().get(key);
       return data ? JSON.parse(data) : null;
     } catch (e) {
-      console.error('Cache get failed:', e);
       return null;
     }
   }
@@ -42,7 +44,6 @@ export class CacheService {
     try {
       await this.getClient().set(key, JSON.stringify(value), 'EX', ttlSeconds);
     } catch (e) {
-      console.error('Cache set failed:', e);
     }
   }
 
@@ -50,7 +51,13 @@ export class CacheService {
     try {
       await this.getClient().del(key);
     } catch (e) {
-      console.error('Cache del failed:', e);
+    }
+  }
+
+  public static async disconnect(): Promise<void> {
+    if (this.client) {
+      await this.client.quit();
+      this.client = null;
     }
   }
 }

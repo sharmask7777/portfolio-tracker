@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api, { API_ENDPOINTS } from '../../api';
 import { Lightbulb, AlertTriangle, CheckCircle, Info } from 'lucide-react';
-import { API_ENDPOINTS, API_CONFIG } from '../../config';
 
 interface Insight {
   type: 'CONCENTRATION' | 'OVERLAP' | 'DRIFT' | 'INFO';
@@ -22,9 +21,7 @@ export const InsightsSidebar: React.FC<InsightsSidebarProps> = ({ portfolioId })
     const fetchInsights = async () => {
       try {
         setLoading(true);
-        const res = await axios.get(`${API_ENDPOINTS.HEALTH}/${portfolioId}/insights`, {
-          params: { userId: API_CONFIG.MOCK_USER_ID }
-        });
+        const res = await api.get(`${API_ENDPOINTS.HEALTH}/${portfolioId}/insights`);
         setInsights(res.data);
       } catch (e) {
         console.error('Failed to fetch insights', e);

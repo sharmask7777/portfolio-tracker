@@ -62,7 +62,7 @@ describe('OverlapService', () => {
         ],
       });
 
-      const exposures = await OverlapService.getPortfolioExposures('p1');
+      const exposures = await OverlapService.getPortfolioExposures('p1', 'u1');
       // Folio Value = 100 * 10 = 1000
       // Stock X absolute = 1000 * 0.5 = 500
       expect(exposures[0].name).toBe('Stock X');

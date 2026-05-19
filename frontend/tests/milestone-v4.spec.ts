@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { setupAuth } from './utils/auth-setup';
 
 test.describe('Milestone v4.0: Analytics & Visualization', () => {
   test.beforeEach(async ({ page }) => {
+    await setupAuth(page);
     // Navigate to the app and trigger a mock upload to populate data
     await page.goto('/');
     

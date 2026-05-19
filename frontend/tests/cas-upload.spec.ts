@@ -10,21 +10,19 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DUMMY_PDF = path.join(__dirname, 'dummy.pdf');
-
-test.beforeAll(async () => {
-  fs.writeFileSync(DUMMY_PDF, 'dummy pdf content');
-});
-
-test.afterAll(async () => {
-  if (fs.existsSync(DUMMY_PDF)) {
-    fs.unlinkSync(DUMMY_PDF);
-  }
-});
-
 test.describe('CAS Upload Flow', () => {
-  test.beforeEach(async ({ page }) => {
+  let dummyPdfPath: string;
+
+  test.beforeEach(async ({ page }, testInfo) => {
     await setupAuth(page);
+    dummyPdfPath = path.join(__dirname, `dummy-${testInfo.workerIndex}.pdf`);
+    fs.writeFileSync(dummyPdfPath, 'dummy pdf content');
+  });
+
+  test.afterEach(async () => {
+    if (fs.existsSync(dummyPdfPath)) {
+      fs.unlinkSync(dummyPdfPath);
+    }
   });
 
   test('happy path: upload CAS and see dashboard metrics', async ({ page }) => {
@@ -37,7 +35,7 @@ test.describe('CAS Upload Flow', () => {
     
     // 2. Navigate and upload
     await uploadPage.goto();
-    await uploadPage.uploadFile(DUMMY_PDF);
+    await uploadPage.uploadFile(dummyPdfPath);
     
     // 3. Wait for upload to complete
     await uploadPage.waitForUploadComplete();
@@ -70,7 +68,7 @@ test.describe('CAS Upload Flow', () => {
     
     // 3. Navigate and upload
     await uploadPage.goto();
-    await uploadPage.uploadFile(DUMMY_PDF);
+    await uploadPage.uploadFile(dummyPdfPath);
     
     // 4. Verify error message
     await expect.poll(() => alertMessage).toContain('Invalid PDF format');

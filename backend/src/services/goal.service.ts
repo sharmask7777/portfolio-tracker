@@ -46,7 +46,7 @@ export class GoalService {
   /**
    * Lists all goals for a portfolio/profile with progress metrics.
    */
-  public static async listGoals(portfolioId: string, currentPortfolioValue: number, userId: string = 'mock-user-123') {
+  public static async listGoals(portfolioId: string, currentPortfolioValue: number, userId: string) {
     let goals: any[] = [];
 
     if (portfolioId === 'consolidated') {

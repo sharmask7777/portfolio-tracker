@@ -10,8 +10,8 @@ export class DashboardPage {
 
   constructor(page: Page) {
     this.page = page;
-    // Selects the stat-value that follows a stat-label containing "Net Worth"
-    this.netWorth = page.locator('.card:has(.stat-label:has-text("Net Worth")) .stat-value');
+    // Selects the div containing the value inside the card that has the text "Current Net Worth"
+    this.netWorth = page.locator('.card:has-text("Current Net Worth")').locator('div').nth(1);
     this.schemesTable = page.locator('.data-table');
     this.emptyState = page.locator('.empty-state');
     this.loadingState = page.locator('.loading-state');

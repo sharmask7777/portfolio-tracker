@@ -10,6 +10,7 @@ jest.mock('./db.service', () => ({
     portfolio: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn(),
     },
   },
 }));
@@ -17,7 +18,7 @@ jest.mock('./db.service', () => ({
 describe('HarvestingService', () => {
   it('should identify harvesting opportunities within exemption limit', async () => {
     const mockDate = new Date('2024-05-16'); // In FY 2024-25
-    (prisma.portfolio.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.portfolio.findMany as jest.Mock).mockResolvedValue([{
       id: 'p1',
       folios: [
         {
@@ -28,13 +29,13 @@ describe('HarvestingService', () => {
           ],
         },
       ],
-    });
+    }]);
 
     (MarketDataService.getLatestNAV as jest.Mock).mockResolvedValue(200);
 
     // Unrealized gain = (200 - 100) * 100 = 10,000
     // Remaining exemption = 1,25,000 (if no realized gains)
-    const result = await HarvestingService.getHarvestingOpportunities('u1');
+    const result = await HarvestingService.getHarvestingOpportunities('consolidated', 'u1');
 
     expect(result.remainingExemption).toBe(125000);
     expect(result.totalPotentialHarvest).toBe(10000);

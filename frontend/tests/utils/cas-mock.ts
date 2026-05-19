@@ -64,7 +64,7 @@ export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
   });
 
   // Also mock other required endpoints for the dashboard
-  await page.route('**/api/portfolio/*/xray', async (route) => {
+  await page.route('**/api/portfolio/*/xray*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -72,7 +72,7 @@ export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
     });
   });
 
-  await page.route('**/api/portfolio/*/exposures', async (route) => {
+  await page.route('**/api/portfolio/*/exposures*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -80,7 +80,7 @@ export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
     });
   });
 
-  await page.route('**/api/portfolio/*/tax-summary', async (route) => {
+  await page.route('**/api/portfolio/*/tax-summary*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -88,7 +88,7 @@ export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
     });
   });
 
-  await page.route('**/api/tax/harvesting-opportunities', async (route) => {
+  await page.route('**/api/tax/harvesting-opportunities*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

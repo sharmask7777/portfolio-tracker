@@ -20,7 +20,7 @@ describe('HealthService', () => {
     });
     (OverlapService.getPortfolioExposures as jest.Mock).mockResolvedValue([]);
 
-    const insights = await HealthService.getPortfolioHealth('p1');
+    const insights = await HealthService.getPortfolioHealth('p1', 'u1');
     const concentration = insights.find((i) => i.type === 'CONCENTRATION');
     
     expect(concentration).toBeDefined();
@@ -36,7 +36,7 @@ describe('HealthService', () => {
       { name: 'HDFC Bank', percentage: 0.2, contributions: [1, 2, 3] },
     ]);
 
-    const insights = await HealthService.getPortfolioHealth('p1');
+    const insights = await HealthService.getPortfolioHealth('p1', 'u1');
     const overlap = insights.find((i) => i.type === 'OVERLAP');
     
     expect(overlap).toBeDefined();

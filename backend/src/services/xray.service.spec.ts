@@ -36,7 +36,7 @@ describe('XRayService', () => {
       },
     });
 
-    const xray = await XRayService.getXRayData('p1');
+    const xray = await XRayService.getXRayData('p1', 'u1');
     
     expect(xray.totalValue).toBe(1000);
     expect(xray.sectors[0].name).toBe('Financial Services');

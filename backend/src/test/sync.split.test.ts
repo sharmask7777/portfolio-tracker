@@ -1,8 +1,19 @@
 import { SyncService } from '../services/sync.service';
-import { prisma } from '../services/db.service';
+import { prisma, cleanupDatabase } from '../services/db.service';
+import { AuthService } from '../services/authService';
 
 describe('SyncService CAS Splitting', () => {
-  const userId = 'sync-test-user-' + Date.now();
+  let userId: string;
+
+  beforeAll(async () => {
+    const user = await prisma.user.create({
+      data: {
+        email: `synctest-${Date.now()}@example.com`,
+        password: await AuthService.hashPassword('password'),
+      },
+    });
+    userId = user.id;
+  });
 
   afterAll(async () => {
     // Cleanup with proper dependency order
@@ -16,7 +27,7 @@ describe('SyncService CAS Splitting', () => {
     await prisma.portfolio.deleteMany({ where: { userId } });
     await prisma.managedProfile.deleteMany({ where: { userId } });
     await prisma.user.delete({ where: { id: userId } });
-    await prisma.$disconnect();
+    await cleanupDatabase();
   });
 
   it('should split CAS into separate portfolios based on PAN', async () => {

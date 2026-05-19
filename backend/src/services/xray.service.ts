@@ -38,7 +38,7 @@ export interface XRayData {
 }
 
 export class XRayService {
-  public static async getXRayData(portfolioId: string, userId: string = 'mock-user-123'): Promise<XRayData> {
+  public static async getXRayData(portfolioId: string, userId: string): Promise<XRayData> {
     let portfolios: any[] = [];
 
     if (portfolioId === 'consolidated') {

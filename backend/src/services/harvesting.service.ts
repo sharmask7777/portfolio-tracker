@@ -26,7 +26,7 @@ export class HarvestingService {
   /**
    * Identifies LTCG harvesting opportunities for a portfolio/profile.
    */
-  public static async getHarvestingOpportunities(scopeId: string, userId: string = 'mock-user-123'): Promise<HarvestingSummary> {
+  public static async getHarvestingOpportunities(scopeId: string, userId: string): Promise<HarvestingSummary> {
     let portfolios: any[] = [];
 
     if (scopeId === 'consolidated') {

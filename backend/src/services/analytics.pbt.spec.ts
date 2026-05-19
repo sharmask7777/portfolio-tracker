@@ -84,7 +84,7 @@ describe('Analytics Property-Based Tests', () => {
           (MarketDataService.getHoldings as jest.Mock).mockImplementation((isin) => Promise.resolve(holdingsMap[isin]));
 
           // 2. Execute
-          const result = await XRayService.getXRayData('test-p-id');
+          const result = await XRayService.getXRayData('test-p-id', 'test-u-id');
 
           // 3. Verify Invariants
           if (result.totalValue > 0) {

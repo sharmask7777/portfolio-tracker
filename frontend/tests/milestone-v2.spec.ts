@@ -37,19 +37,19 @@ test.describe('Milestone v2.0 Features', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(summary) });
     });
 
-    await page.route('**/api/portfolio/*/xray', async (route) => {
+    await page.route('**/api/portfolio/*/xray*', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ assetAllocation: [], sectorExposure: [] }) });
     });
 
-    await page.route('**/api/portfolio/*/exposures', async (route) => {
+    await page.route('**/api/portfolio/*/exposures*', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
-    await page.route('**/api/portfolio/*/tax-summary', async (route) => {
+    await page.route('**/api/portfolio/*/tax-summary*', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ details: [] }) });
     });
 
-    await page.route('**/api/tax/harvesting-opportunities', async (route) => {
+    await page.route('**/api/tax/harvesting-opportunities*', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
         totalPotentialHarvest: 50000,
         estimatedTaxSavings: 6250,
@@ -63,6 +63,7 @@ test.describe('Milestone v2.0 Features', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
         estimatedValue: 50000,
         totalGain: 10000,
+        exitLoad: 0,
         taxBreakdown: {
           totalTax: 1250,
           ltcg: { amount: 10000, tax: 1250 },
@@ -105,18 +106,18 @@ test.describe('Milestone v2.0 Features', () => {
     await taxTab.click();
     
     // Find harvesting card and click the link
-    const harvestLink = page.locator('.harvest-card .btn-link');
+    const harvestLink = page.locator('.harvest-card .btn-link').first();
     await expect(harvestLink).toBeVisible();
     await harvestLink.click();
     
     // Verify modal is open
     const modal = page.locator('.modal');
     await expect(modal).toBeVisible();
-    await expect(modal).toContainText('Tax Simulation');
+    await expect(modal).toContainText('Withdrawal Simulation');
     
     // Verify results are visible (SimulationModal triggers handleSimulate on mount if initialUnits provided)
-    // Wait for "Estimated Total Tax" to appear in results
-    const taxLabel = modal.locator('.stat-label', { hasText: 'Estimated Total Tax' });
+    // Wait for "Total Deductions" to appear in results
+    const taxLabel = modal.locator('.stat-label', { hasText: 'Total Deductions' });
     await expect(taxLabel).toBeVisible();
     
     const taxValue = modal.locator('.stat-value', { hasText: /₹/ }).nth(1);

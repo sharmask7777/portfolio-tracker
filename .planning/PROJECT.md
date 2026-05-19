@@ -8,17 +8,18 @@
 *   **v2.0 Milestone:** Shipped (Dynamic returns, Post-Tax XIRR, E2E Testing).
 *   **v3.0 Milestone:** Shipped (Family View, Alternative Assets).
 *   **v4.0 Milestone:** Shipped (Analytics Visualization, Historical Metrics).
-*   **v5.0 Milestone:** In Planning (Distribution & Persistence).
+*   **v5.0 Milestone:** Shipped (Distribution & Persistence).
+*   **v6.0 Milestone:** In Planning (Authentication & Multi-User Support).
 
-## Current Milestone: v5.0 Distribution & Persistence
+## Current Milestone: v6.0 Authentication & Multi-User Support
 
-**Goal:** Package the application for cross-platform consumption via Docker and ensure data persistence.
+**Goal:** Implement a robust authentication and authorization system to support multiple users with personalized views and secure data access.
 
 **Target features:**
-- **Docker Compose Refinement:** Unified setup for one-command startup.
-- **Data Persistence:** Implement Docker Volumes for PostgreSQL.
-- **Production-ready Dockerfiles:** Optimize builds for deployment.
-- **Setup Script:** Environment handling and initial migration.
+- **User Authentication:** Secure login/signup using JWT or sessions.
+- **Multi-User Data Isolation:** Ensure users can only access their own portfolio data.
+- **Authorization:** Role-based access control (RBAC) if necessary (e.g., Admin vs. User).
+- **Profile Management:** User settings and personalized dashboard configurations.
 
 ## Core Vision
 To provide a highly visual, investor-first dashboard that not only tracks multi-asset portfolios but also offers deep diagnostic tools (like portfolio X-Ray and stock intersection), tax optimization strategies (tax harvesting, switch analysis), and precise performance metrics (XIRR, CAGR, MWRR).

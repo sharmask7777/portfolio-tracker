@@ -10,21 +10,19 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DUMMY_PDF = path.join(__dirname, 'logout-dummy.pdf');
-
-test.beforeAll(async () => {
-  fs.writeFileSync(DUMMY_PDF, 'dummy pdf content');
-});
-
-test.afterAll(async () => {
-  if (fs.existsSync(DUMMY_PDF)) {
-    fs.unlinkSync(DUMMY_PDF);
-  }
-});
-
 test.describe('Logout Flow', () => {
-  test.beforeEach(async ({ page }) => {
+  let dummyPdfPath: string;
+
+  test.beforeEach(async ({ page }, testInfo) => {
     await setupAuth(page);
+    dummyPdfPath = path.join(__dirname, `logout-dummy-${testInfo.workerIndex}.pdf`);
+    fs.writeFileSync(dummyPdfPath, 'dummy pdf content');
+  });
+
+  test.afterEach(async () => {
+    if (fs.existsSync(dummyPdfPath)) {
+      fs.unlinkSync(dummyPdfPath);
+    }
   });
 
   test('should clear session and return to empty state on logout', async ({ page }) => {
@@ -36,15 +34,16 @@ test.describe('Logout Flow', () => {
     await mockPortfolioSummary(page, mockData);
     
     await uploadPage.goto();
-    await uploadPage.uploadFile(DUMMY_PDF);
+    await uploadPage.uploadFile(dummyPdfPath);
     await dashboardPage.waitForData();
     
     // 2. Perform Logout
     await dashboardPage.logout();
     
-    // 3. Verify empty state is shown (app returns to "No portfolio data found")
-    await expect(dashboardPage.emptyState).toBeVisible();
-    await expect(page.getByText('No portfolio data found')).toBeVisible();
+    // 3. Verify user is redirected to the login page
+    await expect(page).toHaveURL(/.*\/login/);
+    await expect(page.locator('text="Welcome Back"')).toBeVisible();
+    await expect(page.locator('text="Sign In"')).toBeVisible();
     
     // 4. Verify schemes table is gone
     await expect(dashboardPage.schemesTable).not.toBeVisible();

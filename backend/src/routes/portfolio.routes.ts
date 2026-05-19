@@ -12,10 +12,13 @@ import { FamilyService } from '../services/family.service';
 import { AlternativeAssetService } from '../services/alternative-assets.service';
 import { HistoryService } from '../services/history.service';
 import { prisma } from '../services/db.service';
+import { authMiddleware } from '../middleware/authMiddleware';
 import fs from 'fs';
 
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
+
+router.use(authMiddleware);
 
 router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
   try {
@@ -23,11 +26,12 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const { password, userId = 'mock-user-123' } = req.body;
+    const { password } = req.body;
+    const userId = req.user!.id;
     const filePath = req.file.path;
 
     const parsedData = await ParserService.parseCAS(filePath, password);
-    const syncResult = await SyncService.syncPortfolio(userId as string, parsedData);
+    const syncResult = await SyncService.syncPortfolio(userId, parsedData);
 
     // Trigger history calculation in background
     if (syncResult.portfolioIds && Array.isArray(syncResult.portfolioIds)) {
@@ -52,7 +56,8 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 
 router.post('/manual-asset', async (req: Request, res: Response) => {
   try {
-    const { userId = 'mock-user-123', type, name, units, balanceDate } = req.body;
+    const { type, name, units, balanceDate } = req.body;
+    const userId = req.user!.id;
 
     const portfolio = await prisma.portfolio.findFirst({ where: { userId } });
     if (!portfolio) throw new Error('Portfolio not found');
@@ -93,7 +98,8 @@ router.post('/manual-asset', async (req: Request, res: Response) => {
 
 router.get('/summary', async (req: Request, res: Response) => {
   try {
-    const { userId = 'mock-user-123', familyGroupId, profileId, taxSlab } = req.query;
+    const { familyGroupId, profileId, taxSlab } = req.query;
+    const userId = req.user!.id;
     const slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
 
     let portfolios: any[] = [];
@@ -103,7 +109,7 @@ router.get('/summary', async (req: Request, res: Response) => {
     } else if (profileId) {
       // FINANCIAL INTELLIGENCE: Individual Member Filtering (REQ-10.4, V3-FAM-03)
       portfolios = await prisma.portfolio.findMany({
-        where: { userId: userId as string, managedProfileId: profileId as string },
+        where: { userId, managedProfileId: profileId as string },
         include: {
           folios: {
             include: {
@@ -116,7 +122,7 @@ router.get('/summary', async (req: Request, res: Response) => {
     } else {
       // Consolidated Family View
       portfolios = await prisma.portfolio.findMany({
-        where: { userId: userId as string },
+        where: { userId },
         include: {
           folios: {
             include: {
@@ -229,8 +235,8 @@ router.get('/summary', async (req: Request, res: Response) => {
 router.get('/:id/exposures', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { userId = 'mock-user-123' } = req.query;
-    const exposures = await OverlapService.getPortfolioExposures(id as string, userId as string);
+    const userId = req.user!.id;
+    const exposures = await OverlapService.getPortfolioExposures(id as string, userId);
     res.status(200).json(exposures);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -240,8 +246,8 @@ router.get('/:id/exposures', async (req: Request, res: Response) => {
 router.get('/:id/xray', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { userId = 'mock-user-123' } = req.query;
-    const xrayData = await XRayService.getXRayData(id as string, userId as string);
+    const userId = req.user!.id;
+    const xrayData = await XRayService.getXRayData(id as string, userId);
     res.status(200).json(xrayData);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -251,14 +257,15 @@ router.get('/:id/xray', async (req: Request, res: Response) => {
 router.get('/:id/tax-summary', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { taxSlab, userId = 'mock-user-123' } = req.query;
+    const userId = req.user!.id;
+    const { taxSlab } = req.query;
     const slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
 
     let portfolios: any[] = [];
 
     if (id === 'consolidated') {
       portfolios = await prisma.portfolio.findMany({
-        where: { userId: userId as string },
+        where: { userId },
         include: {
           folios: {
             include: {
@@ -269,8 +276,8 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
         },
       });
     } else {
-      const p = await prisma.portfolio.findUnique({
-        where: { id: id as string },
+      const p = await prisma.portfolio.findFirst({
+        where: { id: id as string, userId },
         include: {
           folios: {
             include: {
@@ -285,7 +292,7 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
         portfolios = [p];
       } else {
         portfolios = await prisma.portfolio.findMany({
-          where: { managedProfileId: id as string },
+          where: { managedProfileId: id as string, userId },
           include: {
             folios: {
               include: {
@@ -344,24 +351,25 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
 router.get('/:id/history', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { userId = 'mock-user-123', from, to } = req.query;
+    const userId = req.user!.id;
+    const { from, to } = req.query;
 
     let portfolioIds: string[] = [];
 
     if (id === 'consolidated') {
       const portfolios = await prisma.portfolio.findMany({
-        where: { userId: userId as string },
+        where: { userId },
         select: { id: true },
       });
       portfolioIds = portfolios.map(p => p.id);
     } else {
       // Check if ID is a ManagedProfile or Portfolio
-      const portfolio = await prisma.portfolio.findUnique({ where: { id: id as string } });
+      const portfolio = await prisma.portfolio.findFirst({ where: { id: id as string, userId } });
       if (portfolio) {
         portfolioIds = [id as string];
       } else {
         const managedPortfolios = await prisma.portfolio.findMany({
-          where: { managedProfileId: id as string },
+          where: { managedProfileId: id as string, userId },
           select: { id: true },
         });
         portfolioIds = managedPortfolios.map(p => p.id);
@@ -403,24 +411,24 @@ router.get('/:id/history', async (req: Request, res: Response) => {
 router.get('/:id/stats', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { userId = 'mock-user-123' } = req.query;
+    const userId = req.user!.id;
 
     let portfolioIds: string[] = [];
 
     if (id === 'consolidated') {
       const portfolios = await prisma.portfolio.findMany({
-        where: { userId: userId as string },
+        where: { userId },
         select: { id: true },
       });
       portfolioIds = portfolios.map(p => p.id);
     } else {
       // Check if ID is a ManagedProfile or Portfolio
-      const portfolio = await prisma.portfolio.findUnique({ where: { id: id as string } });
+      const portfolio = await prisma.portfolio.findFirst({ where: { id: id as string, userId } });
       if (portfolio) {
         portfolioIds = [id as string];
       } else {
         const managedPortfolios = await prisma.portfolio.findMany({
-          where: { managedProfileId: id as string },
+          where: { managedProfileId: id as string, userId },
           select: { id: true },
         });
         portfolioIds = managedPortfolios.map(p => p.id);
@@ -444,29 +452,29 @@ router.get('/:id/stats', async (req: Request, res: Response) => {
 
 router.delete('/purge', async (req: Request, res: Response) => {
   try {
-    const { userId = 'mock-user-123' } = req.query;
+    const userId = req.user!.id;
 
     // Use a transaction to ensure all-or-nothing deletion
     await prisma.$transaction([
       // 1. Delete all goals associated with portfolios of this user
       prisma.goal.deleteMany({
-        where: { portfolio: { userId: userId as string } }
+        where: { portfolio: { userId } }
       }),
       // 2. Delete all transactions associated with folios of this user
       prisma.transaction.deleteMany({
-        where: { folio: { portfolio: { userId: userId as string } } }
+        where: { folio: { portfolio: { userId } } }
       }),
       // 3. Delete all folios associated with portfolios of this user
       prisma.folio.deleteMany({
-        where: { portfolio: { userId: userId as string } }
+        where: { portfolio: { userId } }
       }),
       // 4. Delete all portfolios for this user
       prisma.portfolio.deleteMany({
-        where: { userId: userId as string }
+        where: { userId }
       }),
       // 5. Delete all managed profiles for this user
       prisma.managedProfile.deleteMany({
-        where: { userId: userId as string }
+        where: { userId }
       }),
     ]);
 
@@ -477,3 +485,4 @@ router.delete('/purge', async (req: Request, res: Response) => {
 });
 
 export default router;
+

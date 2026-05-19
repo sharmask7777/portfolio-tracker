@@ -7,12 +7,13 @@ import portfolioRoutes from './routes/portfolio.routes';
 import taxRoutes from './routes/tax.routes';
 import familyRoutes from './routes/family.routes';
 import healthRoutes from './routes/health.routes';
+import authRoutes from './routes/authRoutes';
 import { NAVRefreshJob } from './jobs/nav-refresh.job';
 import { HistoryRefreshJob } from './jobs/history-refresh.job';
 
 dotenv.config();
 
-const app = express();
+export const app = express();
 const port = process.env.PORT || 3001;
 
 app.use(helmet());
@@ -24,14 +25,17 @@ app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/tax', taxRoutes);
 app.use('/api/family', familyRoutes);
 app.use('/api/health', healthRoutes);
+app.use('/api/auth', authRoutes);
 
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-NAVRefreshJob.start();
-HistoryRefreshJob.start();
+if (process.env.NODE_ENV !== 'test') {
+  NAVRefreshJob.start();
+  HistoryRefreshJob.start();
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+  app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+  });
+}

@@ -17,7 +17,7 @@ test.describe('Family View & Managed Profiles', () => {
     await expect(selector).toContainText('Consolidated Family');
     
     // Wait for profiles to load
-    await expect(page.locator('button.chip:not(.active)')).toBeVisible();
+    await expect(page.locator('button.chip:not(.active)').first()).toBeVisible();
     
     const initialNetWorth = await page.locator('.stats-grid .card:first-child').innerText();
     

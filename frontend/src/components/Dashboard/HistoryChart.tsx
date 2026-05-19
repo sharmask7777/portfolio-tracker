@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api, { API_ENDPOINTS } from '../../api';
 import { 
   AreaChart, 
   Area, 
@@ -9,7 +9,6 @@ import {
   Tooltip, 
   ResponsiveContainer
 } from 'recharts';
-import { API_ENDPOINTS, API_CONFIG } from '../../config';
 
 interface HistoryPoint {
   date: string;
@@ -40,9 +39,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ portfolioId }) => {
       try {
         setLoading(true);
         setError(null);
-        const response = await axios.get(`${API_ENDPOINTS.PORTFOLIO}/${portfolioId}/history`, {
-          params: { userId: API_CONFIG.MOCK_USER_ID }
-        });
+        const response = await api.get(`${API_ENDPOINTS.PORTFOLIO}/${portfolioId}/history`);
         
         // Ensure we always have an array
         setHistoryData(Array.isArray(response.data) ? response.data : []);
