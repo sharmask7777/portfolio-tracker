@@ -70,14 +70,21 @@ docker-compose up -d db redis
 ```
 
 #### Backend
-```bash
-cd backend
-npm install
-python3 -m venv venv
-./venv/bin/pip install casparser
-npx prisma migrate dev
-npm run dev
-```
+1. **Install System Dependencies (Linux only):**
+   ```bash
+   sudo apt-get install -y python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev
+   ```
+2. **Setup Node & Python:**
+   ```bash
+   cd backend
+   npm install
+   # Create venv and install parsing libraries
+   python3 -m venv venv
+   ./venv/bin/pip install casparser pycryptodome
+   # Sync database
+   npx prisma migrate dev
+   npm run dev
+   ```
 
 #### Frontend
 ```bash
