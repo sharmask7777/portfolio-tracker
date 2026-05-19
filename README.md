@@ -2,37 +2,96 @@
 
 A deep-analytics portfolio tracking platform for Indian investors. Supports CAMS/Karvy CAS statements, real-time performance tracking, deep X-Ray analytics, and advanced tax optimization.
 
-## 🚀 Quick Start (Pre-built Docker Images)
+## 🚀 Quick Start (For Users)
 
-The easiest way to run the application is using the pre-built images from Docker Hub.
+You can run Portfolio Tracker on any machine using Docker. You don't need to download the source code—just follow these three simple steps to start the application using our pre-built images.
 
-### 1. Setup Environment
-Create a `.env` file in your root directory from the example:
+### 1. Create a Project Folder
+Create a new folder on your computer and navigate into it:
 ```bash
-cp .env.example .env
+mkdir portfolio-tracker
+cd portfolio-tracker
 ```
 
-**Crucial for Linux/Docker:** Ensure `DOCKER_REGISTRY_USER` is set (e.g., `DOCKER_REGISTRY_USER=local`) to avoid tag errors.
+### 2. Create Configuration Files
 
-### 2. Linux System Dependencies
-If running locally on Linux (Debian/Ubuntu), install these for PDF parsing:
-```bash
-sudo apt-get update
-sudo apt-get install -y python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev
+**Step A:** Create a file named `.env` in this folder to hold your settings. Change the password and IP fields as needed.
+```env
+# .env
+PORTFOLIO_DB_USER=portfolio_admin
+PORTFOLIO_DB_PASSWORD=your_secure_password_here
+PORTFOLIO_DB_NAME=portfolio_tracker
+TZ_GLOBAL=UTC
+VOLUME_PREFIX_GLOBAL=.
+VITE_API_PORT=3031
+# If accessing from another device on your network, replace localhost with your server's IP address (e.g., 192.168.1.100)
+IP_GLOBAL=localhost
 ```
 
-### 3. Run with Docker Compose
-```bash
-# Build local images with Linux-specific fixes
-docker-compose build
+**Step B:** Create a file named `docker-compose.yml` and paste the following configuration:
+```yaml
+# docker-compose.yml
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: portfolio_tracker_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${PORTFOLIO_DB_USER}
+      POSTGRES_PASSWORD: ${PORTFOLIO_DB_PASSWORD}
+      POSTGRES_DB: ${PORTFOLIO_DB_NAME}
+      TZ: ${TZ_GLOBAL}
+    volumes:
+      - "${VOLUME_PREFIX_GLOBAL}/appdata/portfolio/db:/var/lib/postgresql/data"
 
-# Start all services
+  redis:
+    image: redis:7-alpine
+    container_name: portfolio_tracker_redis
+    restart: always
+    environment:
+      TZ: ${TZ_GLOBAL}
+    volumes:
+      - "${VOLUME_PREFIX_GLOBAL}/appdata/portfolio/redis:/data"
+
+  backend:
+    image: shaleenks/portfolio-backend:latest
+    container_name: portfolio_tracker_backend
+    restart: always
+    ports:
+      - "${VITE_API_PORT}:3001"
+    environment:
+      DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      NODE_ENV: production
+      PYTHON_PATH: python3
+      TZ: ${TZ_GLOBAL}
+    depends_on:
+      - postgres
+      - redis
+
+  frontend:
+    image: shaleenks/portfolio-frontend:latest
+    container_name: portfolio_tracker_frontend
+    restart: always
+    ports:
+      - "8082:80"
+    environment:
+      VITE_API_URL: "http://${IP_GLOBAL}:${VITE_API_PORT}"
+      TZ: ${TZ_GLOBAL}
+    depends_on:
+      - backend
+```
+
+### 3. Start the Application
+Run this command to download the images and start the tracker:
+```bash
 docker-compose up -d
 ```
 
-- **Frontend UI:** `http://localhost:8082` (or your mapped port)
-- **Backend API:** `http://localhost:3031` (or your mapped port)
-- **Images:** [shaleenks/portfolio-backend](https://hub.docker.com/r/shaleenks/portfolio-backend) | [shaleenks/portfolio-frontend](https://hub.docker.com/r/shaleenks/portfolio-frontend)
+That's it! You can now access your application:
+- **Frontend UI:** `http://localhost:8082` (or your server's IP:8082)
+- **Backend API:** `http://localhost:3031` (or your server's IP:3031)
 
 ---
 
