@@ -24,8 +24,20 @@ RUN find node_modules -name "query-engine-*" -not -name "*linux-musl-openssl-3.0
 FROM node:20-alpine
 WORKDIR /app
 
-# Install python, casparser, and Prisma dependencies (openssl, libc6-compat)
-RUN apk add --no-cache python3 py3-pip openssl libc6-compat && \
+# Install python, casparser, and Prisma dependencies
+# gcompat and libc6-compat are needed for various binary wheels
+# py3-cryptography provides the heavy-lifting for encrypted PDFs on Alpine
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    py3-cryptography \
+    py3-pydantic \
+    openssl \
+    libc6-compat \
+    gcompat \
+    libffi \
+    zlib \
+    libjpeg-turbo && \
     pip install --no-cache-dir casparser --break-system-packages && \
     apk del py3-pip && \
     rm -rf /root/.cache && \

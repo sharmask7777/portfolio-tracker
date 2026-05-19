@@ -31,13 +31,16 @@ export class ParserService {
 
       child.on('close', (code) => {
         if (code !== 0) {
+          const cleanStderr = stderr.trim();
           console.error(`Python parser process exited with code ${code}`);
-          console.error(`Stderr: ${stderr}`);
+          console.error(`Stderr: ${cleanStderr}`);
+          
           try {
-            const errorObj = JSON.parse(stderr);
-            return reject(new Error(errorObj.error || 'Parsing failed'));
+            const errorObj = JSON.parse(cleanStderr);
+            return reject(new Error(errorObj.error || `Parsing failed (Exit Code ${code})`));
           } catch (e) {
-            return reject(new Error(stderr || 'Python process exited with error'));
+            // If it's not JSON, return the raw stderr as it might contain system/library errors
+            return reject(new Error(cleanStderr || `Python process exited with error code ${code}`));
           }
         }
 
