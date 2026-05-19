@@ -1,0 +1,12 @@
+node_modules
+dist
+venv
+.env
+.git
+.gitignore
+tests
+coverage
+README.md
+PROJECT.md
+uploads/*
+prisma/migrations
