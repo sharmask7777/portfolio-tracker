@@ -11,13 +11,8 @@ export interface ProcessPdfUploadJobData {
 const REDIS_HOST_ENV = process.env.REDIS_HOST;
 const REDIS_PORT_ENV = process.env.REDIS_PORT;
 
-if (!REDIS_HOST_ENV || !REDIS_PORT_ENV) {
-  console.error('REDIS_HOST and REDIS_PORT environment variables must be defined.');
-  throw new Error('REDIS_HOST and REDIS_PORT environment variables must be defined.');
-}
-
-const REDIS_HOST = REDIS_HOST_ENV;
-const REDIS_PORT = parseInt(REDIS_PORT_ENV, 10);
+const REDIS_HOST = REDIS_HOST_ENV || 'localhost';
+const REDIS_PORT = REDIS_PORT_ENV ? parseInt(REDIS_PORT_ENV, 10) : 6379;
 
 // Create a singleton queue instance
 let uploadQueue: Queue<ProcessPdfUploadJobData, any, string> | null = null;

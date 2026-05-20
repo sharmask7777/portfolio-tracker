@@ -132,28 +132,21 @@ describe('Job Queue Module', () => {
     consoleErrorSpy.mockRestore(); // Restore original console.error
   });
 
-  // Test Scenario 4: Error if Redis host or port are not defined
-  it('should throw an error if redis host or port are not defined during initialization', () => {
+  // Test Scenario 4: Default fallback if Redis host or port are not defined
+  it('should fallback to localhost:6379 if redis host or port are not defined during initialization', async () => {
     jest.resetModules(); // Ensure a fresh module load for this specific test
     delete process.env.REDIS_HOST; // Simulate missing host
     delete process.env.REDIS_PORT; // Simulate missing port
 
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { getUploadQueue } = require('../../jobs/queue');
+    const queueInstance = await getUploadQueue();
 
-    let errorThrown: any;
-    try {
-        // Attempt to load the module, which should throw immediately due to top-level check
-        require('../../jobs/queue');
-    } catch (e) {
-        errorThrown = e;
-    }
-
-    expect(errorThrown).toBeDefined(); // Ensure an error was indeed thrown
-    expect(errorThrown.message).toContain('REDIS_HOST and REDIS_PORT environment variables must be defined.');
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('REDIS_HOST and REDIS_PORT environment variables must be defined.'),
-    );
-    consoleErrorSpy.mockRestore();
+    expect(MockQueue).toHaveBeenCalledWith('pdfUploadQueue', expect.objectContaining({
+      connection: expect.objectContaining({
+        host: 'localhost',
+        port: 6379,
+      }),
+    }));
   });
 
 });

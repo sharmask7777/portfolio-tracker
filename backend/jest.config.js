@@ -12,4 +12,12 @@ module.exports = {
   transformIgnorePatterns: [
     "node_modules/(?!@faker-js/faker)"
   ],
+  testPathIgnorePatterns: [
+    "/node_modules/",
+    "/dist/"
+  ],
+  moduleNameMapper: {
+    "^@src/(.*)$": "<rootDir>/src/$1",
+  },
+  moduleDirectories: ["node_modules", "src"],
 };

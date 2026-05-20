@@ -6,7 +6,7 @@ import { SyncService } from './services/sync.service';
 import { HistoryService } from './services/history.service';
 import { prisma } from './services/db.service';
 
-const REDIS_HOST = process.env.REDIS_HOST || 'redis';
+const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
 const REDIS_PORT = process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379;
 
 const connection = {
