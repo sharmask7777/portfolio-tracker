@@ -62,6 +62,8 @@ export function Dashboard() {
   const [renamingProfile, setRenamingProfile] = useState<any>(null);
   const [newName, setNewName] = useState('');
 
+  const [uploadStatusMsg, setUploadStatusMsg] = useState<string>('');
+
   const fetchSummary = async () => {
     try {
       if (!portfolio) {
@@ -110,6 +112,40 @@ export function Dashboard() {
   useEffect(() => {
     fetchSummary();
   }, [selectedFamilyId, selectedProfileId, taxSlab]);
+
+  const pollJobStatus = async (jobId: string) => {
+    setUploadStatusMsg('Processing portfolio... This may take a few minutes.');
+    
+    const checkStatus = async () => {
+      try {
+        const res = await api.get(`${API_ENDPOINTS.PORTFOLIO}/upload-status/${jobId}`);
+        const { status, message } = res.data;
+        
+        if (status === 'COMPLETED') {
+          setShowUpload(false);
+          setPassword('');
+          setUploading(false);
+          setUploadStatusMsg('');
+          await fetchSummary();
+        } else if (status === 'FAILED') {
+          setUploading(false);
+          setUploadStatusMsg('');
+          alert(`Processing failed: ${message || 'Unknown error'}`);
+        } else {
+          // PENDING or PROCESSING
+          setUploadStatusMsg(`Processing... (${status.toLowerCase()})`);
+          setTimeout(checkStatus, 3000); // Check again in 3s
+        }
+      } catch (err) {
+        console.error("Error polling job status:", err);
+        setUploading(false);
+        setUploadStatusMsg('');
+        alert('Lost connection to processing status.');
+      }
+    };
+
+    setTimeout(checkStatus, 2000); // Start checking after 2s
+  };
 
   const handleRename = async () => {
     if (!renamingProfile || !newName) return;
@@ -162,15 +198,23 @@ export function Dashboard() {
 
     try {
       setUploading(true);
-      await api.post(`${API_ENDPOINTS.PORTFOLIO}/upload`, formData);
-      setShowUpload(false);
-      setPassword('');
-      await fetchSummary();
+      setUploadStatusMsg('Uploading file...');
+      const res = await api.post(`${API_ENDPOINTS.PORTFOLIO}/upload`, formData);
+      if (res.status === 202 && res.data.jobId) {
+        pollJobStatus(res.data.jobId);
+      } else {
+        // Fallback for older synchronous behavior or unexpected responses
+        setShowUpload(false);
+        setPassword('');
+        await fetchSummary();
+        setUploading(false);
+        setUploadStatusMsg('');
+      }
     } catch (err: any) {
+      setUploading(false);
+      setUploadStatusMsg('');
       const msg = err.response?.data?.error || 'Upload failed. Please check your password or file format.';
       alert(msg);
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -187,7 +231,7 @@ export function Dashboard() {
   };
 
   if (loading || uploading) {
-    return <div className="loading-state">{uploading ? 'Parsing CAS and Generating History...' : 'Loading your portfolio...'}</div>;
+    return <div className="loading-state">{uploading ? uploadStatusMsg || 'Parsing CAS and Generating History...' : 'Loading your portfolio...'}</div>;
   }
 
   return (
@@ -551,8 +595,8 @@ export function Dashboard() {
               onChange={(e) => setPassword(e.target.value)}
             />
             <div style={{ display: 'flex', gap: '1rem' }}>
-              <label className="btn btn-primary" style={{ flex: 1, cursor: 'pointer' }}>
-                {uploading ? 'Parsing...' : 'Select File & Upload'}
+              <label className="btn btn-primary" style={{ flex: 1, cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.7 : 1 }}>
+                {uploading ? uploadStatusMsg || 'Parsing...' : 'Select File & Upload'}
                 <input type="file" hidden onChange={handleFileUpload} disabled={uploading} />
               </label>
               <button className="btn" onClick={() => setShowUpload(false)} disabled={uploading} style={{ border: '1px solid var(--border-color)' }}>
