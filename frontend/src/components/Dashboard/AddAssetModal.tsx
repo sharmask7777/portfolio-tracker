@@ -1,18 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
 import { X } from 'lucide-react';
 
 interface AddAssetModalProps {
   onClose: () => void;
   onSuccess: () => void;
+  profiles: any[];
+  selectedProfileId: string | null;
 }
 
-export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess }) => {
+export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess, profiles, selectedProfileId }) => {
   const [type, setType] = useState('EPF');
   const [name, setName] = useState('');
   const [units, setUnits] = useState('');
   const [balanceDate, setBalanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [profileId, setProfileId] = useState<string>('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (selectedProfileId) {
+      setProfileId(selectedProfileId);
+    } else if (profiles.length > 0) {
+      // Default to "My Portfolio" (usually the one without a managedProfileId)
+      // Since profiles array comes from the API, we need to handle it.
+      // If selectedProfileId is null, it typically means the "All" or "Primary" view is selected.
+      setProfileId('');
+    }
+  }, [selectedProfileId, profiles]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +39,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
         name,
         units: parseFloat(units),
         balanceDate,
+        profileId: profileId || null,
       });
       onSuccess();
       onClose();
@@ -44,6 +59,22 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          
+          <div>
+            <label style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Assign to Family Member</label>
+            <select 
+              className="card" 
+              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
+              value={profileId}
+              onChange={(e) => setProfileId(e.target.value)}
+            >
+              <option value="">My Primary Portfolio</option>
+              {profiles.map(p => (
+                <option key={p.id} value={p.id}>{p.name} ({p.pan})</option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Asset Type</label>
             <select 

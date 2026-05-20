@@ -435,6 +435,25 @@ export function Dashboard() {
                             >
                               <Calculator size={16} />
                             </button>
+                            {folio.number && folio.number.startsWith('MANUAL_') && (
+                              <button 
+                                className="theme-toggle" 
+                                title="Delete Asset" 
+                                onClick={async () => {
+                                  if (window.confirm('Are you sure you want to delete this asset?')) {
+                                    try {
+                                      await api.delete(`${API_ENDPOINTS.PORTFOLIO}/manual-asset/${folio.id}`);
+                                      fetchSummary();
+                                    } catch (e) {
+                                      alert('Failed to delete asset');
+                                    }
+                                  }
+                                }}
+                                style={{ marginLeft: '0.5rem', color: 'var(--danger-color)' }}
+                              >
+                                <X size={16} />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -514,7 +533,7 @@ export function Dashboard() {
         </div>
       )}
 
-      {showAddAsset && <AddAssetModal onClose={() => setShowAddAsset(false)} onSuccess={fetchSummary} />}
+      {showAddAsset && <AddAssetModal onClose={() => setShowAddAsset(false)} onSuccess={fetchSummary} profiles={profiles} selectedProfileId={selectedProfileId} />}
 
       {showUpload && (
         <div className="modal-overlay">

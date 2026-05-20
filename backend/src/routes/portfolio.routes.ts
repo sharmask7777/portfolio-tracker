@@ -60,11 +60,25 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 
 router.post('/manual-asset', async (req: Request, res: Response) => {
   try {
-    const { type, name, units, balanceDate } = req.body;
+    const { type, name, units, balanceDate, profileId } = req.body;
     const userId = req.user!.id;
 
-    const portfolio = await prisma.portfolio.findFirst({ where: { userId } });
-    if (!portfolio) throw new Error('Portfolio not found');
+    let portfolio;
+    if (profileId) {
+      portfolio = await prisma.portfolio.findFirst({ where: { userId, managedProfileId: profileId } });
+    } else {
+      portfolio = await prisma.portfolio.findFirst({ where: { userId, managedProfileId: null } });
+    }
+
+    if (!portfolio) {
+      portfolio = await prisma.portfolio.create({
+        data: {
+          name: profileId ? 'Family Member Portfolio' : 'Primary Portfolio',
+          userId,
+          managedProfileId: profileId || null
+        }
+      });
+    }
 
     const asset = await prisma.asset.create({
       data: {
@@ -95,6 +109,36 @@ router.post('/manual-asset', async (req: Request, res: Response) => {
     });
 
     res.status(200).json({ status: 'success', assetId: asset.id });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/manual-asset/:folioId', async (req: Request, res: Response) => {
+  try {
+    const { folioId } = req.params;
+    const userId = req.user!.id;
+
+    const folio = await prisma.folio.findUnique({
+      where: { id: folioId },
+      include: { portfolio: true }
+    });
+
+    if (!folio || folio.portfolio.userId !== userId) {
+      return res.status(404).json({ error: 'Folio not found' });
+    }
+
+    await prisma.$transaction([
+      prisma.transaction.deleteMany({ where: { folioId } }),
+      prisma.folio.delete({ where: { id: folioId } })
+    ]);
+
+    const otherFolios = await prisma.folio.count({ where: { assetId: folio.assetId } });
+    if (otherFolios === 0) {
+        await prisma.asset.delete({ where: { id: folio.assetId } });
+    }
+
+    res.status(200).json({ status: 'success' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
