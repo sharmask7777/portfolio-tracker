@@ -14,6 +14,8 @@ import { HistoryService } from '../services/history.service';
 import { prisma } from '../services/db.service';
 import { authMiddleware } from '../middleware/authMiddleware';
 import fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
+import { addProcessPdfJob, ProcessPdfUploadJobData } from '../jobs/queue';
 
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
@@ -30,22 +32,13 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     const userId = req.user!.id;
     const filePath = req.file.path;
 
-    const parsedData = await ParserService.parseCAS(filePath, password);
-    const syncResult = await SyncService.syncPortfolio(userId, parsedData);
+    const jobId = uuidv4();
+    await addProcessPdfJob({ userId, filePath, password, jobId });
 
-    // Trigger history calculation in background
-    if (syncResult.portfolioIds && Array.isArray(syncResult.portfolioIds)) {
-      syncResult.portfolioIds.forEach((pId: string) => {
-        HistoryService.calculateHistory(pId).catch(e => {
-          console.error(`Failed to calculate history for portfolio ${pId} after upload:`, e);
-        });
-      });
-    }
+    // Clean up uploaded file is done in the worker, so remove it from here.
+    // fs.unlinkSync(filePath); // Moved to worker
 
-    // Clean up uploaded file
-    fs.unlinkSync(filePath);
-
-    res.status(200).json(syncResult);
+    res.status(202).json({ jobId, message: 'PDF upload accepted and processing has started.' });
   } catch (error: any) {
     if (req.file) {
       fs.unlinkSync(req.file.path);
