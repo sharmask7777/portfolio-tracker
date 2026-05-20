@@ -44,7 +44,14 @@ jest.mock('@src/services/xray.service');
 jest.mock('@src/services/tax.service');
 jest.mock('@src/services/family.service');
 jest.mock('@src/services/alternative-assets.service');
-jest.mock('@src/services/db.service');
+jest.mock('@src/services/db.service', () => ({
+  prisma: {
+    uploadJob: {
+      create: jest.fn<() => Promise<any>>().mockResolvedValue({ id: 'mockJobId123', status: 'PENDING' }),
+      update: jest.fn<() => Promise<any>>().mockResolvedValue({ id: 'mockJobId123', status: 'PROCESSING' }),
+    }
+  }
+}));
 jest.mock('@src/middleware/authMiddleware', () => ({
   authMiddleware: jest.fn((req: any, res: any, next: any) => {
     req.user = { id: 'testUserId' };

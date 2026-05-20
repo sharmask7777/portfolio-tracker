@@ -33,6 +33,17 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     const filePath = req.file.path;
 
     const jobId = uuidv4();
+    
+    // Create tracking record in DB
+    await prisma.uploadJob.create({
+      data: {
+        id: jobId,
+        userId: userId,
+        filePath: filePath,
+        status: 'PENDING'
+      }
+    });
+
     await addProcessPdfJob({ userId, filePath, password, jobId });
 
     // Clean up uploaded file is done in the worker, so remove it from here.

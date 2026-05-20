@@ -4,6 +4,7 @@ import { ProcessPdfUploadJobData } from './jobs/queue';
 import { ParserService } from './services/parser.service';
 import { SyncService } from './services/sync.service';
 import { HistoryService } from './services/history.service';
+import { prisma } from './services/db.service';
 
 const REDIS_HOST = process.env.REDIS_HOST || 'redis';
 const REDIS_PORT = process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379;
@@ -18,8 +19,7 @@ export async function processPdfJob(job: Job<ProcessPdfUploadJobData>): Promise<
   console.log(`Processing job ${jobId} for user ${userId}`);
 
   try {
-    // TODO: Task 4 - Set status PROCESSING
-    // await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'PROCESSING' } });
+    await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'PROCESSING', startedAt: new Date() } });
 
     console.log(`Parsing PDF for job ${jobId}`);
     const parsedData = await ParserService.parseCAS(filePath, password);
@@ -34,14 +34,12 @@ export async function processPdfJob(job: Job<ProcessPdfUploadJobData>): Promise<
       }
     }
 
-    // TODO: Task 4 - Set status COMPLETED
-    // await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'COMPLETED' } });
+    await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'COMPLETED', completedAt: new Date() } });
     console.log(`Successfully completed job ${jobId}`);
 
   } catch (error: any) {
     console.error(`Failed to process job ${jobId}:`, error);
-    // TODO: Task 4 - Set status FAILED
-    // await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'FAILED', message: error.message } });
+    await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'FAILED', message: error.message, completedAt: new Date() } });
     throw error; // Rethrow to let BullMQ handle the failure (retries, etc.)
   } finally {
     // Clean up uploaded file

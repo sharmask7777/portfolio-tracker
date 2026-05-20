@@ -177,3 +177,25 @@ model Transaction {
   @@index([folioId])
   @@index([date])
 }
+
+enum UploadJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model UploadJob {
+  id          String           @id @default(uuid())
+  userId      String
+  filePath    String
+  status      UploadJobStatus  @default(PENDING)
+  message     String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  @@index([userId])
+  @@index([status])
+}

@@ -16,6 +16,13 @@ jest.mock('bullmq', () => ({
 jest.mock('../services/parser.service');
 jest.mock('../services/sync.service');
 jest.mock('../services/history.service');
+jest.mock('../services/db.service', () => ({
+  prisma: {
+    uploadJob: {
+      update: jest.fn<any, any[]>().mockResolvedValue({ id: 'job123' }),
+    }
+  }
+}));
 
 describe('Background Worker - processPdfJob', () => {
   const mockJobData: ProcessPdfUploadJobData = {
