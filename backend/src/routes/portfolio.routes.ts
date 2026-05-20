@@ -116,7 +116,7 @@ router.post('/manual-asset', async (req: Request, res: Response) => {
 
 router.delete('/manual-asset/:folioId', async (req: Request, res: Response) => {
   try {
-    const { folioId } = req.params;
+    const folioId = req.params.folioId as string;
     const userId = req.user!.id;
 
     const folio = await prisma.folio.findUnique({
@@ -124,7 +124,7 @@ router.delete('/manual-asset/:folioId', async (req: Request, res: Response) => {
       include: { portfolio: true }
     });
 
-    if (!folio || folio.portfolio.userId !== userId) {
+    if (!folio || folio.portfolio?.userId !== userId) {
       return res.status(404).json({ error: 'Folio not found' });
     }
 
