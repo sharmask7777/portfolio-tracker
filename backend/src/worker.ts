@@ -1,0 +1,82 @@
+import { Worker, Job } from 'bullmq';
+import * as fs from 'fs';
+import { ProcessPdfUploadJobData } from './jobs/queue';
+import { ParserService } from './services/parser.service';
+import { SyncService } from './services/sync.service';
+import { HistoryService } from './services/history.service';
+
+const REDIS_HOST = process.env.REDIS_HOST || 'redis';
+const REDIS_PORT = process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379;
+
+const connection = {
+  host: REDIS_HOST,
+  port: REDIS_PORT,
+};
+
+export async function processPdfJob(job: Job<ProcessPdfUploadJobData>): Promise<void> {
+  const { userId, filePath, password, jobId } = job.data;
+  console.log(`Processing job ${jobId} for user ${userId}`);
+
+  try {
+    // TODO: Task 4 - Set status PROCESSING
+    // await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'PROCESSING' } });
+
+    console.log(`Parsing PDF for job ${jobId}`);
+    const parsedData = await ParserService.parseCAS(filePath, password);
+
+    console.log(`Syncing portfolio for job ${jobId}`);
+    const syncResult = await SyncService.syncPortfolio(userId, parsedData);
+
+    if (syncResult.portfolioIds && Array.isArray(syncResult.portfolioIds)) {
+      console.log(`Calculating history for portfolios: ${syncResult.portfolioIds.join(', ')}`);
+      for (const pId of syncResult.portfolioIds) {
+        await HistoryService.calculateHistory(pId);
+      }
+    }
+
+    // TODO: Task 4 - Set status COMPLETED
+    // await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'COMPLETED' } });
+    console.log(`Successfully completed job ${jobId}`);
+
+  } catch (error: any) {
+    console.error(`Failed to process job ${jobId}:`, error);
+    // TODO: Task 4 - Set status FAILED
+    // await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'FAILED', message: error.message } });
+    throw error; // Rethrow to let BullMQ handle the failure (retries, etc.)
+  } finally {
+    // Clean up uploaded file
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`Cleaned up temporary file: ${filePath}`);
+      }
+    } catch (cleanupError) {
+      console.error(`Failed to clean up temporary file ${filePath}:`, cleanupError);
+    }
+  }
+}
+
+// Only start the worker if this file is run directly (not imported in tests)
+if (require.main === module) {
+  console.log('Starting PDF Upload Worker...');
+  const worker = new Worker<ProcessPdfUploadJobData>(
+    'pdfUploadQueue',
+    processPdfJob,
+    { connection }
+  );
+
+  worker.on('completed', (job) => {
+    console.log(`Job ${job.id} has completed!`);
+  });
+
+  worker.on('failed', (job, err) => {
+    console.error(`Job ${job?.id} has failed with ${err.message}`);
+  });
+
+  // Graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('Closing worker...');
+    await worker.close();
+    process.exit(0);
+  });
+}
