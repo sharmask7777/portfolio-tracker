@@ -49,6 +49,7 @@ jest.mock('@src/services/db.service', () => ({
     uploadJob: {
       create: jest.fn<() => Promise<any>>().mockResolvedValue({ id: 'mockJobId123', status: 'PENDING' }),
       update: jest.fn<() => Promise<any>>().mockResolvedValue({ id: 'mockJobId123', status: 'PROCESSING' }),
+      findUnique: jest.fn<() => Promise<any>>(),
     }
   }
 }));
@@ -183,5 +184,66 @@ describe('Portfolio Routes - /upload endpoint', () => {
     // It says: if (req.file) { fs.unlinkSync(req.file.path); }
     expect(fs.unlinkSync).toHaveBeenCalledTimes(1);
     expect(fs.unlinkSync).toHaveBeenCalledWith(tempFilePath);
+  });
+
+  describe('GET /api/portfolio/upload-status/:jobId', () => {
+    const mockJobId = 'test-job-123';
+    
+    it('should return 200 OK with job data if found and authorized', async () => {
+      const mockJobData = {
+        id: mockJobId,
+        userId: 'testUserId',
+        status: 'COMPLETED',
+        message: null,
+        completedAt: new Date().toISOString(),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { prisma } = require('@src/services/db.service');
+      prisma.uploadJob.findUnique.mockResolvedValue(mockJobData);
+
+      const res = await request(app).get(`/api/portfolio/upload-status/${mockJobId}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body).toEqual(mockJobData);
+      expect(prisma.uploadJob.findUnique).toHaveBeenCalledWith({ where: { id: mockJobId } });
+    });
+
+    it('should return 404 Not Found if job does not exist', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { prisma } = require('@src/services/db.service');
+      prisma.uploadJob.findUnique.mockResolvedValue(null);
+
+      const res = await request(app).get(`/api/portfolio/upload-status/${mockJobId}`);
+
+      expect(res.statusCode).toEqual(404);
+      expect(res.body).toEqual({ error: 'Job not found' });
+    });
+
+    it('should return 404 Not Found if job belongs to another user', async () => {
+      const mockJobData = {
+        id: mockJobId,
+        userId: 'otherUserId', // Different from testUserId
+        status: 'COMPLETED',
+      };
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { prisma } = require('@src/services/db.service');
+      prisma.uploadJob.findUnique.mockResolvedValue(mockJobData);
+
+      const res = await request(app).get(`/api/portfolio/upload-status/${mockJobId}`);
+
+      expect(res.statusCode).toEqual(404); // Return 404 to avoid leaking existence
+      expect(res.body).toEqual({ error: 'Job not found' });
+    });
+
+    it('should return 500 Internal Server Error if database query fails', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { prisma } = require('@src/services/db.service');
+      prisma.uploadJob.findUnique.mockRejectedValue(new Error('DB Error'));
+
+      const res = await request(app).get(`/api/portfolio/upload-status/${mockJobId}`);
+
+      expect(res.statusCode).toEqual(500);
+      expect(res.body).toEqual({ error: 'DB Error' });
+    });
   });
 });
