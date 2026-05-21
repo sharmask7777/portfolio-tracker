@@ -49,6 +49,7 @@ COPY --from=builder /app/prisma/schema.prisma ./prisma/
 COPY --from=builder /app/prisma/migrations ./prisma/migrations
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/prisma.config.js ./prisma.config.js
 
 # Create uploads directory and set permissions
 RUN mkdir -p uploads && chown node:node uploads
@@ -58,4 +59,4 @@ USER node
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "export DATABASE_URL=${DATABASE_URL} && npx prisma migrate deploy && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
