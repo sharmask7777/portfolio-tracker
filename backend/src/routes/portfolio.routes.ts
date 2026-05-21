@@ -18,7 +18,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { addProcessPdfJob, ProcessPdfUploadJobData } from '../jobs/queue';
 
 const router = Router();
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ dest: '/app/uploads' });
 
 router.use(authMiddleware);
 

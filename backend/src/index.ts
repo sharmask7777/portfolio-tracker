@@ -31,6 +31,15 @@ app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Global Error Handler
+app.use((err: any, req: Request, res: Response, next: any) => {
+  console.error('Unhandled Error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error',
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+});
+
 if (process.env.NODE_ENV !== 'test') {
   NAVRefreshJob.start();
   HistoryRefreshJob.start();

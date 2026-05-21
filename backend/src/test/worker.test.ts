@@ -27,7 +27,7 @@ jest.mock('../services/db.service', () => ({
 describe('Background Worker - processPdfJob', () => {
   const mockJobData: ProcessPdfUploadJobData = {
     userId: 'testUser123',
-    filePath: '/tmp/test.pdf',
+    filePath: '/app/uploads/test.pdf',
     password: 'password123',
     jobId: 'job123',
   };
@@ -54,12 +54,12 @@ describe('Background Worker - processPdfJob', () => {
 
     await processPdfJob(mockJob);
 
-    expect(ParserService.parseCAS).toHaveBeenCalledWith('/tmp/test.pdf', 'password123');
+    expect(ParserService.parseCAS).toHaveBeenCalledWith('/app/uploads/test.pdf', 'password123');
     expect(SyncService.syncPortfolio).toHaveBeenCalledWith('testUser123', parsedData);
     expect(HistoryService.calculateHistory).toHaveBeenCalledTimes(2);
     expect(HistoryService.calculateHistory).toHaveBeenCalledWith('p1');
     expect(HistoryService.calculateHistory).toHaveBeenCalledWith('p2');
-    expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/test.pdf');
+    expect(fs.unlinkSync).toHaveBeenCalledWith('/app/uploads/test.pdf');
   });
 
   it('should handle parser failure and still cleanup file', async () => {
@@ -71,7 +71,7 @@ describe('Background Worker - processPdfJob', () => {
     expect(ParserService.parseCAS).toHaveBeenCalled();
     expect(SyncService.syncPortfolio).not.toHaveBeenCalled();
     expect(HistoryService.calculateHistory).not.toHaveBeenCalled();
-    expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/test.pdf');
+    expect(fs.unlinkSync).toHaveBeenCalledWith('/app/uploads/test.pdf');
   });
 
   it('should handle sync failure and still cleanup file', async () => {
@@ -86,6 +86,6 @@ describe('Background Worker - processPdfJob', () => {
     expect(ParserService.parseCAS).toHaveBeenCalled();
     expect(SyncService.syncPortfolio).toHaveBeenCalled();
     expect(HistoryService.calculateHistory).not.toHaveBeenCalled();
-    expect(fs.unlinkSync).toHaveBeenCalledWith('/tmp/test.pdf');
+    expect(fs.unlinkSync).toHaveBeenCalledWith('/app/uploads/test.pdf');
   });
 });

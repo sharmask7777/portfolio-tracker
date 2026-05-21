@@ -7,6 +7,10 @@ dotenv.config();
 
 const connectionString = process.env.DATABASE_URL;
 
+if (!connectionString) {
+  console.error('DATABASE_URL environment variable is missing!');
+}
+
 const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 
