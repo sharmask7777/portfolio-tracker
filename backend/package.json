@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "concurrently \"npm run dev:server\" \"npm run worker\"",
-    "dev:server": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev:server": "ts-node-dev --respawn --transpile-only --ignore-watch uploads src/index.ts",
     "worker": "ts-node-dev --respawn --transpile-only src/worker.ts",
     "build": "rimraf dist && tsc",
     "lint": "eslint .",

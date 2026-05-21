@@ -1,5 +1,6 @@
 import { Worker, Job } from 'bullmq';
 import * as fs from 'fs';
+import path from 'path';
 import { ProcessPdfUploadJobData } from './jobs/queue';
 import { ParserService } from './services/parser.service';
 import { SyncService } from './services/sync.service';
@@ -21,9 +22,12 @@ export async function processPdfJob(job: Job<ProcessPdfUploadJobData>): Promise<
   try {
     await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'PROCESSING', startedAt: new Date() } });
 
-    console.log(`Checking if file exists at: ${filePath}`);
+    console.log(`[Worker] Checking if file exists at: ${filePath}`);
     if (!fs.existsSync(filePath)) {
-      const errorMsg = `File not found at path: ${filePath}. Current working directory: ${process.cwd()}`;
+      const dirPath = path.dirname(filePath);
+      const dirExists = fs.existsSync(dirPath);
+      const dirContents = dirExists ? fs.readdirSync(dirPath) : 'DIR NOT FOUND';
+      const errorMsg = `[Worker] File not found at path: ${filePath}. Directory exists: ${dirExists}. Directory contents: ${JSON.stringify(dirContents)}. Current working directory: ${process.cwd()}`;
       console.error(errorMsg);
       throw new Error(errorMsg);
     }
