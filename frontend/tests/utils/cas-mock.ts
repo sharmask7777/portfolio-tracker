@@ -13,9 +13,9 @@ export async function mockCASUpload(page: Page, mockData?: MockCAS) {
     // Check if it's a POST request
     if (route.request().method() === 'POST') {
       await route.fulfill({
-        status: 200,
+        status: 202,
         contentType: 'application/json',
-        body: JSON.stringify(data),
+        body: JSON.stringify({ jobId: 'mock-job-id-123', message: 'PDF upload accepted' }),
       });
     } else {
       await route.continue();
@@ -32,7 +32,7 @@ export async function mockCASUpload(page: Page, mockData?: MockCAS) {
  */
 export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
   const summary = {
-    id: 'mock-portfolio-id',
+    id: 'mock-portfolio-id', // Crucial: Dashboard relies on this ID to fetch other data
     name: 'Mock Portfolio',
     folios: mockData.folios.flatMap(f => f.schemes.map(s => ({
       id: `mock-folio-${s.isin}`,
@@ -44,6 +44,9 @@ export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
         investedAmount: s.transactions.reduce((acc, t) => acc + (t.type.includes('PURCHASE') ? t.amount : 0), 0),
         currentValue: s.transactions[s.transactions.length - 1].balance * s.transactions[s.transactions.length - 1].nav,
         xirr: 0.15,
+        postTaxXirr: 0.12,
+        absoluteReturn: 0.25,
+        postTaxAbsoluteReturn: 0.20
       }
     }))),
     metrics: {
@@ -63,7 +66,7 @@ export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
     });
   });
 
-  // Also mock other required endpoints for the dashboard
+  // Mock all subsequent calls that Dashboard makes when it gets a valid portfolio ID
   await page.route('**/api/portfolio/*/xray*', async (route) => {
     await route.fulfill({
       status: 200,
@@ -76,7 +79,7 @@ export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([]),
+      body: JSON.stringify([{ name: 'Mock Exposure', percentage: 0.1 }]),
     });
   });
 
@@ -93,6 +96,24 @@ export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([]),
+    });
+  });
+  
+  // Historical data mock for the chart
+  await page.route('**/api/portfolio/*/history', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ date: '2026-05-20', value: 125000, invested: 100000 }]),
+    });
+  });
+
+  // Insights / highlights mock
+  await page.route('**/api/portfolio/*/insights', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ allTimeHigh: { value: 130000, date: '2026-01-01' }, maxDrawdown: { percentage: -0.1 } }),
     });
   });
 

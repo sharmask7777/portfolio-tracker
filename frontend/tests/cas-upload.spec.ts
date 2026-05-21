@@ -15,6 +15,7 @@ test.describe('CAS Upload Flow', () => {
 
   test.beforeEach(async ({ page }, testInfo) => {
     await setupAuth(page);
+    await page.waitForLoadState('networkidle'); // Ensure page is loaded
     dummyPdfPath = path.join(__dirname, `dummy-${testInfo.workerIndex}.pdf`);
     fs.writeFileSync(dummyPdfPath, 'dummy pdf content');
   });
@@ -25,19 +26,30 @@ test.describe('CAS Upload Flow', () => {
     }
   });
 
-  test('happy path: upload CAS and see dashboard metrics', async ({ page }) => {
+  test('happy path: upload CAS, poll status, and see dashboard metrics', async ({ page }) => {
     const uploadPage = new UploadPage(page);
     const dashboardPage = new DashboardPage(page);
     
-    // 1. Mock the CAS upload and subsequent summary fetch
+    // 1. Mock the CAS upload (return 202) and subsequent status/summary fetches
     const mockData = await mockCASUpload(page);
+    // Mock the job status endpoint
+    await page.route('**/api/portfolio/upload-status/*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'COMPLETED' }),
+      });
+    });
+    
     await mockPortfolioSummary(page, mockData);
     
     // 2. Navigate and upload
     await uploadPage.goto();
     await uploadPage.uploadFile(dummyPdfPath);
     
-    // 3. Wait for upload to complete
+    // 3. Wait for upload to move through states: 'Uploading...', then 'Processing...'
+    // This confirms the frontend polling logic works.
+    await expect(page.getByText(/Uploading|Processing/)).toBeVisible();
     await uploadPage.waitForUploadComplete();
     
     // 4. Verify Dashboard displays data

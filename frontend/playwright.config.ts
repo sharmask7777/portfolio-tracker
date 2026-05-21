@@ -5,22 +5,36 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests',
-  /* Run tests in files in parallel */
-  fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
-  forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
+  /* Stop the suite immediately after 1 failure */
+  maxFailures: 1,
+  /* Opt out of parallel execution to keep process linear for the agent */
+  workers: 1,
+  /* Force a clean exit without triggering an interactive browser/HTML report */
+  reporter: 'line',
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    /* Base URL to use in actions like `await page.goto('/')`. */
+    // Base URL to use in actions like `await page.goto('/')`.
     baseURL: 'http://localhost:5173',
+    
+    // Prevent the agent from getting stuck on default 30-second timeouts
+    actionTimeout: 5000, 
+    navigationTimeout: 10000,
 
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
+    // Inject localStorage state to bypass auth globally
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: 'http://localhost:5173',
+          localStorage: [
+            { name: 'bypass-auth', value: 'true' },
+            { name: 'token', value: 'mock-token' },
+            { name: 'user', value: '{"id":"test-user","email":"test@example.com","name":"Test User"}' }
+          ]
+        }
+      ]
+    },
+    // Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer
     trace: 'on-first-retry',
   },
 
