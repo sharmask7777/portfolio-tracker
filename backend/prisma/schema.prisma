@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
@@ -11,12 +11,12 @@ model User {
   id              String           @id @default(uuid())
   email           String           @unique
   password        String
-  portfolios      Portfolio[]
-  managedProfiles ManagedProfile[]
-  familyMemberOf  FamilyMember[]
-  ownedFamilies   FamilyGroup[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
+  ownedFamilies   FamilyGroup[]
+  familyMemberOf  FamilyMember[]
+  managedProfiles ManagedProfile[]
+  portfolios      Portfolio[]
 
   @@index([email])
 }
@@ -25,12 +25,12 @@ model ManagedProfile {
   id         String      @id @default(uuid())
   name       String
   pan        String
-  taxSlab    Float       @default(0.3)
   userId     String
-  user       User        @relation(fields: [userId], references: [id])
-  portfolios Portfolio[]
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
+  taxSlab    Float       @default(0.3)
+  user       User        @relation(fields: [userId], references: [id])
+  portfolios Portfolio[]
 
   @@unique([userId, pan])
   @@index([userId])
@@ -40,10 +40,10 @@ model FamilyGroup {
   id        String         @id @default(uuid())
   name      String
   ownerId   String
-  owner     User           @relation(fields: [ownerId], references: [id])
-  members   FamilyMember[]
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
+  owner     User           @relation(fields: [ownerId], references: [id])
+  members   FamilyMember[]
 
   @@index([ownerId])
 }
@@ -51,12 +51,12 @@ model FamilyGroup {
 model FamilyMember {
   id        String      @id @default(uuid())
   userId    String
-  user      User        @relation(fields: [userId], references: [id])
   groupId   String
-  group     FamilyGroup @relation(fields: [groupId], references: [id])
-  role      String      @default("MEMBER") // OWNER, MEMBER
+  role      String      @default("MEMBER")
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+  group     FamilyGroup @relation(fields: [groupId], references: [id])
+  user      User        @relation(fields: [userId], references: [id])
 
   @@unique([userId, groupId])
   @@index([userId])
@@ -64,29 +64,29 @@ model FamilyMember {
 }
 
 model Portfolio {
-  id               String          @id @default(uuid())
+  id               String             @id @default(uuid())
   name             String
   userId           String
-  user             User            @relation(fields: [userId], references: [id])
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
   managedProfileId String?
-  managedProfile   ManagedProfile? @relation(fields: [managedProfileId], references: [id])
   folios           Folio[]
   goals            Goal[]
+  managedProfile   ManagedProfile?    @relation(fields: [managedProfileId], references: [id])
+  user             User               @relation(fields: [userId], references: [id])
   history          PortfolioHistory[]
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
 
   @@index([userId])
 }
 
 model PortfolioHistory {
-  id              String    @id @default(uuid())
-  portfolioId     String
-  portfolio       Portfolio @relation(fields: [portfolioId], references: [id])
-  date            DateTime
-  value           Float
-  investedAmount  Float
-  createdAt       DateTime  @default(now())
+  id             String    @id @default(uuid())
+  portfolioId    String
+  date           DateTime
+  value          Float
+  investedAmount Float
+  createdAt      DateTime  @default(now())
+  portfolio      Portfolio @relation(fields: [portfolioId], references: [id])
 
   @@unique([portfolioId, date])
   @@index([portfolioId])
@@ -111,11 +111,77 @@ model Goal {
   targetAmount Float
   targetDate   DateTime
   portfolioId  String
-  portfolio    Portfolio @relation(fields: [portfolioId], references: [id])
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  portfolio    Portfolio @relation(fields: [portfolioId], references: [id])
 
   @@index([portfolioId])
+}
+
+model Asset {
+  id        String    @id @default(uuid())
+  type      AssetType
+  name      String
+  isin      String?   @unique
+  amfiCode  String?   @unique
+  symbol    String?   @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  folios    Folio[]
+
+  @@index([isin])
+  @@index([amfiCode])
+}
+
+model Folio {
+  id           String        @id @default(uuid())
+  number       String
+  amc          String?
+  pan          String?
+  portfolioId  String
+  assetId      String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  asset        Asset         @relation(fields: [assetId], references: [id])
+  portfolio    Portfolio     @relation(fields: [portfolioId], references: [id])
+  transactions Transaction[]
+
+  @@unique([number, assetId, portfolioId])
+  @@index([portfolioId])
+  @@index([assetId])
+}
+
+model Transaction {
+  id         String   @id @default(uuid())
+  date       DateTime
+  type       String
+  amount     Float
+  units      Float
+  nav        Float
+  balance    Float
+  folioId    String
+  externalId String?  @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  folio      Folio    @relation(fields: [folioId], references: [id])
+
+  @@index([folioId])
+  @@index([date])
+}
+
+model UploadJob {
+  id          String          @id @default(uuid())
+  userId      String
+  filePath    String
+  status      UploadJobStatus @default(PENDING)
+  message     String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  @@index([userId])
+  @@index([status])
 }
 
 enum AssetType {
@@ -128,75 +194,9 @@ enum AssetType {
   PHYSICAL_GOLD
 }
 
-model Asset {
-  id        String      @id @default(uuid())
-  type      AssetType
-  name      String
-  isin      String?     @unique
-  amfiCode  String?     @unique
-  symbol    String?     @unique
-  folios    Folio[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-
-  @@index([isin])
-  @@index([amfiCode])
-}
-
-model Folio {
-  id           String        @id @default(uuid())
-  number       String
-  amc          String?
-  pan          String?
-  portfolioId  String
-  portfolio    Portfolio     @relation(fields: [portfolioId], references: [id])
-  assetId      String
-  asset        Asset         @relation(fields: [assetId], references: [id])
-  transactions Transaction[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  @@unique([number, assetId, portfolioId])
-  @@index([portfolioId])
-  @@index([assetId])
-}
-
-model Transaction {
-  id          String   @id @default(uuid())
-  date        DateTime
-  type        String
-  amount      Float
-  units       Float
-  nav         Float
-  balance     Float
-  folioId     String
-  folio       Folio    @relation(fields: [folioId], references: [id])
-  externalId  String?  @unique // Hash of record to prevent duplicates
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([folioId])
-  @@index([date])
-}
-
 enum UploadJobStatus {
   PENDING
   PROCESSING
   COMPLETED
   FAILED
-}
-
-model UploadJob {
-  id          String           @id @default(uuid())
-  userId      String
-  filePath    String
-  status      UploadJobStatus  @default(PENDING)
-  message     String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  startedAt   DateTime?
-  completedAt DateTime?
-
-  @@index([userId])
-  @@index([status])
 }

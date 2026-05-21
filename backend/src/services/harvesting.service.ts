@@ -39,8 +39,9 @@ export class HarvestingService {
         },
       });
     } else {
-      const p = await prisma.portfolio.findUnique({
-        where: { id: scopeId },
+      // First try finding as a specific portfolio ID belonging to the user
+      const p = await prisma.portfolio.findFirst({
+        where: { id: scopeId, userId },
         include: {
           folios: {
             include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
@@ -51,8 +52,9 @@ export class HarvestingService {
       if (p) {
         portfolios = [p];
       } else {
+        // If not a portfolio ID, try finding as a managed profile ID belonging to the user
         portfolios = await prisma.portfolio.findMany({
-          where: { managedProfileId: scopeId },
+          where: { managedProfileId: scopeId, userId },
           include: {
             folios: {
               include: { asset: true, transactions: { orderBy: { date: 'asc' } } },
@@ -62,11 +64,17 @@ export class HarvestingService {
       }
     }
 
-    if (portfolios.length === 0) throw new Error('Portfolio/Profile not found');
-
+    if (portfolios.length === 0) {
+      // If no portfolios found for the scope, return empty summary instead of throwing
+      return {
+        realizedLTCG_FY: 0,
+        remainingExemption: this.LTCG_EXEMPTION_LIMIT,
+        totalPotentialHarvest: 0,
+        opportunities: [],
+        estimatedTaxSavings: 0,
+      };
+    }
     const allFolios = portfolios.flatMap(p => p.folios);
-
-    // 1. Calculate Realized LTCG for current FY
     const fyDates = this.getCurrentFYDates();
     let realizedLTCG_FY = 0;
 
