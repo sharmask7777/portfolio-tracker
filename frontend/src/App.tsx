@@ -241,7 +241,7 @@ export function Dashboard() {
           <LayoutDashboard size={24} />
           <span>Portfolio Tracker</span>
         </div>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <div className="header-actions">
           <div className="segmented-control">
             <button 
               className={performanceMode === 'XIRR' ? 'active' : ''} 
@@ -323,7 +323,7 @@ export function Dashboard() {
           <div className="empty-state">
             <h2>No portfolio data found</h2>
             <p>Upload your CAMS CAS statement to get started.</p>
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
               <button className="btn" style={{ border: '1px solid var(--border-color)' }} onClick={() => setShowAddAsset(true)}>
                 <Plus size={18} /> Add Other Asset
               </button>

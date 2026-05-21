@@ -5,42 +5,56 @@
 }
 
 .header {
-  height: 64px;
+  min-height: 64px;
   background-color: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2rem;
+  padding: 0.5rem 2rem;
   position: sticky;
   top: 0;
   z-index: 10;
   backdrop-filter: blur(8px);
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
-.logo {
-  font-size: 1.25rem;
-  font-weight: 800;
-  color: var(--accent-color);
+.header-actions {
   display: flex;
+  gap: 1rem;
   align-items: center;
-  gap: 0.75rem;
-  letter-spacing: -0.02em;
+  flex-wrap: wrap;
 }
 
-.main-content {
-  flex: 1;
-  padding: 2rem;
-  max-width: 1400px;
-  margin: 0 auto;
-  width: 100%;
+@media (max-width: 768px) {
+  .header {
+    padding: 1rem;
+    justify-content: center;
+  }
+  
+  .header-actions {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .main-content {
+    padding: 1rem;
+  }
 }
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 1.5rem;
   margin-bottom: 2rem;
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
 }
 
 .card {
@@ -50,6 +64,8 @@
   padding: 1.5rem;
   box-shadow: var(--card-shadow);
   transition: transform 0.2s ease, border-color 0.2s ease;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .card:hover {
@@ -123,7 +139,7 @@
 
 @media (max-width: 1024px) {
   .dashboard-sections {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -218,6 +234,13 @@
   max-width: 550px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   animation: slideUp 0.3s ease-out;
+}
+
+@media (max-width: 640px) {
+  .modal {
+    padding: 1.5rem;
+    border-radius: 16px;
+  }
 }
 
 .theme-toggle {
@@ -318,7 +341,14 @@
   box-shadow: var(--card-shadow);
 }
 
-.chart-container {
+.chart-container, .treemap-container, .pie-container {
   height: 300px;
   width: 100%;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.treemap-container {
+  height: 400px;
 }

@@ -26,7 +26,7 @@ export const StatsGrid: React.FC<StatsGridProps> = ({ metrics, performanceMode }
   const isPositive = metrics.totalGain >= 0;
 
   return (
-    <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+    <div className="stats-grid">
       {/* Net Worth Card */}
       <div className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-secondary)' }}>
