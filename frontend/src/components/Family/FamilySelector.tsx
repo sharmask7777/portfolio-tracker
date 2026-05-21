@@ -21,7 +21,7 @@ export const FamilySelector: React.FC<FamilySelectorProps> = ({
   onRename 
 }) => {
   return (
-    <div className="family-selector-container" style={{ marginBottom: '1.5rem', display: 'flex', gap: '0.75rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
+    <div className="family-selector-container">
       <button
         className={`chip ${selectedProfileId === null ? 'active' : ''}`}
         onClick={() => onSelect(null)}

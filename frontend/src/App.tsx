@@ -255,12 +255,6 @@ export function Dashboard() {
               ABS
             </button>
           </div>
-          <button className="btn" style={{ border: '1px solid var(--border-color)' }} onClick={() => setShowAddAsset(true)}>
-            <Plus size={18} /> Add Other Asset
-          </button>
-          <button className="btn btn-primary" onClick={() => setShowUpload(true)}>
-            <Plus size={18} /> Import CAS
-          </button>
           <button onClick={toggleTheme} className="theme-toggle">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
@@ -290,19 +284,30 @@ export function Dashboard() {
       </header>
 
       <main className="main-content">
-        <FamilySelector 
-          profiles={profiles}
-          selectedProfileId={selectedProfileId}
-          onSelect={(id) => {
-            setSelectedProfileId(id);
-            setSelectedFamilyId(null);
-          }}
-          onRename={(p) => {
-            setProfileToEdit(p);
-            setEditName(p.name);
-            setEditTaxSlab(p.taxSlab || 0.3);
-          }}
-        />
+        <div className="action-container">
+          <FamilySelector 
+            profiles={profiles}
+            selectedProfileId={selectedProfileId}
+            onSelect={(id) => {
+              setSelectedProfileId(id);
+              setSelectedFamilyId(null);
+            }}
+            onRename={(p) => {
+              setProfileToEdit(p);
+              setEditName(p.name);
+              setEditTaxSlab(p.taxSlab || 0.3);
+            }}
+          />
+
+          <div className="action-bar">
+            <button className="btn" style={{ border: '1px solid var(--border-color)' }} onClick={() => setShowAddAsset(true)}>
+              <Plus size={18} /> Add Other Asset
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowUpload(true)}>
+              <Plus size={18} /> Import CAS
+            </button>
+          </div>
+        </div>
 
         {!portfolio ? (
           <div className="empty-state">
