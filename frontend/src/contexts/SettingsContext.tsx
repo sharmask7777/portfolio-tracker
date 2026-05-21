@@ -6,13 +6,11 @@ type PerformanceMode = 'XIRR' | 'ABS';
 interface Settings {
   theme: Theme;
   performanceMode: PerformanceMode;
-  taxSlab: number;
 }
 
 interface SettingsContextType extends Settings {
   toggleTheme: () => void;
   setPerformanceMode: (mode: PerformanceMode) => void;
-  setTaxSlab: (slab: number) => void;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -22,7 +20,6 @@ const STORAGE_KEY = 'portfolio_tracker_settings';
 const DEFAULT_SETTINGS: Settings = {
   theme: 'light',
   performanceMode: 'XIRR',
-  taxSlab: 0.3,
 };
 
 function isValidTheme(value: any): value is Theme {
@@ -45,7 +42,6 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         performanceMode: isValidPerformanceMode(parsed.performanceMode)
           ? parsed.performanceMode
           : DEFAULT_SETTINGS.performanceMode,
-        taxSlab: typeof parsed.taxSlab === 'number' ? parsed.taxSlab : DEFAULT_SETTINGS.taxSlab,
       };
     } catch {
       return DEFAULT_SETTINGS;
@@ -71,20 +67,12 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }));
   };
 
-  const setTaxSlab = (slab: number) => {
-    setSettings((prev) => ({
-      ...prev,
-      taxSlab: slab,
-    }));
-  };
-
   return (
     <SettingsContext.Provider
       value={{
         ...settings,
         toggleTheme,
         setPerformanceMode,
-        setTaxSlab,
       }}
     >
       {children}

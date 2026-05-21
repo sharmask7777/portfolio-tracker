@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
 import { X, AlertCircle, Info, TrendingDown } from 'lucide-react';
-import { useSettings } from '../../contexts/SettingsContext';
 
 interface SimulationModalProps {
   folio: any;
   onClose: () => void;
   initialUnits?: number;
+  taxSlab: number;
 }
 
-export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose, initialUnits }) => {
-  const { taxSlab } = useSettings();
+export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose, initialUnits, taxSlab }) => {
   const [amount, setAmount] = useState('');
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);

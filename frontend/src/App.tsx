@@ -40,7 +40,7 @@ import { HistoricalHighlightsCard } from './components/Dashboard/HistoricalHighl
 import api, { API_ENDPOINTS } from './api';
 
 export function Dashboard() {
-  const { theme, toggleTheme, performanceMode, setPerformanceMode, taxSlab, setTaxSlab } = useSettings();
+  const { theme, toggleTheme, performanceMode, setPerformanceMode } = useSettings();
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
@@ -523,16 +523,16 @@ export function Dashboard() {
       </main>
 
       {simFolio && (
-        <SimulationModal 
-          folio={simFolio} 
-          initialUnits={simUnits || undefined} 
+        <SimulationModal
+          folio={simFolio}
+          initialUnits={simUnits || undefined}
+          taxSlab={portfolio?.taxSlab || 0.3}
           onClose={() => {
             setSimFolio(null);
             setSimUnits(null);
-          }} 
+          }}
         />
       )}
-
       {profileToEdit && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: '400px' }}>

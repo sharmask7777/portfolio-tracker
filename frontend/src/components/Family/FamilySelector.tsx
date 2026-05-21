@@ -5,6 +5,7 @@ interface ManagedProfile {
   id: string;
   name: string;
   pan: string;
+  taxSlab?: number;
 }
 
 interface FamilySelectorProps {

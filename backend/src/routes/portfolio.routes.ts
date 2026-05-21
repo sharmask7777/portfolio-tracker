@@ -278,6 +278,7 @@ router.get('/summary', async (req: Request, res: Response) => {
       id: profileId || familyGroupId || 'consolidated',
       name: profileId ? 'Member View' : familyGroupId ? 'Family Portfolio' : 'Consolidated Portfolio',
       folios: activeFolios,
+      taxSlab: slabValue,
       metrics: {
         totalInvested,
         totalValue,
