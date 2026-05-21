@@ -58,4 +58,4 @@ USER node
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+CMD ["sh", "-c", "export DATABASE_URL=${DATABASE_URL} && npx prisma migrate deploy && node dist/index.js"]
