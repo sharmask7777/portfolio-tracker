@@ -73,6 +73,72 @@ describe('HarvestingService Isolation', () => {
       }
     });
 
+    // Add a CLOSED folio to Portfolio 1 (Axis Legacy Fund)
+    const amfiLegacy = `TEST_LEGACY_${Date.now()}`;
+    const assetLegacy = await prisma.asset.create({
+      data: { type: AssetType.MUTUAL_FUND, name: 'Axis Legacy Fund', amfiCode: amfiLegacy },
+    });
+    const fLegacy = await prisma.folio.create({
+      data: { number: 'F_LEGACY', portfolioId: portfolio1Id, assetId: assetLegacy.id },
+    });
+    // Buy
+    await prisma.transaction.create({
+      data: {
+        date: new Date(Date.now() - 500 * 24 * 60 * 60 * 1000),
+        type: 'BUY',
+        amount: 5000,
+        units: 100,
+        nav: 50,
+        balance: 100,
+        folioId: fLegacy.id
+      }
+    });
+    // Sell All
+    await prisma.transaction.create({
+      data: {
+        date: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000),
+        type: 'SELL',
+        amount: 15000,
+        units: 100,
+        nav: 150,
+        balance: 0,
+        folioId: fLegacy.id
+      }
+    });
+
+    // Add a BROKEN folio (Mismatch between balance and lots - e.g. unrecognized redemption type)
+    const amfiBroken = `TEST_BROKEN_${Date.now()}`;
+    const assetBroken = await prisma.asset.create({
+      data: { type: AssetType.MUTUAL_FUND, name: 'Axis Broken Fund', amfiCode: amfiBroken },
+    });
+    const fBroken = await prisma.folio.create({
+      data: { number: 'F_BROKEN', portfolioId: portfolio1Id, assetId: assetBroken.id },
+    });
+    // Buy
+    await prisma.transaction.create({
+      data: {
+        date: new Date(Date.now() - 500 * 24 * 60 * 60 * 1000),
+        type: 'BUY',
+        amount: 5000,
+        units: 100,
+        nav: 50,
+        balance: 100,
+        folioId: fBroken.id
+      }
+    });
+    // Transfer Out (Updates balance to 0, but might not be matched by FIFO logic if type unknown)
+    await prisma.transaction.create({
+      data: {
+        date: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000),
+        type: 'UNKNOWN_REDEEM_TYPE', 
+        amount: 0,
+        units: 100,
+        nav: 0,
+        balance: 0,
+        folioId: fBroken.id
+      }
+    });
+
     // Create Portfolio 2 for Member 2
     const p2 = await prisma.portfolio.create({
       data: { userId, managedProfileId: member2Id, name: 'P2' },
@@ -133,11 +199,13 @@ describe('HarvestingService Isolation', () => {
     const result = await HarvestingService.getHarvestingOpportunities(member1Id, userId);
     
     expect(result.opportunities).toBeDefined();
-    // Should NOT include Axis (Member 2) or Primary Fund
+    // Should NOT include Axis (Member 2), Primary Fund, Axis Legacy (Closed), or Axis Broken
     const names = result.opportunities.map(o => o.schemeName);
     expect(names).toContain('Member 1 Fund');
     expect(names).not.toContain('Axis Large Cap Fund');
     expect(names).not.toContain('Primary Fund');
+    expect(names).not.toContain('Axis Legacy Fund');
+    expect(names).not.toContain('Axis Broken Fund');
   });
 
   it('should only recommend primary funds when primary portfolio is selected', async () => {

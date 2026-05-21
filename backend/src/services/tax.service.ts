@@ -67,7 +67,8 @@ export class TaxService {
       const type = tx.type.toLowerCase();
       const isBuy = type.includes('buy') || type.includes('purchase') || type.includes('sip') || 
                     type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance');
-      const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
+      const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out') || 
+                    type.includes('transfer_out') || type.includes('off_market');
       const isBonus = type.includes('bonus');
       
       const units = Math.abs(tx.units) || 0;
@@ -264,7 +265,8 @@ export class TaxService {
       const type = tx.type.toLowerCase();
       const isBuy = type.includes('buy') || type.includes('purchase') || type.includes('sip') || 
                     type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance');
-      const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
+      const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out') || 
+                    type.includes('transfer_out') || type.includes('off_market');
       const isBonus = type.includes('bonus');
       const units = Math.abs(tx.units) || 0;
       const nav = isBonus ? 0 : (Math.abs(tx.nav) || 0);

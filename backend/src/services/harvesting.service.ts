@@ -107,6 +107,10 @@ export class HarvestingService {
       for (const folio of allFolios) {
         if (folio.asset.type !== AssetType.MUTUAL_FUND && folio.asset.type !== AssetType.STOCK) continue;
 
+        // Ensure we only check active holdings (skip closed folios)
+        const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
+        if (currentUnits <= 0.0001) continue;
+
         const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
         const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
         const currentPrice = liveNav > 0 ? liveNav : lastNav;

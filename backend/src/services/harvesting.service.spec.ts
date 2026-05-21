@@ -25,7 +25,7 @@ describe('HarvestingService', () => {
           id: 'f1',
           asset: { name: 'Equity Fund', type: AssetType.MUTUAL_FUND, amfiCode: '101' },
           transactions: [
-            { type: 'BUY', units: 100, nav: 100, date: new Date('2022-01-01'), amount: 10000 },
+            { type: 'BUY', units: 100, nav: 100, date: new Date('2022-01-01'), amount: 10000, balance: 100 },
           ],
         },
       ],
