@@ -59,8 +59,9 @@ export function Dashboard() {
   const [isRefetching, setIsRefetching] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [password, setPassword] = useState('');
-  const [renamingProfile, setRenamingProfile] = useState<any>(null);
-  const [newName, setNewName] = useState('');
+  const [profileToEdit, setProfileToEdit] = useState<any>(null);
+  const [editName, setEditName] = useState('');
+  const [editTaxSlab, setEditTaxSlab] = useState<number>(0.3);
 
   const [uploadStatusMsg, setUploadStatusMsg] = useState<string>('');
 
@@ -76,7 +77,6 @@ export function Dashboard() {
           params: {
             familyGroupId: selectedFamilyId,
             profileId: selectedProfileId,
-            taxSlab: taxSlab
           }
         }),
         api.get(`${API_ENDPOINTS.FAMILY}/profiles`)
@@ -89,9 +89,7 @@ export function Dashboard() {
         const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.all([
           api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/xray`),
           api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/exposures`),
-          api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/tax-summary`, {
-            params: { taxSlab }
-          }),
+          api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/tax-summary`),
           api.get(`${API_ENDPOINTS.TAX}/harvesting-opportunities`, {
             params: { scopeId: summaryRes.data.id }
           }),
@@ -111,7 +109,7 @@ export function Dashboard() {
 
   useEffect(() => {
     fetchSummary();
-  }, [selectedFamilyId, selectedProfileId, taxSlab]);
+  }, [selectedFamilyId, selectedProfileId]);
 
   const pollJobStatus = async (jobId: string) => {
     setUploadStatusMsg('Processing portfolio... This may take a few minutes.');
@@ -147,18 +145,19 @@ export function Dashboard() {
     setTimeout(checkStatus, 2000); // Start checking after 2s
   };
 
-  const handleRename = async () => {
-    if (!renamingProfile || !newName) return;
+  const handleUpdateProfile = async () => {
+    if (!profileToEdit || !editName) return;
     try {
-      await api.patch(`${API_ENDPOINTS.FAMILY}/profile/${renamingProfile.id}`, {
-        name: newName
+      await api.patch(`${API_ENDPOINTS.FAMILY}/profile/${profileToEdit.id}`, {
+        name: editName,
+        taxSlab: editTaxSlab
       });
-      setRenamingProfile(null);
-      setNewName('');
+      setProfileToEdit(null);
+      setEditName('');
       fetchSummary();
     } catch (error) {
-      console.error('Error renaming profile:', error);
-      alert('Failed to rename member profile. Please try again.');
+      console.error('Error updating profile:', error);
+      alert('Failed to update member profile. Please try again.');
     }
   };
 
@@ -256,21 +255,6 @@ export function Dashboard() {
               ABS
             </button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-card)', padding: '0.25rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>TAX SLAB</span>
-            <input 
-              type="number" 
-              step="0.05"
-              min="0"
-              max="1"
-              value={taxSlab}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                setTaxSlab(isNaN(val) ? 0 : val);
-              }}
-              style={{ width: '70px', paddingRight: '12px', background: 'none', border: 'none', color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.875rem', outline: 'none' }}
-            />
-          </div>
           <button className="btn" style={{ border: '1px solid var(--border-color)' }} onClick={() => setShowAddAsset(true)}>
             <Plus size={18} /> Add Other Asset
           </button>
@@ -314,8 +298,9 @@ export function Dashboard() {
             setSelectedFamilyId(null);
           }}
           onRename={(p) => {
-            setRenamingProfile(p);
-            setNewName(p.name);
+            setProfileToEdit(p);
+            setEditName(p.name);
+            setEditTaxSlab(p.taxSlab || 0.3);
           }}
         />
 
@@ -543,16 +528,16 @@ export function Dashboard() {
         />
       )}
 
-      {renamingProfile && (
+      {profileToEdit && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: '400px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0 }}>Rename Member</h2>
-              <button onClick={() => setRenamingProfile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+              <h2 style={{ margin: 0 }}>Edit Member</h2>
+              <button onClick={() => setProfileToEdit(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
                 <X size={24} />
               </button>
             </div>
-            <div style={{ marginBottom: '1.5rem' }}>
+            <div style={{ marginBottom: '1rem' }}>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
                 DISPLAY NAME
               </label>
@@ -560,17 +545,32 @@ export function Dashboard() {
                 type="text" 
                 className="card" 
                 style={{ width: '100%', padding: '0.75rem', background: 'var(--bg-secondary)', outline: 'none' }}
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
                 autoFocus
               />
             </div>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                TAX SLAB (e.g. 0.3 for 30%)
+              </label>
+              <input 
+                type="number" 
+                step="0.05"
+                min="0"
+                max="1"
+                className="card" 
+                style={{ width: '100%', padding: '0.75rem', background: 'var(--bg-secondary)', outline: 'none' }}
+                value={editTaxSlab}
+                onChange={(e) => setEditTaxSlab(parseFloat(e.target.value))}
+              />
+            </div>
             <div style={{ display: 'flex', gap: '1rem' }}>
-              <button className="btn" style={{ flex: 1, border: '1px solid var(--border-color)' }} onClick={() => setRenamingProfile(null)}>
+              <button className="btn" style={{ flex: 1, border: '1px solid var(--border-color)' }} onClick={() => setProfileToEdit(null)}>
                 Cancel
               </button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleRename}>
-                Save Name
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleUpdateProfile}>
+                Save Changes
               </button>
             </div>
           </div>

@@ -55,6 +55,26 @@ describe('FamilyService Managed Profiles', () => {
     await prisma.user.delete({ where: { id: otherUser.id } });
   });
 
+  it('should update managed profile tax slab', async () => {
+    const profiles = await FamilyService.getManagedProfiles(userId);
+    const profileId = profiles.find((p: any) => p.pan === 'ABCDE1234F')!.id;
+    const updated = await FamilyService.updateManagedProfileTaxSlab(userId, profileId, 0.2);
+    expect(updated.taxSlab).toBe(0.2);
+  });
+
+  it('should not update tax slab if user does not own it', async () => {
+    const otherUser = await prisma.user.create({
+      data: { email: `other-tax-${Date.now()}@example.com`, password: 'password' }
+    });
+    const profiles = await FamilyService.getManagedProfiles(userId);
+    const profileId = profiles[0].id;
+
+    await expect(FamilyService.updateManagedProfileTaxSlab(otherUser.id, profileId, 0.1))
+      .rejects.toThrow('Profile not found or unauthorized');
+
+    await prisma.user.delete({ where: { id: otherUser.id } });
+  });
+
   it('should get or create managed profile', async () => {
     const pan = 'XYZ1234567';
     const profile = await FamilyService.getOrCreateManagedProfile(userId, pan);

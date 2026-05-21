@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { FamilyService } from '../services/family.service';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { prisma } from '../services/db.service';
 
 const router = Router();
 
@@ -20,25 +21,38 @@ router.get('/profiles', async (req: Request, res: Response) => {
 });
 
 /**
- * Renames a managed profile.
+ * Updates a managed profile (name and/or taxSlab).
  */
 router.patch('/profile/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
-    const { name } = req.body;
+    const { name, taxSlab } = req.body;
 
-    if (!name) {
-      return res.status(400).json({ error: 'Name is required' });
+    // Verify ownership
+    const profile = await prisma.managedProfile.findFirst({
+      where: { id: id as string, userId },
+    });
+
+    if (!profile) {
+      return res.status(403).json({ error: 'Profile not found or unauthorized' });
     }
 
-    // Verify ownership and update
-    const updated = await FamilyService.updateManagedProfileName(userId, id as string, name as string);
+    const data: any = {};
+    if (name) data.name = name;
+    if (typeof taxSlab === 'number') data.taxSlab = taxSlab;
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'No update data provided' });
+    }
+
+    const updated = await prisma.managedProfile.update({
+      where: { id: id as string },
+      data,
+    });
+
     res.status(200).json(updated);
   } catch (error: any) {
-    if (error.message.includes('unauthorized') || error.message.includes('not found')) {
-      return res.status(403).json({ error: error.message });
-    }
     res.status(500).json({ error: error.message });
   }
 });

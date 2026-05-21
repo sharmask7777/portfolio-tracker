@@ -155,7 +155,7 @@ router.get('/summary', async (req: Request, res: Response) => {
   try {
     const { familyGroupId, profileId, taxSlab } = req.query;
     const userId = req.user!.id;
-    const slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
+    let slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
 
     let portfolios: any[] = [];
 
@@ -163,6 +163,13 @@ router.get('/summary', async (req: Request, res: Response) => {
       portfolios = await FamilyService.getFamilyPortfolios(familyGroupId as string);
     } else if (profileId) {
       // FINANCIAL INTELLIGENCE: Individual Member Filtering (REQ-10.4, V3-FAM-03)
+      const profile = await prisma.managedProfile.findUnique({
+        where: { id: profileId as string },
+      });
+      if (profile && !taxSlab) {
+        slabValue = profile.taxSlab;
+      }
+
       portfolios = await prisma.portfolio.findMany({
         where: { userId, managedProfileId: profileId as string },
         include: {

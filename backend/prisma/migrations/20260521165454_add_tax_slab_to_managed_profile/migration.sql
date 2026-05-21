@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "ManagedProfile" ADD COLUMN     "taxSlab" DOUBLE PRECISION NOT NULL DEFAULT 0.3;

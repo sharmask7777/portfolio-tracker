@@ -5,7 +5,7 @@ milestone_name: Authentication & Multi-User Support
 current_phase: Completed
 status: review
 last_updated: "2026-05-19T15:30:00.000Z"
-last_activity: 2026-05-19 — Phase 20 completed; Milestone v6.0 functionally complete
+last_activity: 2026-05-19 — Phase 20 completed; learnings extracted for Milestone v6.0
 progress:
   total_phases: 3
   completed_phases: 3
@@ -17,7 +17,7 @@ progress:
 # Project State Memory
 
 *   **Current Phase:** Completed
-*   **Status:** Milestone v6.0 functionally complete. Ready for audit and cleanup.
+*   **Status:** Milestone v6.0 functionally complete. Learnings extracted. Ready for audit and cleanup.
 *   **Next Steps:** Perform milestone audit and cleanup.
 
 *   **Key Decisions:**

@@ -25,6 +25,7 @@ model ManagedProfile {
   id         String      @id @default(uuid())
   name       String
   pan        String
+  taxSlab    Float       @default(0.3)
   userId     String
   user       User        @relation(fields: [userId], references: [id])
   portfolios Portfolio[]

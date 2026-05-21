@@ -139,6 +139,24 @@ export class FamilyService {
   }
 
   /**
+   * Updates the tax slab of a managed profile.
+   */
+  public static async updateManagedProfileTaxSlab(userId: string, profileId: string, taxSlab: number) {
+    const profile = await prisma.managedProfile.findFirst({
+      where: { id: profileId, userId },
+    });
+
+    if (!profile) {
+      throw new Error('Profile not found or unauthorized');
+    }
+
+    return prisma.managedProfile.update({
+      where: { id: profileId },
+      data: { taxSlab },
+    });
+  }
+
+  /**
    * Gets a managed profile by PAN, or creates one if it doesn't exist.
    */
   public static async getOrCreateManagedProfile(userId: string, pan: string) {
