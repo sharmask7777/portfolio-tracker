@@ -125,6 +125,15 @@ export class XRayService {
       folioValues.map(async (fv) => {
         if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
           const data = await MarketDataService.getHoldings(fv.isin);
+          
+          // FINANCIAL INTELLIGENCE: Persist fund-specific exit load rules (REQ-12.1)
+          if (data?.exitLoadMessage && fv.isin) {
+            prisma.asset.update({
+              where: { isin: fv.isin },
+              data: { exitLoadMetadata: data.exitLoadMessage }
+            }).catch(err => console.error(`Failed to update exit load metadata for ${fv.isin}:`, err));
+          }
+
           return { fv, data };
         }
         return { fv, data: null };

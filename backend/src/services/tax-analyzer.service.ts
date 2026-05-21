@@ -64,7 +64,8 @@ export class TaxAnalyzerService {
           folio.asset.type,
           lot.date,
           sellDate,
-          lotValue
+          lotValue,
+          folio.asset.exitLoadMetadata
         );
         
         const gainRecord = TaxService.calculateGain(

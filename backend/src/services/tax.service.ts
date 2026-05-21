@@ -350,7 +350,8 @@ export class TaxService {
     assetType: AssetType,
     buyDate: Date,
     sellDate: Date,
-    value: number
+    value: number,
+    metadata?: string | null
   ): number {
     if (assetType === AssetType.STOCK) return 0;
     if (assetType !== AssetType.MUTUAL_FUND) return 0;
@@ -359,10 +360,16 @@ export class TaxService {
     const diffTime = Math.abs(sellDate.getTime() - buyDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
+    // FINANCIAL INTELLIGENCE: Priority 1 - Automated Fund-Specific Metadata (REQ-12.2)
+    if (metadata) {
+      const parsedLoad = this.parseExitLoadFromMetadata(metadata, diffDays);
+      if (parsedLoad !== null) return value * parsedLoad;
+    }
+
     // ELSS: 0% exit load (but 3-year lock-in)
     if (this.isELSS(name)) return 0;
 
-    // EXCEPTIONS: Specific well-known funds or categories
+    // EXCEPTIONS: Specific well-known funds or categories (Priority 2 - Heuristics)
     
     // Parag Parikh Flexi Cap (and other PPFAS equity schemes often follow this)
     if (name.includes('parag parikh')) {
@@ -398,6 +405,45 @@ export class TaxService {
     // Default Debt rule: Many have 0 exit load or tiered.
     // Conservative estimate: 0.5% if < 90 days.
     return diffDays < 90 ? value * 0.005 : 0;
+  }
+
+  /**
+   * Attempts to parse numeric exit load percentage from fund metadata text.
+   * Format: Returns decimal (e.g. 0.01 for 1%) or null if parsing fails.
+   */
+  private static parseExitLoadFromMetadata(text: string, holdingDays: number): number | null {
+    try {
+      const normalized = text.toLowerCase();
+      
+      // Look for "no exit load" or "nil" after X days
+      if (normalized.includes('no exit load') || normalized.includes('nil')) {
+         const match = normalized.match(/(?:after|beyond)\s+(\d+)\s+days/);
+         if (match && holdingDays > parseInt(match[1])) return 0;
+      }
+
+      // Pattern: "X.XX% if ... Y days"
+      // Note: We match the most specific rule first (highest days) or loop through all matches.
+      // For now, let's look for common Parag Parikh style multi-tier
+      const tiers: { percent: number, days: number }[] = [];
+      const matches = normalized.matchAll(/(\d+(?:\.\d+)?)%\s+if\s+.*?(\d+)\s+days/g);
+      
+      for (const m of matches) {
+        tiers.push({ percent: parseFloat(m[1]) / 100, days: parseInt(m[2]) });
+      }
+
+      if (tiers.length > 0) {
+        // Sort tiers by days ascending
+        tiers.sort((a, b) => a.days - b.days);
+        for (const t of tiers) {
+          if (holdingDays <= t.days) return t.percent;
+        }
+        return 0; // If exceeded all day-limited tiers
+      }
+
+      return null;
+    } catch (e) {
+      return null;
+    }
   }
 
   private static isEquity(assetType: AssetType, assetName: string): boolean {

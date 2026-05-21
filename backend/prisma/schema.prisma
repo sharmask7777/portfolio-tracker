@@ -119,15 +119,16 @@ model Goal {
 }
 
 model Asset {
-  id        String    @id @default(uuid())
-  type      AssetType
-  name      String
-  isin      String?   @unique
-  amfiCode  String?   @unique
-  symbol    String?   @unique
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  folios    Folio[]
+  id               String    @id @default(uuid())
+  type             AssetType
+  name             String
+  isin             String?   @unique
+  amfiCode         String?   @unique
+  symbol           String?   @unique
+  exitLoadMetadata String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  folios           Folio[]
 
   @@index([isin])
   @@index([amfiCode])

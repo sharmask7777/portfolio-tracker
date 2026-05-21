@@ -181,4 +181,38 @@ describe('Tax Simulation & Grandfathering Logic', () => {
          .rejects.toThrow('units are locked (ELSS 3yr)');
     });
   });
+
+  describe('Exit Load Metadata Parsing', () => {
+    it('should parse exit load from metadata (Parag Parikh style)', () => {
+      const metadata = "2.00% if redeemed within 365 days. 1.00% if redeemed between 365 and 730 days. Nil after 730 days.";
+      const buyDate = new Date();
+      const sellDate = new Date();
+      
+      // Test 1: Within 365 days
+      buyDate.setTime(sellDate.getTime() - 100 * 24 * 60 * 60 * 1000);
+      let load = TaxService.getExitLoad('Any Fund', AssetType.MUTUAL_FUND, buyDate, sellDate, 10000, metadata);
+      expect(load).toBe(200); // 2%
+
+      // Test 2: Between 365 and 730 days
+      buyDate.setTime(sellDate.getTime() - 400 * 24 * 60 * 60 * 1000);
+      load = TaxService.getExitLoad('Any Fund', AssetType.MUTUAL_FUND, buyDate, sellDate, 10000, metadata);
+      expect(load).toBe(100); // 1%
+
+      // Test 3: After 730 days
+      buyDate.setTime(sellDate.getTime() - 800 * 24 * 60 * 60 * 1000);
+      load = TaxService.getExitLoad('Any Fund', AssetType.MUTUAL_FUND, buyDate, sellDate, 10000, metadata);
+      expect(load).toBe(0); // Nil
+    });
+
+    it('should fallback to heuristics if metadata parsing fails', () => {
+      const metadata = "Random text with no clear numbers";
+      const buyDate = new Date();
+      const sellDate = new Date();
+      buyDate.setTime(sellDate.getTime() - 10 * 24 * 60 * 60 * 1000);
+
+      // Should use Arbitrage heuristic (0.25% < 30 days)
+      const load = TaxService.getExitLoad('Kotak Arbitrage Fund', AssetType.MUTUAL_FUND, buyDate, sellDate, 10000, metadata);
+      expect(load).toBe(25); // 0.25%
+    });
+  });
 });
