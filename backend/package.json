@@ -10,7 +10,8 @@
     "worker": "ts-node-dev --respawn --transpile-only src/worker.ts",
     "build": "rimraf dist && tsc",
     "lint": "eslint .",
-    "test": "jest"
+    "test": "jest",
+    "test:docker": "docker build -t portfolio-test-img . && docker run --rm -e DATABASE_URL='postgresql://fake:fake@localhost/fake' portfolio-test-img npx prisma validate"
   },
   "keywords": [],
   "author": "",
