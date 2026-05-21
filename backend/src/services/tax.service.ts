@@ -352,25 +352,37 @@ export class TaxService {
     sellDate: Date,
     value: number
   ): number {
+    if (assetType === AssetType.STOCK) return 0;
     if (assetType !== AssetType.MUTUAL_FUND) return 0;
 
     const name = assetName.toLowerCase();
     const diffTime = Math.abs(sellDate.getTime() - buyDate.getTime());
-    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    // Liquid/Overnight funds usually have 0 or very short (7 day) exit load
-    if (name.includes('liquid') || name.includes('overnight')) {
-      if (diffDays < 7 && name.includes('liquid')) return value * 0.00005; // Tiny tiered load for liquid
-      return 0;
+    // ELSS: 0% exit load (but 3-year lock-in)
+    if (this.isELSS(name)) return 0;
+
+    // Liquid Funds: SEBI Graded Exit Load (7 days)
+    if (name.includes('liquid')) {
+      if (diffDays <= 1) return value * 0.00007; // Day 1: 0.0070%
+      if (diffDays === 2) return value * 0.000065; // Day 2: 0.0065%
+      if (diffDays === 3) return value * 0.00006; // Day 3: 0.0060%
+      if (diffDays === 4) return value * 0.000055; // Day 4: 0.0055%
+      if (diffDays === 5) return value * 0.00005; // Day 5: 0.0050%
+      if (diffDays === 6) return value * 0.000045; // Day 6: 0.0045%
+      return 0; // Day 7 onwards: Nil
     }
 
-    // Standard Equity/Hybrid rule: 1% if sold before 1 year (365 days)
-    if (this.isEquity(assetType, assetName)) {
+    // Overnight Funds: 0%
+    if (name.includes('overnight')) return 0;
+
+    // Standard Equity rule: 1% if sold before 1 year (365 days)
+    if (this.isEquity(assetType, name)) {
       return diffDays < 365 ? value * 0.01 : 0;
     }
 
-    // Default Debt rule: Many have 0 exit load or 0.25-0.5% for short periods. 
-    // We'll use 0.5% if < 90 days for general debt as a safe conservative estimate.
+    // Default Debt rule: Many have 0 exit load or tiered.
+    // Conservative estimate: 0.5% if < 90 days.
     return diffDays < 90 ? value * 0.005 : 0;
   }
 
