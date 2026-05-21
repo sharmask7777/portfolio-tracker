@@ -14,11 +14,12 @@ import { HistoryService } from '../services/history.service';
 import { prisma } from '../services/db.service';
 import { authMiddleware } from '../middleware/authMiddleware';
 import fs from 'fs';
+import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { addProcessPdfJob, ProcessPdfUploadJobData } from '../jobs/queue';
 
 const router = Router();
-const upload = multer({ dest: '/app/uploads' });
+const upload = multer({ dest: path.join(process.cwd(), 'uploads') });
 
 router.use(authMiddleware);
 
