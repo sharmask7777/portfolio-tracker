@@ -10,11 +10,28 @@ import healthRoutes from './routes/health.routes';
 import authRoutes from './routes/authRoutes';
 import { NAVRefreshJob } from './jobs/nav-refresh.job';
 import { HistoryRefreshJob } from './jobs/history-refresh.job';
+import path from 'path';
+import fs from 'fs';
 
 dotenv.config();
 
 export const app = express();
 const port = process.env.PORT || 3001;
+
+// Startup Sanity Checks
+const uploadsDir = path.resolve(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  console.warn(`[Startup] Warning: Uploads directory not found at ${uploadsDir}. Creating it...`);
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+try {
+  const testFile = path.join(uploadsDir, '.startup-test');
+  fs.writeFileSync(testFile, 'test');
+  fs.unlinkSync(testFile);
+  console.log(`[Startup] Success: Uploads directory is writable at ${uploadsDir}`);
+} catch (e) {
+  console.error(`[Startup] CRITICAL: Uploads directory is NOT writable at ${uploadsDir}!`);
+}
 
 app.use(helmet());
 app.use(cors());

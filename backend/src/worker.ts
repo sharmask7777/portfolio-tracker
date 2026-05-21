@@ -15,6 +15,22 @@ const connection = {
   port: REDIS_PORT,
 };
 
+// Startup Sanity Checks
+const uploadsDir = path.resolve(process.cwd(), 'uploads');
+console.log(`[Worker] Startup: Verifying access to ${uploadsDir}`);
+if (!fs.existsSync(uploadsDir)) {
+  console.error(`[Worker] CRITICAL: Uploads directory NOT FOUND at ${uploadsDir}`);
+} else {
+  try {
+    const testFile = path.join(uploadsDir, '.worker-startup-test');
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+    console.log(`[Worker] Success: Shared uploads directory is accessible and writable.`);
+  } catch (e) {
+    console.error(`[Worker] CRITICAL: Shared uploads directory is NOT writable at ${uploadsDir}`);
+  }
+}
+
 export async function processPdfJob(job: Job<ProcessPdfUploadJobData>): Promise<void> {
   const { userId, filePath, password, jobId } = job.data;
   console.log(`Processing job ${jobId} for user ${userId}`);
