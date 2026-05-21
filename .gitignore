@@ -19,3 +19,7 @@ venv/
 !tsconfig.app.json
 !tsconfig.node.json
 !*.toml
+
+appdata/
+frontend/playwright-report/
+frontend/test-results/
