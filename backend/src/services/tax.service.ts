@@ -362,6 +362,20 @@ export class TaxService {
     // ELSS: 0% exit load (but 3-year lock-in)
     if (this.isELSS(name)) return 0;
 
+    // EXCEPTIONS: Specific well-known funds or categories
+    
+    // Parag Parikh Flexi Cap (and other PPFAS equity schemes often follow this)
+    if (name.includes('parag parikh')) {
+      if (diffDays < 365) return value * 0.02; // 2% < 1yr
+      if (diffDays < 730) return value * 0.01; // 1% < 2yr
+      return 0;
+    }
+
+    // Arbitrage Funds: Usually 0.25% for 15-30 days
+    if (name.includes('arbitrage')) {
+      return diffDays < 30 ? value * 0.0025 : 0;
+    }
+
     // Liquid Funds: SEBI Graded Exit Load (7 days)
     if (name.includes('liquid')) {
       if (diffDays <= 1) return value * 0.00007; // Day 1: 0.0070%
