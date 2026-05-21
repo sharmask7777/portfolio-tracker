@@ -21,6 +21,13 @@ export async function processPdfJob(job: Job<ProcessPdfUploadJobData>): Promise<
   try {
     await prisma.uploadJob.update({ where: { id: jobId }, data: { status: 'PROCESSING', startedAt: new Date() } });
 
+    console.log(`Checking if file exists at: ${filePath}`);
+    if (!fs.existsSync(filePath)) {
+      const errorMsg = `File not found at path: ${filePath}. Current working directory: ${process.cwd()}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     console.log(`Parsing PDF for job ${jobId}`);
     const parsedData = await ParserService.parseCAS(filePath, password);
 

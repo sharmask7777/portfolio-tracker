@@ -19,7 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { addProcessPdfJob, ProcessPdfUploadJobData } from '../jobs/queue';
 
 const router = Router();
-const upload = multer({ dest: path.join(process.cwd(), 'uploads') });
+const upload = multer({ dest: path.join(__dirname, '../../uploads') });
 
 router.use(authMiddleware);
 
@@ -32,6 +32,8 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     const { password } = req.body;
     const userId = req.user!.id;
     const filePath = req.file.path;
+
+    console.log(`File uploaded by multer. Path: ${filePath}`);
 
     const jobId = uuidv4();
     
