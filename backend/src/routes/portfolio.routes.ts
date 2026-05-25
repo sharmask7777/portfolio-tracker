@@ -374,15 +374,19 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
 
     const allFolios = portfolios.flatMap(p => p.folios);
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const summaries = await Promise.all(allFolios.map(async (folio) => {
       const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-      const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode || '', new Date());
+      const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode || '', today);
       const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
       const currentPrice = liveNav > 0 ? liveNav : lastNav;
       const prevPrice = previousNav > 0 ? previousNav : lastNav;
 
       const totalUnits = PortfolioUtils.getLatestUnits(folio.transactions);
       const dayChange = (currentPrice - prevPrice) * totalUnits;
+      const previousValue = prevPrice * totalUnits;
 
       const taxSummary = TaxService.calculatePortfolioTax(
         folio.asset.name,
@@ -395,27 +399,35 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
       return {
         ...taxSummary,
         dayChange,
-        dayChangePercentage: prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0
+        dayChangePercentage: prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0,
+        previousValue
       };
     }));
+
+    type TaxSummaryWithDayChange = typeof summaries[0];
+
+    const totalPrevValue = summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.previousValue, 0);
+    const totalDayChange = summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.dayChange, 0);
+    const totalDayChangePercentage = totalPrevValue > 0 ? (totalDayChange / totalPrevValue) * 100 : 0;
 
     // Aggregate overall
     const aggregate = {
       realized: {
-        stcg: summaries.reduce((acc, s) => acc + s.realized.stcg, 0),
-        ltcg: summaries.reduce((acc, s) => acc + s.realized.ltcg, 0),
-        slab: summaries.reduce((acc, s) => acc + s.realized.slab, 0),
-        total: summaries.reduce((acc, s) => acc + s.realized.total, 0),
+        stcg: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.realized.stcg, 0),
+        ltcg: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.realized.ltcg, 0),
+        slab: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.realized.slab, 0),
+        total: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.realized.total, 0),
       },
       unrealized: {
-        stcg: summaries.reduce((acc, s) => acc + s.unrealized.stcg, 0),
-        ltcg: summaries.reduce((acc, s) => acc + s.unrealized.ltcg, 0),
-        slab: summaries.reduce((acc, s) => acc + s.unrealized.slab, 0),
-        total: summaries.reduce((acc, s) => acc + s.unrealized.total, 0),
+        stcg: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.unrealized.stcg, 0),
+        ltcg: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.unrealized.ltcg, 0),
+        slab: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.unrealized.slab, 0),
+        total: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.unrealized.total, 0),
       },
-      details: summaries.flatMap(s => s.realized.details).sort((a, b) => new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime()),
+      details: summaries.flatMap((s: TaxSummaryWithDayChange) => s.realized.details).sort((a, b) => new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime()),
       dayChange: {
-        total: summaries.reduce((acc, s) => acc + (s as any).dayChange, 0),
+        total: totalDayChange,
+        percentage: totalDayChangePercentage
       }
     };
 
