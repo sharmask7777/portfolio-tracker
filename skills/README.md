@@ -34,10 +34,10 @@ This directory contains specialized agentic "skills" (SOPs, scripts, and referen
 2. Read the instructions and bundled resources (scripts/references).
 3. Execute the workflow as described.
 
-## Installation (for Gemini CLI)
-If you are using the Gemini CLI, you can install these skills directly from this folder:
+## Installation (for Antigravity CLI)
+If you are using the Antigravity CLI (`agy`), you can install these plugins directly from this folder:
 ```bash
-gemini skills install skills/<skill-name>.skill --scope workspace
+agy plugin install skills/<plugin-name>
 ```
 
 ---
