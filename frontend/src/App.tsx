@@ -433,6 +433,7 @@ export function Dashboard() {
                         <th>Type</th>
                         <th>Invested</th>
                         <th>Current Value</th>
+                        <th>Day Change</th>
                         <th>{performanceMode === 'XIRR' ? 'XIRR' : 'Return'}</th>
                         <th>Post-Tax {performanceMode === 'XIRR' ? 'XIRR' : 'Return'}</th>
                         <th>Actions</th>
@@ -449,6 +450,16 @@ export function Dashboard() {
                           </td>
                           <td>{formatCurrency(folio.metrics.investedAmount)}</td>
                           <td>{formatCurrency(folio.metrics.currentValue)}</td>
+                          <td className={(folio.metrics.dayChange || 0) >= 0 ? 'positive' : 'negative'}>
+                            {folio.metrics.dayChange !== undefined ? (
+                              <>
+                                {folio.metrics.dayChange >= 0 ? '+' : ''}{formatCurrency(folio.metrics.dayChange)}
+                                <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
+                                  ({folio.metrics.dayChangePercentage !== undefined && folio.metrics.dayChangePercentage >= 0 ? '+' : ''}{(folio.metrics.dayChangePercentage || 0).toFixed(2)}%)
+                                </div>
+                              </>
+                            ) : '-'}
+                          </td>
                           <td className={(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn) >= 0 ? 'positive' : 'negative'}>
                             {formatPercent(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn)}
                           </td>

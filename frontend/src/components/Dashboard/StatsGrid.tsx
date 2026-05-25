@@ -10,6 +10,8 @@ interface StatsMetrics {
   postTaxTotalValue?: number;
   postTaxXirr?: number;
   estimatedTax?: number;
+  dayChange?: number;
+  dayChangePercentage?: number;
 }
 
 interface StatsGridProps {
@@ -36,6 +38,11 @@ export const StatsGrid: React.FC<StatsGridProps> = ({ metrics, performanceMode }
         <div style={{ fontSize: '1.75rem', fontWeight: '700' }}>
           {formatCurrency(metrics.totalValue)}
         </div>
+        {metrics.dayChange !== undefined && (
+          <div style={{ fontSize: '0.875rem', color: metrics.dayChange >= 0 ? 'var(--success-color)' : 'var(--error-color)', fontWeight: '600' }}>
+            {metrics.dayChange >= 0 ? '+' : ''}{formatCurrency(metrics.dayChange)} {metrics.dayChangePercentage !== undefined && `(${metrics.dayChangePercentage >= 0 ? '+' : ''}${metrics.dayChangePercentage.toFixed(2)}%)`} Today
+          </div>
+        )}
         {metrics.postTaxTotalValue !== undefined && (
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             <Calculator size={12} />
