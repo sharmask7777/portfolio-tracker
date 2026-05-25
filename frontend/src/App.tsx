@@ -217,7 +217,15 @@ export function Dashboard() {
     }
   };
 
-  const formatCurrency = (val: number) => {
+  const isValidNumber = (val: unknown): val is number => typeof val === 'number' && !isNaN(val);
+
+  const getReturnClass = (val: unknown) => {
+    if (!isValidNumber(val)) return '';
+    return val > 0 ? 'positive' : val < 0 ? 'negative' : '';
+  };
+
+  const formatCurrency = (val: unknown) => {
+    if (!isValidNumber(val)) return 'N/A';
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -225,7 +233,8 @@ export function Dashboard() {
     }).format(val);
   };
 
-  const formatPercent = (val: number) => {
+  const formatPercent = (val: unknown) => {
+    if (!isValidNumber(val)) return 'N/A';
     return `${(val * 100).toFixed(2)}%`;
   };
 
@@ -387,7 +396,7 @@ export function Dashboard() {
                           />
                           <Tooltip 
                             contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                            formatter={(val: any) => formatCurrency(Number(val))}
+                            formatter={(val: unknown) => formatCurrency(Number(val))}
                           />
                           <Bar dataKey="value" fill="var(--accent-color)" radius={[4, 4, 0, 0]} />
                         </BarChart>
@@ -450,24 +459,24 @@ export function Dashboard() {
                           </td>
                           <td>{formatCurrency(folio.metrics.investedAmount)}</td>
                           <td>{formatCurrency(folio.metrics.currentValue)}</td>
-                          <td className={(folio.metrics.dayChange || 0) >= 0 ? 'positive' : 'negative'}>
-                            {folio.metrics.dayChange !== undefined ? (
+                          <td className={getReturnClass(folio.metrics.dayChange)}>
+                            {isValidNumber(folio.metrics.dayChange) ? (
                               <>
-                                {folio.metrics.dayChange >= 0 ? '+' : ''}{formatCurrency(folio.metrics.dayChange)}
+                                {folio.metrics.dayChange > 0 ? '+' : ''}{formatCurrency(folio.metrics.dayChange)}
                                 <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
-                                  ({folio.metrics.dayChangePercentage !== undefined && folio.metrics.dayChangePercentage >= 0 ? '+' : ''}{(folio.metrics.dayChangePercentage || 0).toFixed(2)}%)
+                                  ({isValidNumber(folio.metrics.dayChangePercentage) ? `${folio.metrics.dayChangePercentage > 0 ? '+' : ''}${folio.metrics.dayChangePercentage.toFixed(2)}%` : 'N/A'})
                                 </div>
                               </>
                             ) : '-'}
                           </td>
-                          <td className={(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn) >= 0 ? 'positive' : 'negative'}>
+                          <td className={getReturnClass(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn)}>
                             {formatPercent(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn)}
                           </td>
                           <td 
-                            className={(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn) >= 0 ? 'positive' : 'negative'}
+                            className={getReturnClass(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn)}
                             style={{ opacity: isRefetching ? 0.5 : 1, transition: 'opacity 0.2s' }}
                           >
-                            {formatPercent(performanceMode === 'XIRR' ? (folio.metrics.postTaxXirr ?? 0) : (folio.metrics.postTaxAbsoluteReturn ?? 0))}
+                            {formatPercent(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn)}
                           </td>
                           <td>
                             <button 

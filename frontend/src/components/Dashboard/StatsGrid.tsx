@@ -20,12 +20,27 @@ interface StatsGridProps {
 }
 
 export const StatsGrid: React.FC<StatsGridProps> = ({ metrics, performanceMode }) => {
-  const formatCurrency = (val: number) => 
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
-  
-  const formatPercent = (val: number) => (val * 100).toFixed(2) + '%';
+  const isValidNumber = (val: unknown): val is number => typeof val === 'number' && !isNaN(val);
 
-  const isPositive = metrics.totalGain >= 0;
+  const formatCurrency = (val: unknown) => {
+    if (!isValidNumber(val)) return 'N/A';
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
+  };
+  
+  const formatPercent = (val: unknown) => {
+    if (!isValidNumber(val)) return 'N/A';
+    return (val * 100).toFixed(2) + '%';
+  };
+
+  const getReturnColor = (val: unknown) => {
+    if (!isValidNumber(val)) return 'var(--text-primary)';
+    return val > 0 ? 'var(--success-color)' : val < 0 ? 'var(--error-color)' : 'var(--text-primary)';
+  };
+
+  const isPositiveGain = isValidNumber(metrics.totalGain) && metrics.totalGain > 0;
+  const gainColor = getReturnColor(metrics.totalGain);
+  const perfValue = performanceMode === 'XIRR' ? metrics.xirr : metrics.absoluteReturn;
+  const perfColor = getReturnColor(perfValue);
 
   return (
     <div className="stats-grid">
@@ -38,12 +53,12 @@ export const StatsGrid: React.FC<StatsGridProps> = ({ metrics, performanceMode }
         <div style={{ fontSize: '1.75rem', fontWeight: '700' }}>
           {formatCurrency(metrics.totalValue)}
         </div>
-        {metrics.dayChange !== undefined && (
-          <div style={{ fontSize: '0.875rem', color: metrics.dayChange >= 0 ? 'var(--success-color)' : 'var(--error-color)', fontWeight: '600' }}>
-            {metrics.dayChange >= 0 ? '+' : ''}{formatCurrency(metrics.dayChange)} {metrics.dayChangePercentage !== undefined && `(${metrics.dayChangePercentage >= 0 ? '+' : ''}${metrics.dayChangePercentage.toFixed(2)}%)`} Today
+        {isValidNumber(metrics.dayChange) && (
+          <div style={{ fontSize: '0.875rem', color: getReturnColor(metrics.dayChange), fontWeight: '600' }}>
+            {metrics.dayChange > 0 ? '+' : ''}{formatCurrency(metrics.dayChange)} {isValidNumber(metrics.dayChangePercentage) && `(${metrics.dayChangePercentage > 0 ? '+' : ''}${metrics.dayChangePercentage.toFixed(2)}%)`} Today
           </div>
         )}
-        {metrics.postTaxTotalValue !== undefined && (
+        {isValidNumber(metrics.postTaxTotalValue) && (
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             <Calculator size={12} />
             After-Tax: <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{formatCurrency(metrics.postTaxTotalValue)}</span>
@@ -60,31 +75,31 @@ export const StatsGrid: React.FC<StatsGridProps> = ({ metrics, performanceMode }
         <div style={{ fontSize: '1.75rem', fontWeight: '700' }}>
           {formatCurrency(metrics.totalInvested)}
         </div>
-        <div style={{ fontSize: '0.75rem', color: isPositive ? 'var(--success-color)' : 'var(--error-color)', fontWeight: '600' }}>
-          {isPositive ? '+' : ''}{formatCurrency(metrics.totalGain)} ({formatPercent(metrics.absoluteReturn)})
+        <div style={{ fontSize: '0.75rem', color: gainColor, fontWeight: '600' }}>
+          {isPositiveGain ? '+' : ''}{formatCurrency(metrics.totalGain)} ({formatPercent(metrics.absoluteReturn)})
         </div>
       </div>
 
       {/* Performance Card */}
       <div className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-secondary)' }}>
-          {isPositive ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+          {isValidNumber(perfValue) && perfValue >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
           <span style={{ fontSize: '0.875rem', fontWeight: '500' }}>
             Overall {performanceMode}
           </span>
         </div>
-        <div style={{ fontSize: '1.75rem', fontWeight: '700', color: isPositive ? 'var(--success-color)' : 'var(--error-color)' }}>
-          {formatPercent(performanceMode === 'XIRR' ? metrics.xirr : metrics.absoluteReturn)}
+        <div style={{ fontSize: '1.75rem', fontWeight: '700', color: perfColor }}>
+          {formatPercent(perfValue)}
         </div>
-        {performanceMode === 'XIRR' && metrics.postTaxXirr !== undefined && (
+        {performanceMode === 'XIRR' && isValidNumber(metrics.postTaxXirr) && (
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             <Calculator size={12} />
             After-Tax XIRR: <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{formatPercent(metrics.postTaxXirr)}</span>
           </div>
         )}
-        {performanceMode === 'ABS' && metrics.postTaxTotalValue !== undefined && (
+        {performanceMode === 'ABS' && isValidNumber(metrics.estimatedTax) && (
            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              Estimated Tax: {formatCurrency(metrics.estimatedTax || 0)}
+              Estimated Tax: {formatCurrency(metrics.estimatedTax)}
            </div>
         )}
       </div>
