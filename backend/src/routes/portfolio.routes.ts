@@ -376,16 +376,27 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
 
     const summaries = await Promise.all(allFolios.map(async (folio) => {
       const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
+      const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode || '', new Date());
       const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
       const currentPrice = liveNav > 0 ? liveNav : lastNav;
+      const prevPrice = previousNav > 0 ? previousNav : lastNav;
 
-      return TaxService.calculatePortfolioTax(
+      const totalUnits = PortfolioUtils.getLatestUnits(folio.transactions);
+      const dayChange = (currentPrice - prevPrice) * totalUnits;
+
+      const taxSummary = TaxService.calculatePortfolioTax(
         folio.asset.name,
         folio.asset.type,
         folio.transactions,
         currentPrice,
         slabValue
       );
+
+      return {
+        ...taxSummary,
+        dayChange,
+        dayChangePercentage: prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0
+      };
     }));
 
     // Aggregate overall
@@ -403,6 +414,9 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
         total: summaries.reduce((acc, s) => acc + s.unrealized.total, 0),
       },
       details: summaries.flatMap(s => s.realized.details).sort((a, b) => new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime()),
+      dayChange: {
+        total: summaries.reduce((acc, s) => acc + (s as any).dayChange, 0),
+      }
     };
 
     res.status(200).json(aggregate);
