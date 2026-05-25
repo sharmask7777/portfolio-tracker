@@ -70,6 +70,22 @@ export class MarketDataService {
     return 0;
   }
 
+  public static async getPreviousNAV(amfiCode: string, beforeDate: Date = new Date()): Promise<number> {
+    const previousNAV = await prisma.historicalNAV.findFirst({
+      where: {
+        amfiCode: amfiCode,
+        date: {
+          lt: beforeDate
+        }
+      },
+      orderBy: {
+        date: 'desc'
+      }
+    });
+
+    return previousNAV ? previousNAV.nav : 0;
+  }
+
   /**
    * Fetches underlying portfolio holdings and sector breakdown.
    */
