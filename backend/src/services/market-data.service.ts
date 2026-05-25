@@ -71,19 +71,26 @@ export class MarketDataService {
   }
 
   public static async getPreviousNAV(amfiCode: string, beforeDate: Date = new Date()): Promise<number> {
-    const previousNAV = await prisma.historicalNAV.findFirst({
-      where: {
-        amfiCode: amfiCode,
-        date: {
-          lt: beforeDate
-        }
-      },
-      orderBy: {
-        date: 'desc'
-      }
-    });
+    if (!amfiCode) return 0;
 
-    return previousNAV ? previousNAV.nav : 0;
+    try {
+      const previousNAV = await prisma.historicalNAV.findFirst({
+        where: {
+          amfiCode: amfiCode,
+          date: {
+            lt: beforeDate
+          }
+        },
+        orderBy: {
+          date: 'desc'
+        }
+      });
+
+      return previousNAV ? previousNAV.nav : 0;
+    } catch (e) {
+      console.error(`Failed to fetch previous NAV for ${amfiCode}:`, e);
+      return 0;
+    }
   }
 
   /**
