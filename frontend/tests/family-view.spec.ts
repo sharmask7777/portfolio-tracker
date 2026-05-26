@@ -80,7 +80,7 @@ test.describe('Family View & Managed Profiles', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'success' }) });
     });
 
-    await page.click('button:text("Save Name")');
+    await page.click('button:text("Save Changes")');
     
     // Verify name change in selector
     await expect(page.locator('.family-selector-container')).toContainText('Family Member X');

@@ -28,11 +28,7 @@ export async function getUploadQueue(): Promise<Queue<ProcessPdfUploadJobData, a
         connection,
         // Add default job options if necessary, e.g., attempts, backoff
         defaultJobOptions: {
-          attempts: 3, // Retry failed jobs 3 times
-          backoff: {
-            type: 'exponential',
-            delay: 1000, // Initial delay of 1 second, then 2s, 4s, 8s...
-          },
+          attempts: 1, // PDF upload jobs are one-shot because files are cleaned up after the first attempt
         },
       });
 

@@ -2,14 +2,27 @@ import { test, expect } from '@playwright/test';
 import { setupAuth } from './utils/auth-setup';
 
 test.describe('Milestone v2.0 Features', () => {
+  let currentTaxSlab = 0.3;
+
   test.beforeEach(async ({ page }) => {
+    // Reset state before each test
+    currentTaxSlab = 0.3;
+
     // Setup basic authentication mock
     await setupAuth(page);
+
+    // Mock PATCH request to save tax slab changes
+    await page.route('**/api/family/profile/*', async (route) => {
+      const payload = route.request().postDataJSON();
+      if (payload && payload.taxSlab !== undefined) {
+        currentTaxSlab = payload.taxSlab;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'success' }) });
+    });
     
     // Mock basic portfolio data
     await page.route('**/api/portfolio/summary*', async (route) => {
-      const url = new URL(route.request().url());
-      const taxSlab = parseFloat(url.searchParams.get('taxSlab') || '0.1');
+      const taxSlab = currentTaxSlab;
       
       const summary = {
         id: 'v2-portfolio',
@@ -82,13 +95,19 @@ test.describe('Milestone v2.0 Features', () => {
     const postTaxCell = page.locator('.data-table tbody tr:first-child td').nth(6);
     const initialValue = await postTaxCell.innerText();
     
-    // Locate tax slab input (header)
+    // Open Rename Profile modal to access the tax slab input
+    const editButton = page.locator('button[title="Rename Profile"]').first();
+    await editButton.click();
+    
+    // Locate tax slab input inside the modal
     const slabInput = page.locator('input[type="number"]');
     await expect(slabInput).toBeVisible();
     
     // Change value from default 0.3 to 0.1
     await slabInput.fill('0.1');
-    await slabInput.press('Enter');
+    
+    // Click Save Changes to apply and reload
+    await page.click('button:text("Save Changes")');
     
     // Verify it updates (XIRR should increase)
     await expect(postTaxCell).not.toHaveText(initialValue);
