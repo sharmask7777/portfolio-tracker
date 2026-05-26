@@ -79,7 +79,7 @@ test.describe('Milestone v2.0 Features', () => {
   });
 
   test('Slab Change Reactivity: Post-Tax XIRR updates when slab changes', async ({ page }) => {
-    const postTaxCell = page.locator('.data-table tbody tr:first-child td').nth(5);
+    const postTaxCell = page.locator('.data-table tbody tr:first-child td').nth(6);
     const initialValue = await postTaxCell.innerText();
     
     // Locate tax slab input (header)
@@ -131,8 +131,8 @@ test.describe('Milestone v2.0 Features', () => {
     
     for (let i = 0; i < count; i++) {
       const row = rows.nth(i);
-      const preTaxText = await row.locator('td').nth(4).innerText();
-      const postTaxText = await row.locator('td').nth(5).innerText();
+      const preTaxText = await row.locator('td').nth(5).innerText();
+      const postTaxText = await row.locator('td').nth(6).innerText();
       
       const preTax = parseFloat(preTaxText.replace('%', ''));
       const postTax = parseFloat(postTaxText.replace('%', ''));
