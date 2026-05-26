@@ -71,6 +71,10 @@ The project is configured for **fail-fast behavior** in `frontend/playwright.con
 - **Run E2E Tests:** `cd frontend && npx playwright test`
 - **Global Auth Bypass:** Playwright is configured to inject a `bypass-auth` flag via `storageState` globally. For tests requiring a natural login/logout flow (like `logout.spec.ts`), you MUST explicitly disable this isolation at the top of your test file:
   `test.use({ storageState: { cookies: [], origins: [] } });`
+  *Note: The backend `AuthService.verifyToken` explicitly accepts `'mock-token'` in non-production environments to authenticate the test user (`test-user`) without failing E2E tests.*
+
+### BullMQ Queue & File Lifecycle
+The BullMQ PDF upload queue in `queue.ts` is configured with `attempts: 1`. Since the temporary uploaded files are cleaned up (deleted) in the `finally` block of the first processing attempt, any automatic BullMQ retries would immediately fail with a `"File not found"` error. Ensure queue attempts remain at `1` to prevent this test regression.
 
 ### Docker Pre-flight Checks
 Standard local testing (`npm test`) bypasses the exact combination of factors that can crash the production container (Compiled JS + Docker Environment + Missing `.env` file).
