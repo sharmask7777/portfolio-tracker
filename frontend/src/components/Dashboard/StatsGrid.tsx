@@ -55,7 +55,7 @@ export const StatsGrid: React.FC<StatsGridProps> = ({ metrics, performanceMode }
         </div>
         {isValidNumber(metrics.dayChange) && (
           <div style={{ fontSize: '0.875rem', color: getReturnColor(metrics.dayChange), fontWeight: '600' }}>
-            {metrics.dayChange > 0 ? '+' : ''}{formatCurrency(metrics.dayChange)} {isValidNumber(metrics.dayChangePercentage) && `(${(metrics.dayChangePercentage * 100).toFixed(2)}%)`} Today
+            {metrics.dayChange > 0 ? '+' : ''}{formatCurrency(metrics.dayChange)} {isValidNumber(metrics.dayChangePercentage) && `(${metrics.dayChangePercentage.toFixed(2)}%)`} Today
           </div>
         )}
         {isValidNumber(metrics.postTaxTotalValue) && (
@@ -94,7 +94,7 @@ export const StatsGrid: React.FC<StatsGridProps> = ({ metrics, performanceMode }
         {isValidNumber(metrics.dayChangePercentage) && (
           <div style={{ fontSize: '0.875rem', color: getReturnColor(metrics.dayChangePercentage), fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             {metrics.dayChangePercentage > 0 ? '▲' : metrics.dayChangePercentage < 0 ? '▼' : '–'}{' '}
-            {metrics.dayChangePercentage > 0 ? '+' : ''}${(metrics.dayChangePercentage * 100).toFixed(2)}% Today
+            {metrics.dayChangePercentage > 0 ? '+' : ''}{metrics.dayChangePercentage.toFixed(2)}% Today
           </div>
         )}
         {performanceMode === 'XIRR' && isValidNumber(metrics.postTaxXirr) && (

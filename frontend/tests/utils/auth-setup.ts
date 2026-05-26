@@ -37,7 +37,7 @@ export async function setupAuth(page: Page) {
         id: 'mock-portfolio-id',
         name: 'Mock Portfolio',
         folios: [],
-        metrics: { totalInvested: 1000, totalValue: 1200, totalGain: 200, absoluteReturn: 0.2, xirr: 0.15, postTaxAbsoluteReturn: 0.18, postTaxXirr: 0.12, dayChange: 15, dayChangePercentage: 0.0125 }
+        metrics: { totalInvested: 1000, totalValue: 1200, totalGain: 200, absoluteReturn: 0.2, xirr: 0.15, postTaxAbsoluteReturn: 0.18, postTaxXirr: 0.12, dayChange: 15, dayChangePercentage: 1.25 }
       }),
     });
   });

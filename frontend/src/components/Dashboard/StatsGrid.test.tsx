@@ -14,7 +14,7 @@ describe('StatsGrid', () => {
     postTaxXirr: 0.20,
     estimatedTax: 10000,
     dayChange: 1500,
-    dayChangePercentage: 0.01
+    dayChangePercentage: 1.0
   };
 
   it('renders primary pre-tax metrics', () => {

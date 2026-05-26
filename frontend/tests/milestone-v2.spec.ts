@@ -46,7 +46,7 @@ test.describe('Milestone v2.0 Features', () => {
           absoluteReturn: 0.5,
           xirr: 0.20,
           dayChange: 1500,
-          dayChangePercentage: 0.01
+          dayChangePercentage: 1.0
         }
       };
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(summary) });
