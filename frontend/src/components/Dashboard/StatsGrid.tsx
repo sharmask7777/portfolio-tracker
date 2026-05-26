@@ -91,6 +91,12 @@ export const StatsGrid: React.FC<StatsGridProps> = ({ metrics, performanceMode }
         <div style={{ fontSize: '1.75rem', fontWeight: '700', color: perfColor }}>
           {formatPercent(perfValue)}
         </div>
+        {isValidNumber(metrics.dayChangePercentage) && (
+          <div style={{ fontSize: '0.875rem', color: getReturnColor(metrics.dayChangePercentage), fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            {metrics.dayChangePercentage > 0 ? '▲' : metrics.dayChangePercentage < 0 ? '▼' : '–'}{' '}
+            {metrics.dayChangePercentage > 0 ? '+' : ''}{metrics.dayChangePercentage.toFixed(2)}% Today
+          </div>
+        )}
         {performanceMode === 'XIRR' && isValidNumber(metrics.postTaxXirr) && (
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             <Calculator size={12} />

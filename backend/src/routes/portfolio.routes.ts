@@ -270,6 +270,13 @@ router.get('/summary', async (req: Request, res: Response) => {
 
     const activeFolios = enrichedFolios.filter(f => Math.abs(f.metrics.currentValue) > 0.01 || Math.abs(f.metrics.investedAmount) > 0.01);
 
+    const totalDayChange = enrichedFolios.reduce((acc, f) => acc + (f.metrics.dayChange || 0), 0);
+    const totalPreviousValue = enrichedFolios.reduce((acc, f) => {
+      const prev = f.metrics.currentValue - (f.metrics.dayChange || 0);
+      return acc + prev;
+    }, 0);
+    const totalDayChangePercentage = totalPreviousValue > 0 ? (totalDayChange / totalPreviousValue) * 100 : 0;
+
     const allTransactions = allFolios.flatMap((f) => 
       f.transactions.map((tx: any) => {
         const type = tx.type.toLowerCase();
@@ -301,6 +308,8 @@ router.get('/summary', async (req: Request, res: Response) => {
         xirr: overallXirr,
         postTaxXirr: overallPostTaxXirr,
         estimatedTax: totalEstimatedTax,
+        dayChange: totalDayChange,
+        dayChangePercentage: totalDayChangePercentage,
       },
     });
   } catch (error: any) {
