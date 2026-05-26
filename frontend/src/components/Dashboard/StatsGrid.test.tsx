@@ -12,7 +12,9 @@ describe('StatsGrid', () => {
     xirr: 0.25,
     postTaxTotalValue: 140000,
     postTaxXirr: 0.20,
-    estimatedTax: 10000
+    estimatedTax: 10000,
+    dayChange: 1500,
+    dayChangePercentage: 0.01
   };
 
   it('renders primary pre-tax metrics', () => {
@@ -21,6 +23,8 @@ describe('StatsGrid', () => {
     expect(screen.getByText(/Current Net Worth/)).toBeDefined();
     expect(screen.getByText(/Total Invested/)).toBeDefined();
     expect(screen.getByText(/25.00%/)).toBeDefined();
+    expect(screen.getByText(/\+₹1,500/)).toBeDefined();
+    expect(screen.getByText(/\(1.00%\)/)).toBeDefined();
   });
 
   it('renders symmetric post-tax metrics', () => {
