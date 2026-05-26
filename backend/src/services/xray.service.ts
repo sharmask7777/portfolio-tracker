@@ -147,10 +147,11 @@ export class XRayService {
 
       if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
         if (!data) {
-          assetAllocation.equity += 100 * weightFactor;
           if (isArbitrage) {
+            assetAllocation.debt += 100 * weightFactor;
             exArbAssetAllocation.arbitrage += 100 * weightFactor;
           } else {
+            assetAllocation.equity += 100 * weightFactor;
             exArbAssetAllocation.equity += 100 * weightFactor;
           }
           continue;
@@ -184,21 +185,23 @@ export class XRayService {
           exArbMarketCap.large += 100 * weightFactor;
         }
 
-        if (data.portfolio?.assetAllocation) {
+        if (isArbitrage) {
+          // Arbitrage funds are equity funds but behave like debt.
+          // From the exposure POV, they are considered equivalents to debt.
+          // So they count as debt allocation in standard asset allocation (decreasing equity exposure).
+          assetAllocation.debt += 100 * weightFactor;
+          exArbAssetAllocation.arbitrage += 100 * weightFactor;
+        } else if (data.portfolio?.assetAllocation) {
           const aa = data.portfolio.assetAllocation;
           assetAllocation.equity += Math.max(0, parseFloat(aa.equity || aa.equityAllocation || '0')) * weightFactor;
           assetAllocation.debt += Math.max(0, parseFloat(aa.debt || aa.debtAllocation || '0')) * weightFactor;
           assetAllocation.cash += Math.max(0, parseFloat(aa.cash || aa.cashAllocation || '0')) * weightFactor;
           assetAllocation.other += Math.max(0, parseFloat(aa.other || aa.otherAllocation || '0')) * weightFactor;
 
-          if (isArbitrage) {
-            exArbAssetAllocation.arbitrage += 100 * weightFactor;
-          } else {
-            exArbAssetAllocation.equity += Math.max(0, parseFloat(aa.equity || aa.equityAllocation || '0')) * weightFactor;
-            exArbAssetAllocation.debt += Math.max(0, parseFloat(aa.debt || aa.debtAllocation || '0')) * weightFactor;
-            exArbAssetAllocation.cash += Math.max(0, parseFloat(aa.cash || aa.cashAllocation || '0')) * weightFactor;
-            exArbAssetAllocation.other += Math.max(0, parseFloat(aa.other || aa.otherAllocation || '0')) * weightFactor;
-          }
+          exArbAssetAllocation.equity += Math.max(0, parseFloat(aa.equity || aa.equityAllocation || '0')) * weightFactor;
+          exArbAssetAllocation.debt += Math.max(0, parseFloat(aa.debt || aa.debtAllocation || '0')) * weightFactor;
+          exArbAssetAllocation.cash += Math.max(0, parseFloat(aa.cash || aa.cashAllocation || '0')) * weightFactor;
+          exArbAssetAllocation.other += Math.max(0, parseFloat(aa.other || aa.otherAllocation || '0')) * weightFactor;
         } else if (fv.type === 'STOCK') {
           assetAllocation.equity += 100 * weightFactor;
           exArbAssetAllocation.equity += 100 * weightFactor;

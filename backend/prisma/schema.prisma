@@ -114,6 +114,7 @@ model Goal {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   portfolio    Portfolio @relation(fields: [portfolioId], references: [id])
+  assets       Asset[]   @relation("GoalAssets")
 
   @@index([portfolioId])
 }
@@ -129,6 +130,7 @@ model Asset {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   folios           Folio[]
+  goals            Goal[]    @relation("GoalAssets")
 
   @@index([isin])
   @@index([amfiCode])

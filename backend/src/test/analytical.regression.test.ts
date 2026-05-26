@@ -80,9 +80,78 @@ describe('Analytical Services Regression Suite', () => {
   });
 
   describe('Goal Service Scope Support', () => {
+    let testAsset: any;
+
+    beforeAll(async () => {
+      testAsset = await prisma.asset.create({
+        data: {
+          type: 'MUTUAL_FUND',
+          name: `Test Fund ${Date.now()}`,
+          isin: `INF-${Date.now()}`,
+          amfiCode: `AMFI-${Date.now()}`,
+        }
+      });
+    });
+
+    afterAll(async () => {
+      if (testAsset) {
+        await prisma.asset.delete({ where: { id: testAsset.id } });
+      }
+    });
+
     it('should list goals with metrics for consolidated scope', async () => {
       const goals = await GoalService.listGoals('consolidated', 1000000, userId);
       expect(Array.isArray(goals)).toBe(true);
+    });
+
+    it('should resolve consolidated scope and create a goal', async () => {
+      const goal = await GoalService.createGoal(
+        'consolidated',
+        'Consolidated Goal',
+        500000,
+        new Date('2035-12-31'),
+        userId,
+        [testAsset.id]
+      );
+      expect(goal).toBeDefined();
+      expect(goal.portfolioId).toBe(portfolioId); // Should resolve to user's first portfolio
+      expect(goal.assets).toHaveLength(1);
+      expect(goal.assets[0].id).toBe(testAsset.id);
+
+      // Clean up goal
+      await GoalService.deleteGoal(goal.id);
+    });
+
+    it('should resolve managed profile scope and create a goal', async () => {
+      const goal = await GoalService.createGoal(
+        profileId,
+        'Profile Goal',
+        300000,
+        new Date('2040-12-31'),
+        userId
+      );
+      expect(goal).toBeDefined();
+      expect(goal.portfolioId).toBe(portfolioId); // Should resolve to profile's portfolio
+
+      // Test list goals shows it
+      const goals = await GoalService.listGoals(profileId, 100000, userId);
+      const found = goals.find(g => g.id === goal.id);
+      expect(found).toBeDefined();
+
+      // Test update goal
+      const updated = await GoalService.updateGoal(
+        goal.id,
+        'Updated Profile Goal',
+        400000,
+        new Date('2041-12-31'),
+        [testAsset.id]
+      );
+      expect(updated.name).toBe('Updated Profile Goal');
+      expect(updated.targetAmount).toBe(400000);
+      expect(updated.assets).toHaveLength(1);
+
+      // Clean up goal
+      await GoalService.deleteGoal(goal.id);
     });
   });
 });

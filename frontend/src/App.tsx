@@ -535,7 +535,19 @@ export function Dashboard() {
             {activeTab === 'insights' && (
               <div className="xray-grid">
                 <InsightsSidebar portfolioId={portfolio.id} />
-                <GoalTracker portfolioId={portfolio.id} currentValue={portfolio.metrics.totalValue} />
+                <GoalTracker 
+                  portfolioId={portfolio.id} 
+                  currentValue={portfolio.metrics.totalValue} 
+                  activeAssets={(() => {
+                    const uniqueAssets = new Map();
+                    portfolio.folios.forEach((f: any) => {
+                      if (f.asset) {
+                        uniqueAssets.set(f.asset.id, f.asset);
+                      }
+                    });
+                    return Array.from(uniqueAssets.values());
+                  })()}
+                />
               </div>
             )}
           </>

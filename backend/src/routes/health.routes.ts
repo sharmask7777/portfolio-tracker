@@ -22,9 +22,44 @@ router.get('/:portfolioId/insights', async (req: Request, res: Response) => {
 router.post('/:portfolioId/goals', async (req: Request, res: Response) => {
   try {
     const { portfolioId } = req.params;
-    const { name, targetAmount, targetDate } = req.body;
-    const goal = await GoalService.createGoal(portfolioId as string, name, parseFloat(targetAmount), new Date(targetDate));
+    const { name, targetAmount, targetDate, assetIds } = req.body;
+    const userId = req.user!.id;
+    const goal = await GoalService.createGoal(
+      portfolioId as string,
+      name,
+      parseFloat(targetAmount),
+      new Date(targetDate),
+      userId,
+      assetIds
+    );
     res.status(200).json(goal);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/:portfolioId/goals/:goalId', async (req: Request, res: Response) => {
+  try {
+    const { name, targetAmount, targetDate, assetIds } = req.body;
+    const goalId = req.params.goalId as string;
+    const goal = await GoalService.updateGoal(
+      goalId,
+      name,
+      parseFloat(targetAmount),
+      new Date(targetDate),
+      assetIds
+    );
+    res.status(200).json(goal);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/:portfolioId/goals/:goalId', async (req: Request, res: Response) => {
+  try {
+    const goalId = req.params.goalId as string;
+    await GoalService.deleteGoal(goalId);
+    res.status(200).json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
