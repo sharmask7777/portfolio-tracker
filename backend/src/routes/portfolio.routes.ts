@@ -204,6 +204,9 @@ router.get('/summary', async (req: Request, res: Response) => {
     const allFolios = portfolios.flatMap(p => p.folios);
 
     // Enrich with performance metrics
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const enrichedFolios = await Promise.all(allFolios.map(async (folio) => {
       const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
       
@@ -248,7 +251,17 @@ router.get('/summary', async (req: Request, res: Response) => {
         currentPrice = altMetrics.currentValue / (currentUnits || 1);
       }
 
-      return { ...folio, metrics: { ...metrics, currentPrice } };
+      // Compute day change for all fund types that have an amfiCode
+      let dayChange = 0;
+      let dayChangePercentage = 0;
+      if (folio.asset.amfiCode) {
+        const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode, today);
+        const prevPrice = previousNav > 0 ? previousNav : currentPrice;
+        dayChange = (currentPrice - prevPrice) * currentUnits;
+        dayChangePercentage = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+      }
+
+      return { ...folio, metrics: { ...metrics, currentPrice, dayChange, dayChangePercentage } };
     }));
 
     const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
