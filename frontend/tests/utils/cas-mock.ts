@@ -55,6 +55,8 @@ export async function mockPortfolioSummary(page: Page, mockData: MockCAS) {
       totalGain: 25000,
       absoluteReturn: 0.25,
       xirr: 0.15,
+      dayChange: 2500,
+      dayChangePercentage: 0.025,
     }
   };
 

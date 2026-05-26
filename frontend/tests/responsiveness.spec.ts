@@ -48,7 +48,9 @@ test.describe('Responsiveness', () => {
             totalValue: 120000,
             totalGain: 20000,
             absoluteReturn: 0.2,
-            xirr: 0.25
+            xirr: 0.25,
+            dayChange: 2000,
+            dayChangePercentage: 0.02
           },
           folios: []
         }) 
