@@ -28,7 +28,7 @@ interface GoalTrackerProps {
   activeAssets?: Asset[];
 }
 
-export const GoalTracker: React.FC<GoalTrackerProps> = ({ portfolioId, currentValue, activeAssets = [] }) => {
+export const GoalTracker: React.FC<GoalTrackerProps> = ({ portfolioId, activeAssets = [] }) => {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
