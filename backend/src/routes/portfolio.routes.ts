@@ -255,7 +255,7 @@ router.get('/summary', async (req: Request, res: Response) => {
       let dayChange = 0;
       let dayChangePercentage = 0;
       if (folio.asset.amfiCode) {
-        const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode, today);
+        const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode, currentPrice);
         const prevPrice = previousNav > 0 ? previousNav : currentPrice;
         dayChange = (currentPrice - prevPrice) * currentUnits;
         dayChangePercentage = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
@@ -401,9 +401,9 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
 
     const summaries = await Promise.all(allFolios.map(async (folio) => {
       const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-      const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode || '', today);
       const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
       const currentPrice = liveNav > 0 ? liveNav : lastNav;
+      const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode || '', currentPrice);
       const prevPrice = previousNav > 0 ? previousNav : lastNav;
 
       const totalUnits = PortfolioUtils.getLatestUnits(folio.transactions);

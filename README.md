@@ -204,7 +204,12 @@ Check your Docker Hub repository. It should show "OS/ARCH" as `linux/amd64` and 
 ## 🧪 Testing & Quality
 
 - **Unit & PBT:** `npm test --prefix backend`
-- **E2E Testing:** `npx playwright test --prefix frontend`
+- **E2E Testing (Local Server):** `npx playwright test --prefix frontend`
+- **E2E Testing (Docker Deployment):** You can verify a full Docker deployment (Frontend + Backend + Database) using Playwright. Make sure your docker containers are running, then execute:
+  ```bash
+  cd frontend
+  npm run test:e2e:docker
+  ```
 - **Quality Mandates:** Zero-tolerance for `NaN` displays in the UI.
 
 ## 📖 Maintenance

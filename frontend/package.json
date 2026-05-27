@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:e2e": "playwright test",
+    "test:e2e:docker": "cross-env E2E_BASE_URL=http://localhost:8082 playwright test",
     "test:unit": "vitest run"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/ui": "^4.1.6",
+    "cross-env": "^10.1.0",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

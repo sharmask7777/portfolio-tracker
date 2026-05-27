@@ -14,7 +14,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     // Base URL to use in actions like `await page.goto('/')`.
-    baseURL: 'http://localhost:5173',
+    baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
     
     // Prevent the agent from getting stuck on default 30-second timeouts
     actionTimeout: 5000, 
@@ -25,7 +25,7 @@ export default defineConfig({
       cookies: [],
       origins: [
         {
-          origin: 'http://localhost:5173',
+          origin: process.env.E2E_BASE_URL || 'http://localhost:5173',
           localStorage: [
             { name: 'bypass-auth', value: 'true' },
             { name: 'token', value: 'mock-token' },
@@ -47,7 +47,7 @@ export default defineConfig({
   ],
 
   /* Run your local dev server before starting the tests */
-  webServer: {
+  webServer: process.env.E2E_BASE_URL ? undefined : {
     command: 'npm run dev',
     url: 'http://localhost:5173',
     reuseExistingServer: !process.env.CI,

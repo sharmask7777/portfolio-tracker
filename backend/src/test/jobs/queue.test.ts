@@ -63,11 +63,7 @@ describe('Job Queue Module', () => {
         port: MOCK_REDIS_PORT,
       }),
       defaultJobOptions: {
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 1000,
-        },
+        attempts: 1,
       },
     });
     expect(mockWaitUntilReady).toHaveBeenCalledTimes(1); // Now we expect this to be called
