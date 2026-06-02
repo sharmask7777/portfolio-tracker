@@ -1,5 +1,5 @@
 import React from 'react';
-import { XRayData } from './types';
+import type { XRayData } from './types';
 import { ExpenseAnalysis } from './ExpenseAnalysis';
 import { XRayDashboard } from './XRayDashboard';
 

@@ -75,7 +75,7 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
               fill="var(--accent-color)"
             >
               <Tooltip 
-                formatter={(value: number, name: string, props: { payload: { percentage: number; name: string } }) => [
+                formatter={(_value: any, _name: any, props: any) => [
                   `${(props.payload.percentage * 100).toFixed(2)}%`, 
                   props.payload.name
                 ]}
@@ -94,7 +94,7 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border-color)" />
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" width={100} stroke="var(--text-secondary)" fontSize={12} />
-                <Tooltip formatter={(val: number) => `${Number(val).toFixed(2)}%`} />
+                <Tooltip formatter={(val: any) => `${Number(val).toFixed(2)}%`} />
                 <Bar dataKey="value" fill="var(--accent-color)" radius={[0, 4, 4, 0]} barSize={30} />
               </BarChart>
             </ResponsiveContainer>
@@ -119,7 +119,7 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(val: number) => `${(Number(val) * 100).toFixed(2)}%`} />
+                <Tooltip formatter={(val: any) => `${(Number(val) * 100).toFixed(2)}%`} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { XRayData } from './types';
+import type { XRayData } from './types';
 
 interface ExpenseAnalysisProps {
   data: XRayData;
