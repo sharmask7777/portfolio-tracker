@@ -48,7 +48,7 @@ services:
       DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
       PYTHON_PATH: python3
       TZ: ${TZ_GLOBAL}
     depends_on:
@@ -68,7 +68,7 @@ services:
       DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
       PYTHON_PATH: python3
       TZ: ${TZ_GLOBAL}
     command: ["node", "dist/worker.js"]

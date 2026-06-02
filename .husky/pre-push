@@ -7,6 +7,7 @@ echo "⏳ Running Docker sanity checks..."
 npm run test:docker --prefix backend
 
 echo "🐳 Starting Docker compose stack for E2E tests..."
+export NODE_ENV=test
 npm run docker:up
 
 # Ensure we always tear down the stack, even if the tests fail
