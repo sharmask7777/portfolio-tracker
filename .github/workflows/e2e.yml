@@ -17,20 +17,28 @@ jobs:
         cache: 'npm'
     
     - name: Install dependencies
-      run: npm ci
+      run: |
+        npm ci
+        cd frontend && npm ci
+        cd ../backend && npm ci
 
     - name: Install Playwright Browsers
-      run: npx playwright install --with-deps chromium
+      run: cd frontend && npx playwright install --with-deps chromium
 
     - name: Run Playwright tests
       run: |
+        export NODE_ENV=development
+        npm run docker:up
+        echo "Waiting for services to become ready..."
+        sleep 10
         if [ "${{ github.event_name }}" == "pull_request" ]; then
           echo "Running smoke and responsiveness tests..."
-          cd frontend && npx playwright test tests/smoke.spec.ts tests/responsiveness.spec.ts
+          cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts
         else
           echo "Running full E2E suite..."
-          cd frontend && npx playwright test
+          cd frontend && npm run test:e2e:docker
         fi
+        npm run docker:down
 
     - uses: actions/upload-artifact@v4
       if: always()
