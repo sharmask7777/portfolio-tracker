@@ -1,6 +1,4 @@
-import { Queue } from 'bullmq';
-// Note: We need to import the functions from the actual module to test them
-import { addProcessPdfJob, ProcessPdfUploadJobData, getUploadQueue } from '../../jobs/queue';
+import { ProcessPdfUploadJobData } from '../../jobs/queue';
 
 // --- Mocks setup for BullMQ ---
 const mockAdd = jest.fn((name, data, opts) => ({ id: opts?.jobId || 'mock_job_id', name, data, opts }));
@@ -53,8 +51,8 @@ describe('Job Queue Module', () => {
 
   // Test Scenario 1: Queue Initialization
   it('should initialize the BullMQ queue with correct Redis connection details', async () => {
-    const { getUploadQueue } = require('../../jobs/queue'); // Re-import to get fresh state for singleton
-    const queueInstance = await getUploadQueue(); // Await the async function
+    const { getUploadQueue } = await import('../../jobs/queue'); // Re-import to get fresh state for singleton
+    await getUploadQueue(); // Await the async function
 
     expect(MockQueue).toHaveBeenCalledTimes(1); // Check against MockQueue directly
     expect(MockQueue).toHaveBeenCalledWith('pdfUploadQueue', {
@@ -78,7 +76,7 @@ describe('Job Queue Module', () => {
       jobId: 'test_job_id',
     };
 
-    const { addProcessPdfJob, getUploadQueue } = require('../../jobs/queue'); // Re-import to get fresh state
+    const { addProcessPdfJob, getUploadQueue } = await import('../../jobs/queue'); // Re-import to get fresh state
     await getUploadQueue(); // Initialize the queue first and await its readiness
     const job = await addProcessPdfJob(mockJobData);
 
@@ -108,9 +106,9 @@ describe('Job Queue Module', () => {
     process.env.REDIS_PORT = MOCK_REDIS_PORT.toString();
 
     // Import *after* environment variables are set and mock is ready
-    const { getUploadQueue } = require('../../jobs/queue');
+    const { getUploadQueue } = await import('../../jobs/queue');
 
-    let errorThrown: any;
+    let errorThrown: unknown;
     try {
       await getUploadQueue(); // This should now reject because of waitUntilReady mock
     } catch (e) {
@@ -118,7 +116,8 @@ describe('Job Queue Module', () => {
     }
 
     expect(errorThrown).toBeInstanceOf(Error);
-    expect(errorThrown.message).toContain('Mock Redis connection error during readiness check');
+    expect(errorThrown).toBeInstanceOf(Error);
+    expect((errorThrown as Error).message).toContain('Mock Redis connection error during readiness check');
     // Ensure console.error was called due to initialization failure from the catch block in getUploadQueue
     expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('Failed to initialize BullMQ upload queue:'),
@@ -134,8 +133,8 @@ describe('Job Queue Module', () => {
     delete process.env.REDIS_HOST; // Simulate missing host
     delete process.env.REDIS_PORT; // Simulate missing port
 
-    const { getUploadQueue } = require('../../jobs/queue');
-    const queueInstance = await getUploadQueue();
+    const { getUploadQueue } = await import('../../jobs/queue');
+    await getUploadQueue();
 
     expect(MockQueue).toHaveBeenCalledWith('pdfUploadQueue', expect.objectContaining({
       connection: expect.objectContaining({

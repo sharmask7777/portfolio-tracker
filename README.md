@@ -210,6 +210,9 @@ Check your Docker Hub repository. It should show "OS/ARCH" as `linux/amd64` and 
   cd frontend
   npm run test:e2e:docker
   ```
+- **Backend Testing Strategy:**
+  - **Unit Tests:** Utilize `jest-mock-extended` by manually mocking Prisma (e.g. `jest.mock('@src/services/db.service', () => require('@src/test/db.mock'))`) to isolate tests from the database.
+  - **Integration Tests:** Do not mock the database. Integration tests require a running PostgreSQL instance (local or via Docker) to successfully test end-to-end service logic and data persistence.
 - **Quality Mandates:** Zero-tolerance for `NaN` displays in the UI.
 
 ## 📖 Maintenance

@@ -68,7 +68,7 @@ export class HistoryService {
     const currentInvested = new Map<string, number>();
     const lastKnownNAV = new Map<string, number>();
 
-    let currentDate = new Date(startDate);
+    const currentDate = new Date(startDate);
     const txByDate = new Map<string, any[]>();
     sortedTxs.forEach(tx => {
       const d = new Date(tx.date).toISOString().split('T')[0];

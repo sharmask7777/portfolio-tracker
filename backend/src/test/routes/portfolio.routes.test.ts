@@ -1,24 +1,16 @@
 import request from 'supertest';
-import express, { Express, Request, Response, NextFunction } from 'express';
-import multer from 'multer';
+import express, { Express, NextFunction } from 'express';
 import fs from 'fs';
-import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
 import portfolioRoutes from '@src/routes/portfolio.routes';
-import { addProcessPdfJob, ProcessPdfUploadJobData, closeUploadQueue } from '@src/jobs/queue';
+import { addProcessPdfJob, closeUploadQueue } from '@src/jobs/queue';
 import { ParserService } from '@src/services/parser.service';
 import { SyncService } from '@src/services/sync.service';
 import { HistoryService } from '@src/services/history.service';
-import { PerformanceService } from '@src/services/performance.service';
-import { MarketDataService } from '@src/services/market-data.service';
-import { PortfolioUtils } from '@src/utils/portfolio.utils';
-import { OverlapService } from '@src/services/overlap.service';
-import { XRayService } from '@src/services/xray.service';
-import { TaxService } from '@src/services/tax.service';
-import { FamilyService } from '@src/services/family.service';
-import { AlternativeAssetService } from '@src/services/alternative-assets.service';
+import { authMiddleware } from '@src/middleware/authMiddleware';
 import { jest } from '@jest/globals';
+import { prismaMock } from '@src/test/db.mock';
 
 jest.setTimeout(15000);
 
@@ -44,18 +36,13 @@ jest.mock('@src/services/xray.service');
 jest.mock('@src/services/tax.service');
 jest.mock('@src/services/family.service');
 jest.mock('@src/services/alternative-assets.service');
-jest.mock('@src/services/db.service', () => ({
-  prisma: {
-    uploadJob: {
-      create: jest.fn<() => Promise<any>>().mockResolvedValue({ id: 'mockJobId123', status: 'PENDING' }),
-      update: jest.fn<() => Promise<any>>().mockResolvedValue({ id: 'mockJobId123', status: 'PROCESSING' }),
-      findUnique: jest.fn<() => Promise<any>>(),
-    }
-  }
-}));
+
+jest.mock('@src/services/db.service', () => {
+  return require('@src/test/db.mock');
+});
 jest.mock('@src/middleware/authMiddleware', () => ({
-  authMiddleware: jest.fn((req: any, res: any, next: any) => {
-    req.user = { id: 'testUserId' };
+  authMiddleware: jest.fn((req: unknown, _res: unknown, next: (err?: unknown) => void) => {
+    (req as { user?: { id: string } }).user = { id: 'testUserId' };
     next();
   }),
 }));
@@ -66,17 +53,18 @@ export const multerMockConfig = {
   password: 'pdfPassword123'
 };
 
-let tempFilePath = '/tmp/test-file.pdf';
+const tempFilePath = '/tmp/test-file.pdf';
 
 jest.mock('multer', () => {
-  const mockSingleMiddleware = jest.fn((req: any, res: any, next: NextFunction) => {
+  const mockSingleMiddleware = jest.fn((req: unknown, _res: unknown, next: NextFunction) => {
+    const typedReq = req as { file?: unknown, body?: Record<string, unknown> };
     if (multerMockConfig.shouldProvideFile) {
-      req.file = { path: tempFilePath, originalname: 'test.pdf', mimetype: 'application/pdf', size: 1024 };
+      typedReq.file = { path: tempFilePath, originalname: 'test.pdf', mimetype: 'application/pdf', size: 1024 };
     } else {
-      req.file = undefined;
+      typedReq.file = undefined;
     }
-    req.body = req.body || {};
-    req.body.password = multerMockConfig.password;
+    typedReq.body = typedReq.body || {};
+    typedReq.body.password = multerMockConfig.password;
     next();
   });
 
@@ -102,7 +90,7 @@ describe('Portfolio Routes - /upload endpoint', () => {
 
     app = express();
     app.use(express.json());
-    app.use(require('@src/middleware/authMiddleware').authMiddleware);
+    app.use(authMiddleware);
     app.use('/api/portfolio', portfolioRoutes);
   });
 
@@ -115,8 +103,11 @@ describe('Portfolio Routes - /upload endpoint', () => {
 
     (uuidv4 as jest.Mock).mockReturnValue('mockJobId123');
 
-    jest.mocked(addProcessPdfJob).mockResolvedValue({ id: 'mockJobId123' } as any);
+    jest.mocked(addProcessPdfJob).mockResolvedValue({ id: 'mockJobId123' } as never);
     jest.mocked(closeUploadQueue).mockResolvedValue(undefined);
+
+    prismaMock.uploadJob.create.mockResolvedValue({ id: 'mockJobId123', status: 'PENDING' } as any);
+    prismaMock.uploadJob.update.mockResolvedValue({ id: 'mockJobId123', status: 'PROCESSING' } as any);
   });
 
   afterAll(async () => {
@@ -197,21 +188,19 @@ describe('Portfolio Routes - /upload endpoint', () => {
         message: null,
         completedAt: new Date().toISOString(),
       };
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { prisma } = require('@src/services/db.service');
-      prisma.uploadJob.findUnique.mockResolvedValue(mockJobData);
+       
+      prismaMock.uploadJob.findUnique.mockResolvedValue(mockJobData as any);
 
       const res = await request(app).get(`/api/portfolio/upload-status/${mockJobId}`);
 
       expect(res.statusCode).toEqual(200);
       expect(res.body).toEqual(mockJobData);
-      expect(prisma.uploadJob.findUnique).toHaveBeenCalledWith({ where: { id: mockJobId } });
+      expect(prismaMock.uploadJob.findUnique).toHaveBeenCalledWith({ where: { id: mockJobId } });
     });
 
     it('should return 404 Not Found if job does not exist', async () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { prisma } = require('@src/services/db.service');
-      prisma.uploadJob.findUnique.mockResolvedValue(null);
+       
+      prismaMock.uploadJob.findUnique.mockResolvedValue(null);
 
       const res = await request(app).get(`/api/portfolio/upload-status/${mockJobId}`);
 
@@ -225,9 +214,8 @@ describe('Portfolio Routes - /upload endpoint', () => {
         userId: 'otherUserId', // Different from testUserId
         status: 'COMPLETED',
       };
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { prisma } = require('@src/services/db.service');
-      prisma.uploadJob.findUnique.mockResolvedValue(mockJobData);
+       
+      prismaMock.uploadJob.findUnique.mockResolvedValue(mockJobData as any);
 
       const res = await request(app).get(`/api/portfolio/upload-status/${mockJobId}`);
 
@@ -236,9 +224,8 @@ describe('Portfolio Routes - /upload endpoint', () => {
     });
 
     it('should return 500 Internal Server Error if database query fails', async () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { prisma } = require('@src/services/db.service');
-      prisma.uploadJob.findUnique.mockRejectedValue(new Error('DB Error'));
+       
+      prismaMock.uploadJob.findUnique.mockRejectedValue(new Error('DB Error'));
 
       const res = await request(app).get(`/api/portfolio/upload-status/${mockJobId}`);
 
