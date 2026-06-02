@@ -45,10 +45,10 @@ jobs:
         sleep 10
         if [ "${{ github.event_name }}" == "pull_request" ]; then
           echo "Running smoke and responsiveness tests..."
-          cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts
+          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts)
         else
           echo "Running full E2E suite..."
-          cd frontend && npm run test:e2e:docker
+          (cd frontend && npm run test:e2e:docker)
         fi
         npm run docker:down
 
