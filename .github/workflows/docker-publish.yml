@@ -1,13 +1,17 @@
 name: Docker Build and Publish
 
 on:
-  push:
+  workflow_run:
+    workflows: ["E2E Tests"]
+    types:
+      - completed
     branches:
       - main
   workflow_dispatch:
 
 jobs:
   build-and-push:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
