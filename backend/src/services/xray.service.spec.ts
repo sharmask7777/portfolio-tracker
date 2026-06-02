@@ -79,4 +79,51 @@ describe('XRayService', () => {
     expect(xray.exArbitrage?.assetAllocation.cash.percentage).toBe(0.0);
     expect(xray.exArbitrage?.assetAllocation.arbitrage.percentage).toBe(1.0);
   });
+
+  it('should compute expense analysis and fund category allocation', async () => {
+    (prisma.portfolio.findUnique as jest.Mock).mockResolvedValue({
+      id: 'p3',
+      folios: [
+        {
+          asset: { isin: 'ISIN_ACTIVE', amfiCode: '1', name: 'Active Fund', type: 'MUTUAL_FUND' },
+          transactions: [{ type: 'BUY', units: 100, balance: 100, nav: 10, date: new Date() }],
+        },
+        {
+          asset: { isin: 'ISIN_INDEX', amfiCode: '2', name: 'Nifty Index Fund', type: 'MUTUAL_FUND' },
+          transactions: [{ type: 'BUY', units: 100, balance: 100, nav: 10, date: new Date() }],
+        }
+      ],
+    });
+
+    (MarketDataService.getLatestNAV as jest.Mock).mockResolvedValue(10);
+    (MarketDataService.getHoldings as jest.Mock).mockImplementation((isin) => {
+      if (isin === 'ISIN_ACTIVE') {
+        return Promise.resolve({
+          expenseRatio: 1.5,
+          schemeCategory: 'Equity - Active',
+          portfolio: { assetAllocation: { equity: '100' } }
+        });
+      }
+      if (isin === 'ISIN_INDEX') {
+        return Promise.resolve({
+          expenseRatio: 0.5,
+          schemeCategory: 'Equity - Index',
+          portfolio: { assetAllocation: { equity: '100' } }
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    const xray = await XRayService.getXRayData('p3', 'u1');
+
+    expect(xray.totalValue).toBe(2000);
+    expect(xray.expenseAnalysis).toBeDefined();
+    
+    expect(xray.expenseAnalysis.totalAnnualFees).toBe(20);
+    expect(xray.expenseAnalysis.weightedAvgTer).toBe(1);
+
+    expect(xray.expenseAnalysis.categoryBreakdown.length).toBeGreaterThan(0);
+    expect(xray.fundCategoryAllocation.active.value).toBe(1000);
+    expect(xray.fundCategoryAllocation.index.value).toBe(1000);
+  });
 });

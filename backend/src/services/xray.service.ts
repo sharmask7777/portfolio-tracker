@@ -35,6 +35,18 @@ export interface XRayData {
       other: { percentage: number; value: number };
     };
   };
+  expenseAnalysis: {
+    totalAnnualFees: number;
+    weightedAvgTer: number;
+    categoryBreakdown: { category: string; totalFees: number; avgTer: number; percentage: number; value: number }[];
+    fundBreakdown: { name: string; isin: string; category: string; ter: number; annualizedFee: number; value: number }[];
+  };
+  fundCategoryAllocation: {
+    active: { percentage: number; value: number };
+    index: { percentage: number; value: number };
+    arbitrage: { percentage: number; value: number };
+    other: { percentage: number; value: number };
+  };
 }
 
 export class XRayService {
@@ -141,11 +153,54 @@ export class XRayService {
     );
 
     // 3. Aggregate from holdings data
+    let totalFees = 0;
+    const fundBreakdown: { name: string; isin: string; category: string; ter: number; annualizedFee: number; value: number }[] = [];
+    const categoryFees: Record<string, { fee: number; terSum: number; value: number; count: number }> = {};
+    const fundCategoryValues = { active: 0, index: 0, arbitrage: 0, other: 0 };
+
+    const parseCategory = (name: string, schemeCat: string) => {
+      const lowerName = name.toLowerCase();
+      const lowerCat = (schemeCat || '').toLowerCase();
+      if (lowerName.includes('arbitrage') || lowerCat.includes('arbitrage')) return 'Arbitrage';
+      if (lowerName.includes('index') || lowerCat.includes('index')) return 'Index';
+      if (lowerCat.includes('international') || lowerCat.includes('global')) return 'International';
+      return 'Active Equity';
+    };
+
     for (const { fv, data } of holdingsResults) {
       const weightFactor = fv.value / (totalPortfolioValue || 1);
       const isArbitrage = fv.type === 'MUTUAL_FUND' && (fv.name?.toLowerCase().includes('arbitrage') || false);
 
       if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
+        if (fv.type === 'MUTUAL_FUND') {
+          const ter = data?.expenseRatio || 0;
+          const annualizedFee = (fv.value * ter) / 100;
+          totalFees += annualizedFee;
+
+          const category = parseCategory(fv.name || '', data?.schemeCategory || '');
+
+          fundBreakdown.push({
+            name: fv.name || '',
+            isin: fv.isin,
+            category,
+            ter,
+            annualizedFee,
+            value: fv.value
+          });
+
+          if (!categoryFees[category]) {
+            categoryFees[category] = { fee: 0, terSum: 0, value: 0, count: 0 };
+          }
+          categoryFees[category].fee += annualizedFee;
+          categoryFees[category].value += fv.value;
+          categoryFees[category].terSum += ter * fv.value;
+          
+          if (category === 'Active Equity') fundCategoryValues.active += fv.value;
+          else if (category === 'Index') fundCategoryValues.index += fv.value;
+          else if (category === 'Arbitrage') fundCategoryValues.arbitrage += fv.value;
+          else fundCategoryValues.other += fv.value;
+        }
+
         if (!data) {
           if (isArbitrage) {
             assetAllocation.debt += 100 * weightFactor;
@@ -218,8 +273,33 @@ export class XRayService {
       }
     }
 
+    const totalMfValue = fundBreakdown.reduce((sum, f) => sum + f.value, 0);
+    const weightedAvgTer = totalMfValue > 0 ? (totalFees / totalMfValue) * 100 : 0;
+    
+    const categoryBreakdown = Object.entries(categoryFees).map(([category, stats]) => ({
+      category,
+      totalFees: stats.fee,
+      avgTer: stats.value > 0 ? (stats.terSum / stats.value) : 0,
+      percentage: totalMfValue > 0 ? stats.value / totalMfValue : 0,
+      value: stats.value
+    }));
+    
+    const fundCategoryAllocation = {
+      active: { percentage: totalPortfolioValue > 0 ? fundCategoryValues.active / totalPortfolioValue : 0, value: fundCategoryValues.active },
+      index: { percentage: totalPortfolioValue > 0 ? fundCategoryValues.index / totalPortfolioValue : 0, value: fundCategoryValues.index },
+      arbitrage: { percentage: totalPortfolioValue > 0 ? fundCategoryValues.arbitrage / totalPortfolioValue : 0, value: fundCategoryValues.arbitrage },
+      other: { percentage: totalPortfolioValue > 0 ? fundCategoryValues.other / totalPortfolioValue : 0, value: fundCategoryValues.other },
+    };
+
     return {
       totalValue: totalPortfolioValue,
+      expenseAnalysis: {
+        totalAnnualFees: totalFees,
+        weightedAvgTer,
+        categoryBreakdown,
+        fundBreakdown
+      },
+      fundCategoryAllocation,
       sectors: Object.entries(sectorMap)
         .map(([name, percentage]) => ({
           name,
