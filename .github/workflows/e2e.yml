@@ -27,6 +27,18 @@ jobs:
 
     - name: Run Playwright tests
       run: |
+        cat <<EOF > .env
+        DOCKER_REGISTRY_USER=shaleenks
+        PORTFOLIO_DB_USER=postgres
+        PORTFOLIO_DB_PASSWORD=password
+        PORTFOLIO_DB_NAME=portfolio_tracker
+        IP_GLOBAL=localhost
+        TZ_GLOBAL=UTC
+        VOLUME_PREFIX_GLOBAL=.
+        VITE_API_PORT=3001
+        VITE_API_URL=http://localhost:3001
+        EOF
+        
         export NODE_ENV=development
         npm run docker:up
         echo "Waiting for services to become ready..."
