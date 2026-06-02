@@ -3,7 +3,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 COPY prisma ./prisma/
 RUN DATABASE_URL="postgresql://postgres:password@postgres:5432/portfolio_tracker?schema=public" npx prisma generate
 COPY . .
@@ -15,7 +15,7 @@ WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat
 COPY package*.json ./
 COPY prisma ./prisma/
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --legacy-peer-deps
 RUN DATABASE_URL="postgresql://postgres:password@postgres:5432/portfolio_tracker?schema=public" npx prisma generate
 # Remove unused Prisma engines to save space
 RUN find node_modules -name "query-engine-*" -not -name "*linux-musl-openssl-3.0.x*" -delete && \
