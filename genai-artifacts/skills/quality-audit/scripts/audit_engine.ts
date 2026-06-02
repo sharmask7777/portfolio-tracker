@@ -1,9 +1,9 @@
 import { PrismaClient, AssetType } from '@prisma/client';
-import { PerformanceService } from '../../../backend/src/services/performance.service';
-import { PortfolioUtils } from '../../../backend/src/utils/portfolio.utils';
+import { PerformanceService } from '../../../../backend/src/services/performance.service';
+import { PortfolioUtils } from '../../../../backend/src/utils/portfolio.utils';
 
 // We use the project's prisma instance
-import { prisma } from '../../../backend/src/services/db.service';
+import { prisma } from '../../../../backend/src/services/db.service';
 
 async function audit() {
   const folios = await prisma.folio.findMany({

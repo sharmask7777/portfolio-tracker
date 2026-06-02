@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { SyncService } from '../../../backend/src/services/sync.service';
+import { SyncService } from '../../../../backend/src/services/sync.service';
 
 async function run() {
   const jsonPath = process.argv[2];
