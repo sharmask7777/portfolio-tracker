@@ -111,6 +111,60 @@ const XRayDashboard = ({ data, title }: { data: any, title: string }) => {
   );
 };
 
+const ExpenseAnalysis = ({ data }: { data: any }) => {
+  if (!data || !data.expenseAnalysis) return null;
+  const { totalAnnualFees, weightedAvgTer, categoryBreakdown } = data.expenseAnalysis;
+  
+  const formatCurrency = (val: number) => {
+    if (typeof val !== 'number' || isNaN(val)) return 'N/A';
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
+  };
+  
+  const formatPercent = (val: number) => {
+    if (typeof val !== 'number' || isNaN(val)) return 'N/A';
+    return `${val.toFixed(2)}%`;
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: '1.5rem' }}>
+      <h3>Expense Analysis</h3>
+      
+      <div style={{ display: 'flex', gap: '2rem', marginTop: '1rem', marginBottom: '1.5rem' }}>
+        <div>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Total Fees Paid (Annualized)</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{formatCurrency(totalAnnualFees)}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Weighted Average TER</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{formatPercent(weightedAvgTer)}</div>
+        </div>
+      </div>
+
+      <h4>Fund Category Breakdown</h4>
+      <div style={{ overflowX: 'auto', marginTop: '1rem' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
+              <th style={{ padding: '0.75rem 0', color: 'var(--text-secondary)' }}>Category Name</th>
+              <th style={{ padding: '0.75rem 0', textAlign: 'right', color: 'var(--text-secondary)' }}>Total Fees Paid</th>
+              <th style={{ padding: '0.75rem 0', textAlign: 'right', color: 'var(--text-secondary)' }}>Average TER</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(categoryBreakdown || []).map((cat: any, i: number) => (
+              <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                <td style={{ padding: '0.75rem 0' }}>{cat.category || 'Unknown'}</td>
+                <td style={{ padding: '0.75rem 0', textAlign: 'right' }}>{formatCurrency(cat.totalFees)}</td>
+                <td style={{ padding: '0.75rem 0', textAlign: 'right' }}>{formatPercent(cat.avgTer)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
   if (!data || !data.sectors) return <div className="loading-state">Loading X-Ray data...</div>;
 
@@ -125,6 +179,7 @@ export const XRayView: React.FC<XRayViewProps> = ({ data }) => {
 
   return (
     <div className="xray-view animate-fade">
+      <ExpenseAnalysis data={data} />
       <XRayDashboard data={data} title="Standard View" />
       {data.exArbitrage && data.exArbitrage.assetAllocation.arbitrage.value > 0 && (
         <XRayDashboard data={data.exArbitrage} title="Excluding Arbitrage (Black Box)" />
