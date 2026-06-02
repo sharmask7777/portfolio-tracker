@@ -51,6 +51,19 @@ export interface XRayData {
 
 export class XRayService {
   public static async getXRayData(portfolioId: string, userId: string): Promise<XRayData> {
+    const allFolios = await this.getFoliosForContext(portfolioId, userId);
+    
+    // 1. Calculate values for all folios in parallel
+    const { folioValues, totalPortfolioValue } = await this.calculateFolioValues(allFolios);
+
+    // 2. Fetch all holdings in parallel
+    const holdingsResults = await this.fetchHoldings(folioValues);
+
+    // 3. Aggregate from holdings data
+    return this.aggregateHoldings(holdingsResults, totalPortfolioValue);
+  }
+
+  private static async getFoliosForContext(portfolioId: string, userId: string) {
     let portfolios: any[] = [];
 
     if (portfolioId === 'consolidated') {
@@ -89,12 +102,10 @@ export class XRayService {
     }
 
     if (portfolios.length === 0) throw new Error('Portfolio/Profile not found');
+    return portfolios.flatMap(p => p.folios);
+  }
 
-    const allFolios = portfolios.flatMap(p => p.folios);
-
-    let totalPortfolioValue = 0;
-    
-    // 1. Calculate values for all folios in parallel
+  private static async calculateFolioValues(allFolios: any[]) {
     const folioCalculations = await Promise.all(
       allFolios.map(async (folio) => {
         const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
@@ -122,8 +133,23 @@ export class XRayService {
     );
 
     const folioValues = folioCalculations.filter((v): v is NonNullable<typeof v> => v !== null);
-    totalPortfolioValue = folioValues.reduce((acc, fv) => acc + fv.value, 0);
+    const totalPortfolioValue = folioValues.reduce((acc, fv) => acc + fv.value, 0);
+    return { folioValues, totalPortfolioValue };
+  }
 
+  private static async fetchHoldings(folioValues: any[]) {
+    return Promise.all(
+      folioValues.map(async (fv) => {
+        if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
+          const data = await MarketDataService.getHoldings(fv.isin);
+          return { fv, data };
+        }
+        return { fv, data: null };
+      })
+    );
+  }
+
+  private static aggregateHoldings(holdingsResults: any[], totalPortfolioValue: number): XRayData {
     const sectorMap: Record<string, number> = {};
     const marketCap = { large: 0, mid: 0, small: 0 };
     const assetAllocation = { equity: 0, debt: 0, cash: 0, gold: 0, other: 0 };
@@ -132,40 +158,10 @@ export class XRayService {
     const exArbMarketCap = { large: 0, mid: 0, small: 0 };
     const exArbAssetAllocation = { equity: 0, debt: 0, cash: 0, gold: 0, arbitrage: 0, other: 0 };
 
-    // 2. Fetch all holdings in parallel
-    const holdingsResults = await Promise.all(
-      folioValues.map(async (fv) => {
-        if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
-          const data = await MarketDataService.getHoldings(fv.isin);
-          
-          // FINANCIAL INTELLIGENCE: Persist fund-specific exit load rules (REQ-12.1)
-          if (data?.exitLoadMessage && fv.isin) {
-            prisma.asset.update({
-              where: { isin: fv.isin },
-              data: { exitLoadMetadata: data.exitLoadMessage }
-            }).catch(err => console.error(`Failed to update exit load metadata for ${fv.isin}:`, err));
-          }
-
-          return { fv, data };
-        }
-        return { fv, data: null };
-      })
-    );
-
-    // 3. Aggregate from holdings data
     let totalFees = 0;
     const fundBreakdown: { name: string; isin: string; category: string; ter: number; annualizedFee: number; value: number }[] = [];
     const categoryFees: Record<string, { fee: number; terSum: number; value: number; count: number }> = {};
     const fundCategoryValues = { active: 0, index: 0, arbitrage: 0, other: 0 };
-
-    const parseCategory = (name: string, schemeCat: string) => {
-      const lowerName = name.toLowerCase();
-      const lowerCat = (schemeCat || '').toLowerCase();
-      if (lowerName.includes('arbitrage') || lowerCat.includes('arbitrage')) return 'Arbitrage';
-      if (lowerName.includes('index') || lowerCat.includes('index')) return 'Index';
-      if (lowerCat.includes('international') || lowerCat.includes('global')) return 'International';
-      return 'Active Equity';
-    };
 
     for (const { fv, data } of holdingsResults) {
       const weightFactor = fv.value / (totalPortfolioValue || 1);
@@ -177,7 +173,7 @@ export class XRayService {
           const annualizedFee = (fv.value * ter) / 100;
           totalFees += annualizedFee;
 
-          const category = parseCategory(fv.name || '', data?.schemeCategory || '');
+          const category = this.parseCategory(fv.name || '', data?.schemeCategory || '');
 
           fundBreakdown.push({
             name: fv.name || '',
@@ -241,9 +237,6 @@ export class XRayService {
         }
 
         if (isArbitrage) {
-          // Arbitrage funds are equity funds but behave like debt.
-          // From the exposure POV, they are considered equivalents to debt.
-          // So they count as debt allocation in standard asset allocation (decreasing equity exposure).
           assetAllocation.debt += 100 * weightFactor;
           exArbAssetAllocation.arbitrage += 100 * weightFactor;
         } else if (data.portfolio?.assetAllocation) {
@@ -261,8 +254,7 @@ export class XRayService {
           assetAllocation.equity += 100 * weightFactor;
           exArbAssetAllocation.equity += 100 * weightFactor;
         }
-      }
- else {
+      } else {
         if (fv.type === AssetType.EPF || fv.type === AssetType.PPF || fv.type === AssetType.FIXED_DEPOSIT) {
           assetAllocation.debt += 100 * weightFactor;
           exArbAssetAllocation.debt += 100 * weightFactor;
@@ -342,6 +334,15 @@ export class XRayService {
         },
       }
     };
+  }
+
+  private static parseCategory(name: string, schemeCat: string): string {
+    const lowerName = name.toLowerCase();
+    const lowerCat = (schemeCat || '').toLowerCase();
+    if (lowerName.includes('arbitrage') || lowerCat.includes('arbitrage')) return 'Arbitrage';
+    if (lowerName.includes('index') || lowerCat.includes('index')) return 'Index';
+    if (lowerCat.includes('international') || lowerCat.includes('global')) return 'International';
+    return 'Active Equity';
   }
 
   private static normalizeSector(name: any): string {
