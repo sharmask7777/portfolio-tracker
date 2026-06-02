@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "⏳ Running Docker sanity checks..."
+npm run test:docker --prefix backend
+
+echo "⏳ Running Playwright E2E tests..."
+# Start the full stack to ensure playwright tests succeed, but playwright.config.ts might already handle this
+# The user guidelines mentioned: cd frontend && npx playwright test
+cd frontend && npx playwright test

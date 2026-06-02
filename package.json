@@ -11,7 +11,8 @@
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
     "start": "npm run docker:up && npm run docker:logs",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "husky"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +22,7 @@
     "schema": "backend/prisma/schema.prisma"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "husky": "^9.1.7"
   }
 }
