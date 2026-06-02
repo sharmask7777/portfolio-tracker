@@ -41,6 +41,8 @@ test.describe('E2E Integration: Real PDF Processing', () => {
     await page.getByPlaceholder('PDF Password').fill('TEST1234');
     
     // Start watching for the upload-status network call
+    page.on('response', r => console.log(`[Network] ${r.status()} ${r.url()}`));
+    
     const statusPromise = page.waitForResponse(response => 
       response.url().includes('/api/portfolio/upload-status/') && response.status() === 200,
       { timeout: 15000 }

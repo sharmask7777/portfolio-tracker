@@ -56,6 +56,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - shared_uploads:/app/uploads
 
   worker:
     build:
@@ -79,6 +81,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_started
+    volumes:
+      - shared_uploads:/app/uploads
 
   frontend:
     build:
@@ -94,3 +98,6 @@ services:
       TZ: ${TZ_GLOBAL}
     depends_on:
       - backend
+
+volumes:
+  shared_uploads:

@@ -3,11 +3,16 @@
 
 set -e
 
-echo "⏳ Running Docker sanity checks..."
-npm run test:docker --prefix backend
+echo "Running backend Docker smoke test..."
+cd backend && npm run test:docker
+cd ..
+
+echo "Running frontend Docker smoke test..."
+cd frontend && npm run test:docker
+cd ..
 
 echo "🐳 Starting Docker compose stack for E2E tests..."
-export NODE_ENV=test
+export NODE_ENV=development
 npm run docker:up
 
 # Ensure we always tear down the stack, even if the tests fail

@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:e2e:docker": "cross-env E2E_BASE_URL=http://localhost:8082 playwright test",
+    "test:docker": "docker build -t portfolio-frontend-test-img . && docker run --rm portfolio-frontend-test-img ls /usr/share/nginx/html",
     "test:unit": "vitest run"
   },
   "dependencies": {
