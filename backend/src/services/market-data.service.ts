@@ -114,6 +114,11 @@ export class MarketDataService {
       const holdings = response.data.data;
 
       if (holdings) {
+        // OVERRIDE FOR KNOWN BAD DATA FROM FINAPI
+        if (isin === 'INF754K01EA4') holdings.expenseRatio = 0.39; // Edelweiss Arbitrage Direct
+        if (isin === 'INF205K01KR8') holdings.expenseRatio = 0.34; // Invesco Arbitrage Direct
+        if (isin === 'INF879O01225') holdings.expenseRatio = 0.30; // PPFAS Arbitrage Direct
+
         await CacheService.set(cacheKey, holdings, 86400 * 7); // Cache holdings for 7 days
         return holdings;
       }
