@@ -20,7 +20,10 @@ import {
   ShieldCheck,
   BrainCircuit,
   LogOut,
-  X
+  X,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from 'lucide-react';
 import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
@@ -31,6 +34,8 @@ import { InsightsSidebar } from './components/Insights/InsightsSidebar';
 import { GoalTracker } from './components/Insights/GoalTracker';
 import { useSettings } from './contexts/SettingsContext';
 import { useAuth } from './contexts/AuthContext';
+import { sortFolios } from './utils/sorting';
+import type { SortField, SortDirection } from './utils/sorting';
 import './App.css';
 
 import { FamilySelector } from './components/Family/FamilySelector';
@@ -64,6 +69,45 @@ export function Dashboard() {
   const [editTaxSlab, setEditTaxSlab] = useState<number>(0.3);
 
   const [uploadStatusMsg, setUploadStatusMsg] = useState<string>('');
+
+  const [sortField, setSortField] = useState<SortField | null>('value');
+  const [sortDirection, setSortDirection] = useState<SortDirection | null>('desc');
+
+  const handleSort = (field: SortField) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortDirection('desc');
+    } else {
+      if (sortDirection === 'desc') {
+        setSortDirection('asc');
+      } else if (sortDirection === 'asc') {
+        setSortField(null);
+        setSortDirection(null);
+      } else {
+        setSortField(field);
+        setSortDirection('desc');
+      }
+    }
+  };
+
+  const renderSortableHeader = (label: string, field: SortField) => {
+    const isSorted = sortField === field;
+    return (
+      <th 
+        onClick={() => handleSort(field)} 
+        style={{ cursor: 'pointer', userSelect: 'none' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+          <span>{label}</span>
+          {isSorted ? (
+            sortDirection === 'asc' ? <ArrowUp size={14} style={{ color: 'var(--accent-color)' }} /> : <ArrowDown size={14} style={{ color: 'var(--accent-color)' }} />
+          ) : (
+            <ArrowUpDown size={14} style={{ opacity: 0.3 }} />
+          )}
+        </div>
+      </th>
+    );
+  };
 
   const fetchSummary = async () => {
     try {
@@ -438,18 +482,18 @@ export function Dashboard() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Scheme Name</th>
-                        <th>Type</th>
-                        <th>Invested</th>
-                        <th>Current Value</th>
-                        <th>Day Change</th>
-                        <th>{performanceMode === 'XIRR' ? 'XIRR' : 'Return'}</th>
-                        <th>Post-Tax {performanceMode === 'XIRR' ? 'XIRR' : 'Return'}</th>
+                        {renderSortableHeader('Scheme Name', 'name')}
+                        {renderSortableHeader('Type', 'type')}
+                        {renderSortableHeader('Invested', 'invested')}
+                        {renderSortableHeader('Current Value', 'value')}
+                        {renderSortableHeader('Day Change', 'dayChange')}
+                        {renderSortableHeader(performanceMode === 'XIRR' ? 'XIRR' : 'Return', 'performance')}
+                        {renderSortableHeader(`Post-Tax ${performanceMode === 'XIRR' ? 'XIRR' : 'Return'}`, 'postTaxPerformance')}
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {portfolio.folios.map((folio: any) => (
+                      {sortFolios(portfolio.folios, sortField, sortDirection, performanceMode).map((folio: any) => (
                         <tr key={folio.id}>
                           <td style={{ fontWeight: 500 }}>
                             {folio.asset.name}
