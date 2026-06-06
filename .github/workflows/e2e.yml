@@ -18,9 +18,9 @@ jobs:
     
     - name: Install dependencies
       run: |
-        npm ci
-        cd frontend && npm ci
-        cd ../backend && npm ci
+        npm ci --legacy-peer-deps
+        cd frontend && npm ci --legacy-peer-deps
+        cd ../backend && npm ci --legacy-peer-deps
 
     - name: Install Playwright Browsers
       run: cd frontend && npx playwright install --with-deps chromium
