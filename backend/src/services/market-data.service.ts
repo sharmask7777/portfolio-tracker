@@ -115,9 +115,14 @@ export class MarketDataService {
       const holdings = response.data.data;
 
       if (holdings) {
-        if (!holdings.expenseRatio) {
-          console.warn(`[MarketDataService] Missing expenseRatio from FinAPI for ISIN ${isin}`);
-          holdings.expenseRatio = null;
+        if (!holdings.expenseRatio || holdings.expenseRatio === 0) {
+          console.warn(`[MarketDataService] Missing expenseRatio from FinAPI for ISIN ${isin}. Applying category fallback.`);
+          const category = holdings.category?.toLowerCase() || '';
+          if (category.includes('equity')) holdings.expenseRatio = 0.8;
+          else if (category.includes('debt')) holdings.expenseRatio = 0.4;
+          else if (category.includes('hybrid')) holdings.expenseRatio = 0.6;
+          else if (category.includes('index')) holdings.expenseRatio = 0.2;
+          else holdings.expenseRatio = 0.7; // general fallback
         }
 
         await CacheService.set(cacheKey, holdings, 86400 * 7); // Cache holdings for 7 days

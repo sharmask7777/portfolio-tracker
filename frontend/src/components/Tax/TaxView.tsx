@@ -52,12 +52,18 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
   const realizedSlab = filteredDetails.filter((g: any) => g.taxType === 'SLAB').reduce((acc: number, g: any) => acc + g.gain, 0);
   
   // Separate Grandfathered Equity (Pre-2018) and Grandfathered Debt (Pre-2023)
-  // Note: Backend currently sets isGrandfathered for both
   const realizedGrandfatheredDebt = filteredDetails.filter((g: any) => g.isGrandfathered && g.taxType === 'LTCG' && g.taxRate === 0.20).reduce((acc: number, g: any) => acc + g.gain, 0);
   const realizedGrandfatheredEquity = filteredDetails.filter((g: any) => g.isGrandfathered && g.taxType === 'LTCG' && g.taxRate === 0.10).reduce((acc: number, g: any) => acc + g.gain, 0);
 
   // Total Equity LTCG includes both standard and grandfathered
   const totalLTCGEquity = realizedLTCG + realizedGrandfatheredEquity;
+
+  const stcgTax = filteredDetails.filter((g: any) => g.taxType === 'STCG').reduce((acc: number, g: any) => acc + g.estimatedTax, 0);
+  const gfDebtTax = filteredDetails.filter((g: any) => g.isGrandfathered && g.taxType === 'LTCG' && g.taxRate === 0.20).reduce((acc: number, g: any) => acc + g.estimatedTax, 0);
+  
+  const ltcgEquityDetails = filteredDetails.filter((g: any) => g.taxType === 'LTCG' && g.taxRate !== 0.20);
+  const totalLTCGEquityTax = ltcgEquityDetails.reduce((acc: number, g: any) => acc + g.estimatedTax, 0);
+
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -97,8 +103,11 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
 
   // LTCG limit changed from 1L to 1.25L in Budget 2024
   const ltcgLimit = selectedFY >= '2024-25' ? 125000 : 100000;
-  const ltcgUsed = Math.max(0, realizedLTCG);
+  const ltcgUsed = Math.max(0, totalLTCGEquity);
   const ltcgPercent = Math.min(100, (ltcgUsed / ltcgLimit) * 100);
+
+  const weightedLtcgRate = totalLTCGEquity > 0 ? (totalLTCGEquityTax / totalLTCGEquity) : (selectedFY >= '2024-25' ? 0.125 : 0.10);
+  const finalLtcgTax = Math.max(0, totalLTCGEquityTax - (Math.min(totalLTCGEquity, ltcgLimit) * weightedLtcgRate));
 
   return (
     <div className="tax-view animate-fade">
@@ -112,6 +121,17 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
           {recentFYs.map(fy => <option key={fy} value={fy}>Financial Year {fy}</option>)}
         </select>
       </div>
+
+      {summary.hasSyntheticAnchors && (
+        <div className="card" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid var(--warning-color)', marginBottom: '1.5rem', color: 'var(--warning-color)' }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <TrendingDown size={20} />
+            <div>
+              <strong>Incomplete History:</strong> Realized gains and reports involve estimated acquisition dates from incomplete CAS histories. Figures are estimates and not strictly compliant for tax filing unless a from-inception CAS is uploaded.
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="xray-grid">
         <div className="card">
@@ -177,19 +197,19 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
             <tr>
               <td><span className="badge badge-lt">LTCG (Equity)</span></td>
               <td>{formatCurrency(totalLTCGEquity)}</td>
-              <td>{formatCurrency(Math.max(0, (totalLTCGEquity - ltcgLimit) * 0.125))}</td>
+              <td>{formatCurrency(finalLtcgTax)}</td>
               <td style={{ fontSize: '0.75rem' }}>Exempt up to ₹{formatCurrency(ltcgLimit).replace('₹', '')}</td>
             </tr>
             <tr>
               <td><span className="badge badge-st">STCG (Equity)</span></td>
               <td>{formatCurrency(realizedSTCG)}</td>
-              <td>{formatCurrency(Math.max(0, realizedSTCG * (selectedFY >= '2024-25' ? 0.20 : 0.15)))}</td>
+              <td>{formatCurrency(stcgTax)}</td>
               <td style={{ fontSize: '0.75rem' }}>Taxed at {selectedFY >= '2024-25' ? '20%' : '15%'}</td>
             </tr>
             <tr>
               <td><span className="badge badge-slab" style={{ backgroundColor: 'var(--accent-color)', color: 'white' }}>Grandfathered Debt</span></td>
               <td>{formatCurrency(realizedGrandfatheredDebt)}</td>
-              <td>{formatCurrency(Math.max(0, realizedGrandfatheredDebt * 0.20))}</td>
+              <td>{formatCurrency(gfDebtTax)}</td>
               <td style={{ fontSize: '0.75rem' }}>20% with Indexation (Pre-2023)</td>
             </tr>
             <tr>
@@ -210,7 +230,8 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
               <tr>
                 <th>Scheme</th>
                 <th>Units</th>
-                <th>Date</th>
+                <th>Buy Date</th>
+                <th>Sell Date</th>
                 <th>Gain</th>
                 <th>Tax</th>
               </tr>
@@ -225,6 +246,10 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
                   <tr key={i}>
                     <td>{g.assetName}</td>
                     <td>{g.units.toFixed(2)}</td>
+                    <td>
+                      {new Date(g.buyDate).toLocaleDateString()}
+                      {g.isAnchorDependent && <span title="Estimated from Synthetic Anchor" style={{ color: 'var(--warning-color)', marginLeft: '4px' }}>*</span>}
+                    </td>
                     <td>{new Date(g.sellDate).toLocaleDateString()}</td>
                     <td className={g.gain >= 0 ? 'positive' : 'negative'}>{formatCurrency(g.gain)}</td>
                     <td><span className={`badge badge-${g.taxType.toLowerCase()}${g.isGrandfathered ? '-grandfathered' : ''}`}>{g.isGrandfathered ? 'GF-' : ''}{g.taxType}</span></td>

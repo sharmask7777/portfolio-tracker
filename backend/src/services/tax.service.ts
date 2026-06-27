@@ -8,6 +8,7 @@ export interface BuyLot {
   originalUnits: number;
   isin?: string;
   isBonus?: boolean;
+  isAnchor?: boolean;
 }
 
 export interface RealizedGain {
@@ -23,9 +24,11 @@ export interface RealizedGain {
   isGrandfathered: boolean;
   taxRate: number;
   estimatedTax: number;
+  isAnchorDependent: boolean;
 }
 
 export interface TaxSummary {
+  hasSyntheticAnchors: boolean;
   realized: {
     stcg: number;
     ltcg: number;
@@ -67,6 +70,7 @@ export class TaxService {
       const type = tx.type.toLowerCase();
       const isBuy = type.includes('buy') || type.includes('purchase') || type.includes('sip') || 
                     type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance');
+      const isAnchor = type.includes('opening_balance');
       const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out') || 
                     type.includes('transfer_out') || type.includes('off_market');
       const isBonus = type.includes('bonus');
@@ -76,7 +80,7 @@ export class TaxService {
       const date = new Date(tx.date);
 
       if (isBuy || isBonus) {
-        buyLots.push({ date, units, nav, originalUnits: units, isBonus });
+        buyLots.push({ date, units, nav, originalUnits: units, isBonus, isAnchor });
       } else if (isSell) {
         let unitsToSell = units;
         while (unitsToSell > 0.000001 && buyLots.length > 0) {
@@ -137,10 +141,21 @@ export class TaxService {
     const stcl = stcgRealized < 0 ? Math.abs(stcgRealized) : 0;
     const ltcl = (ltcgRealized + ltcgGrandfatheredDebtRealized) < 0 ? Math.abs(ltcgRealized + ltcgGrandfatheredDebtRealized) : 0;
     const stcg = stcgRealized > 0 ? stcgRealized : 0;
-    const ltcg = (ltcgRealized + ltcgGrandfatheredDebtRealized) > 0 ? (ltcgRealized + ltcgGrandfatheredDebtRealized) : 0;
+    
+    let ltcgEq = ltcgRealized > 0 ? ltcgRealized : 0;
+    let ltcgDebt = ltcgGrandfatheredDebtRealized > 0 ? ltcgGrandfatheredDebtRealized : 0;
 
     // 1. LTCL can ONLY set off LTCG
-    let remainingLTCG = Math.max(0, ltcg - ltcl);
+    // Set off against 20% (Debt) first, then Equity
+    let remainingLtcl = ltcl;
+    
+    const setOffDebt = Math.min(ltcgDebt, remainingLtcl);
+    ltcgDebt -= setOffDebt;
+    remainingLtcl -= setOffDebt;
+
+    const setOffEq = Math.min(ltcgEq, remainingLtcl);
+    ltcgEq -= setOffEq;
+    remainingLtcl -= setOffEq;
 
     // 2. STCL can set off both STCG and LTCG
     let remainingSTCG = stcg;
@@ -150,14 +165,24 @@ export class TaxService {
     remainingSTCG -= setOffST;
     remainingSTCL -= setOffST;
 
-    const setOffLT = Math.min(remainingLTCG, remainingSTCL);
-    remainingLTCG -= setOffLT;
-    remainingSTCL -= setOffLT;
+    // Set off STCL against remaining LTCG Debt (20%) first, then Equity
+    const setOffSTCLDebt = Math.min(ltcgDebt, remainingSTCL);
+    ltcgDebt -= setOffSTCLDebt;
+    remainingSTCL -= setOffSTCLDebt;
+
+    const setOffSTCLEq = Math.min(ltcgEq, remainingSTCL);
+    ltcgEq -= setOffSTCLEq;
+    remainingSTCL -= setOffSTCLEq;
 
     taxableSTCG = remainingSTCG;
-    taxableLTCG = remainingLTCG;
+    taxableLTCG = ltcgEq + ltcgDebt;
+
+    // Taxable STCG and LTCG computed above
+
+    const hasSyntheticAnchors = buyLots.some(lot => lot.isAnchor) || realizedGains.some(gain => gain.isAnchorDependent);
 
     return {
+      hasSyntheticAnchors,
       realized: {
         stcg: stcgRealized,
         ltcg: ltcgRealized,
@@ -224,10 +249,10 @@ export class TaxService {
     let isGrandfathered = false;
     const isEq = this.isEquity(assetType, assetName);
 
-    if (isEq && lot.date < this.GRANDFATHER_DATE && grandfatherNav) {
+    if (isEq && lot.date < this.GRANDFATHER_DATE && grandfatherNav && !lot.isAnchor) {
       isGrandfathered = true;
       effectiveBuyNav = Math.max(lot.nav, Math.min(grandfatherNav, sellNav));
-    } else if (!isEq && lot.date < this.DEBT_NEW_REGIME_DATE) {
+    } else if (!isEq && lot.date < this.DEBT_NEW_REGIME_DATE && !lot.isAnchor) {
        // Debt grandfathered means purchased before April 1, 2023
        isGrandfathered = true;
     }
@@ -252,6 +277,7 @@ export class TaxService {
       isGrandfathered,
       taxRate,
       estimatedTax: gain > 0 ? gain * taxRate : 0,
+      isAnchorDependent: lot.isAnchor || false,
     };
   }
 
@@ -265,13 +291,14 @@ export class TaxService {
       const type = tx.type.toLowerCase();
       const isBuy = type.includes('buy') || type.includes('purchase') || type.includes('sip') || 
                     type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance');
+      const isAnchor = type.includes('opening_balance');
       const isSell = type.includes('sell') || type.includes('redemption') || type.includes('switch_out') || 
                     type.includes('transfer_out') || type.includes('off_market');
       const isBonus = type.includes('bonus');
       const units = Math.abs(tx.units) || 0;
       const nav = isBonus ? 0 : (Math.abs(tx.nav) || 0);
       if (isBuy || isBonus) {
-        buyLots.push({ date: new Date(tx.date), units, nav, originalUnits: units, isBonus });
+        buyLots.push({ date: new Date(tx.date), units, nav, originalUnits: units, isBonus, isAnchor });
       } else if (isSell) {
         let unitsToSell = units;
         while (unitsToSell > 0.000001 && buyLots.length > 0) {
