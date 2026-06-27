@@ -92,6 +92,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
               </div>
             </div>
           </div>
+        )}
         {(() => {
           const sorted = [...(folio.transactions || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
           const lots: any[] = [];
