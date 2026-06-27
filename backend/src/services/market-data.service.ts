@@ -2,6 +2,9 @@ import axios from 'axios';
 import { CacheService } from './cache.service';
 import { prisma } from './db.service';
 
+import EXPENSE_RATIO_OVERRIDES_DATA from '../config/expense-ratio-overrides.json';
+const EXPENSE_RATIO_OVERRIDES: Record<string, number> = EXPENSE_RATIO_OVERRIDES_DATA;
+
 export class MarketDataService {
   private static MFAPI_BASE = 'https://api.mfapi.in/mf';
   private static FINAPI_BASE = 'https://finapi.upvaly.com/api/mf';
@@ -114,10 +117,13 @@ export class MarketDataService {
       const holdings = response.data.data;
 
       if (holdings) {
-        // OVERRIDE FOR KNOWN BAD DATA FROM FINAPI
-        if (isin === 'INF754K01EA4') holdings.expenseRatio = 0.39; // Edelweiss Arbitrage Direct
-        if (isin === 'INF205K01KR8') holdings.expenseRatio = 0.34; // Invesco Arbitrage Direct
-        if (isin === 'INF879O01225') holdings.expenseRatio = 0.30; // PPFAS Arbitrage Direct
+        if (EXPENSE_RATIO_OVERRIDES[isin] !== undefined) {
+          console.warn(`[MarketDataService] Applying manual expenseRatio override for ISIN ${isin}: ${holdings.expenseRatio} -> ${EXPENSE_RATIO_OVERRIDES[isin]}`);
+          holdings.expenseRatio = EXPENSE_RATIO_OVERRIDES[isin];
+        } else if (!holdings.expenseRatio) {
+          console.warn(`[MarketDataService] Missing expenseRatio from FinAPI for ISIN ${isin}, no override available.`);
+          holdings.expenseRatio = null;
+        }
 
         await CacheService.set(cacheKey, holdings, 86400 * 7); // Cache holdings for 7 days
         return holdings;
