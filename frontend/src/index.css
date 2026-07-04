@@ -3,12 +3,12 @@
   --bg-secondary: #f8fafc;
   --bg-card: #ffffff;
   --text-primary: #0f172a;
-  --text-secondary: #64748b;
+  --text-secondary: #334155;
   --border-color: #e2e8f0;
   --accent-color: #2563eb;
   --accent-light: #eff6ff;
-  --success-color: #10b981;
-  --danger-color: #ef4444;
+  --success-color: #047857;
+  --danger-color: #b91c1c;
   --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --input-bg: #ffffff;
   --input-border: #e2e8f0;
@@ -22,10 +22,10 @@
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --border-color: #334155;
-  --accent-color: #3b82f6;
+  --accent-color: #60a5fa;
   --accent-light: #1e293b;
   --success-color: #34d399;
-  --danger-color: #f87171;
+  --danger-color: #fca5a5;
   --card-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --input-bg: #1e293b;
   --input-border: #334155;
@@ -81,6 +81,11 @@ a {
   color: inherit;
 }
 
+*:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
 .container {
   max-width: 1400px;
   margin: 0 auto;
@@ -105,7 +110,7 @@ a {
   animation: slideUp 0.4s ease-out;
 }
 
-input[type="text"], input[type="number"], input[type="password"], input[type="date"], select, textarea {
+input[type="email"], input[type="text"], input[type="number"], input[type="password"], input[type="date"], select, textarea {
   background-color: var(--input-bg);
   color: var(--input-text);
   border: 1px solid var(--input-border);
@@ -173,4 +178,75 @@ input[type="text"], input[type="number"], input[type="password"], input[type="da
 .chart-container, .pie-container {
   margin-top: 1rem;
   height: 300px;
+}
+
+@media (forced-colors: active) {
+  :root, [data-theme='dark'], [data-theme='light'] {
+    --danger-color: CanvasText;
+    --success-color: CanvasText;
+    --accent-color: Highlight;
+    --accent-light: HighlightText;
+    --text-primary: CanvasText;
+    --text-secondary: CanvasText;
+    --bg-primary: Canvas;
+    --bg-secondary: Canvas;
+    --bg-card: Canvas;
+    --border-color: CanvasText;
+    --input-bg: Field;
+    --input-text: FieldText;
+    --input-border: CanvasText;
+    --btn-bg: ButtonFace;
+    --btn-text: ButtonText;
+    --btn-border: ButtonBorder;
+    --link-color: LinkText;
+    --highlight-bg: Highlight;
+    --highlight-text: HighlightText;
+  }
+  
+  body {
+    background-color: Canvas;
+    color: CanvasText;
+  }
+
+  svg {
+    fill: currentColor;
+    color: ButtonText; /* Base text fallback */
+  }
+
+  svg *[fill]:not([fill="none"]) {
+    fill: currentColor !important;
+  }
+
+  svg *[stroke]:not([stroke="none"]) {
+    stroke: currentColor !important;
+  }
+
+  button, .btn {
+    background-color: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonBorder;
+  }
+
+  button:disabled, input:disabled, .disabled {
+    color: GrayText;
+    border-color: GrayText;
+  }
+
+  a {
+    color: LinkText;
+  }
+
+  .selected, .active {
+    background-color: CanvasText;
+    color: Canvas;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
