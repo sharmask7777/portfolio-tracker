@@ -518,7 +518,7 @@ export function Dashboard() {
                           </td>
                           <td 
                             className={getReturnClass(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn)}
-                            style={{ opacity: isRefetching ? 0.5 : 1, transition: 'opacity 0.2s' }}
+                            style={{ opacity: isRefetching ? 0.5 : 1, transition: 'opacity 0.2s, color 0.2s' }}
                           >
                             {formatPercent(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn)}
                           </td>
