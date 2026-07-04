@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 test.describe('Font Visibility and WCAG Contrast Analysis', () => {
+  test.use({ reducedMotion: 'reduce' });
+
   test.beforeEach(async ({ page }) => {
     // 1. Mock fully populated state for testing
     await page.route('**/api/portfolio/summary*', async route => {
