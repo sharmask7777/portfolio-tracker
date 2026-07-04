@@ -327,7 +327,7 @@ export function Dashboard() {
             </button>
             <button 
               className="btn btn-danger" 
-              style={{ marginLeft: '0.5rem', backgroundColor: 'var(--danger-color)', color: 'white', fontSize: '0.75rem', padding: '0.4rem 0.8rem' }} 
+              style={{ marginLeft: '0.5rem', backgroundColor: 'var(--danger-color)', color: 'var(--bg-primary)', fontSize: '0.75rem', padding: '0.4rem 0.8rem' }} 
               onClick={handlePurge}
             >
               Purge
@@ -507,7 +507,7 @@ export function Dashboard() {
                             {isValidNumber(folio.metrics.dayChange) ? (
                               <>
                                 {folio.metrics.dayChange > 0 ? '+' : ''}{formatCurrency(folio.metrics.dayChange)}
-                                <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
+                                <div style={{ fontSize: '0.75rem',  }}>
                                   ({isValidNumber(folio.metrics.dayChangePercentage) ? `${folio.metrics.dayChangePercentage > 0 ? '+' : ''}${folio.metrics.dayChangePercentage.toFixed(2)}%` : 'N/A'})
                                 </div>
                               </>

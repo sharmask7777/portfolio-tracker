@@ -63,7 +63,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
           <div>
             <label style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Assign to Family Member</label>
             <select 
-              className="card" 
+               
               style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
               value={profileId}
               onChange={(e) => setProfileId(e.target.value)}
@@ -78,7 +78,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
           <div>
             <label style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Asset Type</label>
             <select 
-              className="card" 
+               
               style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
               value={type}
               onChange={(e) => setType(e.target.value)}
@@ -95,7 +95,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
             <label style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Account/Asset Name</label>
             <input 
               type="text" 
-              className="card" 
+               
               placeholder="e.g. My EPF or 10g Gold Coin"
               style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
               value={name}
@@ -110,7 +110,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
             </label>
             <input 
               type="number" 
-              className="card" 
+               
               placeholder="0.00"
               style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
               value={units}
@@ -123,7 +123,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
             <label style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Balance As Of Date</label>
             <input 
               type="date" 
-              className="card" 
+               
               style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', outline: 'none' }}
               value={balanceDate}
               onChange={(e) => setBalanceDate(e.target.value)}

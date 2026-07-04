@@ -34,7 +34,7 @@ export const FamilySelector: React.FC<FamilySelectorProps> = ({
           borderRadius: '100px',
           border: '1px solid var(--border-color)',
           background: selectedProfileId === null ? 'var(--accent-color)' : 'var(--bg-secondary)',
-          color: selectedProfileId === null ? '#fff' : 'var(--text-primary)',
+          color: selectedProfileId === null ? 'var(--bg-primary)' : 'var(--text-primary)',
           cursor: 'pointer',
           whiteSpace: 'nowrap',
           transition: 'all 0.2s'
@@ -58,7 +58,7 @@ export const FamilySelector: React.FC<FamilySelectorProps> = ({
               borderRadius: '100px',
               border: '1px solid var(--border-color)',
               background: selectedProfileId === profile.id ? 'var(--accent-color)' : 'var(--bg-secondary)',
-              color: selectedProfileId === profile.id ? '#fff' : 'var(--text-primary)',
+              color: selectedProfileId === profile.id ? 'var(--bg-primary)' : 'var(--text-primary)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               transition: 'all 0.2s'
@@ -78,7 +78,7 @@ export const FamilySelector: React.FC<FamilySelectorProps> = ({
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
-              color: selectedProfileId === profile.id ? '#fff' : 'var(--text-secondary)',
+              color: selectedProfileId === profile.id ? 'var(--bg-primary)' : 'var(--text-secondary)',
               padding: '0.25rem',
               display: 'flex',
               alignItems: 'center',

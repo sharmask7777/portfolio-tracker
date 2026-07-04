@@ -112,7 +112,7 @@
 }
 
 .card:hover {
-  border-color: var(--accent-color);
+  border-color: var(--text-primary);
 }
 
 .stat-label {
@@ -138,7 +138,7 @@
 
 .positive { color: var(--success-color); }
 .negative { color: var(--danger-color); }
-.accent { color: var(--accent-color); }
+.accent { color: var(--text-primary); }
 
 .tabs {
   display: flex;
@@ -169,8 +169,8 @@
 }
 
 .tab.active {
-  color: var(--accent-color);
-  border-bottom-color: var(--accent-color);
+  color: var(--text-primary);
+  border-bottom-color: var(--text-primary);
 }
 
 .dashboard-sections {
@@ -246,8 +246,8 @@
 }
 
 .btn-primary {
-  background-color: var(--accent-color);
-  color: white;
+  background-color: var(--text-primary);
+  color: var(--bg-primary);
 }
 
 .btn-primary:hover {
@@ -301,8 +301,8 @@
 
 .theme-toggle:hover {
   background-color: var(--accent-light);
-  color: var(--accent-color);
-  border-color: var(--accent-color);
+  color: var(--text-primary);
+  border-color: var(--text-primary);
 }
 
 .loading-state, .empty-state {
@@ -326,7 +326,7 @@
 .badge-lt { background-color: rgba(34, 197, 94, 0.1); color: var(--success-color); }
 .badge-st { background-color: rgba(239, 68, 68, 0.1); color: var(--danger-color); }
 .badge-slab { background-color: rgba(100, 116, 139, 0.1); color: var(--text-secondary); }
-.badge-ltcg-grandfathered { background-color: rgba(37, 99, 235, 0.1); color: var(--accent-color); }
+.badge-ltcg-grandfathered { background-color: rgba(37, 99, 235, 0.1); color: var(--text-primary); }
 .badge-stcg-grandfathered { background-color: rgba(239, 68, 68, 0.1); color: var(--danger-color); }
 .badge-slab-grandfathered { background-color: rgba(100, 116, 139, 0.1); color: var(--text-secondary); }
 
@@ -350,7 +350,7 @@
 
 .progress-bar-fill {
   height: 100%;
-  background-color: var(--accent-color);
+  background-color: var(--text-primary);
 }
 
 /* Segmented Control */
@@ -381,7 +381,7 @@
 
 .segmented-control button.active {
   background: var(--bg-card);
-  color: var(--accent-color);
+  color: var(--text-primary);
   box-shadow: var(--card-shadow);
 }
 

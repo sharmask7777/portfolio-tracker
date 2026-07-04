@@ -207,7 +207,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
               <td style={{ fontSize: '0.75rem' }}>Taxed at {selectedFY >= '2024-25' ? '20%' : '15%'}</td>
             </tr>
             <tr>
-              <td><span className="badge badge-slab" style={{ backgroundColor: 'var(--accent-color)', color: 'white' }}>Grandfathered Debt</span></td>
+              <td><span className="badge badge-slab" style={{ backgroundColor: 'var(--accent-color)', color: 'var(--bg-primary)' }}>Grandfathered Debt</span></td>
               <td>{formatCurrency(realizedGrandfatheredDebt)}</td>
               <td>{formatCurrency(gfDebtTax)}</td>
               <td style={{ fontSize: '0.75rem' }}>20% with Indexation (Pre-2023)</td>
