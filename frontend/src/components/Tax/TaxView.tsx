@@ -42,7 +42,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
   };
 
   const dates = getFYDates(selectedFY);
-  const filteredDetails = summary.details.filter((g: any) => {
+  const filteredDetails = (summary.details || []).filter((g: any) => {
     const sellDate = new Date(g.sellDate);
     return sellDate >= dates.start && sellDate <= dates.end;
   });
@@ -74,7 +74,10 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
   };
 
   const exportCSV = () => {
-    if (filteredDetails.length === 0) return;
+    if (filteredDetails.length === 0) {
+      alert("No realized gains found for this period to export.");
+      return;
+    }
     
     const headers = ['Scheme Name', 'Buy Date', 'Sell Date', 'Units', 'Buy NAV', 'Sell NAV', 'Gain', 'Tax Type', 'Grandfathered'];
     const rows = filteredDetails.map((g: any) => [
@@ -150,7 +153,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
           </div>
         </div>
 
-        {selectedFY === recentFYs[0] && harvesting && harvesting.opportunities.length > 0 && (
+        {selectedFY === recentFYs[0] && harvesting && harvesting.opportunities && harvesting.opportunities.length > 0 && (
           <div className="card harvest-card">
             <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <TrendingDown size={20} /> Tax Harvesting Opportunity

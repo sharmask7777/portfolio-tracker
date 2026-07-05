@@ -29,3 +29,4 @@ test('shows empty state when no data', async ({ page }) => {
   // Should show empty state
   await expect(page.locator('.empty-state h2')).toContainText('No portfolio data found');
 });
+
