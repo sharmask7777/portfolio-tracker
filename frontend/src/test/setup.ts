@@ -11,4 +11,6 @@ vi.mock('lucide-react', () => ({
   Wallet: () => 'WalletIcon',
   Briefcase: () => 'BriefcaseIcon',
   Calculator: () => 'CalculatorIcon',
+  Download: () => 'DownloadIcon',
 }));
+

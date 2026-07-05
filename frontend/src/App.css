@@ -396,3 +396,11 @@
 .treemap-container {
   height: 400px;
 }
+
+.btn:disabled, button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
