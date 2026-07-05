@@ -276,6 +276,8 @@ test.describe('Font Visibility and WCAG Contrast Analysis', () => {
             });
         });
 
+        await page.waitForTimeout(300); // Wait for transition to finish
+
         headerBleedValid = await page.evaluate(async ({ base64Str, textColor, dpr }) => {
             return new Promise((resolve) => {
                 const img = new Image();
