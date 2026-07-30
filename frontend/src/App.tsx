@@ -42,6 +42,7 @@ import { FamilySelector } from './components/Family/FamilySelector';
 import { StatsGrid } from './components/Dashboard/StatsGrid';
 import { HistoryChart } from './components/Dashboard/HistoryChart';
 import { HistoricalHighlightsCard } from './components/Dashboard/HistoricalHighlightsCard';
+import { TransactionSidePanel } from './components/Dashboard/TransactionSidePanel';
 import api, { API_ENDPOINTS } from './api';
 
 export function Dashboard() {
@@ -67,6 +68,7 @@ export function Dashboard() {
   const [profileToEdit, setProfileToEdit] = useState<any>(null);
   const [editName, setEditName] = useState('');
   const [editTaxSlab, setEditTaxSlab] = useState<number>(0.3);
+  const [selectedFolioForTransactions, setSelectedFolioForTransactions] = useState<any>(null);
 
   const [uploadStatusMsg, setUploadStatusMsg] = useState<string>('');
 
@@ -494,7 +496,11 @@ export function Dashboard() {
                     </thead>
                     <tbody>
                       {sortFolios(portfolio.folios, sortField, sortDirection, performanceMode).map((folio: any) => (
-                        <tr key={folio.id}>
+                        <tr 
+                          key={folio.id} 
+                          onClick={() => setSelectedFolioForTransactions(folio)}
+                          style={{ cursor: 'pointer' }}
+                        >
                           <td style={{ fontWeight: 500 }}>
                             {folio.asset.name}
                           </td>
@@ -704,6 +710,13 @@ export function Dashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {selectedFolioForTransactions && (
+        <TransactionSidePanel 
+          folio={selectedFolioForTransactions} 
+          onClose={() => setSelectedFolioForTransactions(null)} 
+        />
       )}
     </div>
   );
