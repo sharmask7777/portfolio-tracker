@@ -257,20 +257,28 @@ input[type="email"], input[type="text"], input[type="number"], input[type="passw
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.5);
+  background: rgba(2, 6, 23, 0.8);
+  backdrop-filter: blur(4px);
   z-index: 1000;
   display: flex;
   justify-content: flex-end;
 }
 .side-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
   max-width: 400px;
-  background: var(--bg-color);
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  opacity: 1;
   height: 100%;
-  box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+  box-shadow: -4px 0 15px rgba(0,0,0,0.3);
   animation: slideIn 0.3s ease-out;
   display: flex;
   flex-direction: column;
+  z-index: 1001;
 }
 @keyframes slideIn {
   from { transform: translateX(100%); }

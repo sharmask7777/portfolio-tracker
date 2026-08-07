@@ -1,11 +1,15 @@
-import React from 'react';
 import { X } from 'lucide-react';
 
 export function TransactionSidePanel({ folio, onClose }: { folio: any, onClose: () => void }) {
   if (!folio) return null;
 
+  const sortedTransactions = folio.transactions
+    ? [...folio.transactions].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    : [];
+
   return (
-    <div className="side-panel-overlay" onClick={onClose}>
+    <>
+      <div className="side-panel-overlay" onClick={onClose}></div>
       <div className="side-panel" onClick={(e) => e.stopPropagation()}>
         <div className="side-panel-header">
           <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{folio.asset.name}</h2>
@@ -16,7 +20,7 @@ export function TransactionSidePanel({ folio, onClose }: { folio: any, onClose: 
         <div className="side-panel-content">
           <h3>Transactions</h3>
           <div className="transaction-list">
-            {folio.transactions?.map((tx: any, idx: number) => (
+            {sortedTransactions.map((tx: any, idx: number) => (
               <div key={tx.id || idx} className="transaction-item">
                 <div>
                   <strong>{tx.type}</strong>
@@ -32,12 +36,12 @@ export function TransactionSidePanel({ folio, onClose }: { folio: any, onClose: 
                 </div>
               </div>
             ))}
-            {(!folio.transactions || folio.transactions.length === 0) && (
+            {sortedTransactions.length === 0 && (
               <p>No transactions found.</p>
             )}
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
