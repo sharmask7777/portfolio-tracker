@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { TaxAnalyzerService } from '../services/tax-analyzer.service';
 import { HarvestingService } from '../services/harvesting.service';
+import { TaxService } from '../services/tax.service';
 import { authMiddleware } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -18,7 +19,7 @@ router.post('/simulate-sell', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Valid units are required' });
     }
 
-    const slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
+    const slabValue = taxSlab ? parseFloat(taxSlab as string) : TaxService.DEFAULT_TAX_SLAB;
     const result = await TaxAnalyzerService.simulateSell(folioId as string, parsedUnits, slabValue);
     res.status(200).json(result);
   } catch (error: any) {

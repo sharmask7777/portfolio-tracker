@@ -22,7 +22,7 @@ export interface HarvestingSummary {
 }
 
 export class HarvestingService {
-  private static LTCG_EXEMPTION_LIMIT = 125000;
+  private static LTCG_EXEMPTION_LIMIT = TaxService.LTCG_EXEMPTION_LIMIT_BUDGET_2024;
 
   /**
    * Identifies LTCG harvesting opportunities for a portfolio/profile.

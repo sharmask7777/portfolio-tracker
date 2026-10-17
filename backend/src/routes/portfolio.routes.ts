@@ -155,7 +155,7 @@ router.get('/summary', async (req: Request, res: Response) => {
   try {
     const { familyGroupId, profileId, taxSlab } = req.query;
     const userId = req.user!.id;
-    let slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
+    let slabValue = taxSlab ? parseFloat(taxSlab as string) : TaxService.DEFAULT_TAX_SLAB;
 
     let portfolios: any[] = [];
 
@@ -344,7 +344,7 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = req.user!.id;
     const { taxSlab } = req.query;
-    const slabValue = taxSlab ? parseFloat(taxSlab as string) : 0.30;
+    const slabValue = taxSlab ? parseFloat(taxSlab as string) : TaxService.DEFAULT_TAX_SLAB;
 
     let portfolios: any[] = [];
 
