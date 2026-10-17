@@ -473,7 +473,7 @@ export class TaxService {
     }
   }
 
-  private static isEquity(assetType: AssetType, assetName: string): boolean {
+  public static isEquity(assetType: AssetType, assetName: string): boolean {
     if (assetType === AssetType.STOCK) return true;
     if (assetType === AssetType.MUTUAL_FUND) {
       const name = assetName.toLowerCase();
