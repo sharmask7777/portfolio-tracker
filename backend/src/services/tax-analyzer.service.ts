@@ -10,9 +10,9 @@ export interface SimulationResult {
   totalGain: number;
   exitLoad: number;
   taxBreakdown: {
-    stcg: { amount: number; tax: number };
-    ltcg: { amount: number; tax: number };
-    slab: { amount: number; tax: number };
+    stcg: { amount: number; tax: number; cess?: number };
+    ltcg: { amount: number; tax: number; cess?: number };
+    slab: { amount: number; tax: number; cess?: number };
     totalTax: number;
   };
   matchedLots: RealizedGain[];
@@ -52,6 +52,19 @@ export class TaxAnalyzerService {
       const sellDate = new Date();
       let totalExitLoad = 0;
 
+      let grandfatherNav: number | undefined;
+      if (folio.asset.amfiCode && prisma.historicalNAV?.findFirst) {
+        const gNav = await prisma.historicalNAV.findFirst({
+          where: {
+            amfiCode: folio.asset.amfiCode,
+            date: new Date('2018-01-31'),
+          },
+        });
+        if (gNav) {
+          grandfatherNav = gNav.nav;
+        }
+      }
+
       for (const lot of activeLots) {
         if (remainingToSell <= 0.000001) break;
 
@@ -59,7 +72,7 @@ export class TaxAnalyzerService {
         const lotValue = unitsFromLot * currentPrice;
 
         // Calculate Exit Load for this specific lot
-        totalExitLoad += TaxService.getExitLoad(
+        const lotExitLoad = TaxService.getExitLoad(
           folio.asset.name,
           folio.asset.type,
           lot.date,
@@ -67,6 +80,7 @@ export class TaxAnalyzerService {
           lotValue,
           folio.asset.exitLoadMetadata
         );
+        totalExitLoad += lotExitLoad;
         
         const gainRecord = TaxService.calculateGain(
           folio.asset.name,
@@ -75,7 +89,15 @@ export class TaxAnalyzerService {
           unitsFromLot,
           currentPrice,
           sellDate,
-          taxSlab
+          taxSlab,
+          grandfatherNav,
+          lotExitLoad,
+          {
+            folioNumber: folio.number,
+            pan: folio.pan || undefined,
+            isin: folio.asset.isin || undefined,
+            exitLoadMetadata: folio.asset.exitLoadMetadata,
+          }
         );
 
         matchedGains.push(gainRecord);
@@ -88,9 +110,9 @@ export class TaxAnalyzerService {
 
       // Aggregate tax breakdown
       const breakdown = {
-        stcg: { amount: 0, tax: 0 },
-        ltcg: { amount: 0, tax: 0 },
-        slab: { amount: 0, tax: 0 },
+        stcg: { amount: 0, tax: 0, cess: 0 },
+        ltcg: { amount: 0, tax: 0, cess: 0 },
+        slab: { amount: 0, tax: 0, cess: 0 },
         totalTax: 0,
       };
 
@@ -98,12 +120,15 @@ export class TaxAnalyzerService {
         if (g.taxType === 'STCG') {
           breakdown.stcg.amount += g.gain;
           breakdown.stcg.tax += g.estimatedTax;
+          breakdown.stcg.cess += g.cess;
         } else if (g.taxType === 'LTCG') {
           breakdown.ltcg.amount += g.gain;
           breakdown.ltcg.tax += g.estimatedTax;
+          breakdown.ltcg.cess += g.cess;
         } else {
           breakdown.slab.amount += g.gain;
           breakdown.slab.tax += g.estimatedTax;
+          breakdown.slab.cess += g.cess;
         }
         breakdown.totalTax += g.estimatedTax;
       }

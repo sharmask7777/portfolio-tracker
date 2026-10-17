@@ -339,9 +339,8 @@ router.get('/:id/xray', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id/tax-summary', async (req: Request, res: Response) => {
+async function computePortfolioTaxImpact(req: Request, res: Response, id: string) {
   try {
-    const { id } = req.params;
     const userId = req.user!.id;
     const { taxSlab } = req.query;
     const slabValue = taxSlab ? parseFloat(taxSlab as string) : TaxService.DEFAULT_TAX_SLAB;
@@ -362,7 +361,7 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
       });
     } else {
       const p = await prisma.portfolio.findFirst({
-        where: { id: id as string, userId },
+        where: { id, userId },
         include: {
           folios: {
             include: {
@@ -377,7 +376,7 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
         portfolios = [p];
       } else {
         portfolios = await prisma.portfolio.findMany({
-          where: { managedProfileId: id as string, userId },
+          where: { managedProfileId: id, userId },
           include: {
             folios: {
               include: {
@@ -396,9 +395,6 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
 
     const allFolios = portfolios.flatMap(p => p.folios);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     const summaries = await Promise.all(allFolios.map(async (folio) => {
       const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
       const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
@@ -410,12 +406,32 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
       const dayChange = (currentPrice - prevPrice) * totalUnits;
       const previousValue = prevPrice * totalUnits;
 
+      let grandfatherNav: number | undefined;
+      if (folio.asset.amfiCode && prisma.historicalNAV?.findFirst) {
+        const gNav = await prisma.historicalNAV.findFirst({
+          where: {
+            amfiCode: folio.asset.amfiCode,
+            date: new Date('2018-01-31'),
+          },
+        });
+        if (gNav) {
+          grandfatherNav = gNav.nav;
+        }
+      }
+
       const taxSummary = TaxService.calculatePortfolioTax(
         folio.asset.name,
         folio.asset.type,
         folio.transactions,
         currentPrice,
-        slabValue
+        slabValue,
+        grandfatherNav,
+        {
+          folioNumber: folio.number,
+          pan: folio.pan || undefined,
+          isin: folio.asset.isin || undefined,
+          exitLoadMetadata: folio.asset.exitLoadMetadata,
+        }
       );
 
       return {
@@ -432,6 +448,13 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
     const totalDayChange = summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.dayChange, 0);
     const totalDayChangePercentage = totalPrevValue > 0 ? (totalDayChange / totalPrevValue) * 100 : 0;
 
+    const allDetails = summaries
+      .flatMap((s: TaxSummaryWithDayChange) => s.realized.details)
+      .sort((a, b) => new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime());
+
+    const tableF = TaxService.buildAdvanceTaxMatrix(allDetails);
+    const sectionTotals = TaxService.buildSectionTotals(allDetails);
+
     // Aggregate overall
     const aggregate = {
       realized: {
@@ -446,17 +469,32 @@ router.get('/:id/tax-summary', async (req: Request, res: Response) => {
         slab: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.unrealized.slab, 0),
         total: summaries.reduce((acc, s: TaxSummaryWithDayChange) => acc + s.unrealized.total, 0),
       },
-      details: summaries.flatMap((s: TaxSummaryWithDayChange) => s.realized.details).sort((a, b) => new Date(b.sellDate).getTime() - new Date(a.sellDate).getTime()),
+      details: allDetails,
       dayChange: {
         total: totalDayChange,
         percentage: totalDayChangePercentage
-      }
+      },
+      tableF,
+      sectionTotals,
     };
 
     res.status(200).json(aggregate);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+}
+
+router.get('/tax-impact', async (req: Request, res: Response) => {
+  const id = (req.query.id as string) || (req.query.portfolioId as string) || 'consolidated';
+  await computePortfolioTaxImpact(req, res, id);
+});
+
+router.get('/:id/tax-impact', async (req: Request, res: Response) => {
+  await computePortfolioTaxImpact(req, res, req.params.id as string);
+});
+
+router.get('/:id/tax-summary', async (req: Request, res: Response) => {
+  await computePortfolioTaxImpact(req, res, req.params.id as string);
 });
 
 router.get('/:id/history', async (req: Request, res: Response) => {
