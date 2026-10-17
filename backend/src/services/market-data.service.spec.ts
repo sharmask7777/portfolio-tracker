@@ -103,4 +103,33 @@ describe('MarketDataService', () => {
       expect(CacheService.set).toHaveBeenCalledWith('holdings:INF123', expect.any(Object), 604800);
     });
   });
+
+  describe('getGoldPrice', () => {
+    it('should return cached price if available', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(7850);
+      const price = await MarketDataService.getGoldPrice();
+      expect(price).toBe(7850);
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    it('should fetch price in INR from API and convert per gram', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({
+        data: { price: 311034.768, currency: 'INR' },
+      });
+
+      const price = await MarketDataService.getGoldPrice();
+      expect(axios.get).toHaveBeenCalledWith('https://api.gold-api.com/price/XAU/INR', { timeout: 10000 });
+      expect(price).toBeCloseTo(10000, 1);
+      expect(CacheService.set).toHaveBeenCalledWith('gold_price_inr', expect.any(Number), 3600);
+    });
+
+    it('should handle API errors gracefully and return 0', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockRejectedValue(new Error('Network error'));
+
+      const price = await MarketDataService.getGoldPrice();
+      expect(price).toBe(0);
+    });
+  });
 });
