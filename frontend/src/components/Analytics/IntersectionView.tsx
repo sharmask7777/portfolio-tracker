@@ -77,10 +77,10 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
         // Search query filter (matches stock name, sector, or contributing fund schemeName)
         if (searchQuery.trim()) {
           const query = searchQuery.toLowerCase().trim();
-          const matchesName = item.name.toLowerCase().includes(query);
-          const matchesSector = item.sector.toLowerCase().includes(query);
+          const matchesName = (item.name || '').toLowerCase().includes(query);
+          const matchesSector = (item.sector || '').toLowerCase().includes(query);
           const matchesContribution = item.contributions?.some((c) =>
-            c.schemeName.toLowerCase().includes(query)
+            (c.schemeName || '').toLowerCase().includes(query)
           );
           return matchesName || matchesSector || matchesContribution;
         }
@@ -90,9 +90,9 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
       .sort((a, b) => {
         let diff = 0;
         if (sortField === 'name') {
-          diff = a.name.localeCompare(b.name);
+          diff = (a.name || '').localeCompare(b.name || '');
         } else if (sortField === 'sector') {
-          diff = a.sector.localeCompare(b.sector);
+          diff = (a.sector || '').localeCompare(b.sector || '');
         } else if (sortField === 'percentage') {
           diff = (a.percentage || 0) - (b.percentage || 0);
         } else if (sortField === 'absoluteValue') {
