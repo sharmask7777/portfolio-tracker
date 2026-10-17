@@ -1,7 +1,16 @@
 import axios from 'axios';
 import { CacheService } from './cache.service';
 import { prisma } from './db.service';
+import { resolveCuratedOrTemplateHoldings } from './holdings.registry';
 
+export interface NAVChangeResult {
+  currentPrice: number;
+  previousPrice: number;
+  change: number;
+  changePercentage: number;
+  currentDate: string;
+  previousDate: string;
+}
 
 export class MarketDataService {
   private static MFAPI_BASE = 'https://api.mfapi.in/mf';
@@ -49,6 +58,67 @@ export class MarketDataService {
     }
   }
 
+  private static navChangeInFlight = new Map<string, Promise<NAVChangeResult | null>>();
+
+  /**
+   * Fetches latest and previous trading day NAVs atomically for a mutual fund from MFAPI.
+   */
+  public static async getNAVChange(amfiCode: string): Promise<NAVChangeResult | null> {
+    if (!amfiCode) return null;
+    const cacheKey = `nav_change:${amfiCode}`;
+    const cached = await CacheService.get<NAVChangeResult | 'NULL'>(cacheKey);
+    if (cached === 'NULL') return null;
+    if (cached) return cached as NAVChangeResult;
+
+    if (this.navChangeInFlight.has(amfiCode)) {
+      return this.navChangeInFlight.get(amfiCode)!;
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const response = await axios.get(`${this.MFAPI_BASE}/${amfiCode}`, { timeout: 8000 });
+        const data = response.data?.data;
+        if (!data || !Array.isArray(data) || data.length < 2) {
+          await CacheService.set(cacheKey, 'NULL', 60);
+          return null;
+        }
+
+        const currentPrice = parseFloat(data[0].nav);
+        const previousPrice = parseFloat(data[1].nav);
+
+        if (isNaN(currentPrice) || isNaN(previousPrice) || previousPrice <= 0 || currentPrice <= 0) {
+          await CacheService.set(cacheKey, 'NULL', 60);
+          return null;
+        }
+
+        const change = currentPrice - previousPrice;
+        const changePercentage = ((currentPrice - previousPrice) / previousPrice) * 100;
+
+        const result: NAVChangeResult = {
+          currentPrice,
+          previousPrice,
+          change,
+          changePercentage,
+          currentDate: data[0].date,
+          previousDate: data[1].date,
+        };
+
+        await CacheService.set(cacheKey, result, 3600); // 1h cache
+        await CacheService.set(`nav:${amfiCode}`, currentPrice, 3600);
+        return result;
+      } catch (e) {
+        console.error(`Failed to fetch NAV change for ${amfiCode}:`, e);
+        await CacheService.set(cacheKey, 'NULL', 60); // 60s negative cache to prevent cascading timeouts
+        return null;
+      } finally {
+        this.navChangeInFlight.delete(amfiCode);
+      }
+    })();
+
+    this.navChangeInFlight.set(amfiCode, fetchPromise);
+    return fetchPromise;
+  }
+
   /**
    * Fetches the latest NAV for a mutual fund.
    */
@@ -58,12 +128,17 @@ export class MarketDataService {
     const cached = await CacheService.get<number>(cacheKey);
     if (cached !== null) return cached;
 
+    const navChange = await this.getNAVChange(amfiCode);
+    if (navChange && navChange.currentPrice > 0) {
+      return navChange.currentPrice;
+    }
+
     try {
       const response = await axios.get(`${this.MFAPI_BASE}/${amfiCode}/latest`, { timeout: 5000 });
-      const nav = parseFloat(response.data.data[0].nav);
+      const nav = parseFloat(response.data?.data?.[0]?.nav);
       
-      if (!isNaN(nav)) {
-        await CacheService.set(cacheKey, nav, 86400); // 24h cache
+      if (!isNaN(nav) && nav > 0) {
+        await CacheService.set(cacheKey, nav, 86400);
         return nav;
       }
     } catch (e) {
@@ -75,6 +150,11 @@ export class MarketDataService {
   public static async getPreviousNAV(amfiCode: string, currentNav?: number | Date): Promise<number> {
     if (!amfiCode) return 0;
 
+    const navChange = await this.getNAVChange(amfiCode);
+    if (navChange && navChange.previousPrice > 0) {
+      return navChange.previousPrice;
+    }
+
     try {
       const navs = await prisma.historicalNAV.findMany({
         where: { amfiCode },
@@ -82,19 +162,23 @@ export class MarketDataService {
         take: 2
       });
 
-      if (navs.length === 0) return 0;
-      if (navs.length === 1) return navs[0].nav;
+      if (navs.length < 2) return 0;
 
-      // Handle the case where currentNav is passed as the current live price
+      // Ensure historical records are within a reasonable recency window (within 7 days of now, and records within 7 days of each other)
+      const now = Date.now();
+      const ageDays = Math.abs(now - navs[0].date.getTime()) / (1000 * 60 * 60 * 24);
+      const diffDays = Math.abs(navs[0].date.getTime() - navs[1].date.getTime()) / (1000 * 60 * 60 * 24);
+      if (ageDays > 7 || diffDays > 7) return 0;
+
       if (typeof currentNav === 'number') {
+        // If currentNav matches the latest DB NAV (navs[0]), then navs[0] is current and navs[1] is previous
         if (Math.abs(navs[0].nav - currentNav) < 0.0001) {
           return navs[1].nav;
-        } else {
-          return navs[0].nav;
         }
+        // If currentNav differs from navs[0] and navs[0] is recent, then navs[0] is the previous trading day's NAV
+        return navs[0].nav;
       }
 
-      // Fallback for when date is passed (legacy support) or nothing is passed
       return navs[1].nav;
     } catch (e) {
       console.error(`Failed to fetch previous NAV for ${amfiCode}:`, e);
@@ -105,34 +189,48 @@ export class MarketDataService {
   /**
    * Fetches underlying portfolio holdings and sector breakdown.
    */
-  public static async getHoldings(isin: string): Promise<any> {
+  public static async getHoldings(isin: string, schemeName?: string, category?: string): Promise<any> {
     if (!isin) return null;
     const cacheKey = `holdings:${isin}`;
     const cached = await CacheService.get<any>(cacheKey);
     if (cached) return cached;
 
+    let externalData: any = null;
     try {
-      const response = await axios.get(`${this.FINAPI_BASE}/isin/${isin}`, { timeout: 10000 });
-      const holdings = response.data.data;
-
-      if (holdings) {
-        if (!holdings.expenseRatio || holdings.expenseRatio === 0) {
-          console.warn(`[MarketDataService] Missing expenseRatio from FinAPI for ISIN ${isin}. Applying category fallback.`);
-          const category = holdings.category?.toLowerCase() || '';
-          if (category.includes('equity')) holdings.expenseRatio = 0.8;
-          else if (category.includes('debt')) holdings.expenseRatio = 0.4;
-          else if (category.includes('hybrid')) holdings.expenseRatio = 0.6;
-          else if (category.includes('index')) holdings.expenseRatio = 0.2;
-          else holdings.expenseRatio = 0.7; // general fallback
-        }
-
-        await CacheService.set(cacheKey, holdings, 86400 * 7); // Cache holdings for 7 days
-        return holdings;
-      }
+      const response = await axios.get(`${this.FINAPI_BASE}/isin/${isin}`, { timeout: 3000 });
+      externalData = response.data?.data;
     } catch (e) {
-      console.error(`Failed to fetch holdings for ${isin}:`, e);
+      // Gracefully fall through to curated and category templates
     }
-    return null;
+
+    // If external API provided valid holdings array, enrich missing expenseRatio and cache
+    if (externalData && Array.isArray(externalData.holdings) && externalData.holdings.length > 0) {
+      if (!externalData.expenseRatio || externalData.expenseRatio === 0) {
+        const cat = (externalData.category || externalData.schemeCategoryLabel || '').toLowerCase();
+        if (cat.includes('equity')) externalData.expenseRatio = 0.8;
+        else if (cat.includes('debt')) externalData.expenseRatio = 0.4;
+        else if (cat.includes('hybrid')) externalData.expenseRatio = 0.6;
+        else if (cat.includes('index')) externalData.expenseRatio = 0.2;
+        else externalData.expenseRatio = 0.7;
+      }
+      await CacheService.set(cacheKey, externalData, 86400 * 7);
+      return externalData;
+    }
+
+    // Tier 1 / Tier 2 / Tier 3 Enrichment via holdings.registry
+    const effectiveSchemeName = externalData?.schemeName || schemeName || '';
+    const effectiveCategory = externalData?.schemeCategoryLabel || externalData?.category || category || '';
+    const enriched = resolveCuratedOrTemplateHoldings(isin, effectiveSchemeName, effectiveCategory);
+
+    // Merge external metadata if available (preserving isin, schemeCode, etc.)
+    const finalResult = {
+      ...(externalData || {}),
+      ...enriched,
+      isin: externalData?.isin || isin,
+    };
+
+    await CacheService.set(cacheKey, finalResult, 86400 * 7);
+    return finalResult;
   }
 
   /**

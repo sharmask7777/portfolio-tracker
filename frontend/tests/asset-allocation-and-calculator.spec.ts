@@ -153,4 +153,19 @@ test.describe('Asset Allocation and Tax Calculator Tests', () => {
     // Verify "Incomplete History" warning is NOT displayed
     await expect(page.locator('.modal').getByText('Incomplete History:')).not.toBeVisible();
   });
+
+  test('Net Worth card and Holdings Table display Day Change accurately without anomalous inflation', async ({ page }) => {
+    await page.goto('/');
+
+    // Check Net Worth card displays day change: +₹250 (0.33%) Today
+    const netWorthCard = page.locator('.stats-grid .card').first();
+    await expect(netWorthCard).toContainText('+₹250');
+    await expect(netWorthCard).toContainText('(0.33%) Today');
+
+    // Check holdings table row displays folio day change: +₹250 (+0.33%)
+    const folioRow = page.locator('tr', { hasText: 'Parag Parikh Flexi Cap Fund' });
+    await expect(folioRow).toContainText('+₹250');
+    await expect(folioRow).toContainText('(+0.33%)');
+  });
 });
+

@@ -131,8 +131,8 @@ export function Dashboard() {
       setPortfolio(summaryRes.data);
       setProfiles(profilesRes.data);
       
-      if (summaryRes.data.id) {
-        const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.all([
+      if (summaryRes?.data?.id) {
+        const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.allSettled([
           api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/xray`),
           api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/exposures`),
           api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/tax-summary`),
@@ -140,10 +140,10 @@ export function Dashboard() {
             params: { scopeId: summaryRes.data.id }
           }),
         ]);
-        setXRayData(xrayRes.data);
-        setExposures(exposuresRes.data);
-        setTaxSummary(taxRes.data);
-        setHarvesting(harvestingRes.data);
+        if (xrayRes.status === 'fulfilled') setXRayData(xrayRes.value.data);
+        if (exposuresRes.status === 'fulfilled') setExposures(exposuresRes.value.data || []);
+        if (taxRes.status === 'fulfilled') setTaxSummary(taxRes.value.data);
+        if (harvestingRes.status === 'fulfilled') setHarvesting(harvestingRes.value.data);
       }
     } catch (err) {
       console.error('Failed to fetch data:', err);
@@ -468,10 +468,14 @@ export function Dashboard() {
                       })()}
                       <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
                         <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>Top Stock Exposure</p>
-                        {exposures[0] && (
+                        {exposures && exposures.length > 0 && exposures[0] ? (
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
                             <span style={{ fontSize: '0.875rem' }}>{exposures[0].name}</span>
                             <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{formatPercent(exposures[0].percentage)}</span>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                            No equity exposures identified
                           </div>
                         )}
                       </div>
@@ -568,7 +572,13 @@ export function Dashboard() {
             )}
 
             {activeTab === 'xray' && <XRayView data={xrayData} />}
-            {activeTab === 'intersection' && <IntersectionView exposures={exposures} />}
+            {activeTab === 'intersection' && (
+              <IntersectionView
+                exposures={exposures}
+                isLoading={loading}
+                onUploadClick={() => setShowUpload(true)}
+              />
+            )}
             {activeTab === 'tax' && (
               <TaxView 
                 summary={taxSummary} 

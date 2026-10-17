@@ -9,6 +9,7 @@ jest.mock('./db.service', () => ({
   prisma: {
     historicalNAV: {
       createMany: jest.fn(),
+      findMany: jest.fn(),
     },
   },
 }));
@@ -102,6 +103,52 @@ describe('MarketDataService', () => {
       expect(holdings.isin).toBe('INF123');
       expect(CacheService.set).toHaveBeenCalledWith('holdings:INF123', expect.any(Object), 604800);
     });
+
+    it('should enrich with Tier 1 Curated Top Holdings when fund matches curated registry', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({
+        data: { data: { schemeName: 'Parag Parikh Flexi Cap Fund - Direct Plan' } }
+      });
+
+      const holdings = await MarketDataService.getHoldings('INF879O01018');
+      expect(holdings.holdings.length).toBeGreaterThan(0);
+      expect(holdings.holdings.some((h: any) => h.name.includes('HDFC Bank'))).toBe(true);
+      expect(holdings.holdings.some((h: any) => h.name.includes('ITC'))).toBe(true);
+      expect(holdings.portfolio.assetAllocation.equity).toBe('85.00');
+    });
+
+    it('should fall back to Tier 2 Category Constituent Templates when scheme category is matched', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({
+        data: { data: { schemeName: 'Unknown AMC Small Cap Fund', schemeCategoryLabel: 'Equity Scheme - Small Cap Fund' } }
+      });
+
+      const holdings = await MarketDataService.getHoldings('INF_RANDOM_SMALLCAP');
+      expect(holdings.holdings.length).toBeGreaterThan(0);
+      expect(holdings.schemeCategoryLabel).toBe('Equity Scheme - Small Cap Fund');
+      expect(holdings.portfolio.marketCapWeightage.smallCap).toBe('67.00');
+    });
+
+    it('should return empty holdings for Debt / Liquid funds (Tier 3)', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({
+        data: { data: { schemeName: 'HDFC Liquid Fund - Direct Plan', schemeCategoryLabel: 'Debt Scheme - Liquid Fund' } }
+      });
+
+      const holdings = await MarketDataService.getHoldings('INF179K01999');
+      expect(holdings.holdings).toEqual([]);
+      expect(holdings.sectors).toEqual([]);
+      expect(holdings.portfolio.assetAllocation.debt).toBe('100.00');
+    });
+
+    it('should seamlessly fallback to curated/category template when FinAPI network call fails', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockRejectedValue(new Error('FinAPI service timeout'));
+
+      const holdings = await MarketDataService.getHoldings('INF879O01018', 'Parag Parikh Flexi Cap Fund');
+      expect(holdings.holdings.length).toBeGreaterThan(0);
+      expect(holdings.schemeName).toBe('Parag Parikh Flexi Cap Fund');
+    });
   });
 
   describe('getGoldPrice', () => {
@@ -132,4 +179,154 @@ describe('MarketDataService', () => {
       expect(price).toBe(0);
     });
   });
+
+  describe('getNAVChange', () => {
+    it('should return cached NAV change if available', async () => {
+      const mockResult = {
+        currentPrice: 100,
+        previousPrice: 98,
+        change: 2,
+        changePercentage: 2.0408,
+        currentDate: '16-10-2026',
+        previousDate: '15-10-2026',
+      };
+      (CacheService.get as jest.Mock).mockResolvedValue(mockResult);
+
+      const result = await MarketDataService.getNAVChange('122639');
+      expect(result).toEqual(mockResult);
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    it('should fetch from MFAPI and compute day change from consecutive trading days', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({
+        data: {
+          data: [
+            { date: '16-10-2026', nav: '100.00' },
+            { date: '15-10-2026', nav: '98.00' },
+            { date: '14-10-2026', nav: '97.00' },
+          ],
+        },
+      });
+
+      const result = await MarketDataService.getNAVChange('122639');
+      expect(result).not.toBeNull();
+      expect(result?.currentPrice).toBe(100.0);
+      expect(result?.previousPrice).toBe(98.0);
+      expect(result?.change).toBeCloseTo(2.0, 4);
+      expect(result?.changePercentage).toBeCloseTo(2.0408, 3);
+      expect(result?.currentDate).toBe('16-10-2026');
+      expect(result?.previousDate).toBe('15-10-2026');
+
+      expect(CacheService.set).toHaveBeenCalledWith(
+        'nav_change:122639',
+        expect.objectContaining({ currentPrice: 100, previousPrice: 98 }),
+        3600
+      );
+      expect(CacheService.set).toHaveBeenCalledWith('nav:122639', 100, 3600);
+    });
+
+    it('should return null when API returns less than 2 data points or invalid navs', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({
+        data: { data: [{ date: '16-10-2026', nav: '100.00' }] },
+      });
+
+      const result = await MarketDataService.getNAVChange('122639');
+      expect(result).toBeNull();
+    });
+
+    it('should return null when API call fails', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockRejectedValue(new Error('Network error'));
+
+      const result = await MarketDataService.getNAVChange('122639');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getPreviousNAV', () => {
+    it('should use getNAVChange previousPrice when available', async () => {
+      (CacheService.get as jest.Mock).mockImplementation((key: string) => {
+        if (key === 'nav_change:122639') {
+          return Promise.resolve({
+            currentPrice: 100,
+            previousPrice: 98,
+            change: 2,
+            changePercentage: 2.04,
+            currentDate: '16-10-2026',
+            previousDate: '15-10-2026',
+          });
+        }
+        return Promise.resolve(null);
+      });
+
+      const prevNav = await MarketDataService.getPreviousNAV('122639');
+      expect(prevNav).toBe(98);
+    });
+
+    it('should return 0 when historical records in DB have a gap greater than 7 days', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({ data: { data: [] } });
+
+      (prisma.historicalNAV.findMany as jest.Mock).mockResolvedValue([
+        { amfiCode: '122639', nav: 100, date: new Date('2026-10-16') },
+        { amfiCode: '122639', nav: 50, date: new Date('2026-05-15') }, // 5 months gap!
+      ]);
+
+      const prevNav = await MarketDataService.getPreviousNAV('122639');
+      expect(prevNav).toBe(0);
+    });
+
+    it('should return 0 when DB records are closely spaced but both are older than 7 days from now', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({ data: { data: [] } });
+
+      const staleDate1 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
+      const staleDate2 = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000); // 31 days ago (1 day apart)
+
+      (prisma.historicalNAV.findMany as jest.Mock).mockResolvedValue([
+        { amfiCode: '122639', nav: 100, date: staleDate1 },
+        { amfiCode: '122639', nav: 99, date: staleDate2 },
+      ]);
+
+      const prevNav = await MarketDataService.getPreviousNAV('122639', 105);
+      expect(prevNav).toBe(0);
+    });
+
+    it('should return navs[0].nav as previous NAV when currentNav is newer and differs from navs[0]', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({ data: { data: [] } });
+
+      const recentYesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recentDayBefore = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+      (prisma.historicalNAV.findMany as jest.Mock).mockResolvedValue([
+        { amfiCode: '122639', nav: 100, date: recentYesterday },
+        { amfiCode: '122639', nav: 98, date: recentDayBefore },
+      ]);
+
+      // Today's live NAV is 102 (not yet in DB)
+      const prevNav = await MarketDataService.getPreviousNAV('122639', 102);
+      expect(prevNav).toBe(100);
+    });
+
+    it('should return navs[1].nav when currentNav matches navs[0] (already in DB)', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+      (axios.get as jest.Mock).mockResolvedValue({ data: { data: [] } });
+
+      const recentToday = new Date();
+      const recentYesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      (prisma.historicalNAV.findMany as jest.Mock).mockResolvedValue([
+        { amfiCode: '122639', nav: 102, date: recentToday },
+        { amfiCode: '122639', nav: 100, date: recentYesterday },
+      ]);
+
+      // Today's live NAV is 102 (matches navs[0])
+      const prevNav = await MarketDataService.getPreviousNAV('122639', 102);
+      expect(prevNav).toBe(100);
+    });
+  });
 });
+
