@@ -8,6 +8,9 @@ import { addProcessPdfJob, closeUploadQueue } from '@src/jobs/queue';
 import { ParserService } from '@src/services/parser.service';
 import { SyncService } from '@src/services/sync.service';
 import { HistoryService } from '@src/services/history.service';
+import { MarketDataService } from '@src/services/market-data.service';
+import { PerformanceService } from '@src/services/performance.service';
+import { PortfolioUtils } from '@src/utils/portfolio.utils';
 import { authMiddleware } from '@src/middleware/authMiddleware';
 import { jest } from '@jest/globals';
 import { prismaMock } from '@src/test/db.mock';
@@ -231,6 +234,93 @@ describe('Portfolio Routes - /upload endpoint', () => {
 
       expect(res.statusCode).toEqual(500);
       expect(res.body).toEqual({ error: 'DB Error' });
+    });
+  });
+
+  describe('GET /api/portfolio/summary day change integration', () => {
+    it('should calculate accurate day change and day change percentage through the summary route', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 'testUserId', taxSlab: 0.3 } as any);
+      prismaMock.portfolio.findMany.mockResolvedValue([
+        {
+          id: 'p-1',
+          userId: 'testUserId',
+          folios: [
+            {
+              id: 'f-1',
+              number: '12345',
+              asset: { id: 'a-1', name: 'Fund A', type: 'MUTUAL_FUND', amfiCode: '122639' },
+              transactions: [{ id: 'tx-1', type: 'PURCHASE', date: new Date('2023-01-01'), amount: 10000, nav: 100, units: 100 }],
+            },
+          ],
+        },
+      ] as any);
+
+      (PortfolioUtils.getLatestUnits as jest.Mock).mockReturnValue(100);
+      (MarketDataService.getNAVChange as any).mockResolvedValue({
+        currentPrice: 110,
+        previousPrice: 108,
+        change: 2,
+        changePercentage: 1.85,
+        currentDate: '16-10-2026',
+        previousDate: '15-10-2026',
+      });
+      (PerformanceService.calculateXIRR as jest.Mock).mockReturnValue(0.12);
+      (PerformanceService.getMetrics as jest.Mock).mockReturnValue({
+        investedAmount: 10000,
+        currentValue: 11000,
+        totalGain: 1000,
+        absoluteReturn: 0.1,
+        xirr: 0.12,
+        postTaxXirr: 0.1,
+        postTaxAbsoluteReturn: 0.08,
+        estimatedTax: 100,
+      });
+
+      const res = await request(app).get('/api/portfolio/summary');
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.folios).toHaveLength(1);
+      expect(res.body.folios[0].metrics.dayChange).toBe(200); // (110 - 108) * 100 = 200
+      expect(res.body.folios[0].metrics.dayChangePercentage).toBeCloseTo(1.8518, 2);
+      expect(res.body.metrics.dayChange).toBe(200);
+      expect(res.body.metrics.dayChangePercentage).toBeCloseTo(1.8518, 2);
+    });
+
+    it('should set dayChange to 0 when holding has 0 units (closed folio)', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 'testUserId', taxSlab: 0.3 } as any);
+      prismaMock.portfolio.findMany.mockResolvedValue([
+        {
+          id: 'p-1',
+          userId: 'testUserId',
+          folios: [
+            {
+              id: 'f-1',
+              number: '12345',
+              asset: { id: 'a-1', name: 'Fund A', type: 'MUTUAL_FUND', amfiCode: '122639' },
+              transactions: [{ id: 'tx-1', type: 'PURCHASE', date: new Date('2023-01-01'), amount: 0, nav: 100, units: 0 }],
+            },
+          ],
+        },
+      ] as any);
+
+      (PortfolioUtils.getLatestUnits as jest.Mock).mockReturnValue(0);
+      (PerformanceService.calculateXIRR as jest.Mock).mockReturnValue(0);
+      (PerformanceService.getMetrics as jest.Mock).mockReturnValue({
+        investedAmount: 0,
+        currentValue: 0,
+        totalGain: 0,
+        absoluteReturn: 0,
+        xirr: 0,
+        postTaxXirr: 0,
+        postTaxAbsoluteReturn: 0,
+        estimatedTax: 0,
+      });
+
+      const res = await request(app).get('/api/portfolio/summary');
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.folios).toHaveLength(0); // Closed folios filtered out from activeFolios
+      expect(res.body.metrics.dayChange).toBe(0);
+      expect(res.body.metrics.dayChangePercentage).toBe(0);
     });
   });
 });

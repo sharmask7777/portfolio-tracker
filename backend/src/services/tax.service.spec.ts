@@ -3,7 +3,6 @@ import { AssetType } from '@prisma/client';
 
 describe('TaxService Refined Rules', () => {
   const MF = AssetType.MUTUAL_FUND;
-  const STOCK = AssetType.STOCK;
 
   describe('Budget 2024 Changes (Post-July 23, 2024)', () => {
     it('should apply 20% STCG and 12.5% LTCG for sales on/after July 23, 2024', () => {
@@ -140,6 +139,15 @@ describe('TaxService Refined Rules', () => {
       );
       // Gain = (150 - 100) * 10 = 500. Tax = 500 * 0.20 = 100.
       expect(estimatedTax).toBe(100);
+    });
+
+    it('should ignore 0-unit synthetic anchors when computing hasSyntheticAnchors', () => {
+      const transactions = [
+        { type: 'OPENING_BALANCE', units: 0, nav: 0, date: '2023-01-01', amount: 50 },
+        { type: 'BUY', units: 100, nav: 100, date: '2023-01-05', amount: 10000 },
+      ];
+      const summary = TaxService.calculatePortfolioTax('Fund A', MF, transactions, 150);
+      expect(summary.hasSyntheticAnchors).toBe(false);
     });
   });
 });

@@ -343,7 +343,9 @@ export class TaxService {
       const date = new Date(tx.date);
 
       if (isBuy || isBonus) {
-        buyLots.push({ date, units, nav, originalUnits: units, isBonus, isAnchor });
+        if (units > 0.000001) {
+          buyLots.push({ date, units, nav, originalUnits: units, isBonus, isAnchor });
+        }
       } else if (isSell) {
         let unitsToSell = units;
         while (unitsToSell > 0.000001 && buyLots.length > 0) {
@@ -445,7 +447,7 @@ export class TaxService {
     taxableSTCG = remainingSTCG;
     taxableLTCG = ltcgEq + ltcgDebt;
 
-    const hasSyntheticAnchors = buyLots.some(lot => lot.isAnchor) || realizedGains.some(gain => gain.isAnchorDependent);
+    const hasSyntheticAnchors = buyLots.some(lot => lot.isAnchor && lot.units > 0.000001) || realizedGains.some(gain => gain.isAnchorDependent && gain.units > 0.000001);
 
     const tableF = this.buildAdvanceTaxMatrix(realizedGains);
     const sectionTotals = this.buildSectionTotals(realizedGains);
@@ -666,7 +668,7 @@ export class TaxService {
       const isBonus = type.includes('bonus');
       const units = Math.abs(tx.units) || 0;
       const nav = isBonus ? 0 : (Math.abs(tx.nav) || 0);
-      if (isBuy || isBonus) {
+      if ((isBuy || isBonus) && units > 0.000001) {
         buyLots.push({ date: new Date(tx.date), units, nav, originalUnits: units, isBonus, isAnchor });
       } else if (isSell) {
         let unitsToSell = units;

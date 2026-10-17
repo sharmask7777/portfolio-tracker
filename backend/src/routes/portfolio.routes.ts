@@ -3,7 +3,7 @@ import multer from 'multer';
 import { ParserService } from '../services/parser.service';
 import { SyncService } from '../services/sync.service';
 import { PerformanceService } from '../services/performance.service';
-import { MarketDataService } from '../services/market-data.service';
+import { MarketDataService, NAVChangeResult } from '../services/market-data.service';
 import { PortfolioUtils } from '../utils/portfolio.utils';
 import { OverlapService } from '../services/overlap.service';
 import { XRayService } from '../services/xray.service';
@@ -214,10 +214,16 @@ router.get('/summary', async (req: Request, res: Response) => {
       let currentPrice = lastTx?.nav || 0;
       let metrics: any = null;
 
+      let navChange: NAVChangeResult | null = null;
       if (folio.asset.type === 'MUTUAL_FUND' || folio.asset.type === 'STOCK') {
         if (folio.asset.amfiCode) {
-          const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode);
-          if (liveNav > 0) currentPrice = liveNav;
+          navChange = await MarketDataService.getNAVChange(folio.asset.amfiCode);
+          if (navChange && navChange.currentPrice > 0) {
+            currentPrice = navChange.currentPrice;
+          } else {
+            const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode);
+            if (liveNav > 0) currentPrice = liveNav;
+          }
         }
         
         metrics = PerformanceService.getMetrics(folio.transactions, currentPrice, {
@@ -254,11 +260,18 @@ router.get('/summary', async (req: Request, res: Response) => {
       // Compute day change for all fund types that have an amfiCode
       let dayChange = 0;
       let dayChangePercentage = 0;
-      if (folio.asset.amfiCode) {
-        const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode, currentPrice);
-        const prevPrice = previousNav > 0 ? previousNav : currentPrice;
-        dayChange = (currentPrice - prevPrice) * currentUnits;
-        dayChangePercentage = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+      if (folio.asset.amfiCode && currentUnits > 0) {
+        if (navChange) {
+          const prevPrice = navChange.previousPrice;
+          dayChange = (currentPrice - prevPrice) * currentUnits;
+          dayChangePercentage = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+        } else {
+          const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode, currentPrice);
+          if (previousNav > 0) {
+            dayChange = (currentPrice - previousNav) * currentUnits;
+            dayChangePercentage = ((currentPrice - previousNav) / previousNav) * 100;
+          }
+        }
       }
 
       return { ...folio, metrics: { ...metrics, currentPrice, dayChange, dayChangePercentage } };
@@ -272,8 +285,11 @@ router.get('/summary', async (req: Request, res: Response) => {
 
     const totalDayChange = enrichedFolios.reduce((acc, f) => acc + (f.metrics.dayChange || 0), 0);
     const totalPreviousValue = enrichedFolios.reduce((acc, f) => {
-      const prev = f.metrics.currentValue - (f.metrics.dayChange || 0);
-      return acc + prev;
+      if (f.metrics.currentValue > 0) {
+        const prev = f.metrics.currentValue - (f.metrics.dayChange || 0);
+        return acc + Math.max(0, prev);
+      }
+      return acc;
     }, 0);
     const totalDayChangePercentage = totalPreviousValue > 0 ? (totalDayChange / totalPreviousValue) * 100 : 0;
 
@@ -396,15 +412,33 @@ async function computePortfolioTaxImpact(req: Request, res: Response, id: string
     const allFolios = portfolios.flatMap(p => p.folios);
 
     const summaries = await Promise.all(allFolios.map(async (folio) => {
-      const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
-      const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
-      const currentPrice = liveNav > 0 ? liveNav : lastNav;
-      const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode || '', currentPrice);
-      const prevPrice = previousNav > 0 ? previousNav : lastNav;
+      let currentPrice = PortfolioUtils.getLatestNAV(folio.transactions);
+      let prevPrice = currentPrice;
+      let hasValidDayChange = false;
+
+      if (folio.asset.amfiCode) {
+        const navChange = await MarketDataService.getNAVChange(folio.asset.amfiCode);
+        if (navChange) {
+          currentPrice = navChange.currentPrice;
+          prevPrice = navChange.previousPrice;
+          hasValidDayChange = true;
+        } else {
+          const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode);
+          if (liveNav > 0) currentPrice = liveNav;
+          const previousNav = await MarketDataService.getPreviousNAV(folio.asset.amfiCode, currentPrice);
+          if (previousNav > 0) {
+            prevPrice = previousNav;
+            hasValidDayChange = true;
+          }
+        }
+      }
 
       const totalUnits = PortfolioUtils.getLatestUnits(folio.transactions);
-      const dayChange = (currentPrice - prevPrice) * totalUnits;
-      const previousValue = prevPrice * totalUnits;
+      const dayChange = (hasValidDayChange && totalUnits > 0) ? (currentPrice - prevPrice) * totalUnits : 0;
+      const dayChangePercentage = (hasValidDayChange && totalUnits > 0 && prevPrice > 0)
+        ? ((currentPrice - prevPrice) / prevPrice) * 100
+        : 0;
+      const previousValue = (hasValidDayChange && totalUnits > 0) ? prevPrice * totalUnits : currentPrice * totalUnits;
 
       let grandfatherNav: number | undefined;
       if (folio.asset.amfiCode && prisma.historicalNAV?.findFirst) {
@@ -437,7 +471,7 @@ async function computePortfolioTaxImpact(req: Request, res: Response, id: string
       return {
         ...taxSummary,
         dayChange,
-        dayChangePercentage: prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0,
+        dayChangePercentage,
         previousValue
       };
     }));

@@ -168,12 +168,14 @@ export class XRayService {
       const isArbitrage = fv.type === 'MUTUAL_FUND' && (fv.name?.toLowerCase().includes('arbitrage') || false);
 
       if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
+        const category = fv.type === 'MUTUAL_FUND'
+          ? this.parseCategory(fv.name || '', data?.schemeCategory || data?.schemeCategoryLabel || '')
+          : 'Stock';
+
         if (fv.type === 'MUTUAL_FUND') {
           const ter = data?.expenseRatio || 0;
           const annualizedFee = (fv.value * ter) / 100;
           totalFees += annualizedFee;
-
-          const category = this.parseCategory(fv.name || '', data?.schemeCategory || '');
 
           fundBreakdown.push({
             name: fv.name || '',
@@ -198,7 +200,6 @@ export class XRayService {
         }
 
         if (!data) {
-          const category = this.parseCategory(fv.name || '', '');
           if (isArbitrage || category === 'Arbitrage') {
             assetAllocation.debt += 100 * weightFactor;
             exArbAssetAllocation.arbitrage += 100 * weightFactor;
@@ -248,9 +249,39 @@ export class XRayService {
           // Default individual stocks to Large Cap if no data
           marketCap.large += 100 * weightFactor;
           exArbMarketCap.large += 100 * weightFactor;
+        } else if (fv.type === 'MUTUAL_FUND') {
+          const lowerName = (fv.name || '').toLowerCase();
+          const lowerCat = (data?.schemeCategoryLabel || data?.schemeCategory || '').toLowerCase();
+          if (!isArbitrage && category !== 'Debt' && category !== 'Commodity / Gold') {
+            let large = 0, mid = 0, small = 0;
+            if (lowerName.includes('small cap') || lowerName.includes('smallcap') || lowerCat.includes('small cap')) {
+              small = 100;
+            } else if (lowerName.includes('mid cap') || lowerName.includes('midcap') || lowerCat.includes('mid cap')) {
+              mid = 100;
+            } else if (lowerName.includes('large & mid') || lowerName.includes('large and mid') || lowerCat.includes('large & mid')) {
+              large = 50;
+              mid = 50;
+            } else if (lowerName.includes('flexi') || lowerName.includes('multi cap') || lowerCat.includes('flexi') || lowerCat.includes('multi cap')) {
+              large = 65;
+              mid = 25;
+              small = 10;
+            } else {
+              large = 80;
+              mid = 15;
+              small = 5;
+            }
+            marketCap.large += large * weightFactor;
+            marketCap.mid += mid * weightFactor;
+            marketCap.small += small * weightFactor;
+            if (!isArbitrage) {
+              exArbMarketCap.large += large * weightFactor;
+              exArbMarketCap.mid += mid * weightFactor;
+              exArbMarketCap.small += small * weightFactor;
+            }
+          }
         }
 
-        if (isArbitrage) {
+        if (isArbitrage || category === 'Arbitrage') {
           assetAllocation.debt += 100 * weightFactor;
           exArbAssetAllocation.arbitrage += 100 * weightFactor;
         } else if (data.portfolio?.assetAllocation) {
@@ -258,15 +289,37 @@ export class XRayService {
           assetAllocation.equity += Math.max(0, parseFloat(aa.equity || aa.equityAllocation || '0')) * weightFactor;
           assetAllocation.debt += Math.max(0, parseFloat(aa.debt || aa.debtAllocation || '0')) * weightFactor;
           assetAllocation.cash += Math.max(0, parseFloat(aa.cash || aa.cashAllocation || '0')) * weightFactor;
+          assetAllocation.gold += Math.max(0, parseFloat(aa.gold || aa.goldAllocation || '0')) * weightFactor;
           assetAllocation.other += Math.max(0, parseFloat(aa.other || aa.otherAllocation || '0')) * weightFactor;
 
           exArbAssetAllocation.equity += Math.max(0, parseFloat(aa.equity || aa.equityAllocation || '0')) * weightFactor;
           exArbAssetAllocation.debt += Math.max(0, parseFloat(aa.debt || aa.debtAllocation || '0')) * weightFactor;
           exArbAssetAllocation.cash += Math.max(0, parseFloat(aa.cash || aa.cashAllocation || '0')) * weightFactor;
+          exArbAssetAllocation.gold += Math.max(0, parseFloat(aa.gold || aa.goldAllocation || '0')) * weightFactor;
           exArbAssetAllocation.other += Math.max(0, parseFloat(aa.other || aa.otherAllocation || '0')) * weightFactor;
         } else if (fv.type === 'STOCK') {
           assetAllocation.equity += 100 * weightFactor;
           exArbAssetAllocation.equity += 100 * weightFactor;
+        } else {
+          // Fallback based on parsed fund category for MUTUAL_FUND when data.portfolio.assetAllocation is missing
+          if (category === 'Debt') {
+            assetAllocation.debt += 100 * weightFactor;
+            exArbAssetAllocation.debt += 100 * weightFactor;
+          } else if (category === 'Commodity / Gold') {
+            assetAllocation.gold += 100 * weightFactor;
+            exArbAssetAllocation.gold += 100 * weightFactor;
+          } else if (category === 'Hybrid') {
+            assetAllocation.equity += 65 * weightFactor;
+            assetAllocation.debt += 25 * weightFactor;
+            assetAllocation.cash += 10 * weightFactor;
+            exArbAssetAllocation.equity += 65 * weightFactor;
+            exArbAssetAllocation.debt += 25 * weightFactor;
+            exArbAssetAllocation.cash += 10 * weightFactor;
+          } else {
+            // Default to Equity (Active Equity, Index, International, etc.)
+            assetAllocation.equity += 100 * weightFactor;
+            exArbAssetAllocation.equity += 100 * weightFactor;
+          }
         }
       } else {
         if (fv.type === AssetType.EPF || fv.type === AssetType.PPF || fv.type === AssetType.FIXED_DEPOSIT) {
