@@ -2,15 +2,39 @@ import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
 // Mock Lucide icons or other globals if needed
-vi.mock('lucide-react', () => ({
-  User: () => 'UserIcon',
-  Edit2: () => 'EditIcon',
-  Users: () => 'UsersIcon',
-  TrendingUp: () => 'TrendingUpIcon',
-  TrendingDown: () => 'TrendingDownIcon',
-  Wallet: () => 'WalletIcon',
-  Briefcase: () => 'BriefcaseIcon',
-  Calculator: () => 'CalculatorIcon',
-  Download: () => 'DownloadIcon',
-}));
+vi.mock('lucide-react', () => {
+  const Icon = () => null;
+  return {
+    User: Icon,
+    Edit2: Icon,
+    Users: Icon,
+    TrendingUp: Icon,
+    TrendingDown: Icon,
+    Wallet: Icon,
+    Briefcase: Icon,
+    Calculator: Icon,
+    Download: Icon,
+    X: Icon,
+    AlertCircle: Icon,
+    Info: Icon,
+    Target: Icon,
+    Plus: Icon,
+    Calendar: Icon,
+    Edit: Icon,
+    Trash2: Icon,
+    Check: Icon,
+    Lightbulb: Icon,
+    AlertTriangle: Icon,
+    CheckCircle: Icon,
+    LayoutDashboard: Icon,
+    Mail: Icon,
+    Lock: Icon,
+    Loader2: Icon,
+    PieChart: Icon,
+    Layers: Icon,
+    ShieldCheck: Icon,
+    BrainCircuit: Icon,
+  };
+});
+
 

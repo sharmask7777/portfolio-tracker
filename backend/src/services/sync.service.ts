@@ -136,7 +136,7 @@ export class SyncService {
         const totalRealUnits = realTxs.reduce((acc, t) => acc + t.units, 0);
         const totalRealCost = realTxs.reduce((acc, t) => {
           const type = t.type.toLowerCase();
-          const isOutflow = type.includes('buy') || type.includes('purchase') || type.includes('sip') || type.includes('reinvestment') || type.includes('switch_in');
+          const isOutflow = type.includes('buy') || type.includes('purchase') || type.includes('sip') || type.includes('reinvestment') || type.includes('switch_in') || type.includes('stamp_duty');
           const isInflow = type.includes('sell') || type.includes('redemption') || type.includes('switch_out');
           return isOutflow ? acc + Math.abs(t.amount) : isInflow ? acc - Math.abs(t.amount) : acc;
         }, 0);
@@ -144,8 +144,8 @@ export class SyncService {
         const anchorUnits = Math.max(0, schemeData.close - totalRealUnits);
         const anchorCost = Math.max(0, (schemeData.valuation?.cost || 0) - totalRealCost);
 
-        // If closing balance is zero, we MUST NOT have an anchor
-        if (schemeData.close === 0 || (anchorUnits <= 0.001 && anchorCost <= 0)) {
+        // If closing balance is zero or all units are accounted for, we MUST NOT have an anchor
+        if (schemeData.close === 0 || anchorUnits <= 0.001) {
           await prisma.transaction.deleteMany({
             where: { externalId: `ANCHOR-${folio.id}` }
           });

@@ -57,6 +57,7 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
     { name: 'Cash', value: data.assetAllocation?.cash?.percentage || 0 },
     { name: 'Gold', value: data.assetAllocation?.gold?.percentage || 0 },
     { name: 'Arbitrage', value: data.assetAllocation?.arbitrage?.percentage || 0 },
+    { name: 'Other', value: data.assetAllocation?.other?.percentage || 0 },
   ].filter(a => a.value > 0);
 
   return (

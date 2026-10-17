@@ -147,4 +147,31 @@ describe('XRayService', () => {
     expect(xray.assetAllocation.equity.percentage).toBe(0.0);
     expect(xray.expenseAnalysis.fundBreakdown[0].category).toBe('Debt');
   });
+
+  it('should correctly allocate equity when FinAPI returns metadata without portfolio.assetAllocation', async () => {
+    (prisma.portfolio.findUnique as jest.Mock).mockResolvedValue({
+      id: 'p_equity',
+      folios: [
+        {
+          asset: { isin: 'INF879O01027', amfiCode: '122639', name: 'Parag Parikh Flexi Cap Fund', type: 'MUTUAL_FUND' },
+          transactions: [{ type: 'BUY', units: 100, balance: 100, nav: 50, date: new Date() }],
+        },
+      ],
+    });
+
+    (MarketDataService.getLatestNAV as jest.Mock).mockResolvedValue(50);
+    // Real FinAPI response structure (contains metadata and schemeCategoryLabel, but NO portfolio.assetAllocation)
+    (MarketDataService.getHoldings as jest.Mock).mockResolvedValue({
+      schemeCode: '122639',
+      schemeName: 'Parag Parikh Flexi Cap Fund',
+      schemeCategoryLabel: 'Equity Scheme - Flexi Cap Fund',
+      planName: 'Direct Plan',
+    });
+
+    const xray = await XRayService.getXRayData('p_equity', 'u1');
+
+    expect(xray.assetAllocation.equity.percentage).toBe(1.0);
+    expect(xray.assetAllocation.debt.percentage).toBe(0.0);
+    expect(xray.assetAllocation.gold.percentage).toBe(0.0);
+  });
 });

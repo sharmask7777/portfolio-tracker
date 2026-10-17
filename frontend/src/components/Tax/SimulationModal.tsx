@@ -95,13 +95,15 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
         )}
         {(() => {
           const sorted = [...(folio.transactions || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-          const lots: any[] = [];
+          const lots: { type: string; units: number }[] = [];
           for (const tx of sorted) {
+            const units = Math.abs(tx.units || 0);
+            if (units <= 0.000001) continue;
             const type = tx.type.toLowerCase();
             if (type.includes('buy') || type.includes('purchase') || type.includes('sip') || type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance') || type.includes('bonus')) {
-              lots.push({ type: tx.type, units: Math.abs(tx.units) });
+              lots.push({ type: tx.type, units });
             } else if (type.includes('sell') || type.includes('redemption') || type.includes('switch_out') || type.includes('transfer_out') || type.includes('off_market')) {
-              let unitsToSell = Math.abs(tx.units);
+              let unitsToSell = units;
               while (unitsToSell > 0.000001 && lots.length > 0) {
                 const sold = Math.min(unitsToSell, lots[0].units);
                 lots[0].units -= sold;
@@ -110,7 +112,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
               }
             }
           }
-          return lots.some(lot => lot.type === 'OPENING_BALANCE');
+          return lots.some(lot => (lot.type?.toLowerCase().includes('opening_balance') || lot.type === 'OPENING_BALANCE') && lot.units > 0.000001);
         })() && (
           <div className="card" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid var(--warning-color)', marginBottom: '1rem', color: 'var(--warning-color)' }}>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
