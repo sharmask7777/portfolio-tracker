@@ -19,9 +19,6 @@ export class AuthService {
   }
 
   static verifyToken(token: string): any {
-    if (token === 'mock-token' && process.env.NODE_ENV !== 'production') {
-      return { id: 'test-user', email: 'test@example.com' };
-    }
     try {
       return jwt.verify(token, JWT_SECRET);
     } catch (error) {

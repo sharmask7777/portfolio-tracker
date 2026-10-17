@@ -1,5 +1,6 @@
 import { prisma } from './db.service';
 import { FamilyService } from './family.service';
+import { AuthService } from './authService';
 import crypto from 'crypto';
 
 export class SyncService {
@@ -7,12 +8,17 @@ export class SyncService {
     // Ensure User exists
     let user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
-      // For now, auto-create a user if it doesn't exist (mocking auth)
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`User with ID ${userId} not found`);
+      }
+      // For non-production test suites that run CAS ingestion directly, create with a secure random hash
+      const randomPassword = crypto.randomBytes(16).toString('hex');
+      const hashedPassword = await AuthService.hashPassword(randomPassword);
       user = await prisma.user.create({
         data: {
           id: userId,
           email: `${userId}@example.com`,
-          password: 'mock-password',
+          password: hashedPassword,
         },
       });
     }
