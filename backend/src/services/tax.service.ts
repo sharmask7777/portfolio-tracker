@@ -130,9 +130,23 @@ export class TaxService {
   private static BUDGET_2024_DATE = new Date('2024-07-23T00:00:00.000Z');
   private static DEBT_NEW_REGIME_DATE = new Date('2023-04-01T00:00:00.000Z');
 
+  public static toISTDateString(date: Date): string {
+    const d = date instanceof Date ? date : new Date(date);
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(d);
+    } catch {
+      return d.toISOString().split('T')[0];
+    }
+  }
+
   public static getAdvanceTaxQuarter(date: Date): AdvanceTaxQuarter {
     const d = date instanceof Date ? date : new Date(date);
-    const iso = d.toISOString().split('T')[0];
+    const iso = this.toISTDateString(d);
     const parts = iso.split('-');
     const mmdd = `${parts[1]}-${parts[2]}`;
 
@@ -512,8 +526,8 @@ export class TaxService {
     const buyDate = lot.date instanceof Date ? lot.date : new Date(lot.date);
     const sellDateObj = sellDate instanceof Date ? sellDate : new Date(sellDate);
 
-    const buyDateStr = buyDate.toISOString().split('T')[0];
-    const sellDateStr = sellDateObj.toISOString().split('T')[0];
+    const buyDateStr = this.toISTDateString(buyDate);
+    const sellDateStr = this.toISTDateString(sellDateObj);
 
     const isEq = this.isEquity(assetType, assetName);
     const assetClass = isEq ? 'Equity' : (assetType === AssetType.FIXED_DEPOSIT ? 'Fixed Deposit' : 'Debt');
@@ -669,8 +683,8 @@ export class TaxService {
   }
 
   private static getTaxType(buyDate: Date, sellDate: Date, assetType: AssetType, assetName: string): 'STCG' | 'LTCG' | 'SLAB' {
-    const buyDateStr = (buyDate instanceof Date ? buyDate : new Date(buyDate)).toISOString().split('T')[0];
-    const sellDateStr = (sellDate instanceof Date ? sellDate : new Date(sellDate)).toISOString().split('T')[0];
+    const buyDateStr = this.toISTDateString(buyDate);
+    const sellDateStr = this.toISTDateString(sellDate);
     const diffTime = Math.abs(sellDate.getTime() - buyDate.getTime());
     const holdingDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
     const isEq = this.isEquity(assetType, assetName);
@@ -693,7 +707,7 @@ export class TaxService {
   ): number {
     if (taxType === 'SLAB') return taxSlab;
     const isEq = this.isEquity(assetType, assetName);
-    const sellDateStr = (sellDate instanceof Date ? sellDate : new Date(sellDate)).toISOString().split('T')[0];
+    const sellDateStr = this.toISTDateString(sellDate);
     const isPostBudget = sellDateStr >= '2024-07-23';
 
     if (isPostBudget) {
