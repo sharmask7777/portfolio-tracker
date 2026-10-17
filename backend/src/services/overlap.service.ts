@@ -100,10 +100,28 @@ export class OverlapService {
         let folioValue = 0;
         if (folio.asset.type === 'MUTUAL_FUND') {
           const liveNav = folio.asset.amfiCode ? await MarketDataService.getLatestNAV(folio.asset.amfiCode) : 0;
-          const currentPrice = liveNav > 0 ? liveNav : PortfolioUtils.getLatestNAV(folio.transactions);
+          let currentPrice = liveNav > 0 ? liveNav : PortfolioUtils.getLatestNAV(folio.transactions);
+          if (currentPrice <= 0) {
+            const lastTx = folio.transactions[folio.transactions.length - 1];
+            if (lastTx && lastTx.amount > 0 && lastTx.units > 0) {
+              currentPrice = lastTx.amount / lastTx.units;
+            } else {
+              const totalInvested = PortfolioUtils.getTotalInvested(folio.transactions);
+              currentPrice = totalInvested > 0 ? totalInvested / currentUnits : 10;
+            }
+          }
           folioValue = currentUnits * currentPrice;
         } else if (folio.asset.type === 'STOCK') {
-          const currentPrice = PortfolioUtils.getLatestNAV(folio.transactions);
+          let currentPrice = PortfolioUtils.getLatestNAV(folio.transactions);
+          if (currentPrice <= 0) {
+            const lastTx = folio.transactions[folio.transactions.length - 1];
+            if (lastTx && lastTx.amount > 0 && lastTx.units > 0) {
+              currentPrice = lastTx.amount / lastTx.units;
+            } else {
+              const totalInvested = PortfolioUtils.getTotalInvested(folio.transactions);
+              currentPrice = totalInvested > 0 ? totalInvested / currentUnits : 100;
+            }
+          }
           folioValue = currentUnits * currentPrice;
         } else {
           // Alternative Assets (EPF, PPF, Gold, Real Estate, etc.)
@@ -130,10 +148,10 @@ export class OverlapService {
         if (folio.asset.type === 'STOCK') {
           return { folio, folioValue, data: null };
         }
-        if (folio.asset.type !== 'MUTUAL_FUND' || !folio.asset.isin) {
+        if (folio.asset.type !== 'MUTUAL_FUND' || (!folio.asset.isin && !folio.asset.name)) {
           return null;
         }
-        const data = await MarketDataService.getHoldings(folio.asset.isin, folio.asset.name);
+        const data = await MarketDataService.getHoldings(folio.asset.isin || '', folio.asset.name);
         return { folio, folioValue, data };
       })
     );
@@ -184,7 +202,8 @@ export class OverlapService {
           const lookup = TOP_INDIAN_STOCKS_SECTOR_MAP[normKey];
           const canonicalName = lookup?.canonicalName || rawName;
           const sector = holding.sector && holding.sector !== 'Other' ? holding.sector : (lookup?.sector || 'Other');
-          const weightVal = parseFloat(holding.weightage);
+          const rawWeight = (holding as any).weightage ?? (holding as any).weight ?? (holding as any).percentage ?? 0;
+          const weightVal = typeof rawWeight === 'number' ? rawWeight : parseFloat(String(rawWeight));
           const weightPercent = isNaN(weightVal) ? 0 : weightVal;
           const weightFraction = weightPercent / 100;
           const absoluteValue = folioValue * weightFraction;

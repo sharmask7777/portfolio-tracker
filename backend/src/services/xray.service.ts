@@ -141,7 +141,7 @@ export class XRayService {
     return Promise.all(
       folioValues.map(async (fv) => {
         if (fv.type === 'MUTUAL_FUND' || fv.type === 'STOCK') {
-          const data = await MarketDataService.getHoldings(fv.isin);
+          const data = await MarketDataService.getHoldings(fv.isin, fv.name);
           return { fv, data };
         }
         return { fv, data: null };
