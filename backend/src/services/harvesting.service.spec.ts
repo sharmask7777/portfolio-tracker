@@ -43,4 +43,26 @@ describe('HarvestingService', () => {
     expect(result.opportunities[0].unrealizedGain).toBe(10000);
     expect(result.estimatedTaxSavings).toBe(1250); // 10,000 * 12.5%
   });
+
+  it('should exclude debt funds from LTCG exemption harvesting', async () => {
+    (prisma.portfolio.findMany as jest.Mock).mockResolvedValue([{
+      id: 'p1',
+      folios: [
+        {
+          id: 'f_debt',
+          asset: { name: 'HDFC Corporate Bond Debt Fund', type: AssetType.MUTUAL_FUND, amfiCode: '102' },
+          transactions: [
+            { type: 'BUY', units: 100, nav: 100, date: new Date('2022-01-01'), amount: 10000, balance: 100 },
+          ],
+        },
+      ],
+    }]);
+
+    (MarketDataService.getLatestNAV as jest.Mock).mockResolvedValue(150);
+
+    const result = await HarvestingService.getHarvestingOpportunities('consolidated', 'u1');
+
+    expect(result.opportunities.length).toBe(0);
+    expect(result.totalPotentialHarvest).toBe(0);
+  });
 });

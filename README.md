@@ -50,6 +50,11 @@ services:
       TZ: ${TZ_GLOBAL}
     volumes:
       - "${VOLUME_PREFIX_GLOBAL}/appdata/portfolio/db:/var/lib/postgresql/data"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PORTFOLIO_DB_USER} -d ${PORTFOLIO_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -59,6 +64,11 @@ services:
       TZ: ${TZ_GLOBAL}
     volumes:
       - "${VOLUME_PREFIX_GLOBAL}/appdata/portfolio/redis:/data"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     image: shaleenks/portfolio-backend:latest
@@ -76,11 +86,36 @@ services:
       # Authentication
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+    volumes:
+      - shared_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  worker:
+    image: shaleenks/portfolio-backend:latest
+    container_name: portfolio_tracker_worker
+    restart: always
+    command: ["node", "dist/worker.js"]
+    environment:
+      DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      NODE_ENV: production
+      PYTHON_PATH: python3
+      TZ: ${TZ_GLOBAL}
+      JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - shared_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
 
   frontend:
     image: shaleenks/portfolio-frontend:latest
@@ -93,7 +128,17 @@ services:
       TZ: ${TZ_GLOBAL}
     depends_on:
       - backend
+
+volumes:
+  shared_uploads:
 ```
+
+> [!TIP]
+> **Recommended Volume Setup for Uploads:**
+> We strongly recommend using the Docker named volume `shared_uploads:/app/uploads` as shown above. Both the backend (which receives file uploads) and the worker (which parses and deletes the temporary files) share this volume. Docker automatically ensures the proper permissions for the non-root `node` container user.
+>
+> If you choose to bind-mount a host path instead (e.g. `- "${VOLUME_PREFIX_GLOBAL}/.../uploads:/app/uploads"`), ensure the directory on the host is owned or writable by UID:GID `1000:1000` (e.g. `sudo chown -R 1000:1000 <path_to_uploads>`), otherwise file uploads will fail with `EACCES: permission denied`.
+
 
 ### 3. Start the Application
 Run this command to download the images and start the tracker:

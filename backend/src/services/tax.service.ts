@@ -49,6 +49,10 @@ export interface TaxSummary {
 }
 
 export class TaxService {
+  public static readonly DEFAULT_TAX_SLAB = 0.30;
+  public static readonly LTCG_EXEMPTION_LIMIT_BUDGET_2024 = 125000;
+  public static readonly LTCG_EXEMPTION_LIMIT_PRE_BUDGET_2024 = 100000;
+
   private static GRANDFATHER_DATE = new Date('2018-01-31');
   private static BUDGET_2024_DATE = new Date('2024-07-23');
   private static DEBT_NEW_REGIME_DATE = new Date('2023-04-01');
@@ -473,7 +477,7 @@ export class TaxService {
     }
   }
 
-  private static isEquity(assetType: AssetType, assetName: string): boolean {
+  public static isEquity(assetType: AssetType, assetName: string): boolean {
     if (assetType === AssetType.STOCK) return true;
     if (assetType === AssetType.MUTUAL_FUND) {
       const name = assetName.toLowerCase();

@@ -3,6 +3,7 @@ import { TaxService } from './tax.service';
 import { MarketDataService } from './market-data.service';
 import { AssetType } from '@prisma/client';
 import { PortfolioUtils } from '../utils/portfolio.utils';
+import { FYUtils } from '../utils/fy.utils';
 
 export interface HarvestingOpportunity {
   folioId: string;
@@ -21,7 +22,7 @@ export interface HarvestingSummary {
 }
 
 export class HarvestingService {
-  private static LTCG_EXEMPTION_LIMIT = 125000;
+  private static LTCG_EXEMPTION_LIMIT = TaxService.LTCG_EXEMPTION_LIMIT_BUDGET_2024;
 
   /**
    * Identifies LTCG harvesting opportunities for a portfolio/profile.
@@ -75,10 +76,13 @@ export class HarvestingService {
       };
     }
     const allFolios = portfolios.flatMap(p => p.folios);
-    const fyDates = this.getCurrentFYDates();
+    const fyDates = FYUtils.getFYDates(FYUtils.getFY());
     let realizedLTCG_FY = 0;
 
     for (const folio of allFolios) {
+      // Exemption under Section 112A applies exclusively to equity assets
+      if (!TaxService.isEquity(folio.asset.type, folio.asset.name)) continue;
+
       const liveNav = await MarketDataService.getLatestNAV(folio.asset.amfiCode || '');
       const lastNav = PortfolioUtils.getLatestNAV(folio.transactions);
       const currentPrice = liveNav > 0 ? liveNav : lastNav;
@@ -90,7 +94,7 @@ export class HarvestingService {
         currentPrice
       );
 
-      // Filter gains realized in current FY
+      // Filter equity gains realized in current FY
       const fyGains = taxSummary.realized.details.filter(
         (g) => g.taxType === 'LTCG' && g.sellDate >= fyDates.start && g.sellDate <= fyDates.end
       );
@@ -105,7 +109,7 @@ export class HarvestingService {
     // 2. Scan for Unrealized LTCG in Equity Holdings
     if (remainingExemption > 0) {
       for (const folio of allFolios) {
-        if (folio.asset.type !== AssetType.MUTUAL_FUND && folio.asset.type !== AssetType.STOCK) continue;
+        if (!TaxService.isEquity(folio.asset.type, folio.asset.name)) continue;
 
         // Ensure we only check active holdings (skip closed folios)
         const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
@@ -160,18 +164,6 @@ export class HarvestingService {
       totalPotentialHarvest,
       opportunities,
       estimatedTaxSavings: totalPotentialHarvest * 0.125, // 12.5% LTCG savings
-    };
-  }
-
-  private static getCurrentFYDates(): { start: Date; end: Date } {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const isPostMarch = now.getMonth() >= 3; // April is month 3 (0-indexed)
-    
-    const startYear = isPostMarch ? currentYear : currentYear - 1;
-    return {
-      start: new Date(startYear, 3, 1), // April 1st
-      end: new Date(startYear + 1, 2, 31, 23, 59, 59), // March 31st
     };
   }
 }

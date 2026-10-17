@@ -126,4 +126,25 @@ describe('XRayService', () => {
     expect(xray.fundCategoryAllocation.active.value).toBe(1000);
     expect(xray.fundCategoryAllocation.index.value).toBe(1000);
   });
+
+  it('should categorize debt and liquid funds as debt even if external holdings data is missing', async () => {
+    (prisma.portfolio.findUnique as jest.Mock).mockResolvedValue({
+      id: 'p_debt',
+      folios: [
+        {
+          asset: { isin: 'ISIN_DEBT', amfiCode: '103', name: 'ICICI Liquid Fund', type: 'MUTUAL_FUND' },
+          transactions: [{ type: 'BUY', units: 100, balance: 100, nav: 10, date: new Date() }],
+        },
+      ],
+    });
+
+    (MarketDataService.getLatestNAV as jest.Mock).mockResolvedValue(10);
+    (MarketDataService.getHoldings as jest.Mock).mockResolvedValue(null);
+
+    const xray = await XRayService.getXRayData('p_debt', 'u1');
+
+    expect(xray.assetAllocation.debt.percentage).toBe(1.0);
+    expect(xray.assetAllocation.equity.percentage).toBe(0.0);
+    expect(xray.expenseAnalysis.fundBreakdown[0].category).toBe('Debt');
+  });
 });

@@ -8,3 +8,11 @@ We utilize a Python script based on `casparser` to extract structured data from 
 - The user uploads a CAS PDF and provides the password.
 - The background worker executes the Python `casparser` utility to parse the file into JSON format.
 - The JSON output contains folios, schemes, and individual transactions which are then ingested into our database for further processing and analytics.
+
+## Storage & Volume Permissions
+Uploaded CAS PDFs are temporarily stored in `/app/uploads` while being handed off from the `backend` to the BullMQ `worker`.
+
+- **Recommended Setup:** Use a shared Docker named volume (`shared_uploads:/app/uploads`) across both the `backend` and `worker` services. Docker automatically sets directory permissions matching the container image (`node:node` with UID 1000).
+- **Host Bind-Mounts:** Both backend and worker containers run under the non-root user `node` (`UID: 1000`). If mounting a host folder (e.g. `${VOLUME_PREFIX_GLOBAL}/.../uploads:/app/uploads`), you must ensure the host directory is owned or writable by UID 1000 (`sudo chown -R 1000:1000 <uploads_dir>`), otherwise uploads will fail with `EACCES: permission denied`.
+- **Cleanup:** As soon as the worker successfully parses (or fails) the CAS PDF, the temporary file is unlinked (`fs.unlinkSync`) to keep storage ephemeral.
+

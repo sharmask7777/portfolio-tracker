@@ -198,9 +198,23 @@ export class XRayService {
         }
 
         if (!data) {
-          if (isArbitrage) {
+          const category = this.parseCategory(fv.name || '', '');
+          if (isArbitrage || category === 'Arbitrage') {
             assetAllocation.debt += 100 * weightFactor;
             exArbAssetAllocation.arbitrage += 100 * weightFactor;
+          } else if (category === 'Debt') {
+            assetAllocation.debt += 100 * weightFactor;
+            exArbAssetAllocation.debt += 100 * weightFactor;
+          } else if (category === 'Commodity / Gold') {
+            assetAllocation.gold += 100 * weightFactor;
+            exArbAssetAllocation.gold += 100 * weightFactor;
+          } else if (category === 'Hybrid') {
+            assetAllocation.equity += 65 * weightFactor;
+            assetAllocation.debt += 25 * weightFactor;
+            assetAllocation.cash += 10 * weightFactor;
+            exArbAssetAllocation.equity += 65 * weightFactor;
+            exArbAssetAllocation.debt += 25 * weightFactor;
+            exArbAssetAllocation.cash += 10 * weightFactor;
           } else {
             assetAllocation.equity += 100 * weightFactor;
             exArbAssetAllocation.equity += 100 * weightFactor;
@@ -340,8 +354,17 @@ export class XRayService {
     const lowerName = name.toLowerCase();
     const lowerCat = (schemeCat || '').toLowerCase();
     if (lowerName.includes('arbitrage') || lowerCat.includes('arbitrage')) return 'Arbitrage';
-    if (lowerName.includes('index') || lowerCat.includes('index')) return 'Index';
-    if (lowerCat.includes('international') || lowerCat.includes('global')) return 'International';
+    if (lowerName.includes('index') || lowerCat.includes('index') || lowerName.includes('etf') || lowerCat.includes('etf')) return 'Index';
+    if (lowerCat.includes('international') || lowerCat.includes('global') || lowerName.includes('international') || lowerName.includes('global') || lowerName.includes('nasdaq') || lowerName.includes('s&p 500')) return 'International';
+    if (
+      lowerName.includes('debt') || lowerName.includes('liquid') || lowerName.includes('gilt') ||
+      lowerName.includes('bond') || lowerName.includes('overnight') || lowerName.includes('money market') ||
+      lowerName.includes('credit risk') || lowerName.includes('treasury') || lowerName.includes('floater') ||
+      lowerName.includes('banking & psu') || lowerName.includes('corporate bond') || lowerCat.includes('debt') ||
+      lowerCat.includes('income') || lowerCat.includes('liquid')
+    ) return 'Debt';
+    if (lowerName.includes('gold') || lowerName.includes('silver') || lowerCat.includes('commodity') || lowerCat.includes('precious metals')) return 'Commodity / Gold';
+    if (lowerName.includes('hybrid') || lowerName.includes('balanced') || lowerCat.includes('hybrid') || lowerName.includes('equity savings')) return 'Hybrid';
     return 'Active Equity';
   }
 

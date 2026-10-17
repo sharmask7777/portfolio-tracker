@@ -22,7 +22,7 @@ export class TaxAnalyzerService {
   /**
    * Simulates a sell and returns estimated tax impact.
    */
-  public static async simulateSell(folioId: string, unitsToSell: number, taxSlab: number = 0.30): Promise<SimulationResult> {
+  public static async simulateSell(folioId: string, unitsToSell: number, taxSlab: number = TaxService.DEFAULT_TAX_SLAB): Promise<SimulationResult> {
     try {
       const folio = await prisma.folio.findUnique({
         where: { id: folioId },
