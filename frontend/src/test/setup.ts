@@ -34,6 +34,13 @@ vi.mock('lucide-react', () => {
     Layers: Icon,
     ShieldCheck: Icon,
     BrainCircuit: Icon,
+    Sun: Icon,
+    ArrowUp: Icon,
+    ArrowDown: Icon,
+    ArrowUpDown: Icon,
+    Search: Icon,
+    Upload: Icon,
+    Trophy: Icon,
   };
 });
 
