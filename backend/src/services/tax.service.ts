@@ -1,6 +1,26 @@
 import { AssetType } from '@prisma/client';
 import { PortfolioUtils } from '../utils/portfolio.utils';
 
+export enum TaxSection {
+  SEC_111A_15 = '111A (15%)',
+  SEC_111A_20 = '111A (20%)',
+  SEC_112A_10 = '112A (10%)',
+  SEC_112A_12_5 = '112A (12.5%)',
+  SEC_50AA = '50AA (Slab)',
+  SEC_112_DEBT_12_5 = '112 Debt (12.5%)',
+  SEC_112_DEBT_20 = '112 Debt (20% Indexed)',
+  SLAB = 'SLAB',
+}
+
+export enum AdvanceTaxQuarter {
+  Q1 = 'Q1 (01/04 - 15/06)',
+  Q2A = 'Q2a (16/06 - 22/07)',
+  Q2B = 'Q2b (23/07 - 15/09)',
+  Q3 = 'Q3 (16/09 - 15/12)',
+  Q4 = 'Q4 (16/12 - 15/03)',
+  Q5 = 'Q5 (16/03 - 31/03)',
+}
+
 export interface BuyLot {
   date: Date;
   units: number;
@@ -13,19 +33,69 @@ export interface BuyLot {
 
 export interface RealizedGain {
   assetName: string;
+  folioNumber?: string;
+  isin?: string;
+  pan?: string;
+  assetClass: string;
+  section: string;
   buyDate: Date;
   sellDate: Date;
+  holdingPeriodDays: number;
+  holdingType: 'Short-Term' | 'Long-Term';
   units: number;
   buyNav: number;
   sellNav: number;
+  grossConsideration: number;
+  costOfAcquisition: number;
+  fmvAsOfJan31_2018: number;
+  totalFmvJan31_2018: number;
+  deemedCostOfAcquisition: number;
+  transferExpenses: number;
   gain: number;
   taxType: 'STCG' | 'LTCG' | 'SLAB';
-  holdingPeriodDays: number;
-  isGrandfathered: boolean;
   taxRate: number;
+  taxBeforeCess: number;
+  cess: number;
   estimatedTax: number;
+  advanceTaxQuarter: string;
+  isGrandfathered: boolean;
+  grandfatheredStatus: string;
   isAnchorDependent: boolean;
 }
+
+export interface TableFQuarterData {
+  stcg15: number;
+  stcg20: number;
+  ltcg10: number;
+  ltcg12_5: number;
+  debtLtcg12_5: number;
+  debtLtcg20: number;
+  slab: number;
+  totalGain: number;
+  taxBeforeCess: number;
+  cess: number;
+  estimatedTax: number;
+}
+
+export interface AdvanceTaxAccrualMatrix {
+  quarters: Record<AdvanceTaxQuarter, TableFQuarterData>;
+  quarterTotals: Record<AdvanceTaxQuarter, number>;
+}
+
+export interface SectionTotalData {
+  section: string;
+  grossConsideration: number;
+  costOfAcquisition: number;
+  deemedCostOfAcquisition: number;
+  transferExpenses: number;
+  totalGain: number;
+  taxRate: number;
+  taxBeforeCess: number;
+  cess: number;
+  totalTax: number;
+}
+
+export type SectionTotalsMap = Record<string, SectionTotalData>;
 
 export interface TaxSummary {
   hasSyntheticAnchors: boolean;
@@ -38,6 +108,8 @@ export interface TaxSummary {
     taxableSTCG: number;
     taxableLTCG: number;
     details: RealizedGain[];
+    tableF?: AdvanceTaxAccrualMatrix;
+    sectionTotals?: SectionTotalsMap;
   };
   unrealized: {
     stcg: number;
@@ -52,10 +124,191 @@ export class TaxService {
   public static readonly DEFAULT_TAX_SLAB = 0.30;
   public static readonly LTCG_EXEMPTION_LIMIT_BUDGET_2024 = 125000;
   public static readonly LTCG_EXEMPTION_LIMIT_PRE_BUDGET_2024 = 100000;
+  public static readonly LTCG_EXEMPTION_LIMIT = 125000;
 
-  private static GRANDFATHER_DATE = new Date('2018-01-31');
-  private static BUDGET_2024_DATE = new Date('2024-07-23');
-  private static DEBT_NEW_REGIME_DATE = new Date('2023-04-01');
+  private static GRANDFATHER_DATE = new Date('2018-01-31T23:59:59.999Z');
+  private static BUDGET_2024_DATE = new Date('2024-07-23T00:00:00.000Z');
+  private static DEBT_NEW_REGIME_DATE = new Date('2023-04-01T00:00:00.000Z');
+
+  public static toISTDateString(date: Date): string {
+    const d = date instanceof Date ? date : new Date(date);
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(d);
+    } catch {
+      return d.toISOString().split('T')[0];
+    }
+  }
+
+  public static getAdvanceTaxQuarter(date: Date): AdvanceTaxQuarter {
+    const d = date instanceof Date ? date : new Date(date);
+    const iso = this.toISTDateString(d);
+    const parts = iso.split('-');
+    const mmdd = `${parts[1]}-${parts[2]}`;
+
+    if (mmdd >= '04-01' && mmdd <= '06-15') {
+      return AdvanceTaxQuarter.Q1;
+    }
+    if (mmdd >= '06-16' && mmdd <= '07-22') {
+      return AdvanceTaxQuarter.Q2A;
+    }
+    if (mmdd >= '07-23' && mmdd <= '09-15') {
+      return AdvanceTaxQuarter.Q2B;
+    }
+    if (mmdd >= '09-16' && mmdd <= '12-15') {
+      return AdvanceTaxQuarter.Q3;
+    }
+    if (mmdd >= '12-16' || mmdd <= '03-15') {
+      return AdvanceTaxQuarter.Q4;
+    }
+    return AdvanceTaxQuarter.Q5;
+  }
+
+  public static calculate112AExemption(
+    ltcg10: number,
+    ltcg12_5: number,
+    fy: string = '2024-25'
+  ): {
+    exempt10: number;
+    exempt12_5: number;
+    totalExemption: number;
+    taxable10: number;
+    taxable12_5: number;
+    tax10: number;
+    tax12_5: number;
+    totalTax: number;
+  } {
+    const isFy2425OrLater = fy >= '2024-25';
+    const limit = isFy2425OrLater
+      ? this.LTCG_EXEMPTION_LIMIT_BUDGET_2024
+      : this.LTCG_EXEMPTION_LIMIT_PRE_BUDGET_2024;
+
+    const pureLtcg10 = Math.max(0, ltcg10);
+    const pureLtcg12_5 = Math.max(0, ltcg12_5);
+
+    // Sequential exhaustion: 10% tranche first, then remainder against 12.5%
+    const exempt10 = Math.min(pureLtcg10, limit);
+    const remainingLimit = limit - exempt10;
+    const exempt12_5 = Math.min(pureLtcg12_5, remainingLimit);
+
+    const taxable10 = pureLtcg10 - exempt10;
+    const taxable12_5 = pureLtcg12_5 - exempt12_5;
+
+    const tax10BeforeCess = taxable10 * 0.10;
+    const tax10 = tax10BeforeCess + tax10BeforeCess * 0.04;
+
+    const tax12_5BeforeCess = taxable12_5 * 0.125;
+    const tax12_5 = tax12_5BeforeCess + tax12_5BeforeCess * 0.04;
+
+    return {
+      exempt10,
+      exempt12_5,
+      totalExemption: exempt10 + exempt12_5,
+      taxable10,
+      taxable12_5,
+      tax10,
+      tax12_5,
+      totalTax: tax10 + tax12_5,
+    };
+  }
+
+  public static buildAdvanceTaxMatrix(details: RealizedGain[]): AdvanceTaxAccrualMatrix {
+    const quartersList = [
+      AdvanceTaxQuarter.Q1,
+      AdvanceTaxQuarter.Q2A,
+      AdvanceTaxQuarter.Q2B,
+      AdvanceTaxQuarter.Q3,
+      AdvanceTaxQuarter.Q4,
+      AdvanceTaxQuarter.Q5,
+    ];
+
+    const quarters: Record<AdvanceTaxQuarter, TableFQuarterData> = {} as any;
+    const quarterTotals: Record<AdvanceTaxQuarter, number> = {} as any;
+
+    for (const q of quartersList) {
+      quarters[q] = {
+        stcg15: 0,
+        stcg20: 0,
+        ltcg10: 0,
+        ltcg12_5: 0,
+        debtLtcg12_5: 0,
+        debtLtcg20: 0,
+        slab: 0,
+        totalGain: 0,
+        taxBeforeCess: 0,
+        cess: 0,
+        estimatedTax: 0,
+      };
+      quarterTotals[q] = 0;
+    }
+
+    for (const g of details) {
+      const q = g.advanceTaxQuarter as AdvanceTaxQuarter;
+      const data = quarters[q];
+      if (!data) continue;
+
+      if (g.section === TaxSection.SEC_111A_15) {
+        data.stcg15 += g.gain;
+      } else if (g.section === TaxSection.SEC_111A_20) {
+        data.stcg20 += g.gain;
+      } else if (g.section === TaxSection.SEC_112A_10) {
+        data.ltcg10 += g.gain;
+      } else if (g.section === TaxSection.SEC_112A_12_5) {
+        data.ltcg12_5 += g.gain;
+      } else if (g.section === TaxSection.SEC_112_DEBT_12_5) {
+        data.debtLtcg12_5 += g.gain;
+      } else if (g.section === TaxSection.SEC_112_DEBT_20) {
+        data.debtLtcg20 += g.gain;
+      } else {
+        data.slab += g.gain;
+      }
+
+      data.totalGain += g.gain;
+      data.taxBeforeCess += g.taxBeforeCess;
+      data.cess += g.cess;
+      data.estimatedTax += g.estimatedTax;
+      quarterTotals[q] += g.estimatedTax;
+    }
+
+    return { quarters, quarterTotals };
+  }
+
+  public static buildSectionTotals(details: RealizedGain[]): SectionTotalsMap {
+    const totals: SectionTotalsMap = {};
+
+    for (const g of details) {
+      if (!totals[g.section]) {
+        totals[g.section] = {
+          section: g.section,
+          grossConsideration: 0,
+          costOfAcquisition: 0,
+          deemedCostOfAcquisition: 0,
+          transferExpenses: 0,
+          totalGain: 0,
+          taxRate: g.taxRate,
+          taxBeforeCess: 0,
+          cess: 0,
+          totalTax: 0,
+        };
+      }
+
+      const t = totals[g.section];
+      t.grossConsideration += g.grossConsideration;
+      t.costOfAcquisition += g.costOfAcquisition;
+      t.deemedCostOfAcquisition += g.deemedCostOfAcquisition;
+      t.transferExpenses += g.transferExpenses;
+      t.totalGain += g.gain;
+      t.taxBeforeCess += g.taxBeforeCess;
+      t.cess += g.cess;
+      t.totalTax += g.estimatedTax;
+    }
+
+    return totals;
+  }
 
   public static calculatePortfolioTax(
     assetName: string,
@@ -64,6 +317,12 @@ export class TaxService {
     currentNav: number,
     taxSlab: number = 0,
     grandfatherNav?: number,
+    folioOptions?: {
+      folioNumber?: string;
+      pan?: string;
+      isin?: string;
+      exitLoadMetadata?: string | null;
+    }
   ): TaxSummary {
     const sortedTxs = PortfolioUtils.sortTransactions(transactions);
 
@@ -91,6 +350,10 @@ export class TaxService {
           const lot = buyLots[0];
           const soldFromLot = Math.min(unitsToSell, lot.units);
           
+          const lotTransferExpenses = folioOptions?.exitLoadMetadata
+            ? this.getExitLoad(assetName, assetType, lot.date, date, soldFromLot * nav, folioOptions.exitLoadMetadata)
+            : ((tx.transferExpenses as number) || (tx.exitLoad as number) || 0);
+
           realizedGains.push(this.calculateGain(
             assetName,
             assetType,
@@ -99,7 +362,9 @@ export class TaxService {
             nav,
             date,
             taxSlab,
-            grandfatherNav
+            grandfatherNav,
+            lotTransferExpenses,
+            folioOptions
           ));
 
           lot.units -= soldFromLot;
@@ -138,7 +403,7 @@ export class TaxService {
     const ltcgGrandfatheredDebtRealized = realizedGains.filter(g => g.taxType === 'LTCG' && !isEq).reduce((acc, g) => acc + g.gain, 0);
     const slabRealized = realizedGains.filter(g => g.taxType === 'SLAB').reduce((acc, g) => acc + g.gain, 0);
 
-    // Set-off Logic Implementation (Standard Equity-focused for now, Debt LTCG is usually separate but let's keep it simple)
+    // Set-off Logic Implementation
     let taxableSTCG = 0;
     let taxableLTCG = 0;
 
@@ -150,7 +415,6 @@ export class TaxService {
     let ltcgDebt = ltcgGrandfatheredDebtRealized > 0 ? ltcgGrandfatheredDebtRealized : 0;
 
     // 1. LTCL can ONLY set off LTCG
-    // Set off against 20% (Debt) first, then Equity
     let remainingLtcl = ltcl;
     
     const setOffDebt = Math.min(ltcgDebt, remainingLtcl);
@@ -181,9 +445,10 @@ export class TaxService {
     taxableSTCG = remainingSTCG;
     taxableLTCG = ltcgEq + ltcgDebt;
 
-    // Taxable STCG and LTCG computed above
-
     const hasSyntheticAnchors = buyLots.some(lot => lot.isAnchor) || realizedGains.some(gain => gain.isAnchorDependent);
+
+    const tableF = this.buildAdvanceTaxMatrix(realizedGains);
+    const sectionTotals = this.buildSectionTotals(realizedGains);
 
     return {
       hasSyntheticAnchors,
@@ -196,6 +461,8 @@ export class TaxService {
         taxableSTCG,
         taxableLTCG,
         details: realizedGains,
+        tableF,
+        sectionTotals,
       },
       unrealized: {
         stcg: uSTCG,
@@ -248,39 +515,137 @@ export class TaxService {
     sellDate: Date,
     taxSlab: number = 0,
     grandfatherNav?: number,
+    transferExpenses: number = 0,
+    metadata?: {
+      folioNumber?: string;
+      isin?: string;
+      pan?: string;
+      exitLoadMetadata?: string | null;
+    }
   ): RealizedGain {
-    let effectiveBuyNav = lot.nav;
-    let isGrandfathered = false;
-    const isEq = this.isEquity(assetType, assetName);
+    const buyDate = lot.date instanceof Date ? lot.date : new Date(lot.date);
+    const sellDateObj = sellDate instanceof Date ? sellDate : new Date(sellDate);
 
-    if (isEq && lot.date < this.GRANDFATHER_DATE && grandfatherNav && !lot.isAnchor) {
-      isGrandfathered = true;
-      effectiveBuyNav = Math.max(lot.nav, Math.min(grandfatherNav, sellNav));
-    } else if (!isEq && lot.date < this.DEBT_NEW_REGIME_DATE && !lot.isAnchor) {
-       // Debt grandfathered means purchased before April 1, 2023
-       isGrandfathered = true;
+    const buyDateStr = this.toISTDateString(buyDate);
+    const sellDateStr = this.toISTDateString(sellDateObj);
+
+    const isEq = this.isEquity(assetType, assetName);
+    const assetClass = isEq ? 'Equity' : (assetType === AssetType.FIXED_DEPOSIT ? 'Fixed Deposit' : 'Debt');
+
+    const diffTime = Math.abs(sellDateObj.getTime() - buyDate.getTime());
+    const holdingPeriodDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    const isPostBudget2024 = sellDateStr >= '2024-07-23';
+    const isPostDebtRegime = buyDateStr >= '2023-04-01';
+    const isGrandfatherDateOrBefore = buyDateStr <= '2018-01-31';
+
+    let holdingType: 'Short-Term' | 'Long-Term';
+    let taxType: 'STCG' | 'LTCG' | 'SLAB';
+    let section: TaxSection;
+    let taxRate: number;
+
+    if (isEq) {
+      const isLongTerm = holdingPeriodDays >= 365;
+      holdingType = isLongTerm ? 'Long-Term' : 'Short-Term';
+      taxType = isLongTerm ? 'LTCG' : 'STCG';
+      if (isLongTerm) {
+        section = isPostBudget2024 ? TaxSection.SEC_112A_12_5 : TaxSection.SEC_112A_10;
+        taxRate = isPostBudget2024 ? 0.125 : 0.10;
+      } else {
+        section = isPostBudget2024 ? TaxSection.SEC_111A_20 : TaxSection.SEC_111A_15;
+        taxRate = isPostBudget2024 ? 0.20 : 0.15;
+      }
+    } else {
+      if (isPostDebtRegime) {
+        holdingType = 'Short-Term';
+        taxType = 'SLAB';
+        section = TaxSection.SEC_50AA;
+        taxRate = taxSlab;
+      } else {
+        const debtLtThreshold = isPostBudget2024 ? 730 : 1095;
+        const isDebtLongTerm = holdingPeriodDays >= debtLtThreshold;
+        holdingType = isDebtLongTerm ? 'Long-Term' : 'Short-Term';
+        taxType = isDebtLongTerm ? 'LTCG' : 'SLAB';
+        if (isDebtLongTerm) {
+          section = isPostBudget2024 ? TaxSection.SEC_112_DEBT_12_5 : TaxSection.SEC_112_DEBT_20;
+          taxRate = isPostBudget2024 ? 0.125 : 0.20;
+        } else {
+          section = TaxSection.SLAB;
+          taxRate = taxSlab;
+        }
+      }
     }
 
-    const gain = (sellNav - effectiveBuyNav) * unitsSold;
-    const diffTime = Math.abs(sellDate.getTime() - lot.date.getTime());
-    const holdingPeriodDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    const taxType = this.getTaxType(lot.date, sellDate, assetType, assetName);
-    const taxRate = this.getTaxRate(taxType, sellDate, assetType, assetName, taxSlab);
+    const grossConsideration = sellNav * unitsSold;
+    const costOfAcquisition = (lot.isBonus ? 0 : lot.nav) * unitsSold;
+    let deemedCostOfAcquisition = costOfAcquisition;
+    let fmvAsOfJan31_2018 = 0;
+    let totalFmvJan31_2018 = 0;
+    let isGrandfathered = false;
+    let grandfatheredStatus = 'Non-Grandfathered';
+
+    if (isEq && isGrandfatherDateOrBefore && !lot.isAnchor) {
+      isGrandfathered = true;
+      grandfatheredStatus = 'Grandfathered u/s 55(2)(ac)';
+      if (grandfatherNav !== undefined && grandfatherNav !== null) {
+        fmvAsOfJan31_2018 = grandfatherNav;
+        totalFmvJan31_2018 = fmvAsOfJan31_2018 * unitsSold;
+        const actualNav = lot.isBonus ? 0 : lot.nav;
+        const deemedUnitCost = Math.max(actualNav, Math.min(grandfatherNav, sellNav));
+        deemedCostOfAcquisition = deemedUnitCost * unitsSold;
+      }
+    } else if (!isEq && !isPostDebtRegime && !lot.isAnchor) {
+      isGrandfathered = true;
+      grandfatheredStatus = 'Grandfathered Debt (Pre-50AA)';
+    }
+
+    let actualTransferExpenses = transferExpenses || 0;
+    if (!actualTransferExpenses && metadata?.exitLoadMetadata) {
+      actualTransferExpenses = this.getExitLoad(
+        assetName,
+        assetType,
+        buyDate,
+        sellDateObj,
+        grossConsideration,
+        metadata.exitLoadMetadata
+      );
+    }
+
+    const gain = grossConsideration - deemedCostOfAcquisition - actualTransferExpenses;
+    const taxBeforeCess = gain > 0 ? gain * taxRate : 0;
+    const cess = taxBeforeCess * 0.04;
+    const estimatedTax = taxBeforeCess + cess;
+    const advanceTaxQuarter = this.getAdvanceTaxQuarter(sellDateObj);
 
     return {
       assetName,
-      buyDate: lot.date,
-      sellDate,
+      folioNumber: metadata?.folioNumber,
+      isin: metadata?.isin,
+      pan: metadata?.pan,
+      assetClass,
+      section,
+      buyDate,
+      sellDate: sellDateObj,
+      holdingPeriodDays,
+      holdingType,
       units: unitsSold,
-      buyNav: lot.nav,
+      buyNav: lot.isBonus ? 0 : lot.nav,
       sellNav,
+      grossConsideration,
+      costOfAcquisition,
+      fmvAsOfJan31_2018,
+      totalFmvJan31_2018,
+      deemedCostOfAcquisition,
+      transferExpenses: actualTransferExpenses,
       gain,
       taxType,
-      holdingPeriodDays,
-      isGrandfathered,
       taxRate,
-      estimatedTax: gain > 0 ? gain * taxRate : 0,
+      taxBeforeCess,
+      cess,
+      estimatedTax,
+      advanceTaxQuarter,
+      isGrandfathered,
+      grandfatheredStatus,
       isAnchorDependent: lot.isAnchor || false,
     };
   }
@@ -318,14 +683,19 @@ export class TaxService {
   }
 
   private static getTaxType(buyDate: Date, sellDate: Date, assetType: AssetType, assetName: string): 'STCG' | 'LTCG' | 'SLAB' {
+    const buyDateStr = this.toISTDateString(buyDate);
+    const sellDateStr = this.toISTDateString(sellDate);
     const diffTime = Math.abs(sellDate.getTime() - buyDate.getTime());
-    const diffMonths = diffTime / (1000 * 60 * 60 * 24 * 30.44);
-    if (this.isEquity(assetType, assetName)) {
-      return diffMonths >= 12 ? 'LTCG' : 'STCG';
+    const holdingDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    const isEq = this.isEquity(assetType, assetName);
+
+    if (isEq) {
+      return holdingDays >= 365 ? 'LTCG' : 'STCG';
     }
-    if (buyDate >= this.DEBT_NEW_REGIME_DATE) return 'SLAB';
-    const ltThreshold = sellDate >= this.BUDGET_2024_DATE ? 24 : 36;
-    return diffMonths >= ltThreshold ? 'LTCG' : 'SLAB'; // Debt STCG is always taxed at Slab rates
+    if (buyDateStr >= '2023-04-01') return 'SLAB';
+    const isPostBudget = sellDateStr >= '2024-07-23';
+    const ltThreshold = isPostBudget ? 730 : 1095;
+    return holdingDays >= ltThreshold ? 'LTCG' : 'SLAB';
   }
 
   private static getTaxRate(
@@ -337,19 +707,20 @@ export class TaxService {
   ): number {
     if (taxType === 'SLAB') return taxSlab;
     const isEq = this.isEquity(assetType, assetName);
+    const sellDateStr = this.toISTDateString(sellDate);
+    const isPostBudget = sellDateStr >= '2024-07-23';
 
-    if (sellDate >= this.BUDGET_2024_DATE) {
+    if (isPostBudget) {
       if (isEq) {
         return taxType === 'LTCG' ? 0.125 : 0.20;
       }
-      return taxType === 'LTCG' ? 0.125 : taxSlab; // Debt LTCG post-budget is 12.5%
+      return taxType === 'LTCG' ? 0.125 : taxSlab;
     }
     
     // Pre-Budget 2024
     if (isEq) {
       return taxType === 'LTCG' ? 0.10 : 0.15;
     }
-    // Debt LTCG pre-budget was 20% (with indexation)
     return taxType === 'LTCG' ? 0.20 : taxSlab;
   }
 
@@ -391,7 +762,7 @@ export class TaxService {
     const diffTime = Math.abs(sellDate.getTime() - buyDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    // FINANCIAL INTELLIGENCE: Priority 1 - Automated Fund-Specific Metadata (REQ-12.2)
+    // Priority 1 - Fund-Specific Metadata
     if (metadata) {
       const parsedLoad = this.parseExitLoadFromMetadata(metadata, diffDays);
       if (parsedLoad !== null) return value * parsedLoad;
@@ -400,21 +771,17 @@ export class TaxService {
     // ELSS: 0% exit load (but 3-year lock-in)
     if (this.isELSS(name)) return 0;
 
-    // EXCEPTIONS: Specific well-known funds or categories (Priority 2 - Heuristics)
-    
-    // Parag Parikh Flexi Cap (and other PPFAS equity schemes often follow this)
+    // Specific well-known funds or categories
     if (name.includes('parag parikh')) {
       if (diffDays < 365) return value * 0.02; // 2% < 1yr
       if (diffDays < 730) return value * 0.01; // 1% < 2yr
       return 0;
     }
 
-    // Arbitrage Funds: Usually 0.25% for 15-30 days
     if (name.includes('arbitrage')) {
       return diffDays < 30 ? value * 0.0025 : 0;
     }
 
-    // Liquid Funds: SEBI Graded Exit Load (7 days)
     if (name.includes('liquid')) {
       if (diffDays <= 1) return value * 0.00007; // Day 1: 0.0070%
       if (diffDays === 2) return value * 0.000065; // Day 2: 0.0065%
@@ -422,10 +789,9 @@ export class TaxService {
       if (diffDays === 4) return value * 0.000055; // Day 4: 0.0055%
       if (diffDays === 5) return value * 0.00005; // Day 5: 0.0050%
       if (diffDays === 6) return value * 0.000045; // Day 6: 0.0045%
-      return 0; // Day 7 onwards: Nil
+      return 0;
     }
 
-    // Overnight Funds: 0%
     if (name.includes('overnight')) return 0;
 
     // Standard Equity rule: 1% if sold before 1 year (365 days)
@@ -433,28 +799,19 @@ export class TaxService {
       return diffDays < 365 ? value * 0.01 : 0;
     }
 
-    // Default Debt rule: Many have 0 exit load or tiered.
-    // Conservative estimate: 0.5% if < 90 days.
+    // Default Debt rule: 0.5% if < 90 days.
     return diffDays < 90 ? value * 0.005 : 0;
   }
 
-  /**
-   * Attempts to parse numeric exit load percentage from fund metadata text.
-   * Format: Returns decimal (e.g. 0.01 for 1%) or null if parsing fails.
-   */
   private static parseExitLoadFromMetadata(text: string, holdingDays: number): number | null {
     try {
       const normalized = text.toLowerCase();
       
-      // Look for "no exit load" or "nil" after X days
       if (normalized.includes('no exit load') || normalized.includes('nil')) {
          const match = normalized.match(/(?:after|beyond)\s+(\d+)\s+days/);
          if (match && holdingDays > parseInt(match[1])) return 0;
       }
 
-      // Pattern: "X.XX% if ... Y days"
-      // Note: We match the most specific rule first (highest days) or loop through all matches.
-      // For now, let's look for common Parag Parikh style multi-tier
       const tiers: { percent: number, days: number }[] = [];
       const matches = normalized.matchAll(/(\d+(?:\.\d+)?)%\s+if\s+.*?(\d+)\s+days/g);
       
@@ -463,12 +820,11 @@ export class TaxService {
       }
 
       if (tiers.length > 0) {
-        // Sort tiers by days ascending
         tiers.sort((a, b) => a.days - b.days);
         for (const t of tiers) {
           if (holdingDays <= t.days) return t.percent;
         }
-        return 0; // If exceeded all day-limited tiers
+        return 0;
       }
 
       return null;
