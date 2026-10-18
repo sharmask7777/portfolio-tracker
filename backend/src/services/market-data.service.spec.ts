@@ -149,6 +149,44 @@ describe('MarketDataService', () => {
       expect(holdings.holdings.length).toBeGreaterThan(0);
       expect(holdings.schemeName).toBe('Parag Parikh Flexi Cap Fund');
     });
+
+    it('should reject stale cached object without holdings array and re-enrich with template holdings', async () => {
+      // Simulate poisoned Redis cache containing only scheme metadata without holdings
+      (CacheService.get as jest.Mock).mockResolvedValue({
+        schemeName: 'Edelweiss NIFTY Large Midcap 250 Index Fund',
+        schemeCategoryLabel: 'Other Scheme - Index Funds',
+        expenseRatio: 0.7,
+      });
+
+      const holdings = await MarketDataService.getHoldings('INF754K01NR9');
+      expect(holdings).toBeDefined();
+      expect(Array.isArray(holdings.holdings)).toBe(true);
+      expect(holdings.holdings.length).toBeGreaterThan(0);
+      expect(CacheService.set).toHaveBeenCalledWith('holdings:INF754K01NR9', expect.any(Object), 604800);
+    });
+
+    it('should skip external FinAPI network call for synthetic ISINs and resolve via scheme name', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+
+      const holdings = await MarketDataService.getHoldings('MISSING-122639', 'Parag Parikh Flexi Cap Fund');
+      expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining('MISSING-122639'), expect.any(Object));
+      expect(holdings.holdings.length).toBeGreaterThan(0);
+      expect(holdings.holdings.some((h: any) => h.name.includes('HDFC Bank'))).toBe(true);
+    });
+
+    it('should resolve holdings when isin is undefined but schemeName is provided', async () => {
+      (CacheService.get as jest.Mock).mockResolvedValue(null);
+
+      const holdings = await MarketDataService.getHoldings(undefined, 'Axis Small Cap Fund');
+      expect(holdings).toBeDefined();
+      expect(holdings.holdings.length).toBeGreaterThan(0);
+      expect(holdings.schemeCategoryLabel).toContain('Small Cap');
+    });
+
+    it('should return null when both isin and schemeName are missing', async () => {
+      const holdings = await MarketDataService.getHoldings(undefined, undefined);
+      expect(holdings).toBeNull();
+    });
   });
 
   describe('getGoldPrice', () => {
