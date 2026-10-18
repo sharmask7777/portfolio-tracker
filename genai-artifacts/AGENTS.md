@@ -34,6 +34,28 @@ This document provides instructions for future agents to maintain the high stand
 - **Push Protocol:** Whenever a significant code push is made, evaluate if the Docker images should be updated. If unsure, nudge the user for a decision.
 - **Milestone Releases:** For every major end-to-end flow implementation or milestone completion, you MUST nudge the user to tag and push updated Docker configurations.
 
+### 6. Data Anonymization & Privacy Protection
+- **Zero Real Data Commitment:** Strict prohibition against hardcoding, committing, staging, or logging real personal identifying information (PII) or real portfolio data.
+- **Forbidden Identifiers:** Absolutely NO real PANs (Permanent Account Numbers), investor names, email addresses, phone numbers, folio numbers, bank/demat details, or actual statement files (CAS PDFs, `parsed_cas.json`, `*.cas.json`).
+- **Synthetic Test Data Only:** All tests, fixtures, mocks, and examples MUST use synthetic, fictitious data (e.g. synthetic PANs such as `ABCDE1234F`, `ALPAC1001A`, fictitious names like "Aarav Sharma", "Neha Patel", etc.).
+- **Ignore Verification:** Real CAS statements or parsed JSON files must remain permanently git-ignored and never committed to the repository.
+
+### 7. Mock Portfolio Test Suite & Financial Scenarios
+- **Comprehensive Mock Suite:** All financial features, calculations, consolidation behaviors, and UI views MUST be validated against the 10+ synthetic mock portfolios suite (`backend/src/test/mock-portfolios.spec.ts`, `frontend/src/utils/mock-portfolios.test.ts`, and `frontend/tests/mock-portfolios.spec.ts`).
+- **Core Financial Scenarios Covered:**
+  1. **Scheme Consolidation:** Grouping multiple folios/PANs for the same scheme without duplicate valuation.
+  2. **Zero-Holding / Full Redemption Isolation:** Fully redeemed positions must never show active holdings/valuation and must be cleanly isolated in closed positions.
+  3. **Partial Redemptions:** FIFO accounting of remaining units, invested cost, and realized gains.
+  4. **Stock Intersection & X-Ray:** Accurate underlying company allocation and multi-fund overlap without NaN or phantom exposure.
+  5. **Asset-Class Specific States:** Correct behavior for pure debt/liquid (empty equity states) and mixed multi-asset allocations.
+  6. **Alternative Assets:** Unlisted assets, SGBs, Physical Gold, and Real Estate integration.
+  7. **Multi-Member Profiles:** Family profile switching, aggregation, and cascading deletion integrity.
+  8. **Tax Rules & Grandfathering:** Section 112A LTCG grandfathering (Jan 31, 2018 FMV formula) and loss set-off rules.
+  9. **Lock-In Restrictions:** ELSS 3-year lock-in and statutory withdrawal constraints.
+  10. **Folio Lifecycle:** Manual closing and deletion of folios and managed profiles.
+- **Continuous Evolution:** All future use cases, edge cases, and bug fixes MUST be baked into these mock portfolios so regressions are caught permanently.
+- **Hook & CI Enforcement:** Mock portfolio tests MUST run as part of hermetic unit tests (`npm test`), the pre-push hook (`.husky/pre-push`), and GitHub Actions workflows (`.github/workflows/e2e.yml`).
+
 ## Agent Skills
 The project includes a suite of specialized SOPs and scripts in the `genai-artifacts/skills/` directory. These are designed to be AI-agnostic—any agent can read these Markdown files to learn how to perform complex tasks.
 
