@@ -72,6 +72,15 @@ impl InMemoryDatabase {
         state.users.get(&id).cloned()
     }
 
+    pub fn get_user_by_email(&self, email: &str) -> Option<UserEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state
+            .users
+            .values()
+            .find(|u| u.email.eq_ignore_ascii_case(email.trim()))
+            .cloned()
+    }
+
     // -----------------------------------------------------------------------
     // Asset helpers
     // -----------------------------------------------------------------------

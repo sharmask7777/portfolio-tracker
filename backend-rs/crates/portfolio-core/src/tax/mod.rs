@@ -150,6 +150,7 @@ pub struct TaxPortfolioSummary {
 
 /// Result of simulating a unit redemption, including tax impact and lock-in verification.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SellSimulation {
     pub asset_name: String,
     pub units_to_sell: Units,

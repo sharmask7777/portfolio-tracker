@@ -35,6 +35,7 @@ pub const LTCG_TAX_RATE_BUDGET_2024: Decimal = Decimal::from_parts(125, 0, 0, fa
 
 /// Specific harvesting recommendation for an individual scheme holding lot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HarvestingOpportunity {
     pub folio_id: Option<String>,
     pub scheme_name: String,
@@ -45,6 +46,7 @@ pub struct HarvestingOpportunity {
 
 /// An individual unrealized lot analysis.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UnrealizedLotGain {
     pub scheme_name: String,
     pub buy_date: NaiveDate,
@@ -58,6 +60,7 @@ pub struct UnrealizedLotGain {
 
 /// Aggregated breakdown of unrealized capital gains and losses across active holdings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct UnrealizedTaxSummary {
     pub stcg: Money,
     pub ltcg: Money,
@@ -68,6 +71,7 @@ pub struct UnrealizedTaxSummary {
 
 /// Overall tax harvesting summary for a portfolio or profile scope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HarvestingSummary {
     pub realized_ltcg_fy: Money,
     pub remaining_exemption: Money,
