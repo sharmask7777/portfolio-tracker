@@ -29,7 +29,7 @@ jobs:
     - name: Install Playwright Browsers
       run: cd frontend && npx playwright install --with-deps chromium
 
-    - name: Run Playwright tests
+    - name: Run Integration Tests and Playwright E2E tests
       run: |
         cat <<EOF > .env
         DOCKER_REGISTRY_USER=shaleenks
@@ -42,18 +42,40 @@ jobs:
         VITE_API_PORT=3001
         VITE_API_URL=http://localhost:3001
         EOF
-        
+
+        cat <<EOF > backend/.env
+        DATABASE_URL=postgresql://postgres:password@localhost:5432/portfolio_tracker?schema=public
+        JWT_SECRET=your-super-secret-jwt-key-change-me
+        REDIS_HOST=localhost
+        REDIS_PORT=6379
+        NODE_ENV=development
+        EOF
+
+        export DATABASE_URL="postgresql://postgres:password@localhost:5432/portfolio_tracker?schema=public"
+        export JWT_SECRET="your-super-secret-jwt-key-change-me"
         export NODE_ENV=development
+
         npm run docker:up
-        echo "Waiting for services to become ready..."
-        sleep 10
+
+        echo "Waiting for postgres to become healthy..."
+        until docker exec portfolio_tracker_db pg_isready -U postgres -d portfolio_tracker; do
+          sleep 2
+        done
+
+        echo "Waiting for frontend to become ready..."
+        until curl -s http://localhost:8082 > /dev/null; do
+          sleep 2
+        done
+
+        echo "Applying Prisma migrations..."
+        (cd backend && npx prisma migrate deploy)
 
         echo "Running backend test suite (unit + integration)..."
         (cd backend && npm test)
 
         if [ "${{ github.event_name }}" == "pull_request" ]; then
-          echo "Running smoke and responsiveness tests..."
-          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts)
+          echo "Running smoke, responsiveness, and mock portfolio tests..."
+          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts)
         else
           echo "Running full E2E suite..."
           (cd frontend && npm run test:e2e:docker)
