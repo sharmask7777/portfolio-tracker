@@ -1111,7 +1111,7 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let purge_json = parse_json(purge_res.into_body()).await;
     assert_eq!(purge_json["status"], "success");
 
-    // 11. Call GET /api/health/test-id/insights. Assert 200 OK.
+    // 11. Call GET /api/health/test-id/insights. Assert 200 OK and array response.
     let insights_req = Request::builder()
         .uri("/api/health/test-id/insights")
         .method("GET")
@@ -1122,9 +1122,9 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let insights_res = app.clone().oneshot(insights_req).await.unwrap();
     assert_eq!(insights_res.status(), StatusCode::OK);
     let insights_json = parse_json(insights_res.into_body()).await;
-    assert_eq!(insights_json["healthStatus"], "Excellent");
+    assert!(insights_json.is_array());
 
-    // 12. Call GET /api/health/test-id/goals. Assert 200 OK.
+    // 12. Call GET /api/health/test-id/goals. Assert 200 OK and array response.
     let goals_req = Request::builder()
         .uri("/api/health/test-id/goals")
         .method("GET")
@@ -1132,8 +1132,57 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
         .body(Body::empty())
         .unwrap();
 
-    let goals_res = app.oneshot(goals_req).await.unwrap();
+    let goals_res = app.clone().oneshot(goals_req).await.unwrap();
     assert_eq!(goals_res.status(), StatusCode::OK);
     let goals_json = parse_json(goals_res.into_body()).await;
     assert!(goals_json.is_array());
+
+    // 13. Call POST /api/health/test-id/goals with string targetAmount. Assert 200 OK.
+    let goal_create_req = Request::builder()
+        .uri("/api/health/test-id/goals")
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({
+                "name": "Retirement Fund",
+                "targetAmount": "500000"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let goal_create_res = app.clone().oneshot(goal_create_req).await.unwrap();
+    assert_eq!(goal_create_res.status(), StatusCode::OK);
+    let goal_create_json = parse_json(goal_create_res.into_body()).await;
+    let goal_id = goal_create_json["id"].as_str().unwrap();
+
+    // 14. Call PUT /api/health/test-id/goals/{goalId} with string targetAmount. Assert 200 OK.
+    let goal_update_req = Request::builder()
+        .uri(format!("/api/health/test-id/goals/{goal_id}"))
+        .method("PUT")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({
+                "name": "Updated Retirement Fund",
+                "targetAmount": "600000"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let goal_update_res = app.clone().oneshot(goal_update_req).await.unwrap();
+    assert_eq!(goal_update_res.status(), StatusCode::OK);
+
+    // 15. Call DELETE /api/health/test-id/goals/{goalId}. Assert 200 OK.
+    let goal_del_req = Request::builder()
+        .uri(format!("/api/health/test-id/goals/{goal_id}"))
+        .method("DELETE")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let goal_del_res = app.oneshot(goal_del_req).await.unwrap();
+    assert_eq!(goal_del_res.status(), StatusCode::OK);
 }

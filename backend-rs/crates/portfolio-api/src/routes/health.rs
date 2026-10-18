@@ -19,10 +19,49 @@ pub struct HealthResponse {
     pub timestamp: DateTime<Utc>,
 }
 
+fn deserialize_f64_or_string<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum NumOrStr {
+        Num(f64),
+        Str(String),
+    }
+
+    match NumOrStr::deserialize(deserializer)? {
+        NumOrStr::Num(n) => Ok(n),
+        NumOrStr::Str(s) => s.trim().parse::<f64>().map_err(serde::de::Error::custom),
+    }
+}
+
+fn deserialize_opt_f64_or_string<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum NumOrStr {
+        Num(f64),
+        Str(String),
+    }
+
+    match Option::<NumOrStr>::deserialize(deserializer)? {
+        Some(NumOrStr::Num(n)) => Ok(Some(n)),
+        Some(NumOrStr::Str(s)) => {
+            let parsed = s.trim().parse::<f64>().map_err(serde::de::Error::custom)?;
+            Ok(Some(parsed))
+        }
+        None => Ok(None),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateGoalRequest {
     pub name: String,
+    #[serde(deserialize_with = "deserialize_f64_or_string")]
     pub target_amount: f64,
     pub target_date: Option<String>,
     pub asset_ids: Option<Vec<String>>,
@@ -32,6 +71,7 @@ pub struct CreateGoalRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateGoalRequest {
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_opt_f64_or_string")]
     pub target_amount: Option<f64>,
     pub target_date: Option<String>,
     pub asset_ids: Option<Vec<String>>,
@@ -48,11 +88,7 @@ pub async fn get_insights(
     _auth_user: AuthUser,
     Path(_portfolio_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    Ok(Json(json!({
-        "score": 100,
-        "healthStatus": "Excellent",
-        "insights": []
-    })))
+    Ok(Json(json!([])))
 }
 
 pub async fn get_goals(

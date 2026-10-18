@@ -634,19 +634,20 @@ pub async fn get_portfolio_summary(
                 metrics: folio_metrics,
             };
 
+            for tx in &core_txs {
+                let flow_amount = if tx.tx_type.is_outflow() {
+                    -tx.amount.abs().to_decimal()
+                } else if tx.tx_type.is_inflow() {
+                    tx.amount.abs().to_decimal()
+                } else {
+                    tx.amount.to_decimal()
+                };
+                all_cash_flows.push(CashFlow::new(tx.date, flow_amount));
+            }
+
             if is_active {
                 total_invested += inv_dec;
                 total_current_value += val_dec;
-                for tx in &core_txs {
-                    let flow_amount = if tx.tx_type.is_outflow() {
-                        -tx.amount.abs().to_decimal()
-                    } else if tx.tx_type.is_inflow() {
-                        tx.amount.abs().to_decimal()
-                    } else {
-                        tx.amount.to_decimal()
-                    };
-                    all_cash_flows.push(CashFlow::new(tx.date, flow_amount));
-                }
                 active_folios.push(enriched);
             } else {
                 closed_folios.push(enriched);
@@ -695,8 +696,32 @@ pub async fn get_xray(
     State(_state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     Ok(Json(json!({
-        "assetAllocation": [],
-        "sectorExposure": []
+        "sectors": [],
+        "totalValue": 0.0,
+        "marketCap": {
+            "large": { "percentage": 0.0, "value": 0.0 },
+            "mid": { "percentage": 0.0, "value": 0.0 },
+            "small": { "percentage": 0.0, "value": 0.0 }
+        },
+        "assetAllocation": {
+            "equity": { "percentage": 0.0, "value": 0.0 },
+            "debt": { "percentage": 0.0, "value": 0.0 },
+            "cash": { "percentage": 0.0, "value": 0.0 },
+            "gold": { "percentage": 0.0, "value": 0.0 },
+            "other": { "percentage": 0.0, "value": 0.0 }
+        },
+        "expenseAnalysis": {
+            "totalAnnualFees": 0.0,
+            "weightedAvgTer": 0.0,
+            "categoryBreakdown": [],
+            "fundBreakdown": []
+        },
+        "fundCategoryAllocation": {
+            "active": { "percentage": 0.0, "value": 0.0 },
+            "index": { "percentage": 0.0, "value": 0.0 },
+            "arbitrage": { "percentage": 0.0, "value": 0.0 },
+            "other": { "percentage": 0.0, "value": 0.0 }
+        }
     })))
 }
 
