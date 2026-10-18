@@ -113,7 +113,7 @@ pub fn generate_ddl() -> &'static str {
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS "UploadJob_userId_idx" ON "UploadJob"("userId");
-    CREATE INDEX IF NOT EXISTS "UploadJob_status_idx" ON "UploadJob"(status);
+    CREATE INDEX IF NOT EXISTS "UploadJob_status_idx" ON "UploadJob"("status");
 
     CREATE TABLE IF NOT EXISTS "PortfolioHistory" (
         "id" TEXT PRIMARY KEY,
@@ -148,6 +148,13 @@ pub fn generate_ddl() -> &'static str {
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS "Goal_portfolioId_idx" ON "Goal"("portfolioId");
+
+    CREATE TABLE IF NOT EXISTS "_GoalAssets" (
+        "A" TEXT NOT NULL REFERENCES "Asset"("id") ON DELETE CASCADE,
+        "B" TEXT NOT NULL REFERENCES "Goal"("id") ON DELETE CASCADE,
+        PRIMARY KEY ("A", "B")
+    );
+    CREATE INDEX IF NOT EXISTS "_GoalAssets_B_index" ON "_GoalAssets"("B");
     "#
 }
 

@@ -77,3 +77,25 @@ pub fn create_app(state: AppState) -> Router {
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_state_in_memory_backend() {
+        let db = Arc::new(InMemoryDatabase::new());
+        let state = AppState::new(Arc::clone(&db), "test-secret");
+        assert!(matches!(state.backend, DbBackend::InMemory(_)));
+        assert!(state.pool().is_none());
+        assert_eq!(state.jwt_secret, "test-secret");
+    }
+
+    #[test]
+    fn test_app_state_with_backend_in_memory() {
+        let db = Arc::new(InMemoryDatabase::new());
+        let state = AppState::with_backend(DbBackend::InMemory(Arc::clone(&db)), "test-secret");
+        assert!(state.pool().is_none());
+        assert_eq!(state.jwt_secret, "test-secret");
+    }
+}

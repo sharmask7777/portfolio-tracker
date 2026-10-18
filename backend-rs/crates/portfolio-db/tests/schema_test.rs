@@ -15,4 +15,5 @@ fn test_schema_ddl_contains_all_core_tables() {
     assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"PortfolioHistory\""));
     assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"HistoricalNAV\""));
     assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"Goal\""));
+    assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"_GoalAssets\""));
 }
