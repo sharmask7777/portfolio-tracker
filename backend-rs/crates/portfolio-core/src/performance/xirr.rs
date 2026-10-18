@@ -179,22 +179,6 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
         });
     }
 
-    let first_date = flows[0].date;
-    if flows.iter().all(|f| f.date == first_date) {
-        return Err(PortfolioError::InvalidTransaction {
-            reason: "All cash flow dates are identical".to_string(),
-        });
-    }
-
-    let has_positive = flows.iter().any(|f| f.amount > Decimal::ZERO);
-    let has_negative = flows.iter().any(|f| f.amount < Decimal::ZERO);
-    if !has_positive || !has_negative {
-        return Err(PortfolioError::InvalidTransaction {
-            reason: "Cash flows must contain at least one positive and one negative flow"
-                .to_string(),
-        });
-    }
-
     // Filter non-zero flows and sort chronologically
     let mut sorted_flows: Vec<CashFlow> = flows
         .iter()
@@ -208,7 +192,23 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
         });
     }
 
+    let has_positive = sorted_flows.iter().any(|f| f.amount > Decimal::ZERO);
+    let has_negative = sorted_flows.iter().any(|f| f.amount < Decimal::ZERO);
+    if !has_positive || !has_negative {
+        return Err(PortfolioError::InvalidTransaction {
+            reason: "Cash flows must contain at least one positive and one negative flow"
+                .to_string(),
+        });
+    }
+
     sorted_flows.sort_by_key(|f| f.date);
+    let first_date = sorted_flows[0].date;
+    if sorted_flows.iter().all(|f| f.date == first_date) {
+        return Err(PortfolioError::InvalidTransaction {
+            reason: "All cash flow dates are identical".to_string(),
+        });
+    }
+
     let t0 = sorted_flows[0].date;
 
     // Normalization scale factor to prevent f64 overflow with huge amounts
@@ -437,6 +437,17 @@ mod tests {
         ];
         assert!(matches!(
             calculate_xirr(&same_dates),
+            Err(PortfolioError::InvalidTransaction { .. })
+        ));
+
+        // 6. Non-zero cash flows have identical dates even with a 0 cash flow on another date
+        let zero_flow_other_date = vec![
+            CashFlow::new(date(2023, 1, 1), dec("-100")),
+            CashFlow::new(date(2023, 1, 1), dec("110")),
+            CashFlow::new(date(2024, 1, 1), Decimal::ZERO),
+        ];
+        assert!(matches!(
+            calculate_xirr(&zero_flow_other_date),
             Err(PortfolioError::InvalidTransaction { .. })
         ));
     }

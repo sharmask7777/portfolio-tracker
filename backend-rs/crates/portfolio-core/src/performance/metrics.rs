@@ -12,6 +12,7 @@ use crate::types::{AssetType, Money, Nav, Units};
 
 /// Comprehensive performance metrics for a position, folio, or aggregated portfolio.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PerformanceMetrics {
     pub invested_amount: Money,
     pub current_value: Money,
@@ -31,6 +32,7 @@ pub struct PerformanceOptions {
     pub tax_slab: Option<Decimal>,
     pub asset_type: Option<AssetType>,
     pub asset_name: Option<String>,
+    pub as_of_date: Option<NaiveDate>,
 }
 
 impl PerformanceOptions {
@@ -55,6 +57,11 @@ impl PerformanceOptions {
 
     pub fn with_asset_name(mut self, asset_name: impl Into<String>) -> Self {
         self.asset_name = Some(asset_name.into());
+        self
+    }
+
+    pub fn with_as_of_date(mut self, date: NaiveDate) -> Self {
+        self.as_of_date = Some(date);
         self
     }
 }
@@ -178,7 +185,11 @@ pub fn get_metrics(
 
     let first_date = transactions.iter().map(|t| t.date).min();
     let last_date = transactions.iter().map(|t| t.date).max();
-    let as_of_date = last_date.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let as_of_date = options
+        .as_ref()
+        .and_then(|o| o.as_of_date)
+        .or(last_date)
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
 
     let cagr = if let Some(start) = first_date {
         if start < as_of_date && invested_amount.is_positive() {
@@ -287,6 +298,14 @@ mod tests {
         Money::from_str(s).expect("valid money")
     }
 
+    fn units(s: &str) -> Units {
+        Units::from_str(s).expect("valid units")
+    }
+
+    fn nav(s: &str) -> Nav {
+        Nav::from_str(s).expect("valid nav")
+    }
+
     #[test]
     fn test_cagr_multi_year_single_investment() {
         // 10,000 invested on 2020-01-01, value 14,641 on 2024-01-01 (4 years = 1461 days / 365.25 = 4.0 years)
@@ -387,5 +406,126 @@ mod tests {
             calculate_absolute_return(Money::ZERO, money("100")),
             Decimal::ZERO
         );
+    }
+
+    #[test]
+    fn test_performance_metrics_single_buy_with_as_of_date() {
+        use crate::holdings::TransactionType;
+
+        let tx = Transaction::new(
+            "tx-1",
+            date(2023, 1, 1),
+            TransactionType::Purchase,
+            money("10000"),
+            units("100"),
+            nav("100"),
+            units("100"),
+        );
+
+        // Without as_of_date, single buy defaults to tx.date, so XIRR has identical dates and returns None
+        let metrics_no_date = get_metrics(std::slice::from_ref(&tx), nav("120"), None);
+        assert_eq!(metrics_no_date.invested_amount, money("10000"));
+        assert_eq!(metrics_no_date.current_value, money("12000"));
+        assert_eq!(metrics_no_date.total_gain, money("2000"));
+        assert_eq!(metrics_no_date.absolute_return, dec("0.2"));
+        assert_eq!(metrics_no_date.xirr, None);
+
+        // With explicit as_of_date 1 year later, XIRR and CAGR are calculated accurately
+        let options = PerformanceOptions::new().with_as_of_date(date(2024, 1, 1));
+        let metrics = get_metrics(&[tx], nav("120"), Some(options));
+        assert_eq!(metrics.invested_amount, money("10000"));
+        assert_eq!(metrics.current_value, money("12000"));
+        assert_eq!(metrics.total_gain, money("2000"));
+        assert_eq!(metrics.absolute_return, dec("0.2"));
+        assert_eq!(metrics.xirr, Some(dec("0.2")));
+        assert!(metrics.cagr.is_some());
+    }
+
+    #[test]
+    fn test_performance_metrics_with_tax_slab_and_post_tax() {
+        use crate::holdings::TransactionType;
+
+        let tx = Transaction::new(
+            "tx-1",
+            date(2023, 1, 1),
+            TransactionType::Purchase,
+            money("10000"),
+            units("100"),
+            nav("100"),
+            units("100"),
+        );
+
+        let options = PerformanceOptions::new()
+            .with_as_of_date(date(2024, 1, 1))
+            .with_tax_slab(dec("0.30"))
+            .with_asset_type(AssetType::MutualFund)
+            .with_asset_name("Test Equity Scheme");
+
+        let metrics = get_metrics(&[tx], nav("150"), Some(options));
+
+        // Invested: 10,000; Current Value: 15,000; Unrealized Gain: 5,000
+        assert_eq!(metrics.invested_amount, money("10000"));
+        assert_eq!(metrics.current_value, money("15000"));
+        assert_eq!(metrics.total_gain, money("5000"));
+        assert_eq!(metrics.absolute_return, dec("0.5"));
+        assert_eq!(metrics.xirr, Some(dec("0.5")));
+
+        // Post-tax metrics
+        assert_eq!(metrics.estimated_tax, Some(money("5000")));
+        assert_eq!(metrics.post_tax_absolute_return, Some(Decimal::ZERO));
+        assert_eq!(metrics.post_tax_xirr, Some(Decimal::ZERO));
+    }
+
+    #[test]
+    fn test_performance_metrics_zero_units_returns_empty() {
+        let metrics = get_metrics(&[], nav("100"), None);
+        assert_eq!(metrics.invested_amount, Money::ZERO);
+        assert_eq!(metrics.current_value, Money::ZERO);
+        assert_eq!(metrics.total_gain, Money::ZERO);
+        assert_eq!(metrics.absolute_return, Decimal::ZERO);
+        assert_eq!(metrics.cagr, None);
+        assert_eq!(metrics.xirr, None);
+        assert_eq!(metrics.post_tax_xirr, None);
+        assert_eq!(metrics.post_tax_absolute_return, None);
+        assert_eq!(metrics.estimated_tax, None);
+    }
+
+    #[test]
+    fn test_performance_metrics_serde_camel_case_parity() {
+        use crate::holdings::TransactionType;
+
+        let tx = Transaction::new(
+            "tx-1",
+            date(2023, 1, 1),
+            TransactionType::Purchase,
+            money("10000"),
+            units("100"),
+            nav("100"),
+            units("100"),
+        );
+        let options = PerformanceOptions::new()
+            .with_as_of_date(date(2024, 1, 1))
+            .with_tax_slab(dec("0.30"))
+            .with_asset_type(AssetType::MutualFund)
+            .with_asset_name("Test Equity Scheme");
+
+        let metrics = get_metrics(&[tx], nav("150"), Some(options));
+        let json = serde_json::to_string(&metrics).expect("serialization should succeed");
+
+        // Verify camelCase JSON keys
+        assert!(json.contains("\"investedAmount\":"));
+        assert!(json.contains("\"currentValue\":"));
+        assert!(json.contains("\"totalGain\":"));
+        assert!(json.contains("\"absoluteReturn\":"));
+        assert!(json.contains("\"cagr\":"));
+        assert!(json.contains("\"xirr\":"));
+        assert!(json.contains("\"postTaxXirr\":"));
+        assert!(json.contains("\"postTaxAbsoluteReturn\":"));
+        assert!(json.contains("\"estimatedTax\":"));
+
+        // Roundtrip deserialization
+        let deserialized: PerformanceMetrics =
+            serde_json::from_str(&json).expect("deserialization should succeed");
+        assert_eq!(deserialized, metrics);
     }
 }
