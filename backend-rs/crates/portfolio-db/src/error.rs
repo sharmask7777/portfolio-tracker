@@ -29,6 +29,9 @@ pub enum DbError {
     #[error("Transaction not found: {0}")]
     TransactionNotFound(Uuid),
 
+    #[error("Upload job not found: {0}")]
+    UploadJobNotFound(Uuid),
+
     #[error("Constraint violation: {0}")]
     ConstraintViolation(String),
 

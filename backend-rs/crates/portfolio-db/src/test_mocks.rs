@@ -9,8 +9,9 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::entities::{
-    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, ManagedProfileEntity,
-    PortfolioEntity, TransactionEntity, UserEntity,
+    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, HistoricalNavEntity,
+    HistoricalValuationEntity, ManagedProfileEntity, PortfolioEntity, TransactionEntity,
+    UploadJobEntity, UploadJobStatus, UserEntity,
 };
 use crate::error::DbError;
 use crate::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
@@ -26,6 +27,9 @@ pub struct InMemoryDatabaseState {
     pub transactions: HashMap<Uuid, TransactionEntity>,
     pub family_groups: HashMap<Uuid, FamilyGroupEntity>,
     pub family_members: HashMap<Uuid, FamilyMemberEntity>,
+    pub upload_jobs: HashMap<Uuid, UploadJobEntity>,
+    pub historical_navs: HashMap<(String, NaiveDate), HistoricalNavEntity>,
+    pub historical_valuations: HashMap<(Uuid, NaiveDate), HistoricalValuationEntity>,
 }
 
 /// Thread-safe in-memory database mock.
@@ -168,6 +172,234 @@ impl InMemoryDatabase {
             .collect();
         folios.sort_by_key(|f| f.created_at);
         folios
+    }
+
+    // -----------------------------------------------------------------------
+    // UploadJob helpers
+    // -----------------------------------------------------------------------
+
+    pub fn create_upload_job(&self, id: Uuid, user_id: Uuid, file_path: &str) -> UploadJobEntity {
+        let mut state = self.state.write().expect("lock poisoned");
+        let now = Utc::now();
+        let job = UploadJobEntity {
+            id,
+            user_id,
+            file_path: file_path.to_string(),
+            status: UploadJobStatus::Pending,
+            message: None,
+            created_at: now,
+            updated_at: now,
+            started_at: None,
+            completed_at: None,
+        };
+        state.upload_jobs.insert(id, job.clone());
+        job
+    }
+
+    pub fn get_upload_job(&self, id: Uuid) -> Option<UploadJobEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state.upload_jobs.get(&id).cloned()
+    }
+
+    pub fn update_upload_job_status(
+        &self,
+        id: Uuid,
+        status: UploadJobStatus,
+        message: Option<String>,
+    ) -> Result<UploadJobEntity, DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        let job = state
+            .upload_jobs
+            .get_mut(&id)
+            .ok_or(DbError::UploadJobNotFound(id))?;
+        let now = Utc::now();
+        job.status = status;
+        job.message = message;
+        job.updated_at = now;
+        if status == UploadJobStatus::Processing && job.started_at.is_none() {
+            job.started_at = Some(now);
+        }
+        if matches!(status, UploadJobStatus::Completed | UploadJobStatus::Failed) {
+            job.completed_at = Some(now);
+        }
+        Ok(job.clone())
+    }
+
+    pub fn set_upload_job_processing(&self, id: Uuid) -> Result<UploadJobEntity, DbError> {
+        self.update_upload_job_status(id, UploadJobStatus::Processing, None)
+    }
+
+    pub fn set_upload_job_completed(&self, id: Uuid) -> Result<UploadJobEntity, DbError> {
+        self.update_upload_job_status(id, UploadJobStatus::Completed, None)
+    }
+
+    pub fn set_upload_job_failed(
+        &self,
+        id: Uuid,
+        message: &str,
+    ) -> Result<UploadJobEntity, DbError> {
+        self.update_upload_job_status(id, UploadJobStatus::Failed, Some(message.to_string()))
+    }
+
+    // -----------------------------------------------------------------------
+    // NAV helpers
+    // -----------------------------------------------------------------------
+
+    pub fn store_nav(&self, amfi_code: &str, date: NaiveDate, nav: Decimal) -> HistoricalNavEntity {
+        let mut state = self.state.write().expect("lock poisoned");
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        let record = HistoricalNavEntity {
+            id,
+            amfi_code: amfi_code.to_string(),
+            date,
+            nav,
+            created_at: now,
+        };
+        state
+            .historical_navs
+            .insert((amfi_code.to_string(), date), record.clone());
+        record
+    }
+
+    pub fn get_nav(&self, amfi_code: &str, date: NaiveDate) -> Option<HistoricalNavEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state
+            .historical_navs
+            .get(&(amfi_code.to_string(), date))
+            .cloned()
+    }
+
+    pub fn list_navs(&self, amfi_code: &str) -> Vec<HistoricalNavEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        let mut navs: Vec<HistoricalNavEntity> = state
+            .historical_navs
+            .values()
+            .filter(|n| n.amfi_code == amfi_code)
+            .cloned()
+            .collect();
+        navs.sort_by_key(|n| n.date);
+        navs
+    }
+
+    // -----------------------------------------------------------------------
+    // Historical Valuation helpers
+    // -----------------------------------------------------------------------
+
+    pub fn store_historical_valuation(
+        &self,
+        portfolio_id: Uuid,
+        date: NaiveDate,
+        value: Decimal,
+        cost: Decimal,
+    ) -> HistoricalValuationEntity {
+        let mut state = self.state.write().expect("lock poisoned");
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        let record = HistoricalValuationEntity {
+            id,
+            portfolio_id,
+            date,
+            value,
+            cost,
+            created_at: now,
+        };
+        state
+            .historical_valuations
+            .insert((portfolio_id, date), record.clone());
+        record
+    }
+
+    pub fn list_historical_valuations(&self, portfolio_id: Uuid) -> Vec<HistoricalValuationEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        let mut list: Vec<HistoricalValuationEntity> = state
+            .historical_valuations
+            .values()
+            .filter(|v| v.portfolio_id == portfolio_id)
+            .cloned()
+            .collect();
+        list.sort_by_key(|v| v.date);
+        list
+    }
+
+    // -----------------------------------------------------------------------
+    // Lookup helpers
+    // -----------------------------------------------------------------------
+
+    pub fn find_asset_by_isin(&self, isin: &str) -> Option<AssetEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state
+            .assets
+            .values()
+            .find(|a| a.isin.as_deref() == Some(isin))
+            .cloned()
+    }
+
+    pub fn find_asset_by_amfi_code(&self, amfi_code: &str) -> Option<AssetEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state
+            .assets
+            .values()
+            .find(|a| a.amfi_code.as_deref() == Some(amfi_code))
+            .cloned()
+    }
+
+    pub fn find_asset_by_name(&self, name: &str) -> Option<AssetEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state
+            .assets
+            .values()
+            .find(|a| a.name.eq_ignore_ascii_case(name.trim()))
+            .cloned()
+    }
+
+    pub fn find_folio(
+        &self,
+        portfolio_id: Uuid,
+        asset_id: Uuid,
+        number: &str,
+    ) -> Option<FolioEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state
+            .folios
+            .values()
+            .find(|f| {
+                f.portfolio_id == portfolio_id
+                    && f.asset_id == asset_id
+                    && f.number.eq_ignore_ascii_case(number.trim())
+            })
+            .cloned()
+    }
+
+    pub fn find_profile_by_pan(&self, user_id: Uuid, pan: &str) -> Option<ManagedProfileEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state
+            .profiles
+            .values()
+            .find(|p| p.user_id == user_id && p.pan.eq_ignore_ascii_case(pan.trim()))
+            .cloned()
+    }
+
+    pub fn find_portfolio_by_profile(
+        &self,
+        user_id: Uuid,
+        profile_id: Uuid,
+    ) -> Option<PortfolioEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state
+            .portfolios
+            .values()
+            .find(|p| p.user_id == user_id && p.managed_profile_id == Some(profile_id))
+            .cloned()
+    }
+
+    pub fn find_transaction_by_external_id(&self, external_id: &str) -> Option<TransactionEntity> {
+        let state = self.state.read().expect("lock poisoned");
+        state
+            .transactions
+            .values()
+            .find(|t| t.external_id.as_deref() == Some(external_id))
+            .cloned()
     }
 }
 

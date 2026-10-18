@@ -176,6 +176,102 @@ pub struct FamilyMemberEntity {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Upload job status enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "UploadJobStatus", rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum UploadJobStatus {
+    Pending,
+    Processing,
+    Completed,
+    Failed,
+}
+
+impl std::fmt::Display for UploadJobStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "PENDING"),
+            Self::Processing => write!(f, "PROCESSING"),
+            Self::Completed => write!(f, "COMPLETED"),
+            Self::Failed => write!(f, "FAILED"),
+        }
+    }
+}
+
+impl std::str::FromStr for UploadJobStatus {
+    type Err = DbError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_uppercase().as_str() {
+            "PENDING" => Ok(Self::Pending),
+            "PROCESSING" => Ok(Self::Processing),
+            "COMPLETED" => Ok(Self::Completed),
+            "FAILED" => Ok(Self::Failed),
+            other => Err(DbError::Internal(format!(
+                "Invalid upload job status: {other}"
+            ))),
+        }
+    }
+}
+
+/// Database entity for UploadJob table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadJobEntity {
+    pub id: Uuid,
+    #[sqlx(rename = "userId")]
+    #[serde(rename = "userId", alias = "user_id")]
+    pub user_id: Uuid,
+    #[sqlx(rename = "filePath")]
+    #[serde(rename = "filePath", alias = "file_path")]
+    pub file_path: String,
+    pub status: UploadJobStatus,
+    pub message: Option<String>,
+    #[sqlx(rename = "createdAt")]
+    #[serde(rename = "createdAt", alias = "created_at")]
+    pub created_at: DateTime<Utc>,
+    #[sqlx(rename = "updatedAt")]
+    #[serde(rename = "updatedAt", alias = "updated_at")]
+    pub updated_at: DateTime<Utc>,
+    #[sqlx(rename = "startedAt")]
+    #[serde(rename = "startedAt", alias = "started_at")]
+    pub started_at: Option<DateTime<Utc>>,
+    #[sqlx(rename = "completedAt")]
+    #[serde(rename = "completedAt", alias = "completed_at")]
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// Database entity for HistoricalNAV table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoricalNavEntity {
+    pub id: Uuid,
+    #[sqlx(rename = "amfiCode")]
+    #[serde(rename = "amfiCode", alias = "amfi_code")]
+    pub amfi_code: String,
+    pub date: NaiveDate,
+    pub nav: Decimal,
+    #[sqlx(rename = "createdAt")]
+    #[serde(rename = "createdAt", alias = "created_at")]
+    pub created_at: DateTime<Utc>,
+}
+
+/// Database entity for HistoricalValuation table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoricalValuationEntity {
+    pub id: Uuid,
+    #[sqlx(rename = "portfolioId")]
+    #[serde(rename = "portfolioId", alias = "portfolio_id")]
+    pub portfolio_id: Uuid,
+    pub date: NaiveDate,
+    pub value: Decimal,
+    pub cost: Decimal,
+    #[sqlx(rename = "createdAt")]
+    #[serde(rename = "createdAt", alias = "created_at")]
+    pub created_at: DateTime<Utc>,
+}
+
 // ---------------------------------------------------------------------------
 // Conversion to / from portfolio-core domain models
 // ---------------------------------------------------------------------------
