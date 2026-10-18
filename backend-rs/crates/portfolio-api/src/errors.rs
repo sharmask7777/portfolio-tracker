@@ -63,6 +63,9 @@ pub enum ApiError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 
+    #[error("Validation failed: {0}")]
+    ValidationFailed(String),
+
     #[error("Not found: {0}")]
     NotFound(String),
 
@@ -185,6 +188,13 @@ impl IntoResponse for ApiError {
                 "BAD_REQUEST".to_string(),
                 None,
             ),
+            ApiError::ValidationFailed(msg) => (
+                StatusCode::BAD_REQUEST,
+                msg,
+                "VALIDATION_FAILED".to_string(),
+                None,
+            ),
+
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg, "NOT_FOUND".to_string(), None),
             ApiError::Forbidden => (
                 StatusCode::FORBIDDEN,

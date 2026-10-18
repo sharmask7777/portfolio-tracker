@@ -870,3 +870,96 @@ async fn test_duplicate_pan_profile_creation_rejected() {
     let json2 = parse_json(res2.into_body()).await;
     assert_eq!(json2["code"], "CONSTRAINT_VIOLATION");
 }
+
+#[tokio::test]
+async fn test_cas_upload_and_status_polling_contract() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    let user = db.create_user("upload.contract@example.com", "pwd");
+    let token = portfolio_api::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
+
+    // 1. Multipart POST to /api/portfolio/upload
+    let boundary = "------------------------boundary123";
+    let body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nPASS123\r\n\
+        --{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"statement.pdf\"\r\n\
+        Content-Type: application/pdf\r\n\r\n%PDF-1.4 dummy\r\n--{boundary}--\r\n"
+    );
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::ACCEPTED);
+    let json = parse_json(res.into_body()).await;
+    let job_id = json["jobId"]
+        .as_str()
+        .expect("jobId must be present in response");
+    assert_eq!(
+        json["message"],
+        "PDF upload accepted and processing has started."
+    );
+
+    // 2. Poll status: GET /api/portfolio/upload-status/{jobId}
+    let status_req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/portfolio/upload-status/{job_id}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let status_res = app.clone().oneshot(status_req).await.unwrap();
+    assert_eq!(status_res.status(), StatusCode::OK);
+    let status_json = parse_json(status_res.into_body()).await;
+    assert_eq!(status_json["status"], "PENDING");
+    assert_eq!(status_json["id"], job_id);
+    assert_eq!(status_json["userId"], user.id.to_string());
+
+    // 3. Unauthorized access from another user returns 404 NOT_FOUND
+    let user_b = db.create_user("other.user@example.com", "pwd");
+    let token_b = portfolio_api::create_jwt(user_b.id, &user_b.email, &jwt_secret).unwrap();
+    let unauth_req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/portfolio/upload-status/{job_id}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token_b}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let unauth_res = app.clone().oneshot(unauth_req).await.unwrap();
+    assert_eq!(unauth_res.status(), StatusCode::NOT_FOUND);
+    let unauth_json = parse_json(unauth_res.into_body()).await;
+    assert_eq!(unauth_json["code"], "NOT_FOUND");
+    assert_eq!(unauth_json["error"], "Job not found");
+
+    // 4. Missing file upload returns 400 VALIDATION_FAILED
+    let empty_boundary = "------------------------emptyboundary";
+    let empty_body = format!(
+        "--{empty_boundary}\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nPASS123\r\n\
+        --{empty_boundary}--\r\n"
+    );
+
+    let empty_req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={empty_boundary}"),
+        )
+        .body(Body::from(empty_body))
+        .unwrap();
+
+    let empty_res = app.oneshot(empty_req).await.unwrap();
+    assert_eq!(empty_res.status(), StatusCode::BAD_REQUEST);
+    let empty_json = parse_json(empty_res.into_body()).await;
+    assert_eq!(empty_json["code"], "VALIDATION_FAILED");
+    assert_eq!(empty_json["error"], "No file uploaded");
+}

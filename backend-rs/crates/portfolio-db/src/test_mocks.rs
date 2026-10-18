@@ -196,6 +196,11 @@ impl InMemoryDatabase {
         job
     }
 
+    pub fn insert_upload_job(&self, job: UploadJobEntity) {
+        let mut state = self.state.write().expect("lock poisoned");
+        state.upload_jobs.insert(job.id, job);
+    }
+
     pub fn get_upload_job(&self, id: Uuid) -> Option<UploadJobEntity> {
         let state = self.state.read().expect("lock poisoned");
         state.upload_jobs.get(&id).cloned()
