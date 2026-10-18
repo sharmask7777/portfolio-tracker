@@ -62,7 +62,6 @@ fn nav(s: &str) -> Nav {
 // PORTFOLIO 1: Aurora Growth Family (Multi-Folio Scheme Consolidation)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 4 Holdings Engine"]
 fn test_portfolio_1_scheme_consolidation() {
     // Folio 1 Transactions (Investor A)
     let folio1_txs = vec![
@@ -194,7 +193,6 @@ fn test_portfolio_1_scheme_consolidation() {
 // PORTFOLIO 2: Zephyr Exited Fund (Fully Redeemed / Zero Holdings)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 4 Holdings Engine"]
 fn test_portfolio_2_fully_redeemed_zero_holdings() {
     let transactions = vec![
         Transaction::new(
@@ -267,7 +265,6 @@ fn test_portfolio_2_fully_redeemed_zero_holdings() {
 // PORTFOLIO 3: Titan Bluechip Retained (Partial Redemption Retained)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 4 Holdings Engine"]
 fn test_portfolio_3_partial_redemption_retained() {
     let transactions = vec![
         Transaction::new(
@@ -494,7 +491,6 @@ fn test_portfolio_6_alternative_assets_gold() {
 // PORTFOLIO 7: Solaria Family Hub (Multi-Member Profile Cascading Deletion)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 4/5 Registry Implementation"]
 fn test_portfolio_7_multi_member_cascading_deletion() {
     let mut registry = FamilyRegistry::new();
 
@@ -705,7 +701,6 @@ fn test_portfolio_9_elss_3yr_lockin() {
 // PORTFOLIO 10: Lifecycle Manager (Folio Manual Close and Direct Deletion)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 4 Holdings Engine"]
 fn test_portfolio_10_folio_lifecycle_manual_close() {
     let active_transactions = vec![Transaction::new(
         "tx-lc1",

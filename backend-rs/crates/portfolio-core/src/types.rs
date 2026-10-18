@@ -511,6 +511,18 @@ impl Nav {
     pub fn to_decimal(self) -> Decimal {
         self.0
     }
+
+    pub fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+
+    pub fn is_positive(&self) -> bool {
+        self.0.is_sign_positive() && !self.0.is_zero()
+    }
+
+    pub fn is_negative(&self) -> bool {
+        self.0.is_sign_negative()
+    }
 }
 
 impl Deref for Nav {

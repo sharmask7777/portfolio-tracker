@@ -188,18 +188,103 @@ pub fn calculate_gain(
 }
 
 /// Calculates portfolio-level realized and unrealized tax across all transactions in a scheme/folio.
-///
-/// NOTE: In TDD RED state, this returns a default zeroed summary.
 pub fn calculate_portfolio_tax(
-    _asset_name: &str,
-    _asset_type: AssetType,
-    _transactions: &[Transaction],
-    _current_nav: Nav,
+    asset_name: &str,
+    asset_type: AssetType,
+    transactions: &[Transaction],
+    current_nav: Nav,
     _tax_slab: Decimal,
     _grandfather_nav: Option<Nav>,
 ) -> TaxPortfolioSummary {
-    // RED phase stub
-    TaxPortfolioSummary::default()
+    let (active_lots, depletions) = crate::holdings::process_fifo_lots(transactions);
+    let is_eq = is_equity(asset_type, asset_name);
+
+    let mut realized_stcg = Money::ZERO;
+    let mut realized_ltcg = Money::ZERO;
+    let mut realized_details = Vec::new();
+
+    for d in depletions {
+        let holding_days = (d.redemption_date - d.lot_purchase_date).num_days();
+        let is_lt = if is_eq {
+            holding_days >= 365
+        } else {
+            holding_days >= 1095
+        };
+
+        if is_lt {
+            realized_ltcg += d.realized_gain;
+        } else {
+            realized_stcg += d.realized_gain;
+        }
+
+        realized_details.push(RealizedGain {
+            asset_name: asset_name.to_string(),
+            folio_number: None,
+            isin: None,
+            pan: None,
+            asset_class: if is_eq {
+                "Equity".to_string()
+            } else {
+                "Debt".to_string()
+            },
+            section: if is_lt {
+                TaxSection::Sec112A10
+            } else {
+                TaxSection::Sec111A15
+            },
+            buy_date: d.lot_purchase_date,
+            sell_date: d.redemption_date,
+            holding_period_days: holding_days,
+            holding_type: if is_lt {
+                HoldingType::LongTerm
+            } else {
+                HoldingType::ShortTerm
+            },
+            units: d.units,
+            buy_nav: d.purchase_nav,
+            sell_nav: d.redemption_nav,
+            gross_consideration: d.proceeds,
+            cost_of_acquisition: d.cost_basis,
+            fmv_as_of_jan31_2018: Nav::ZERO,
+            total_fmv_jan31_2018: Money::ZERO,
+            deemed_cost_of_acquisition: d.cost_basis,
+            transfer_expenses: Money::ZERO,
+            gain: d.realized_gain,
+            tax_type: if is_lt { TaxType::Ltcg } else { TaxType::Stcg },
+            tax_rate: Decimal::ZERO,
+            tax_before_cess: Money::ZERO,
+            cess: Money::ZERO,
+            estimated_tax: Money::ZERO,
+            is_grandfathered: false,
+            grandfathered_status: String::new(),
+        });
+    }
+
+    let mut unrealized_total = Money::ZERO;
+    for lot in active_lots {
+        let current_val = current_nav * lot.remaining_units;
+        let cost_val = lot.purchase_nav * lot.remaining_units;
+        let gain = current_val - cost_val;
+        unrealized_total += gain;
+    }
+
+    TaxPortfolioSummary {
+        has_synthetic_anchors: false,
+        realized: TaxCategorySummary {
+            stcg: realized_stcg,
+            ltcg: realized_ltcg,
+            slab: Money::ZERO,
+            total: realized_stcg + realized_ltcg,
+            details: realized_details,
+        },
+        unrealized: TaxCategorySummary {
+            stcg: Money::ZERO,
+            ltcg: Money::ZERO,
+            slab: Money::ZERO,
+            total: unrealized_total,
+            details: Vec::new(),
+        },
+    }
 }
 
 /// Checks if an asset is ELSS based on fund name.
@@ -209,10 +294,28 @@ pub fn is_elss(asset_name: &str) -> bool {
 }
 
 /// Checks if an asset is classified as equity for taxation.
-///
-/// NOTE: In TDD RED state, returns false for non-stocks.
-pub fn is_equity(asset_type: AssetType, _asset_name: &str) -> bool {
-    asset_type.is_equity()
+pub fn is_equity(asset_type: AssetType, asset_name: &str) -> bool {
+    if asset_type == AssetType::Stock {
+        return true;
+    }
+    if asset_type == AssetType::MutualFund {
+        let lower = asset_name.to_lowercase();
+        let debt_keywords = [
+            "debt",
+            "bond",
+            "liquid",
+            "gilt",
+            "money market",
+            "overnight",
+            "credit risk",
+            "conservative",
+            "income",
+            "duration",
+            "treasury",
+        ];
+        return !debt_keywords.iter().any(|keyword| lower.contains(keyword));
+    }
+    false
 }
 
 /// Computes locked units for ELSS funds subject to the 3-year statutory lock-in requirement.

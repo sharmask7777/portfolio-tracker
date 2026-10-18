@@ -3,7 +3,6 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
-use crate::error::PortfolioError;
 use crate::types::{AssetType, FolioNumber, Isin, Money, Nav, Pan, Units};
 
 /// Classification of transaction types matching standard mutual fund / brokerage CAS statements.
@@ -208,69 +207,11 @@ impl ManagedProfile {
     }
 }
 
-/// In-memory domain registry for managing multi-member family profiles.
-#[derive(Debug, Clone, Default)]
-pub struct FamilyRegistry {
-    profiles: Vec<ManagedProfile>,
-}
+pub mod lot;
+pub mod registry;
 
-impl FamilyRegistry {
-    pub fn new() -> Self {
-        Self {
-            profiles: Vec::new(),
-        }
-    }
-
-    pub fn add_profile(&mut self, profile: ManagedProfile) {
-        self.profiles.push(profile);
-    }
-
-    pub fn get_profile(&self, profile_id: &str) -> Option<&ManagedProfile> {
-        self.profiles.iter().find(|p| p.id == profile_id)
-    }
-
-    pub fn get_profiles_for_user(&self, user_id: &str) -> Vec<&ManagedProfile> {
-        self.profiles
-            .iter()
-            .filter(|p| p.user_id == user_id)
-            .collect()
-    }
-
-    /// Transactionally deletes a managed profile and cascades to all its portfolios and folios,
-    /// strictly isolating and leaving all other profiles untouched.
-    ///
-    /// NOTE: In TDD RED state, this returns an error stub to confirm test failure.
-    pub fn delete_managed_profile(
-        &mut self,
-        _user_id: &str,
-        _profile_id: &str,
-    ) -> Result<ManagedProfile, PortfolioError> {
-        // RED phase stub: fails to satisfy test assertion until GREEN phase is implemented
-        Err(PortfolioError::ProfileNotFound(_profile_id.to_string()))
-    }
-}
-
-/// Safely gets the latest unit balance from a list of transactions.
-///
-/// NOTE: In TDD RED state, this returns Units::zero() to confirm test failure.
-pub fn get_latest_units(_transactions: &[Transaction]) -> Units {
-    // RED phase stub
-    Units::zero()
-}
-
-/// Safely gets the latest NAV from a list of transactions.
-///
-/// NOTE: In TDD RED state, this returns Nav::zero() to confirm test failure.
-pub fn get_latest_nav(_transactions: &[Transaction]) -> Nav {
-    // RED phase stub
-    Nav::zero()
-}
-
-/// Consolidates multiple folios for the same scheme (grouped by ISIN / name),
-/// aggregating total units, current valuation, and invested amount.
-///
-/// NOTE: In TDD RED state, this returns an empty Vec to confirm test failure.
-pub fn consolidate_by_scheme(_folios: &[Folio], _current_nav: Nav) -> Vec<ConsolidatedScheme> {
-    // RED phase stub
-    Vec::new()
-}
+pub use self::lot::{
+    LotDepletion, TaxLot, is_unit_addition, is_unit_redemption, process_fifo_lots,
+    sort_transactions,
+};
+pub use self::registry::{FamilyRegistry, consolidate_by_scheme, get_latest_nav, get_latest_units};

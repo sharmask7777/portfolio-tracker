@@ -71,11 +71,12 @@ impl CashFlow {
 }
 
 /// Calculates absolute return: `(current_value - invested_amount) / invested_amount`.
-///
-/// NOTE: In TDD RED state, this returns Decimal::ZERO.
-pub fn calculate_absolute_return(_invested_amount: Money, _current_value: Money) -> Decimal {
-    // RED phase stub
-    Decimal::ZERO
+pub fn calculate_absolute_return(invested_amount: Money, current_value: Money) -> Decimal {
+    if invested_amount.is_zero() || invested_amount.is_negative() {
+        return Decimal::ZERO;
+    }
+    let gain = current_value - invested_amount;
+    gain / invested_amount
 }
 
 /// Calculates Compound Annual Growth Rate (CAGR).
@@ -104,19 +105,61 @@ pub fn calculate_xirr(
 }
 
 /// Aggregates metrics for a given set of transactions and current valuation price.
-///
-/// NOTE: In TDD RED state, this returns zeroed metrics to confirm test assertion failures.
 pub fn get_metrics(
-    _transactions: &[Transaction],
-    _current_price: Nav,
-    _options: Option<PerformanceOptions>,
+    transactions: &[Transaction],
+    current_price: Nav,
+    options: Option<PerformanceOptions>,
 ) -> PerformanceMetrics {
-    // RED phase stub
+    let current_units = options
+        .as_ref()
+        .and_then(|o| o.current_units_override)
+        .unwrap_or_else(|| crate::holdings::get_latest_units(transactions));
+
+    if current_units.is_zero() || current_units.is_negative() {
+        return PerformanceMetrics {
+            invested_amount: Money::ZERO,
+            current_value: Money::ZERO,
+            total_gain: Money::ZERO,
+            absolute_return: Decimal::ZERO,
+            cagr: None,
+            xirr: None,
+            post_tax_xirr: None,
+            post_tax_absolute_return: None,
+            estimated_tax: None,
+        };
+    }
+
+    let current_value = current_price * current_units;
+
+    // Calculate invested amount from active FIFO tax lots
+    let (active_lots, _) = crate::holdings::process_fifo_lots(transactions);
+    let active_lot_units: Units = active_lots.iter().map(|l| l.remaining_units).sum();
+
+    let invested_amount = if active_lot_units.is_positive() {
+        let fifo_cost: Money = active_lots
+            .iter()
+            .map(|lot| lot.remaining_units * lot.purchase_nav)
+            .sum();
+
+        // If units were overridden and differ from active lots, pro-rate cost
+        if current_units == active_lot_units {
+            fifo_cost
+        } else {
+            let ratio = (current_units / active_lot_units).unwrap_or(Decimal::ONE);
+            fifo_cost * ratio
+        }
+    } else {
+        Money::ZERO
+    };
+
+    let total_gain = current_value - invested_amount;
+    let absolute_return = calculate_absolute_return(invested_amount, current_value);
+
     PerformanceMetrics {
-        invested_amount: Money::zero(),
-        current_value: Money::zero(),
-        total_gain: Money::zero(),
-        absolute_return: Decimal::ZERO,
+        invested_amount,
+        current_value,
+        total_gain,
+        absolute_return,
         cagr: None,
         xirr: None,
         post_tax_xirr: None,
