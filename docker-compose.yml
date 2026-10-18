@@ -93,7 +93,7 @@ services:
     container_name: portfolio_tracker_backend_rs
     restart: always
     ports:
-      - "${VITE_API_PORT:-3001}:3001"
+      - "${VITE_API_PORT_RS:-3002}:3001"
     environment:
       DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
       REDIS_HOST: redis
