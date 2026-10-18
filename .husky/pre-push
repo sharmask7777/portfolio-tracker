@@ -3,9 +3,6 @@
 
 set -e
 
-echo "Running backend hermetic unit tests..."
-(cd backend && npm test)
-
 echo "Running frontend hermetic unit tests..."
 (cd frontend && npm run test:unit)
 
@@ -17,7 +14,7 @@ echo "Running frontend Docker smoke test..."
 cd frontend && npm run test:docker
 cd ..
 
-echo "🐳 Starting Docker compose stack for E2E tests..."
+echo "🐳 Starting Docker compose stack for tests..."
 export NODE_ENV=development
 npm run docker:up
 
@@ -31,5 +28,9 @@ trap cleanup EXIT
 echo "⏳ Waiting for services to become ready (10s)..."
 sleep 10
 
+echo "Running backend test suite (unit + integration)..."
+(cd backend && npm test)
+
 echo "⏳ Running Playwright E2E tests against Docker stack..."
 npm run test:e2e:docker --prefix frontend
+
