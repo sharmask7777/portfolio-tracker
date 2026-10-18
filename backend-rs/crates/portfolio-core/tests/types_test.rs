@@ -1,11 +1,19 @@
-use std::str::FromStr;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 use portfolio_core::error::PortfolioError;
-use portfolio_core::types::{
-    AssetType, FolioNumber, Isin, Money, Nav, Pan, Percentage, Units,
-};
+use portfolio_core::types::{AssetType, FolioNumber, Isin, Money, Nav, Pan, Percentage, Units};
+
+#[allow(unused_macros)]
+macro_rules! dec {
+    ($val:literal) => {
+        Decimal::from_str(stringify!($val).trim_matches('"')).expect("valid decimal literal")
+    };
+    ($val:expr) => {
+        Decimal::from_str(&$val.to_string()).expect("valid decimal")
+    };
+}
 
 fn dec(s: &str) -> Decimal {
     Decimal::from_str(s).expect("valid decimal string")
@@ -256,7 +264,10 @@ fn test_asset_type_variants_and_methods() {
     assert_eq!(parsed, AssetType::MutualFund);
 
     // FromStr
-    assert_eq!(AssetType::from_str("MUTUAL_FUND").unwrap(), AssetType::MutualFund);
+    assert_eq!(
+        AssetType::from_str("MUTUAL_FUND").unwrap(),
+        AssetType::MutualFund
+    );
     assert_eq!(AssetType::from_str("stock").unwrap(), AssetType::Stock);
 }
 
@@ -318,6 +329,99 @@ fn test_serde_with_str_exact_precision_without_floating_point_loss() {
     let invalid_json = record_json.replace("ABCDE1234F", "INVALID_PAN");
     let err = serde_json::from_str::<FinancialRecord>(&invalid_json);
     assert!(err.is_err());
+}
+
+#[test]
+fn test_serde_deserialization_rounding_invariant() {
+    // Deserializing "100.4567" string into Money produces Banker's rounded 100.46
+    let deserialized_money: Money = serde_json::from_str("\"100.4567\"").unwrap();
+    assert_eq!(deserialized_money, Money::new(dec!(100.46)));
+    assert_eq!(deserialized_money, Money::from_str("100.46").unwrap());
+
+    // Deserializing numeric 100.4567 literal into Money produces Banker's rounded 100.46
+    let deserialized_money_num: Money = serde_json::from_str("100.4567").unwrap();
+    assert_eq!(deserialized_money_num, Money::new(dec!(100.46)));
+    assert_eq!(deserialized_money_num, Money::from_str("100.46").unwrap());
+
+    // Deserializing "100.45678" into Units rounds to 4 decimal places
+    let deserialized_units: Units = serde_json::from_str("\"100.45678\"").unwrap();
+    assert_eq!(deserialized_units, Units::new(dec!(100.4568)));
+    assert_eq!(deserialized_units, Units::from_str("100.4568").unwrap());
+
+    // Deserializing "100.45678" into Nav rounds to 4 decimal places
+    let deserialized_nav: Nav = serde_json::from_str("\"100.45678\"").unwrap();
+    assert_eq!(deserialized_nav, Nav::new(dec!(100.4568)));
+    assert_eq!(deserialized_nav, Nav::from_str("100.4568").unwrap());
+}
+
+#[test]
+fn test_encapsulation_and_conversions() {
+    let m = Money::from_str("123.45").unwrap();
+    assert_eq!(*m.as_decimal(), dec!(123.45));
+    assert_eq!(m.to_decimal(), dec!(123.45));
+
+    let u = Units::from_str("123.4567").unwrap();
+    assert_eq!(*u.as_decimal(), dec!(123.4567));
+    assert_eq!(u.to_decimal(), dec!(123.4567));
+
+    let n = Nav::from_str("456.7890").unwrap();
+    assert_eq!(*n.as_decimal(), dec!(456.7890));
+    assert_eq!(n.to_decimal(), dec!(456.7890));
+
+    let p = Percentage::from_percentage(dec!(12.34));
+    assert_eq!(*p.as_decimal(), dec!(12.34));
+    assert_eq!(p.to_decimal(), dec!(12.34));
+}
+
+#[test]
+#[allow(clippy::op_ref)]
+fn test_commutative_multiplication_money_percentage_and_precision() {
+    let m = Money::from_str("1000.00").unwrap();
+    let p = Percentage::from_percentage(dec!(15.5));
+
+    let expected = Money::from_str("155.00").unwrap();
+
+    // Commutative multiplication: Money * Percentage == Percentage * Money
+    assert_eq!(m * p, expected);
+    assert_eq!(p * m, expected);
+
+    // Borrowed variants
+    assert_eq!(m * &p, expected);
+    assert_eq!(&m * p, expected);
+    assert_eq!(&m * &p, expected);
+    assert_eq!(p * &m, expected);
+    assert_eq!(&p * m, expected);
+    assert_eq!(&p * &m, expected);
+
+    // Non-premature division test:
+    // Compute (money * pct) / 100 before rounding to Money
+    let m2 = Money::from_str("300.00").unwrap();
+    let p2 = Percentage::from_percentage(dec!(33.33333333333333333333333333));
+    let res = m2 * p2;
+    assert_eq!(res, Money::from_str("100.00").unwrap());
+    assert_eq!(p2 * m2, Money::from_str("100.00").unwrap());
+}
+
+#[test]
+#[allow(clippy::op_ref)]
+fn test_units_division_operator() {
+    let u1 = Units::from_str("100.0000").unwrap();
+    let u2 = Units::from_str("25.0000").unwrap();
+
+    let div_res = (u1 / u2).expect("valid division");
+    assert_eq!(div_res, dec!(4));
+
+    // Borrowed variants
+    assert_eq!((&u1 / u2).unwrap(), dec!(4));
+    assert_eq!((u1 / &u2).unwrap(), dec!(4));
+    assert_eq!((&u1 / &u2).unwrap(), dec!(4));
+
+    // Division by zero
+    let zero_units = Units::ZERO;
+    assert_eq!(u1 / zero_units, Err(PortfolioError::DivisionByZero));
+    assert_eq!(&u1 / zero_units, Err(PortfolioError::DivisionByZero));
+    assert_eq!(u1 / &zero_units, Err(PortfolioError::DivisionByZero));
+    assert_eq!(&u1 / &zero_units, Err(PortfolioError::DivisionByZero));
 }
 
 #[test]
@@ -403,4 +507,3 @@ proptest! {
         prop_assert_eq!(units * nav, nav * units);
     }
 }
-

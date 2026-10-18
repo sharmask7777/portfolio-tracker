@@ -9,16 +9,10 @@ use crate::types::Units;
 #[derive(Debug, Error, PartialEq, Eq, Clone)]
 pub enum PortfolioError {
     #[error("Insufficient units: available {available}, requested {requested}")]
-    InsufficientUnits {
-        available: Units,
-        requested: Units,
-    },
+    InsufficientUnits { available: Units, requested: Units },
 
     #[error("Units locked: available {available}, locked {locked}")]
-    UnitsLocked {
-        available: Units,
-        locked: Units,
-    },
+    UnitsLocked { available: Units, locked: Units },
 
     #[error("XIRR failed to converge after {iterations} iterations with last guess {last_guess}")]
     XirrConvergenceFailure {
@@ -27,9 +21,7 @@ pub enum PortfolioError {
     },
 
     #[error("Invalid transaction: {reason}")]
-    InvalidTransaction {
-        reason: String,
-    },
+    InvalidTransaction { reason: String },
 
     #[error("Invalid PAN: {0}")]
     InvalidPan(String),

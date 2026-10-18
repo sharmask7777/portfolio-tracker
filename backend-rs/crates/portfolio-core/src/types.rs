@@ -11,9 +11,11 @@ use crate::error::PortfolioError;
 
 /// Money represents a monetary amount rounded to 2 decimal places (standard currency cents/paise).
 /// Prevents floating-point precision loss.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
-#[serde(transparent)]
-pub struct Money(pub Decimal);
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(from = "Decimal", into = "Decimal")]
+pub struct Money(Decimal);
 
 impl Money {
     pub const PRECISION: u32 = 2;
@@ -28,7 +30,11 @@ impl Money {
         Self::ZERO
     }
 
-    pub fn as_decimal(&self) -> Decimal {
+    pub fn as_decimal(&self) -> &Decimal {
+        &self.0
+    }
+
+    pub fn to_decimal(self) -> Decimal {
         self.0
     }
 
@@ -79,6 +85,12 @@ impl From<Decimal> for Money {
 
 impl From<Money> for Decimal {
     fn from(m: Money) -> Self {
+        m.0
+    }
+}
+
+impl From<&Money> for Decimal {
+    fn from(m: &Money) -> Self {
         m.0
     }
 }
@@ -161,14 +173,28 @@ impl Neg for Money {
 impl Mul<Percentage> for Money {
     type Output = Money;
     fn mul(self, rhs: Percentage) -> Money {
-        Money::new(self.0 * rhs.as_fraction())
+        Money::new((self.0 * rhs.0) / Decimal::from(100))
     }
 }
 
 impl Mul<&Percentage> for Money {
     type Output = Money;
     fn mul(self, rhs: &Percentage) -> Money {
-        Money::new(self.0 * rhs.as_fraction())
+        Money::new((self.0 * rhs.0) / Decimal::from(100))
+    }
+}
+
+impl Mul<Percentage> for &Money {
+    type Output = Money;
+    fn mul(self, rhs: Percentage) -> Money {
+        Money::new((self.0 * rhs.0) / Decimal::from(100))
+    }
+}
+
+impl Mul<&Percentage> for &Money {
+    type Output = Money;
+    fn mul(self, rhs: &Percentage) -> Money {
+        Money::new((self.0 * rhs.0) / Decimal::from(100))
     }
 }
 
@@ -213,9 +239,11 @@ impl<'a> std::iter::Sum<&'a Money> for Money {
 }
 
 /// Units represents mutual fund or stock share count rounded to 4 decimal places.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
-#[serde(transparent)]
-pub struct Units(pub Decimal);
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(from = "Decimal", into = "Decimal")]
+pub struct Units(Decimal);
 
 impl Units {
     pub const PRECISION: u32 = 4;
@@ -230,7 +258,11 @@ impl Units {
         Self::ZERO
     }
 
-    pub fn as_decimal(&self) -> Decimal {
+    pub fn as_decimal(&self) -> &Decimal {
+        &self.0
+    }
+
+    pub fn to_decimal(self) -> Decimal {
         self.0
     }
 
@@ -281,6 +313,12 @@ impl From<Decimal> for Units {
 
 impl From<Units> for Decimal {
     fn from(u: Units) -> Self {
+        u.0
+    }
+}
+
+impl From<&Units> for Decimal {
+    fn from(u: &Units) -> Self {
         u.0
     }
 }
@@ -402,6 +440,38 @@ impl Div<Decimal> for Units {
     }
 }
 
+impl Div<Units> for Units {
+    type Output = Result<Decimal, PortfolioError>;
+    fn div(self, rhs: Units) -> Self::Output {
+        if rhs.0.is_zero() {
+            Err(PortfolioError::DivisionByZero)
+        } else {
+            Ok(self.0 / rhs.0)
+        }
+    }
+}
+
+impl Div<&Units> for Units {
+    type Output = Result<Decimal, PortfolioError>;
+    fn div(self, rhs: &Units) -> Self::Output {
+        self / *rhs
+    }
+}
+
+impl Div<Units> for &Units {
+    type Output = Result<Decimal, PortfolioError>;
+    fn div(self, rhs: Units) -> Self::Output {
+        *self / rhs
+    }
+}
+
+impl Div<&Units> for &Units {
+    type Output = Result<Decimal, PortfolioError>;
+    fn div(self, rhs: &Units) -> Self::Output {
+        *self / *rhs
+    }
+}
+
 impl std::iter::Sum for Units {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Units::ZERO, |acc, u| acc + u)
@@ -415,9 +485,11 @@ impl<'a> std::iter::Sum<&'a Units> for Units {
 }
 
 /// Nav represents the Net Asset Value per unit rounded to 4 decimal places.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
-#[serde(transparent)]
-pub struct Nav(pub Decimal);
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(from = "Decimal", into = "Decimal")]
+pub struct Nav(Decimal);
 
 impl Nav {
     pub const PRECISION: u32 = 4;
@@ -432,7 +504,11 @@ impl Nav {
         Self::ZERO
     }
 
-    pub fn as_decimal(&self) -> Decimal {
+    pub fn as_decimal(&self) -> &Decimal {
+        &self.0
+    }
+
+    pub fn to_decimal(self) -> Decimal {
         self.0
     }
 }
@@ -471,6 +547,12 @@ impl From<Nav> for Decimal {
     }
 }
 
+impl From<&Nav> for Decimal {
+    fn from(n: &Nav) -> Self {
+        n.0
+    }
+}
+
 impl Mul<Units> for Nav {
     type Output = Money;
     fn mul(self, rhs: Units) -> Money {
@@ -500,9 +582,11 @@ impl Mul<&Units> for &Nav {
 }
 
 /// Percentage represents a percentage value (e.g. 15.5 for 15.5%).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
 #[serde(transparent)]
-pub struct Percentage(pub Decimal);
+pub struct Percentage(Decimal);
 
 impl Percentage {
     pub const ZERO: Percentage = Percentage(Decimal::ZERO);
@@ -523,6 +607,14 @@ impl Percentage {
     }
 
     pub fn as_percentage(&self) -> Decimal {
+        self.0
+    }
+
+    pub fn as_decimal(&self) -> &Decimal {
+        &self.0
+    }
+
+    pub fn to_decimal(self) -> Decimal {
         self.0
     }
 
@@ -552,6 +644,52 @@ impl FromStr for Percentage {
         Decimal::from_str(cleaned)
             .map(Percentage::from_percentage)
             .map_err(|e| PortfolioError::ParseError(e.to_string()))
+    }
+}
+
+impl From<Decimal> for Percentage {
+    fn from(d: Decimal) -> Self {
+        Percentage::from_percentage(d)
+    }
+}
+
+impl From<Percentage> for Decimal {
+    fn from(p: Percentage) -> Self {
+        p.0
+    }
+}
+
+impl From<&Percentage> for Decimal {
+    fn from(p: &Percentage) -> Self {
+        p.0
+    }
+}
+
+impl Mul<Money> for Percentage {
+    type Output = Money;
+    fn mul(self, rhs: Money) -> Money {
+        rhs * self
+    }
+}
+
+impl Mul<&Money> for Percentage {
+    type Output = Money;
+    fn mul(self, rhs: &Money) -> Money {
+        *rhs * self
+    }
+}
+
+impl Mul<Money> for &Percentage {
+    type Output = Money;
+    fn mul(self, rhs: Money) -> Money {
+        rhs * *self
+    }
+}
+
+impl Mul<&Money> for &Percentage {
+    type Output = Money;
+    fn mul(self, rhs: &Money) -> Money {
+        *rhs * *self
     }
 }
 
@@ -647,7 +785,7 @@ impl FolioNumber {
 
         // Must be ASCII printable without control chars or angle brackets
         for c in raw.chars() {
-            if !c.is_ascii() || c.is_ascii_control() || c == '<' || c == '>' || c == '\0' {
+            if !c.is_ascii() || c.is_ascii_control() || c == '<' || c == '>' {
                 return Err(PortfolioError::InvalidFolio(input.to_string()));
             }
         }
@@ -836,7 +974,9 @@ impl FromStr for AssetType {
             "PPF" => Ok(AssetType::Ppf),
             "SGB" => Ok(AssetType::Sgb),
             "PHYSICAL_GOLD" | "PHYSICALGOLD" | "GOLD" => Ok(AssetType::PhysicalGold),
-            _ => Err(PortfolioError::ParseError(format!("Unknown asset type: {s}"))),
+            _ => Err(PortfolioError::ParseError(format!(
+                "Unknown asset type: {s}"
+            ))),
         }
     }
 }
