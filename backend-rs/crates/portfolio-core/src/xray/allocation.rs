@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Market capitalization breakdown across large, mid, and small cap equities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct MarketCapBreakdown {
     pub large_cap: Decimal,
     pub mid_cap: Decimal,
@@ -46,7 +46,7 @@ impl MarketCapBreakdown {
 
 /// Asset allocation breakdown across broad asset classes (Equity, Debt, Cash, Alternatives).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct AssetAllocationBreakdown {
     pub equity: Decimal,
     pub debt: Decimal,
@@ -196,5 +196,21 @@ mod tests {
         assert_eq!(aggregated.cash, dec("10"));
         assert_eq!(aggregated.alternatives, dec("0"));
         assert_eq!(aggregated.total(), dec("100"));
+    }
+
+    #[test]
+    fn test_serde_defaults_for_missing_fields() {
+        let json_mc = r#"{"largeCap": "75"}"#;
+        let mc: MarketCapBreakdown = serde_json::from_str(json_mc).unwrap();
+        assert_eq!(mc.large_cap, dec("75"));
+        assert_eq!(mc.mid_cap, dec("0"));
+        assert_eq!(mc.small_cap, dec("0"));
+
+        let json_aa = r#"{"equity": "60", "debt": "40"}"#;
+        let aa: AssetAllocationBreakdown = serde_json::from_str(json_aa).unwrap();
+        assert_eq!(aa.equity, dec("60"));
+        assert_eq!(aa.debt, dec("40"));
+        assert_eq!(aa.cash, dec("0"));
+        assert_eq!(aa.alternatives, dec("0"));
     }
 }

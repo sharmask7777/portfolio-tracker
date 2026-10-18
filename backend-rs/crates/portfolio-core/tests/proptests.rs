@@ -38,7 +38,11 @@ const STOCK_CATALOG: &[&str] = &[
 ];
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(256))]
+    #![proptest_config(ProptestConfig {
+        cases: 256,
+        failure_persistence: None,
+        .. ProptestConfig::default()
+    })]
 
     // ========================================================================
     // Property 1: Conservation of Units
@@ -355,15 +359,19 @@ proptest! {
         let xirr1 = calculate_xirr_with_terminal_value(&flows, Money::new(v1), terminal_date);
         let xirr2 = calculate_xirr_with_terminal_value(&flows, Money::new(v2), terminal_date);
 
-        if let (Ok(r1), Ok(r2)) = (xirr1, xirr2) {
-            prop_assert!(
-                r2 > r1,
-                "Monotonicity invariant violated: XIRR(V2={}) = {} must be > XIRR(V1={}) = {}",
-                v2,
-                r2,
-                v1,
-                r1
-            );
-        }
+        prop_assert!(xirr1.is_ok(), "xirr1 must converge: {:?}", xirr1.err());
+        prop_assert!(xirr2.is_ok(), "xirr2 must converge: {:?}", xirr2.err());
+
+        let r1 = xirr1.unwrap();
+        let r2 = xirr2.unwrap();
+
+        prop_assert!(
+            r2 > r1,
+            "Monotonicity invariant violated: XIRR(V2={}) = {} must be > XIRR(V1={}) = {}",
+            v2,
+            r2,
+            v1,
+            r1
+        );
     }
 }
