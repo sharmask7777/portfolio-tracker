@@ -13,3 +13,4 @@ pub use holdings::*;
 pub use performance::*;
 pub use tax::*;
 pub use types::*;
+pub use xray::*;
