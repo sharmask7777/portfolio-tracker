@@ -456,13 +456,12 @@ pub async fn upload_pdf(
         let insert_res = sqlx::query(
             r#"
             INSERT INTO "UploadJob" ("id", "userId", "filePath", "status", "message", "createdAt", "updatedAt")
-            VALUES ($1, $2, $3, $4, $5, $6, $6)
+            VALUES ($1, $2, $3, 'PENDING', $4, $5, $5)
             "#,
         )
         .bind(job_id.to_string())
         .bind(auth_user.user_id.to_string())
         .bind(&file_path_str)
-        .bind("PENDING")
         .bind(None::<String>)
         .bind(now)
         .execute(pool)
@@ -475,6 +474,45 @@ pub async fn upload_pdf(
     }
 
     state.db.insert_upload_job(job);
+
+    if let Some(ref client) = state.redis
+        && let Ok(mut conn) = client.get_multiplexed_async_connection().await
+    {
+        let job_data = serde_json::json!({
+            "userId": auth_user.user_id.to_string(),
+            "filePath": file_path_str,
+            "password": _password,
+            "jobId": job_id.to_string(),
+        });
+        let job_data_str = job_data.to_string();
+        let now_ms = chrono::Utc::now().timestamp_millis();
+
+        let bull_job_id: Result<i64, _> = redis::cmd("INCR")
+            .arg("bull:pdfUploadQueue:id")
+            .query_async(&mut conn)
+            .await;
+
+        if let Ok(b_id) = bull_job_id {
+            let _: Result<(), _> = redis::cmd("HSET")
+                .arg(format!("bull:pdfUploadQueue:{}", b_id))
+                .arg("name")
+                .arg("pdfUploadQueue")
+                .arg("data")
+                .arg(&job_data_str)
+                .arg("opts")
+                .arg("{}")
+                .arg("timestamp")
+                .arg(now_ms)
+                .query_async(&mut conn)
+                .await;
+
+            let _: Result<(), _> = redis::cmd("LPUSH")
+                .arg("bull:pdfUploadQueue:wait")
+                .arg(b_id.to_string())
+                .query_async(&mut conn)
+                .await;
+        }
+    }
 
     Ok((
         StatusCode::ACCEPTED,
@@ -494,7 +532,10 @@ pub async fn get_upload_status(
         let opt = sqlx::query_as::<_, UploadJobEntity>(
             r#"
             SELECT id::uuid, "userId"::uuid, "filePath", status, message,
-                   "createdAt", "updatedAt", "startedAt", "completedAt"
+                   "createdAt" AT TIME ZONE 'UTC' AS "createdAt",
+                   "updatedAt" AT TIME ZONE 'UTC' AS "updatedAt",
+                   "startedAt" AT TIME ZONE 'UTC' AS "startedAt",
+                   "completedAt" AT TIME ZONE 'UTC' AS "completedAt"
             FROM "UploadJob"
             WHERE id = $1
             "#,

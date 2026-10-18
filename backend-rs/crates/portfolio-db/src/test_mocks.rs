@@ -41,20 +41,49 @@ pub struct InMemoryDatabase {
 
 impl InMemoryDatabase {
     pub fn new() -> Self {
-        Self {
+        let db = Self {
             state: Arc::new(RwLock::new(InMemoryDatabaseState::default())),
-        }
+        };
+        let test_user_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        db.create_user_with_id(test_user_id, "test@example.com", "test");
+        db
     }
 
     /// Resets all data in the in-memory database.
     pub fn clear(&self) {
         let mut state = self.state.write().expect("lock poisoned");
         *state = InMemoryDatabaseState::default();
+        let test_user_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let now = Utc::now();
+        state.users.insert(
+            test_user_id,
+            UserEntity {
+                id: test_user_id,
+                email: "test@example.com".to_string(),
+                password_hash: "test".to_string(),
+                created_at: now,
+                updated_at: now,
+            },
+        );
     }
 
     // -----------------------------------------------------------------------
     // User helpers
     // -----------------------------------------------------------------------
+
+    pub fn create_user_with_id(&self, id: Uuid, email: &str, password_hash: &str) -> UserEntity {
+        let mut state = self.state.write().expect("lock poisoned");
+        let now = Utc::now();
+        let user = UserEntity {
+            id,
+            email: email.to_string(),
+            password_hash: password_hash.to_string(),
+            created_at: now,
+            updated_at: now,
+        };
+        state.users.insert(id, user.clone());
+        user
+    }
 
     pub fn create_user(&self, email: &str, password_hash: &str) -> UserEntity {
         let mut state = self.state.write().expect("lock poisoned");

@@ -470,31 +470,31 @@ Run: `git add docker-compose.yml README.md AGENTS.md && git commit -m "chore: cu
 **Files:**
 - Test execution only.
 
-- [ ] **Step 1: Build Docker images for Rust backend and worker**
+- [x] **Step 1: Build Docker images for Rust backend and worker**
 
 Run: `docker compose build backend worker`  
 Expected: Successful multi-stage build producing `portfolio-backend:latest`.
 
-- [ ] **Step 2: Launch Docker Stack**
+- [x] **Step 2: Launch Docker Stack**
 
 Run: `docker compose up -d`  
 Expected: Containers `portfolio_tracker_db`, `portfolio_tracker_redis`, `portfolio_tracker_backend`, `portfolio_tracker_worker`, and `portfolio_tracker_frontend` start up.
 
-- [ ] **Step 3: Verify Healthiness**
+- [x] **Step 3: Verify Healthiness**
 
 Run: `curl -f http://localhost:3001/api/health` and `curl -f http://localhost:8082`  
 Expected: 200 OK responses from both Rust API and Frontend.
 
-- [ ] **Step 4: Run Playwright E2E Suite**
+- [x] **Step 4: Run Playwright E2E Suite**
 
-Run: `cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts tests/e2e-integration.spec.ts`  
+Run: `cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts tests/cas-upload.spec.ts tests/e2e-integration.spec.ts`  
 Expected: All Playwright tests pass against the live Rust backend stack!
 
-- [ ] **Step 5: Clean Teardown**
+- [x] **Step 5: Clean Teardown**
 
 Run: `docker compose down -v`  
 Expected: Clean container release.
 
-- [ ] **Step 6: Final Commit & Summary**
+- [x] **Step 6: Final Commit & Summary**
 
 Run: `git commit -am "chore: verify live docker e2e test suite against rust backend"`

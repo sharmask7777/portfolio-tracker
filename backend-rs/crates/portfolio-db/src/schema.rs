@@ -101,11 +101,17 @@ pub fn generate_ddl() -> &'static str {
     CREATE INDEX IF NOT EXISTS "Transaction_folioId_idx" ON "Transaction"("folioId");
     CREATE INDEX IF NOT EXISTS "Transaction_date_idx" ON "Transaction"("date");
 
+    DO $$ BEGIN
+        CREATE TYPE "UploadJobStatus" AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED');
+    EXCEPTION
+        WHEN duplicate_object THEN null;
+    END $$;
+
     CREATE TABLE IF NOT EXISTS "UploadJob" (
         "id" TEXT PRIMARY KEY,
         "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
         "filePath" TEXT NOT NULL,
-        "status" TEXT NOT NULL DEFAULT 'PENDING',
+        "status" "UploadJobStatus" NOT NULL DEFAULT 'PENDING'::"UploadJobStatus",
         "message" TEXT,
         "startedAt" TIMESTAMP(3),
         "completedAt" TIMESTAMP(3),
@@ -155,6 +161,10 @@ pub fn generate_ddl() -> &'static str {
         PRIMARY KEY ("A", "B")
     );
     CREATE INDEX IF NOT EXISTS "_GoalAssets_B_index" ON "_GoalAssets"("B");
+
+    INSERT INTO "User" ("id", "email", "password", "createdAt", "updatedAt")
+    VALUES ('00000000-0000-0000-0000-000000000001', 'test@example.com', '$2b$12$dummyhashforplaywrighttestuser', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT ("id") DO NOTHING;
     "#
 }
 

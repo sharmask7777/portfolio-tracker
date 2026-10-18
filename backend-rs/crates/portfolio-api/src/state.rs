@@ -21,6 +21,7 @@ pub struct AppState {
     pub backend: DbBackend,
     pub db: Arc<InMemoryDatabase>,
     pub jwt_secret: String,
+    pub redis: Option<redis::Client>,
 }
 
 impl AppState {
@@ -30,6 +31,7 @@ impl AppState {
             backend: DbBackend::InMemory(Arc::clone(&db)),
             db,
             jwt_secret: jwt_secret.into(),
+            redis: None,
         }
     }
 
@@ -43,12 +45,19 @@ impl AppState {
             backend,
             db,
             jwt_secret: jwt_secret.into(),
+            redis: None,
         }
     }
 
     /// Constructs state backed by a live PostgreSQL connection pool.
     pub fn with_postgres(pool: sqlx::PgPool, jwt_secret: impl Into<String>) -> Self {
         Self::with_backend(DbBackend::Postgres(pool), jwt_secret)
+    }
+
+    /// Attaches an optional Redis client.
+    pub fn with_redis(mut self, redis: Option<redis::Client>) -> Self {
+        self.redis = redis;
+        self
     }
 
     /// Returns a reference to the in-memory database mock (or fallback instance).

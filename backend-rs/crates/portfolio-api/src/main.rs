@@ -42,6 +42,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         AppState::new(db, jwt_secret)
     };
 
+    let redis_host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let redis_port = std::env::var("REDIS_PORT").unwrap_or_else(|_| "6379".to_string());
+    let redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| format!("redis://{redis_host}:{redis_port}"));
+    let redis_client = redis::Client::open(redis_url).ok();
+    let state = state.with_redis(redis_client);
+
     let app = create_app(state);
 
     let addr = format!("0.0.0.0:{port}");

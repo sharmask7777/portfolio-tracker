@@ -232,8 +232,8 @@ cargo fmt --check
 
 **Running Rust Services with Docker Compose:**
 ```bash
-# Launch Rust API server and background worker using the rust profile
-docker compose --profile rust up -d backend-rs worker-rs
+# Launch full stack (Rust backend, Rust worker, Frontend, DB, Redis)
+docker compose up -d
 ```
 
 #### Frontend

@@ -1284,6 +1284,7 @@ dependencies = [
  "jsonwebtoken",
  "portfolio-core",
  "portfolio-db",
+ "redis",
  "rust_decimal",
  "serde",
  "serde_json",
