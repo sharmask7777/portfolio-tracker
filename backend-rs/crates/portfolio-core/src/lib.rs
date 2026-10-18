@@ -6,3 +6,6 @@ pub mod tax;
 pub mod performance;
 pub mod xray;
 pub mod parser;
+
+pub use types::*;
+pub use error::PortfolioError;
