@@ -22,6 +22,11 @@ jobs:
         cd frontend && npm ci --legacy-peer-deps
         cd ../backend && npm ci --legacy-peer-deps
 
+    - name: Run Hermetic Unit Tests (Backend & Frontend)
+      run: |
+        (cd backend && npm test)
+        (cd frontend && npm run test:unit)
+
     - name: Install Playwright Browsers
       run: cd frontend && npx playwright install --with-deps chromium
 

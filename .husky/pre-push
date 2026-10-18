@@ -3,6 +3,12 @@
 
 set -e
 
+echo "Running backend hermetic unit tests..."
+(cd backend && npm test)
+
+echo "Running frontend hermetic unit tests..."
+(cd frontend && npm run test:unit)
+
 echo "Running backend Docker smoke test..."
 cd backend && npm run test:docker
 cd ..

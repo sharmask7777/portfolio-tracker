@@ -84,4 +84,63 @@ describe('FamilyService Managed Profiles', () => {
     const again = await FamilyService.getOrCreateManagedProfile(userId, pan);
     expect(again.id).toBe(profile.id);
   });
+
+  it('should delete managed profile and associated portfolios and folios', async () => {
+    const profile = await FamilyService.createManagedProfile(userId, 'DELPAN1234', 'To Delete');
+    const portfolio = await prisma.portfolio.create({
+      data: {
+        name: 'Portfolio to Delete',
+        userId,
+        managedProfileId: profile.id,
+      },
+    });
+    const asset = await prisma.asset.create({
+      data: {
+        type: 'MUTUAL_FUND',
+        name: 'Asset to Delete',
+        isin: `DEL_ISIN_${Date.now()}`,
+      },
+    });
+    const folio = await prisma.folio.create({
+      data: {
+        number: `FOLIO_DEL_${Date.now()}`,
+        portfolioId: portfolio.id,
+        assetId: asset.id,
+        pan: 'DELPAN1234',
+      },
+    });
+    await prisma.transaction.create({
+      data: {
+        date: new Date(),
+        type: 'PURCHASE',
+        amount: 1000,
+        units: 100,
+        nav: 10,
+        balance: 100,
+        folioId: folio.id,
+      },
+    });
+
+    // Attempt delete with unauthorized user
+    const otherUser = await prisma.user.create({
+      data: { email: `other-del-${Date.now()}@example.com`, password: 'password' },
+    });
+    await expect(FamilyService.deleteManagedProfile(otherUser.id, profile.id))
+      .rejects.toThrow('Profile not found or unauthorized');
+    await prisma.user.delete({ where: { id: otherUser.id } });
+
+    // Authorized delete
+    await FamilyService.deleteManagedProfile(userId, profile.id);
+
+    // Verify profile, portfolio, and folio are gone
+    const deletedProfile = await prisma.managedProfile.findUnique({ where: { id: profile.id } });
+    expect(deletedProfile).toBeNull();
+    const deletedPortfolio = await prisma.portfolio.findUnique({ where: { id: portfolio.id } });
+    expect(deletedPortfolio).toBeNull();
+    const deletedFolio = await prisma.folio.findUnique({ where: { id: folio.id } });
+    expect(deletedFolio).toBeNull();
+
+    // Clean up asset
+    await prisma.asset.delete({ where: { id: asset.id } });
+  });
 });
