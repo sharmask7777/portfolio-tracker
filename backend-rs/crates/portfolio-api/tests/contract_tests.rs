@@ -963,3 +963,177 @@ async fn test_cas_upload_and_status_polling_contract() {
     assert_eq!(empty_json["code"], "VALIDATION_FAILED");
     assert_eq!(empty_json["error"], "No file uploaded");
 }
+
+#[tokio::test]
+async fn test_portfolio_summary_and_health_endpoints_contract() {
+    let (app, _db, _jwt_secret) = setup_test_app();
+
+    // 1. Register user & get token
+    let reg_payload = json!({
+        "email": "summary_test@example.com",
+        "password": "SecurePassword123!"
+    });
+    let reg_req = Request::builder()
+        .uri("/api/auth/register")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(reg_payload.to_string()))
+        .unwrap();
+
+    let reg_res = app.clone().oneshot(reg_req).await.unwrap();
+    assert_eq!(reg_res.status(), StatusCode::CREATED);
+    let reg_json = parse_json(reg_res.into_body()).await;
+    let token = reg_json["token"].as_str().unwrap().to_string();
+
+    // 2. Call GET /api/portfolio/summary. Assert 200 OK and JSON has metrics, folios, closedFolios.
+    let sum_req = Request::builder()
+        .uri("/api/portfolio/summary")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let sum_res = app.clone().oneshot(sum_req).await.unwrap();
+    assert_eq!(sum_res.status(), StatusCode::OK);
+    let sum_json = parse_json(sum_res.into_body()).await;
+    assert!(sum_json.get("metrics").is_some());
+    assert!(sum_json.get("folios").is_some());
+    assert!(sum_json.get("closedFolios").is_some());
+
+    // 3. Call GET /api/portfolio/summary?profileId=some-id. Assert 200 OK.
+    let prof_sum_req = Request::builder()
+        .uri("/api/portfolio/summary?profileId=some-id")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let prof_sum_res = app.clone().oneshot(prof_sum_req).await.unwrap();
+    assert_eq!(prof_sum_res.status(), StatusCode::OK);
+
+    // 4. Call GET /api/portfolio/test-id/xray. Assert 200 OK with assetAllocation.
+    let xray_req = Request::builder()
+        .uri("/api/portfolio/test-id/xray")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let xray_res = app.clone().oneshot(xray_req).await.unwrap();
+    assert_eq!(xray_res.status(), StatusCode::OK);
+    let xray_json = parse_json(xray_res.into_body()).await;
+    assert!(xray_json.get("assetAllocation").is_some());
+
+    // 5. Call GET /api/portfolio/test-id/exposures. Assert 200 OK with array.
+    let exp_req = Request::builder()
+        .uri("/api/portfolio/test-id/exposures")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let exp_res = app.clone().oneshot(exp_req).await.unwrap();
+    assert_eq!(exp_res.status(), StatusCode::OK);
+    let exp_json = parse_json(exp_res.into_body()).await;
+    assert!(exp_json.is_array());
+
+    // 6. Call GET /api/portfolio/test-id/tax-summary. Assert 200 OK with realized and unrealized.
+    let tax_req = Request::builder()
+        .uri("/api/portfolio/test-id/tax-summary")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let tax_res = app.clone().oneshot(tax_req).await.unwrap();
+    assert_eq!(tax_res.status(), StatusCode::OK);
+    let tax_json = parse_json(tax_res.into_body()).await;
+    assert!(tax_json.get("realized").is_some());
+    assert!(tax_json.get("unrealized").is_some());
+
+    // 7. Call GET /api/portfolio/test-id/history. Assert 200 OK with array.
+    let hist_req = Request::builder()
+        .uri("/api/portfolio/test-id/history")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let hist_res = app.clone().oneshot(hist_req).await.unwrap();
+    assert_eq!(hist_res.status(), StatusCode::OK);
+    let hist_json = parse_json(hist_res.into_body()).await;
+    assert!(hist_json.is_array());
+
+    // 8. Call GET /api/portfolio/test-id/stats. Assert 200 OK with ath and maxInvested.
+    let stats_req = Request::builder()
+        .uri("/api/portfolio/test-id/stats")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let stats_res = app.clone().oneshot(stats_req).await.unwrap();
+    assert_eq!(stats_res.status(), StatusCode::OK);
+    let stats_json = parse_json(stats_res.into_body()).await;
+    assert!(stats_json.get("ath").is_some());
+    assert!(stats_json.get("maxInvested").is_some());
+
+    // 9. Call POST /api/portfolio/manual-asset with { "type": "FIXED_DEPOSIT", "name": "FD 1", "units": "10000" }. Assert 200 OK.
+    let asset_payload = json!({
+        "type": "FIXED_DEPOSIT",
+        "name": "FD 1",
+        "units": "10000"
+    });
+    let asset_req = Request::builder()
+        .uri("/api/portfolio/manual-asset")
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(asset_payload.to_string()))
+        .unwrap();
+
+    let asset_res = app.clone().oneshot(asset_req).await.unwrap();
+    assert_eq!(asset_res.status(), StatusCode::OK);
+    let asset_json = parse_json(asset_res.into_body()).await;
+    assert_eq!(asset_json["status"], "success");
+    assert!(asset_json.get("assetId").is_some());
+
+    // 10. Call DELETE /api/portfolio/purge. Assert 200 OK with status success.
+    let purge_req = Request::builder()
+        .uri("/api/portfolio/purge")
+        .method("DELETE")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let purge_res = app.clone().oneshot(purge_req).await.unwrap();
+    assert_eq!(purge_res.status(), StatusCode::OK);
+    let purge_json = parse_json(purge_res.into_body()).await;
+    assert_eq!(purge_json["status"], "success");
+
+    // 11. Call GET /api/health/test-id/insights. Assert 200 OK.
+    let insights_req = Request::builder()
+        .uri("/api/health/test-id/insights")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let insights_res = app.clone().oneshot(insights_req).await.unwrap();
+    assert_eq!(insights_res.status(), StatusCode::OK);
+    let insights_json = parse_json(insights_res.into_body()).await;
+    assert_eq!(insights_json["healthStatus"], "Excellent");
+
+    // 12. Call GET /api/health/test-id/goals. Assert 200 OK.
+    let goals_req = Request::builder()
+        .uri("/api/health/test-id/goals")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let goals_res = app.oneshot(goals_req).await.unwrap();
+    assert_eq!(goals_res.status(), StatusCode::OK);
+    let goals_json = parse_json(goals_res.into_body()).await;
+    assert!(goals_json.is_array());
+}

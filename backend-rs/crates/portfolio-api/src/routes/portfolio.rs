@@ -1,12 +1,15 @@
 //! Portfolio management, performance summary, and fund overlap routes.
 
+use std::str::FromStr;
+
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use uuid::Uuid;
 
 use portfolio_core::holdings::get_latest_units;
@@ -36,6 +39,94 @@ pub struct CreatePortfolioRequest {
 pub struct OverlapQuery {
     pub isin_a: String,
     pub isin_b: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryParams {
+    pub profile_id: Option<String>,
+    pub tax_slab: Option<Decimal>,
+    pub family_group_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryMetrics {
+    pub total_invested: Decimal,
+    pub total_value: Decimal,
+    pub post_tax_total_value: Decimal,
+    pub total_gain: Decimal,
+    pub absolute_return: Decimal,
+    pub xirr: Decimal,
+    pub post_tax_xirr: Decimal,
+    pub estimated_tax: Decimal,
+    pub day_change: Decimal,
+    pub day_change_percentage: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolioMetrics {
+    pub invested_amount: Decimal,
+    pub current_value: Decimal,
+    pub total_gain: Decimal,
+    pub absolute_return: Decimal,
+    pub xirr: Option<Decimal>,
+    pub post_tax_xirr: Option<Decimal>,
+    pub post_tax_absolute_return: Option<Decimal>,
+    pub current_price: Decimal,
+    pub day_change: Decimal,
+    pub day_change_percentage: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichedFolio {
+    pub id: Uuid,
+    pub number: String,
+    pub amc: Option<String>,
+    pub pan: Option<String>,
+    pub portfolio_id: Uuid,
+    pub asset_id: Uuid,
+    pub asset: Option<portfolio_db::entities::AssetEntity>,
+    pub transactions: Vec<portfolio_db::entities::TransactionEntity>,
+    pub metrics: FolioMetrics,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsolidatedSummaryResponse {
+    pub id: String,
+    pub name: String,
+    pub folios: Vec<EnrichedFolio>,
+    pub closed_folios: Vec<EnrichedFolio>,
+    pub tax_slab: Decimal,
+    pub metrics: SummaryMetrics,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateManualAssetRequest {
+    pub r#type: String,
+    pub name: String,
+    #[serde(deserialize_with = "deserialize_number_or_string")]
+    pub units: Decimal,
+    pub balance_date: Option<String>,
+    pub profile_id: Option<String>,
+}
+
+fn deserialize_number_or_string<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let val = serde_json::Value::deserialize(deserializer)?;
+    match val {
+        serde_json::Value::Number(n) => {
+            Decimal::from_str(&n.to_string()).map_err(serde::de::Error::custom)
+        }
+        serde_json::Value::String(s) => Decimal::from_str(&s).map_err(serde::de::Error::custom),
+        _ => Err(serde::de::Error::custom("expected number or string")),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -427,6 +518,491 @@ pub async fn get_upload_status(
     Ok(Json(job))
 }
 
+pub async fn get_portfolio_summary(
+    auth_user: AuthUser,
+    State(state): State<AppState>,
+    Query(params): Query<SummaryParams>,
+) -> Result<Json<ConsolidatedSummaryResponse>, ApiError> {
+    let slab_value = params.tax_slab.unwrap_or_else(|| Decimal::new(3, 1));
+    let res_id = params
+        .profile_id
+        .clone()
+        .or_else(|| params.family_group_id.clone())
+        .unwrap_or_else(|| "consolidated".to_string());
+    let res_name = if params.profile_id.is_some() {
+        "Member View".to_string()
+    } else if params.family_group_id.is_some() {
+        "Family Portfolio".to_string()
+    } else {
+        "Consolidated Portfolio".to_string()
+    };
+
+    let user_portfolios = state.db.list_user_portfolios(auth_user.user_id).await?;
+    let filtered_portfolios: Vec<_> = if let Some(ref prof_str) = params.profile_id {
+        if let Ok(prof_uuid) = Uuid::parse_str(prof_str) {
+            user_portfolios
+                .into_iter()
+                .filter(|p| p.managed_profile_id == Some(prof_uuid))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    } else {
+        user_portfolios
+    };
+
+    if filtered_portfolios.is_empty() {
+        return Ok(Json(ConsolidatedSummaryResponse {
+            id: res_id,
+            name: res_name,
+            folios: Vec::new(),
+            closed_folios: Vec::new(),
+            tax_slab: slab_value,
+            metrics: SummaryMetrics {
+                total_invested: Decimal::ZERO,
+                total_value: Decimal::ZERO,
+                post_tax_total_value: Decimal::ZERO,
+                total_gain: Decimal::ZERO,
+                absolute_return: Decimal::ZERO,
+                xirr: Decimal::ZERO,
+                post_tax_xirr: Decimal::ZERO,
+                estimated_tax: Decimal::ZERO,
+                day_change: Decimal::ZERO,
+                day_change_percentage: Decimal::ZERO,
+            },
+        }));
+    }
+
+    let mut active_folios = Vec::new();
+    let mut closed_folios = Vec::new();
+    let mut total_invested = Decimal::ZERO;
+    let mut total_current_value = Decimal::ZERO;
+    let mut all_cash_flows = Vec::new();
+
+    for portfolio in &filtered_portfolios {
+        let folios = state.db.list_folios_by_portfolio(portfolio.id);
+        for folio in folios {
+            let asset = state.db.get_asset(folio.asset_id);
+            let tx_entities = state.db.list_by_folio(folio.id).await?;
+            if tx_entities.is_empty() {
+                continue;
+            }
+
+            let mut core_txs = Vec::with_capacity(tx_entities.len());
+            for t in &tx_entities {
+                core_txs.push(t.to_core_transaction()?);
+            }
+
+            let units = get_latest_units(&core_txs);
+            let latest_nav = core_txs
+                .iter()
+                .rev()
+                .find(|t| t.nav.is_positive())
+                .map(|t| t.nav)
+                .unwrap_or(Nav::ZERO);
+
+            let metrics = get_metrics(&core_txs, latest_nav, None);
+            let inv_dec = metrics.invested_amount.to_decimal();
+            let val_dec = metrics.current_value.to_decimal();
+
+            let folio_metrics = FolioMetrics {
+                invested_amount: inv_dec,
+                current_value: val_dec,
+                total_gain: metrics.total_gain.to_decimal(),
+                absolute_return: metrics.absolute_return,
+                xirr: metrics.xirr,
+                post_tax_xirr: metrics.xirr,
+                post_tax_absolute_return: Some(metrics.absolute_return),
+                current_price: latest_nav.to_decimal(),
+                day_change: Decimal::ZERO,
+                day_change_percentage: Decimal::ZERO,
+            };
+
+            let is_active = units.to_decimal()
+                >= Decimal::from_str("0.001").unwrap_or(Decimal::ZERO)
+                && val_dec >= Decimal::from_str("0.01").unwrap_or(Decimal::ZERO);
+
+            let enriched = EnrichedFolio {
+                id: folio.id,
+                number: folio.number.clone(),
+                amc: folio.amc.clone(),
+                pan: folio.pan.clone(),
+                portfolio_id: folio.portfolio_id,
+                asset_id: folio.asset_id,
+                asset,
+                transactions: tx_entities,
+                metrics: folio_metrics,
+            };
+
+            if is_active {
+                total_invested += inv_dec;
+                total_current_value += val_dec;
+                for tx in &core_txs {
+                    let flow_amount = if tx.tx_type.is_outflow() {
+                        -tx.amount.abs().to_decimal()
+                    } else if tx.tx_type.is_inflow() {
+                        tx.amount.abs().to_decimal()
+                    } else {
+                        tx.amount.to_decimal()
+                    };
+                    all_cash_flows.push(CashFlow::new(tx.date, flow_amount));
+                }
+                active_folios.push(enriched);
+            } else {
+                closed_folios.push(enriched);
+            }
+        }
+    }
+
+    let today = Utc::now().date_naive();
+    if total_current_value > Decimal::ZERO {
+        all_cash_flows.push(CashFlow::new(today, total_current_value));
+    }
+    let overall_xirr = calculate_xirr(&all_cash_flows)
+        .ok()
+        .unwrap_or(Decimal::ZERO);
+    let total_gain = total_current_value - total_invested;
+    let absolute_return = if total_invested > Decimal::ZERO {
+        total_gain / total_invested
+    } else {
+        Decimal::ZERO
+    };
+
+    Ok(Json(ConsolidatedSummaryResponse {
+        id: res_id,
+        name: res_name,
+        folios: active_folios,
+        closed_folios,
+        tax_slab: slab_value,
+        metrics: SummaryMetrics {
+            total_invested,
+            total_value: total_current_value,
+            post_tax_total_value: total_current_value,
+            total_gain,
+            absolute_return,
+            xirr: overall_xirr,
+            post_tax_xirr: overall_xirr,
+            estimated_tax: Decimal::ZERO,
+            day_change: Decimal::ZERO,
+            day_change_percentage: Decimal::ZERO,
+        },
+    }))
+}
+
+pub async fn get_xray(
+    _auth_user: AuthUser,
+    Path(_id): Path<String>,
+    State(_state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(json!({
+        "assetAllocation": [],
+        "sectorExposure": []
+    })))
+}
+
+pub async fn get_exposures(
+    _auth_user: AuthUser,
+    Path(_id): Path<String>,
+    State(_state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(json!([])))
+}
+
+pub async fn get_tax_summary(
+    _auth_user: AuthUser,
+    Path(_id): Path<String>,
+    State(_state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(json!({
+        "realized": {
+            "total": 0.0,
+            "stcg": 0.0,
+            "ltcg": 0.0,
+            "slab": 0.0
+        },
+        "unrealized": {
+            "total": 0.0,
+            "stcg": 0.0,
+            "ltcg": 0.0,
+            "slab": 0.0
+        },
+        "details": []
+    })))
+}
+
+pub async fn get_tax_impact_query(
+    _auth_user: AuthUser,
+    Query(_query): Query<std::collections::HashMap<String, String>>,
+    State(_state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(json!({
+        "realized": {
+            "total": 0.0,
+            "stcg": 0.0,
+            "ltcg": 0.0,
+            "slab": 0.0
+        },
+        "unrealized": {
+            "total": 0.0,
+            "stcg": 0.0,
+            "ltcg": 0.0,
+            "slab": 0.0
+        },
+        "details": []
+    })))
+}
+
+pub async fn get_history(
+    _auth_user: AuthUser,
+    Path(_id): Path<String>,
+    State(_state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(json!([])))
+}
+
+pub async fn get_stats(
+    _auth_user: AuthUser,
+    Path(_id): Path<String>,
+    State(_state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(json!({
+        "ath": { "value": 0.0, "date": serde_json::Value::Null },
+        "maxInvested": { "value": 0.0, "date": serde_json::Value::Null },
+        "yearly": []
+    })))
+}
+
+pub async fn close_folio(
+    auth_user: AuthUser,
+    State(state): State<AppState>,
+    Path(folio_id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let folio_uuid = Uuid::parse_str(&folio_id)
+        .map_err(|_| ApiError::NotFound("Folio not found".to_string()))?;
+
+    let folio = state
+        .db
+        .get_folio(folio_uuid)
+        .ok_or_else(|| ApiError::NotFound("Folio not found".to_string()))?;
+
+    let portfolio = state
+        .db
+        .get_portfolio(folio.portfolio_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Folio not found".to_string()))?;
+
+    if portfolio.user_id != auth_user.user_id {
+        return Err(ApiError::NotFound("Folio not found".to_string()));
+    }
+
+    let tx_entities = state.db.list_by_folio(folio_uuid).await?;
+    let mut core_txs = Vec::with_capacity(tx_entities.len());
+    for t in &tx_entities {
+        core_txs.push(t.to_core_transaction()?);
+    }
+
+    let units = get_latest_units(&core_txs);
+    if units.to_decimal() > Decimal::from_str("0.001").unwrap_or(Decimal::ZERO) {
+        let last_nav = core_txs
+            .iter()
+            .rev()
+            .find(|t| t.nav.is_positive())
+            .map(|t| t.nav.to_decimal())
+            .unwrap_or(Decimal::ONE);
+        let today = Utc::now().date_naive();
+        let amount = -(units.to_decimal() * last_nav);
+        let ext_id = format!(
+            "MANUAL_CLOSE-{folio_uuid}-{}",
+            Utc::now().timestamp_millis()
+        );
+
+        state
+            .db
+            .create_transaction(
+                folio_uuid,
+                today,
+                "REDEMPTION",
+                amount,
+                -units.to_decimal(),
+                last_nav,
+                Decimal::ZERO,
+                Some(&ext_id),
+            )
+            .await?;
+    }
+
+    Ok(Json(json!({ "status": "success" })))
+}
+
+pub async fn delete_folio(
+    auth_user: AuthUser,
+    State(state): State<AppState>,
+    Path(folio_id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let folio_uuid = Uuid::parse_str(&folio_id)
+        .map_err(|_| ApiError::NotFound("Folio not found".to_string()))?;
+
+    let folio = state
+        .db
+        .get_folio(folio_uuid)
+        .ok_or_else(|| ApiError::NotFound("Folio not found".to_string()))?;
+
+    let portfolio = state
+        .db
+        .get_portfolio(folio.portfolio_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Folio not found".to_string()))?;
+
+    if portfolio.user_id != auth_user.user_id {
+        return Err(ApiError::NotFound("Folio not found".to_string()));
+    }
+
+    state.db.delete_folio(folio_uuid);
+
+    if let Some(pool) = state.pool() {
+        let _ = sqlx::query(r#"DELETE FROM "Transaction" WHERE "folioId" = $1"#)
+            .bind(folio_uuid.to_string())
+            .execute(pool)
+            .await;
+        let _ = sqlx::query(r#"DELETE FROM "Folio" WHERE id = $1"#)
+            .bind(folio_uuid.to_string())
+            .execute(pool)
+            .await;
+    }
+
+    Ok(Json(json!({ "status": "success" })))
+}
+
+pub async fn purge_user_data(
+    auth_user: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    state.db.purge_user_data(auth_user.user_id);
+
+    if let Some(pool) = state.pool() {
+        let mut tx = pool.begin().await.map_err(DbError::from)?;
+        let user_id_str = auth_user.user_id.to_string();
+        let _ = sqlx::query(
+            r#"DELETE FROM "Goal" WHERE "portfolioId" IN (SELECT id FROM "Portfolio" WHERE "userId" = $1)"#,
+        )
+        .bind(&user_id_str)
+        .execute(&mut *tx)
+        .await;
+        let _ = sqlx::query(
+            r#"DELETE FROM "Transaction" WHERE "folioId" IN (SELECT f.id FROM "Folio" f JOIN "Portfolio" p ON f."portfolioId" = p.id WHERE p."userId" = $1)"#,
+        )
+        .bind(&user_id_str)
+        .execute(&mut *tx)
+        .await;
+        let _ = sqlx::query(
+            r#"DELETE FROM "Folio" WHERE "portfolioId" IN (SELECT id FROM "Portfolio" WHERE "userId" = $1)"#,
+        )
+        .bind(&user_id_str)
+        .execute(&mut *tx)
+        .await;
+        let _ = sqlx::query(r#"DELETE FROM "Portfolio" WHERE "userId" = $1"#)
+            .bind(&user_id_str)
+            .execute(&mut *tx)
+            .await;
+        let _ = sqlx::query(r#"DELETE FROM "ManagedProfile" WHERE "userId" = $1"#)
+            .bind(&user_id_str)
+            .execute(&mut *tx)
+            .await;
+        let _ = tx.commit().await;
+    }
+
+    Ok(Json(json!({
+        "status": "success",
+        "message": "All user data has been purged."
+    })))
+}
+
+pub async fn create_manual_asset(
+    auth_user: AuthUser,
+    State(state): State<AppState>,
+    Json(payload): Json<CreateManualAssetRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let user_id = auth_user.user_id;
+    let user_portfolios = state.db.list_user_portfolios(user_id).await?;
+    let target_prof_id = payload
+        .profile_id
+        .as_deref()
+        .and_then(|p| Uuid::parse_str(p).ok());
+
+    let portfolio = if let Some(prof_id) = target_prof_id {
+        if let Some(p) = user_portfolios
+            .into_iter()
+            .find(|p| p.managed_profile_id == Some(prof_id))
+        {
+            p
+        } else {
+            state
+                .db
+                .create_portfolio(user_id, "Family Member Portfolio", Some(prof_id))
+                .await?
+        }
+    } else if let Some(p) = user_portfolios
+        .into_iter()
+        .find(|p| p.managed_profile_id.is_none())
+    {
+        p
+    } else {
+        state
+            .db
+            .create_portfolio(user_id, "Primary Portfolio", None)
+            .await?
+    };
+
+    let now_ts = Utc::now().timestamp_millis();
+    let symbol = format!("{}_{}", payload.r#type, now_ts);
+    let asset = state.db.create_asset(
+        &payload.r#type,
+        &payload.name,
+        None,
+        None,
+        Some(&symbol),
+        None,
+    );
+
+    let folio_num = format!("MANUAL_{now_ts}");
+    let folio = state
+        .db
+        .create_folio(portfolio.id, asset.id, &folio_num, None, None)?;
+
+    let balance_date = payload
+        .balance_date
+        .as_deref()
+        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .unwrap_or_else(|| Utc::now().date_naive());
+
+    state
+        .db
+        .create_transaction(
+            folio.id,
+            balance_date,
+            "PURCHASE",
+            payload.units,
+            payload.units,
+            Decimal::ONE,
+            payload.units,
+            None,
+        )
+        .await?;
+
+    Ok(Json(json!({
+        "status": "success",
+        "assetId": asset.id.to_string()
+    })))
+}
+
+pub async fn delete_manual_asset(
+    auth_user: AuthUser,
+    State(state): State<AppState>,
+    Path(folio_id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    delete_folio(auth_user, State(state), Path(folio_id)).await
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_portfolios).post(create_portfolio))
@@ -436,5 +1012,18 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/upload-status/{id}", get(get_upload_status))
         .route("/overlap", get(get_overlap))
+        .route("/summary", get(get_portfolio_summary))
+        .route("/manual-asset", post(create_manual_asset))
+        .route("/manual-asset/{folioId}", delete(delete_manual_asset))
+        .route("/folio/{folioId}", delete(delete_folio))
+        .route("/folio/{folioId}/close", post(close_folio))
+        .route("/purge", delete(purge_user_data))
+        .route("/tax-impact", get(get_tax_impact_query))
+        .route("/{id}/tax-impact", get(get_tax_summary))
+        .route("/{id}/tax-summary", get(get_tax_summary))
+        .route("/{id}/xray", get(get_xray))
+        .route("/{id}/exposures", get(get_exposures))
+        .route("/{id}/history", get(get_history))
+        .route("/{id}/stats", get(get_stats))
         .route("/{id}/summary", get(get_summary))
 }

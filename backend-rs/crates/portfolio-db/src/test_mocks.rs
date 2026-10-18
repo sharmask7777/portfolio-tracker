@@ -174,6 +174,47 @@ impl InMemoryDatabase {
         folios
     }
 
+    pub fn delete_folio(&self, id: Uuid) -> bool {
+        let mut state = self.state.write().expect("lock poisoned");
+        if state.folios.remove(&id).is_some() {
+            state.transactions.retain(|_, tx| tx.folio_id != id);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn purge_user_data(&self, user_id: Uuid) {
+        let mut state = self.state.write().expect("lock poisoned");
+        let portfolio_ids: HashSet<Uuid> = state
+            .portfolios
+            .values()
+            .filter(|p| p.user_id == user_id)
+            .map(|p| p.id)
+            .collect();
+
+        let folio_ids: HashSet<Uuid> = state
+            .folios
+            .values()
+            .filter(|f| portfolio_ids.contains(&f.portfolio_id))
+            .map(|f| f.id)
+            .collect();
+
+        state
+            .transactions
+            .retain(|_, tx| !folio_ids.contains(&tx.folio_id));
+
+        state
+            .folios
+            .retain(|_, f| !portfolio_ids.contains(&f.portfolio_id));
+
+        state.portfolios.retain(|_, p| p.user_id != user_id);
+
+        state.profiles.retain(|_, p| p.user_id != user_id);
+
+        state.upload_jobs.retain(|_, j| j.user_id != user_id);
+    }
+
     // -----------------------------------------------------------------------
     // UploadJob helpers
     // -----------------------------------------------------------------------
