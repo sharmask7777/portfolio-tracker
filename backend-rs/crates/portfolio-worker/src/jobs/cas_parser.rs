@@ -1,6 +1,7 @@
 //! Background worker job for parsing and ingesting CAS PDF / JSON statements.
 
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
 use portfolio_db::InMemoryDatabase;
@@ -10,7 +11,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::error::WorkerError;
-use crate::jobs::ProcessPdfUploadJobData;
+use crate::jobs::{HistoryRefreshJobData, ProcessPdfUploadJobData, process_history_refresh_job};
 
 /// In-memory CAS Statement models mapping casparser JSON output.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -118,11 +119,15 @@ pub fn parse_cas_date(date_str: &str) -> Result<NaiveDate, WorkerError> {
     if let Ok(d) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
         return Ok(d);
     }
-    // 4. Try YYYY/MM/DD
+    // 4. Try DD/MM/YYYY (e.g. 15/01/2024)
+    if let Ok(d) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
+        return Ok(d);
+    }
+    // 5. Try YYYY/MM/DD
     if let Ok(d) = NaiveDate::parse_from_str(s, "%Y/%m/%d") {
         return Ok(d);
     }
-    // 5. Try ISO with timestamp (YYYY-MM-DDTHH:MM:SS)
+    // 6. Try ISO with timestamp (YYYY-MM-DDTHH:MM:SS)
     if s.len() >= 10
         && let Ok(d) = NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d")
     {
@@ -135,18 +140,21 @@ pub fn parse_cas_date(date_str: &str) -> Result<NaiveDate, WorkerError> {
 }
 
 /// Normalizes raw CAS transaction type string into standard canonical transaction type.
+///
+/// Checks SWITCH_IN before PURCHASE and SWITCH_OUT before REDEMPTION to avoid
+/// misclassifying "SWITCH IN - PURCHASE" or "SWITCH OUT - REDEMPTION" strings.
 pub fn normalize_tx_type(raw_type: &str) -> &'static str {
     let upper = raw_type.trim().to_uppercase();
-    if upper.contains("SIP") {
+    if upper.contains("SWITCH_IN") || upper.contains("SWITCH IN") {
+        "SWITCH_IN"
+    } else if upper.contains("SWITCH_OUT") || upper.contains("SWITCH OUT") {
+        "SWITCH_OUT"
+    } else if upper.contains("SIP") {
         "PURCHASE_SIP"
     } else if upper.contains("PURCHASE") || upper.contains("BUY") {
         "PURCHASE"
     } else if upper.contains("REDEMPTION") || upper.contains("SELL") {
         "REDEMPTION"
-    } else if upper.contains("SWITCH_IN") || upper.contains("SWITCH IN") {
-        "SWITCH_IN"
-    } else if upper.contains("SWITCH_OUT") || upper.contains("SWITCH OUT") {
-        "SWITCH_OUT"
     } else if upper.contains("REINVEST") {
         "DIVIDEND_REINVESTMENT"
     } else if upper.contains("DIVIDEND") {
@@ -156,16 +164,57 @@ pub fn normalize_tx_type(raw_type: &str) -> &'static str {
     }
 }
 
+/// Validates an upload file path against path traversal attacks and allowable directories.
+///
+/// Ensures:
+/// 1. Path does not contain `..` (path traversal).
+/// 2. Path resides within allowable directories (`uploads/` or system temp directories).
+pub fn validate_file_path(path_str: &str) -> Result<PathBuf, WorkerError> {
+    let p = Path::new(path_str);
+
+    // 1. Reject path traversal
+    if path_str.contains("..")
+        || p.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(WorkerError::ValidationError(format!(
+            "Path traversal detected in file path: '{path_str}'"
+        )));
+    }
+
+    // 2. Allowable directory check
+    let temp_dir = std::env::temp_dir();
+    let is_in_temp = p.starts_with(&temp_dir)
+        || p.starts_with("/tmp")
+        || p.starts_with("/private/tmp")
+        || p.starts_with("/var/tmp")
+        || p.starts_with("/private/var/tmp");
+
+    let is_in_uploads = p.starts_with("uploads")
+        || p.starts_with("./uploads")
+        || p.components().any(|c| c.as_os_str() == "uploads");
+
+    if !is_in_temp && !is_in_uploads {
+        return Err(WorkerError::ValidationError(format!(
+            "Path '{path_str}' is not in an allowed directory (uploads/ or temp directory)"
+        )));
+    }
+
+    Ok(p.to_path_buf())
+}
+
 /// Core background worker handler for processing CAS PDF / JSON uploads.
 ///
 /// Lifecycle:
 /// 1. Transitions `UploadJob` status: `PENDING` -> `PROCESSING` (updates `started_at`).
-/// 2. Verifies file exists at `file_path`. If not found, sets `status = FAILED`, sets `message`,
+/// 2. Sandboxes and validates `file_path` against path traversal and allowable directories.
+/// 3. Verifies file exists at `file_path`. If not found, sets `status = FAILED`, sets `message`,
 ///    and returns `Err(WorkerError::FileNotFound)`.
-/// 3. Parses statement transactions.
-/// 4. Ingests assets, folios, and transactions into database with multi-PAN isolation.
-/// 5. Transitions `UploadJob` status to `COMPLETED` (updates `completed_at`).
-/// 6. Cleans up temporary file.
+/// 4. Parses statement transactions.
+/// 5. Ingests assets, folios, and transactions into database with multi-PAN isolation.
+/// 6. Recalculates historical valuation timeline for all touched portfolios.
+/// 7. Transitions `UploadJob` status to `COMPLETED` (updates `completed_at`).
+/// 8. Cleans up temporary file (only if it passed validation and exists).
 pub async fn process_pdf_job(
     job_data: &ProcessPdfUploadJobData,
     db: &InMemoryDatabase,
@@ -178,26 +227,33 @@ pub async fn process_pdf_job(
     // Step 1: Transition status to PROCESSING (started_at set)
     let _ = db.set_upload_job_processing(job_data.job_id);
 
-    let file_path = Path::new(&job_data.file_path);
+    // Step 2: Validate file path (sandboxing)
+    let validated_path = match validate_file_path(&job_data.file_path) {
+        Ok(path) => path,
+        Err(err) => {
+            let _ = db.set_upload_job_failed(job_data.job_id, &err.to_string());
+            return Err(err);
+        }
+    };
 
-    // Step 2: Verify file exists
-    if !file_path.exists() {
+    // Step 3: Verify file exists
+    if !validated_path.exists() {
         let err_msg = format!("File not found at path: {}", job_data.file_path);
         let _ = db.set_upload_job_failed(job_data.job_id, &err_msg);
         return Err(WorkerError::FileNotFound(job_data.file_path.clone()));
     }
 
-    // Process with guaranteed cleanup in case of success or error
-    let process_result = process_cas_file_internal(job_data, db, file_path).await;
+    // Process with guaranteed cleanup only if path passed validation and exists
+    let process_result = process_cas_file_internal(job_data, db, &validated_path).await;
 
-    // Step 6: Temporary file cleanup
-    if file_path.exists() {
-        let _ = std::fs::remove_file(file_path);
+    // Step 8: Safe cleanup: only unlink if validated and exists
+    if validated_path.exists() {
+        let _ = std::fs::remove_file(&validated_path);
     }
 
     match process_result {
         Ok(()) => {
-            // Step 5: Transition to COMPLETED
+            // Step 7: Transition to COMPLETED
             let _ = db.set_upload_job_completed(job_data.job_id);
             Ok(())
         }
@@ -233,6 +289,8 @@ async fn process_cas_file_internal(
                 .and_then(|i| i.pan.as_deref().or(i.pan_upper.as_deref()))
         })
         .unwrap_or("ABCDE1234F");
+
+    let mut touched_portfolios = HashSet::new();
 
     // Step 4: Ingest assets, folios, and transactions
     for folio_data in &statement.folios {
@@ -276,6 +334,7 @@ async fn process_cas_file_internal(
                 )
                 .await?
             };
+            touched_portfolios.insert(portfolio.id);
 
             // 3. Asset
             let fund_name = scheme_data
@@ -368,6 +427,14 @@ async fn process_cas_file_internal(
                 }
             }
         }
+    }
+
+    // Step 6: Recalculate historical valuation timeline for all touched portfolios
+    let mut touched_vec: Vec<uuid::Uuid> = touched_portfolios.into_iter().collect();
+    touched_vec.sort();
+    for p_id in touched_vec {
+        let refresh_data = HistoryRefreshJobData::new(p_id);
+        process_history_refresh_job(&refresh_data, db).await?;
     }
 
     Ok(())

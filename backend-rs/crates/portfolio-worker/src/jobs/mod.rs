@@ -9,7 +9,7 @@ pub mod cas_parser;
 pub mod history_refresh;
 pub mod nav_refresh;
 
-pub use cas_parser::process_pdf_job;
+pub use cas_parser::{normalize_tx_type, parse_cas_date, process_pdf_job, validate_file_path};
 pub use history_refresh::process_history_refresh_job;
 pub use nav_refresh::process_nav_refresh_job;
 

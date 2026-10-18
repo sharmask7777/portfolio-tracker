@@ -20,8 +20,9 @@ use portfolio_db::entities::UploadJobStatus;
 use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
 use portfolio_worker::WorkerError;
 use portfolio_worker::jobs::{
-    HistoryRefreshJobData, NavRefreshJobData, ProcessPdfUploadJobData, process_history_refresh_job,
-    process_nav_refresh_job, process_pdf_job,
+    HistoryRefreshJobData, NavRefreshJobData, ProcessPdfUploadJobData, normalize_tx_type,
+    parse_cas_date, process_history_refresh_job, process_nav_refresh_job, process_pdf_job,
+    validate_file_path,
 };
 use portfolio_worker::queue::{InMemoryJobQueue, JobQueue, RedisBullQueue};
 use rust_decimal::Decimal;
@@ -206,6 +207,18 @@ async fn test_cas_upload_job_processing_success() {
     let txs2 = db.list_by_folio(folio2.id).await.expect("folio 2 txs");
     assert_eq!(txs2.len(), 1);
     assert_eq!(txs2[0].units, dec("200.0"));
+
+    // 9. Verify Chained History Refresh: Both touched portfolios must have historical valuations
+    let valuations_self = db.list_historical_valuations(port_self.id);
+    assert!(
+        !valuations_self.is_empty(),
+        "Self portfolio must have historical valuation timeline calculated"
+    );
+    let valuations_member = db.list_historical_valuations(port_member.id);
+    assert!(
+        !valuations_member.is_empty(),
+        "Family member portfolio must have historical valuation timeline calculated"
+    );
 }
 
 #[tokio::test]
@@ -482,4 +495,174 @@ fn test_redis_bull_queue_key_generation() {
     assert_eq!(queue.wait_key(), "bull:pdfUploadQueue:wait");
     assert_eq!(queue.id_key(), "bull:pdfUploadQueue:id");
     assert_eq!(queue.job_key("101"), "bull:pdfUploadQueue:101");
+}
+
+#[tokio::test]
+async fn test_multi_asset_portfolio_valuation_independent() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("multi.asset@example.com", "pwd");
+
+    let portfolio = db
+        .create_portfolio(user.id, "Multi Asset Balanced", None)
+        .await
+        .expect("portfolio");
+
+    // Asset A: Large Cap equity fund (NAV ~100)
+    let asset_a = db.create_asset(
+        "MUTUAL_FUND",
+        "Nifty 50 Index Fund",
+        Some("INF789FB1X41"),
+        Some("120716"),
+        None,
+        None,
+    );
+    let folio_a = db
+        .create_folio(portfolio.id, asset_a.id, "FOLIO-A", None, None)
+        .expect("folio a");
+
+    // Asset B: Liquid / Overnight fund (NAV ~10)
+    let asset_b = db.create_asset(
+        "MUTUAL_FUND",
+        "Liquid Cash Fund",
+        Some("INF200K01VA1"),
+        Some("119551"),
+        None,
+        None,
+    );
+    let folio_b = db
+        .create_folio(portfolio.id, asset_b.id, "FOLIO-B", None, None)
+        .expect("folio b");
+
+    let date1 = NaiveDate::from_ymd_opt(2023, 1, 15).unwrap();
+
+    // Folio A: Buy 100 units @ 100 NAV = 10,000 cost, 10,000 value
+    db.create_transaction(
+        folio_a.id,
+        date1,
+        "PURCHASE",
+        dec("10000.00"),
+        dec("100.0000"),
+        dec("100.0000"),
+        dec("100.0000"),
+        Some("TX-A1"),
+    )
+    .await
+    .expect("tx a1");
+
+    // Folio B: Buy 1,000 units @ 10 NAV = 10,000 cost, 10,000 value
+    db.create_transaction(
+        folio_b.id,
+        date1,
+        "PURCHASE",
+        dec("10000.00"),
+        dec("1000.0000"),
+        dec("10.0000"),
+        dec("1000.0000"),
+        Some("TX-B1"),
+    )
+    .await
+    .expect("tx b1");
+
+    let job_data = HistoryRefreshJobData::new(portfolio.id);
+    let records = process_history_refresh_job(&job_data, &db)
+        .await
+        .expect("multi asset history refresh should succeed");
+
+    assert!(!records.is_empty());
+    let checkpoint = &records[0];
+    assert_eq!(checkpoint.date, date1);
+    // Verified: Value must be (100 * 100) + (1000 * 10) = 10,000 + 10,000 = 20,000
+    // NOT lumped into 1,100 * 10 = 11,000
+    assert_eq!(checkpoint.value, dec("20000.00"));
+    assert_eq!(checkpoint.cost, dec("20000.00"));
+
+    // Checkpoint 2: Folio A sells 50 units (partial redemption) @ 120 NAV on 2023-04-01
+    // Remaining in Folio A: 50 units @ 120 NAV = 6,000 value, 5,000 cost basis (FIFO)
+    // Folio B remains: 1,000 units @ 10 NAV = 10,000 value, 10,000 cost basis
+    // Total value = 6,000 + 10,000 = 16,000; Total cost = 5,000 + 10,000 = 15,000
+    let date2 = NaiveDate::from_ymd_opt(2023, 4, 1).unwrap();
+    db.create_transaction(
+        folio_a.id,
+        date2,
+        "REDEMPTION",
+        dec("6000.00"),
+        dec("50.0000"),
+        dec("120.0000"),
+        dec("50.0000"),
+        Some("TX-A2-SELL"),
+    )
+    .await
+    .expect("tx a2 sell");
+
+    let records2 = process_history_refresh_job(&job_data, &db)
+        .await
+        .expect("refresh after redemption");
+
+    let cp2 = records2
+        .iter()
+        .find(|r| r.date == date2)
+        .expect("date2 record");
+    assert_eq!(cp2.value, dec("16000.00"));
+    assert_eq!(cp2.cost, dec("15000.00"));
+}
+
+#[tokio::test]
+async fn test_path_sandboxing_and_safe_cleanup() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("security.sandbox@example.com", "pwd");
+
+    // 1. Path traversal with .. must be rejected with ValidationError without touching filesystem
+    let traversal_job_id = Uuid::new_v4();
+    let traversal_path = "uploads/../../etc/passwd";
+    db.create_upload_job(traversal_job_id, user.id, traversal_path);
+    let job_data1 = ProcessPdfUploadJobData::new(user.id, traversal_path, traversal_job_id);
+    let res1 = process_pdf_job(&job_data1, &db).await;
+    assert!(matches!(res1, Err(WorkerError::ValidationError(_))));
+    let failed_job1 = db.get_upload_job(traversal_job_id).unwrap();
+    assert_eq!(failed_job1.status, UploadJobStatus::Failed);
+
+    // 2. Disallowed directory outside uploads/ or temp dir must be rejected with ValidationError
+    let disallowed_job_id = Uuid::new_v4();
+    let disallowed_path = "/etc/hosts";
+    db.create_upload_job(disallowed_job_id, user.id, disallowed_path);
+    let job_data2 = ProcessPdfUploadJobData::new(user.id, disallowed_path, disallowed_job_id);
+    let res2 = process_pdf_job(&job_data2, &db).await;
+    assert!(matches!(res2, Err(WorkerError::ValidationError(_))));
+    let failed_job2 = db.get_upload_job(disallowed_job_id).unwrap();
+    assert_eq!(failed_job2.status, UploadJobStatus::Failed);
+
+    // 3. validate_file_path unit assertions
+    assert!(validate_file_path("/tmp/test.pdf").is_ok());
+    assert!(validate_file_path("uploads/statement.pdf").is_ok());
+    assert!(validate_file_path("./uploads/statement.pdf").is_ok());
+    assert!(validate_file_path("/tmp/../etc/passwd").is_err());
+    assert!(validate_file_path("uploads/../../etc/shadow").is_err());
+    assert!(validate_file_path("/etc/shadow").is_err());
+}
+
+#[test]
+fn test_date_parsing_and_tx_type_normalization() {
+    // 1. DD/MM/YYYY date format
+    let parsed_slash = parse_cas_date("15/01/2024").expect("valid DD/MM/YYYY");
+    assert_eq!(parsed_slash, NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
+
+    // Existing formats
+    let parsed_iso = parse_cas_date("2024-01-15").expect("valid ISO");
+    assert_eq!(parsed_iso, NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
+
+    let parsed_dash = parse_cas_date("15-Jan-2024").expect("valid DD-Mon-YYYY");
+    assert_eq!(parsed_dash, NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
+
+    // 2. Transaction type priority: SWITCH_IN before PURCHASE, SWITCH_OUT before REDEMPTION
+    assert_eq!(normalize_tx_type("SWITCH IN - PURCHASE"), "SWITCH_IN");
+    assert_eq!(normalize_tx_type("SWITCH IN"), "SWITCH_IN");
+    assert_eq!(normalize_tx_type("SWITCH_IN"), "SWITCH_IN");
+    assert_eq!(normalize_tx_type("PURCHASE"), "PURCHASE");
+    assert_eq!(normalize_tx_type("BUY"), "PURCHASE");
+
+    assert_eq!(normalize_tx_type("SWITCH OUT - REDEMPTION"), "SWITCH_OUT");
+    assert_eq!(normalize_tx_type("SWITCH OUT"), "SWITCH_OUT");
+    assert_eq!(normalize_tx_type("SWITCH_OUT"), "SWITCH_OUT");
+    assert_eq!(normalize_tx_type("REDEMPTION"), "REDEMPTION");
+    assert_eq!(normalize_tx_type("SELL"), "REDEMPTION");
 }

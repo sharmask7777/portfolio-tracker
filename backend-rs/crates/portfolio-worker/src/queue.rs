@@ -79,6 +79,7 @@ impl<T: Send + Sync + 'static> JobQueue<T> for InMemoryJobQueue<T> {
 pub struct RedisBullQueue {
     client: redis::Client,
     queue_name: String,
+    conn: Arc<Mutex<Option<redis::aio::MultiplexedConnection>>>,
 }
 
 impl RedisBullQueue {
@@ -87,6 +88,20 @@ impl RedisBullQueue {
         Self {
             client,
             queue_name: queue_name.into(),
+            conn: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Creates a new `RedisBullQueue` with a pre-established multiplexed async connection.
+    pub fn with_connection(
+        client: redis::Client,
+        queue_name: impl Into<String>,
+        conn: redis::aio::MultiplexedConnection,
+    ) -> Self {
+        Self {
+            client,
+            queue_name: queue_name.into(),
+            conn: Arc::new(Mutex::new(Some(conn))),
         }
     }
 
@@ -94,6 +109,29 @@ impl RedisBullQueue {
     pub fn from_url(redis_url: &str, queue_name: impl Into<String>) -> Result<Self, WorkerError> {
         let client = redis::Client::open(redis_url)?;
         Ok(Self::new(client, queue_name))
+    }
+
+    /// Asynchronously connects to Redis and returns a `RedisBullQueue` with active connection.
+    pub async fn connect(
+        redis_url: &str,
+        queue_name: impl Into<String>,
+    ) -> Result<Self, WorkerError> {
+        let client = redis::Client::open(redis_url)?;
+        let conn = client.get_multiplexed_async_connection().await?;
+        Ok(Self::with_connection(client, queue_name, conn))
+    }
+
+    /// Reuses or initializes the cached multiplexed async Redis connection.
+    async fn get_connection(
+        &self,
+    ) -> Result<tokio::sync::MutexGuard<'_, Option<redis::aio::MultiplexedConnection>>, WorkerError>
+    {
+        let mut guard = self.conn.lock().await;
+        if guard.is_none() {
+            let conn = self.client.get_multiplexed_async_connection().await?;
+            *guard = Some(conn);
+        }
+        Ok(guard)
     }
 
     pub fn queue_name(&self) -> &str {
@@ -116,10 +154,12 @@ impl RedisBullQueue {
 #[async_trait]
 impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> JobQueue<T> for RedisBullQueue {
     async fn enqueue(&self, job: T) -> Result<String, WorkerError> {
-        let mut conn = self.client.get_multiplexed_async_connection().await?;
+        let mut guard = self.get_connection().await?;
+        let conn = guard.as_mut().expect("multiplexed connection initialized");
+
         let job_id: i64 = redis::cmd("INCR")
             .arg(self.id_key())
-            .query_async(&mut conn)
+            .query_async(conn)
             .await?;
         let job_id_str = job_id.to_string();
 
@@ -136,23 +176,27 @@ impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> JobQueue<T> for Re
             .arg("{}")
             .arg("timestamp")
             .arg(now_ms)
-            .query_async(&mut conn)
+            .query_async(conn)
             .await?;
 
-        let _: () = redis::cmd("RPUSH")
+        // BullMQ FIFO convention: LPUSH on enqueue, RPOP on dequeue
+        let _: () = redis::cmd("LPUSH")
             .arg(self.wait_key())
             .arg(&job_id_str)
-            .query_async(&mut conn)
+            .query_async(conn)
             .await?;
 
         Ok(job_id_str)
     }
 
     async fn dequeue(&self) -> Result<Option<T>, WorkerError> {
-        let mut conn = self.client.get_multiplexed_async_connection().await?;
-        let job_id_opt: Option<String> = redis::cmd("LPOP")
+        let mut guard = self.get_connection().await?;
+        let conn = guard.as_mut().expect("multiplexed connection initialized");
+
+        // BullMQ FIFO convention: RPOP on dequeue
+        let job_id_opt: Option<String> = redis::cmd("RPOP")
             .arg(self.wait_key())
-            .query_async(&mut conn)
+            .query_async(conn)
             .await?;
 
         match job_id_opt {
@@ -161,7 +205,7 @@ impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> JobQueue<T> for Re
                 let data_opt: Option<String> = redis::cmd("HGET")
                     .arg(self.job_key(&job_id))
                     .arg("data")
-                    .query_async(&mut conn)
+                    .query_async(conn)
                     .await?;
 
                 match data_opt {

@@ -9,6 +9,9 @@ pub enum WorkerError {
     #[error("Upload file not found at path: {0}")]
     FileNotFound(String),
 
+    #[error("Path validation error: {0}")]
+    ValidationError(String),
+
     #[error("Failed to parse CAS statement: {0}")]
     ParseError(String),
 
