@@ -41,6 +41,9 @@ pub enum PortfolioError {
     #[error("Empty portfolio")]
     EmptyPortfolio,
 
+    #[error("Profile not found: {0}")]
+    ProfileNotFound(String),
+
     #[error("Parse error: {0}")]
     ParseError(String),
 }

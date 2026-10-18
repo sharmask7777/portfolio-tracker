@@ -143,6 +143,8 @@ pub struct SellSimulation {
 /// Calculates capital gain for a specific buy lot redemption under Section 112A / Section 55(2)(ac).
 ///
 /// NOTE: In TDD RED state, this returns zeroed stub values to confirm test assertion failure.
+// Legacy 1:1 API parity with TypeScript TaxService.calculateGain
+#[allow(clippy::too_many_arguments)]
 pub fn calculate_gain(
     asset_name: &str,
     _asset_type: AssetType,

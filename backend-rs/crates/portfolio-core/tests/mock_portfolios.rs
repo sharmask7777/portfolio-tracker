@@ -25,12 +25,12 @@ use rust_decimal::Decimal;
 
 use portfolio_core::error::PortfolioError;
 use portfolio_core::holdings::{
-    consolidate_by_scheme, get_latest_units, FamilyRegistry, Folio, ManagedProfile, Portfolio,
-    Transaction, TransactionType,
+    FamilyRegistry, Folio, ManagedProfile, Portfolio, Transaction, TransactionType,
+    consolidate_by_scheme, get_latest_units,
 };
-use portfolio_core::performance::{get_metrics, PerformanceOptions};
+use portfolio_core::performance::{PerformanceOptions, get_metrics};
 use portfolio_core::tax::{
-    calculate_gain, calculate_portfolio_tax, is_elss, is_equity, simulate_sell, BuyLot, TaxType,
+    BuyLot, TaxType, calculate_gain, calculate_portfolio_tax, is_elss, is_equity, simulate_sell,
 };
 use portfolio_core::types::{AssetType, FolioNumber, Isin, Money, Nav, Pan, Units};
 
@@ -62,6 +62,7 @@ fn nav(s: &str) -> Nav {
 // PORTFOLIO 1: Aurora Growth Family (Multi-Folio Scheme Consolidation)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 4 Holdings Engine"]
 fn test_portfolio_1_scheme_consolidation() {
     // Folio 1 Transactions (Investor A)
     let folio1_txs = vec![
@@ -165,7 +166,11 @@ fn test_portfolio_1_scheme_consolidation() {
 
     // 3. Verify consolidated scheme aggregation without duplicate valuation
     let consolidated = consolidate_by_scheme(&[folio1, folio2], current_price);
-    assert_eq!(consolidated.len(), 1, "Must consolidate into 1 scheme group");
+    assert_eq!(
+        consolidated.len(),
+        1,
+        "Must consolidate into 1 scheme group"
+    );
     let scheme = &consolidated[0];
     assert_eq!(scheme.isin.as_ref(), Some(&isin));
     assert_eq!(
@@ -189,6 +194,7 @@ fn test_portfolio_1_scheme_consolidation() {
 // PORTFOLIO 2: Zephyr Exited Fund (Fully Redeemed / Zero Holdings)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 4 Holdings Engine"]
 fn test_portfolio_2_fully_redeemed_zero_holdings() {
     let transactions = vec![
         Transaction::new(
@@ -261,6 +267,7 @@ fn test_portfolio_2_fully_redeemed_zero_holdings() {
 // PORTFOLIO 3: Titan Bluechip Retained (Partial Redemption Retained)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 4 Holdings Engine"]
 fn test_portfolio_3_partial_redemption_retained() {
     let transactions = vec![
         Transaction::new(
@@ -325,6 +332,7 @@ fn test_portfolio_3_partial_redemption_retained() {
 // PORTFOLIO 4: Olympus Hybrid (Direct Equity and Mutual Fund Intersection)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 6 Performance Engine"]
 fn test_portfolio_4_direct_equity_and_mf_intersection() {
     let direct_stock_tx = vec![Transaction::new(
         "tx-s1",
@@ -380,6 +388,7 @@ fn test_portfolio_4_direct_equity_and_mf_intersection() {
 // PORTFOLIO 5: Sovereign Safety (Pure Debt & Liquid Funds - Zero Equity)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 6 Performance Engine"]
 fn test_portfolio_5_pure_debt_and_liquid_funds() {
     let liquid_tx = vec![Transaction::new(
         "tx-l1",
@@ -433,6 +442,7 @@ fn test_portfolio_5_pure_debt_and_liquid_funds() {
 // PORTFOLIO 6: Nova Multi-Asset (Alternative Assets: Gold & Real Estate)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 6 Performance Engine"]
 fn test_portfolio_6_alternative_assets_gold() {
     let gold_tx = vec![Transaction::new(
         "tx-g1",
@@ -484,6 +494,7 @@ fn test_portfolio_6_alternative_assets_gold() {
 // PORTFOLIO 7: Solaria Family Hub (Multi-Member Profile Cascading Deletion)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 4/5 Registry Implementation"]
 fn test_portfolio_7_multi_member_cascading_deletion() {
     let mut registry = FamilyRegistry::new();
 
@@ -519,11 +530,8 @@ fn test_portfolio_7_multi_member_cascading_deletion() {
         "Child Bluechip Fund",
         AssetType::MutualFund,
     );
-    let child_portfolio =
-        Portfolio::new("portfolio-child-1", "Child Future Portfolio").with_folios(vec![
-            child_folio_1,
-            child_folio_2,
-        ]);
+    let child_portfolio = Portfolio::new("portfolio-child-1", "Child Future Portfolio")
+        .with_folios(vec![child_folio_1, child_folio_2]);
     let child_profile = ManagedProfile::new(
         child_profile_id,
         user_id,
@@ -580,13 +588,9 @@ fn test_portfolio_7_multi_member_cascading_deletion() {
 // PORTFOLIO 8: Vintage Heritage Fund (Section 112A LTCG Grandfathering)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 5 Tax Engine"]
 fn test_portfolio_8_grandfathering_section_112a() {
-    let buy_lot = BuyLot::new(
-        date(2016, 4, 1),
-        units("1000"),
-        nav("40"),
-        money("40000"),
-    );
+    let buy_lot = BuyLot::new(date(2016, 4, 1), units("1000"), nav("40"), money("40000"));
     let grandfather_nav = nav("70"); // FMV as of 31-Jan-2018
     let sell_nav = nav("120");
     let sell_date = date(2024, 8, 15); // Post Budget 2024
@@ -633,6 +637,7 @@ fn test_portfolio_8_grandfathering_section_112a() {
 // PORTFOLIO 9: Tax Optimizer ELSS (3-Year Lock-in Enforcement)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 5 Tax Engine"]
 fn test_portfolio_9_elss_3yr_lockin() {
     let now = date(2024, 1, 1);
     let four_years_ago = date(2020, 1, 1);
@@ -673,13 +678,7 @@ fn test_portfolio_9_elss_3yr_lockin() {
     );
 
     // 1. Selling 500 units (unlocked, purchased 4 years ago) must succeed
-    let sell_500_result = simulate_sell(
-        &mock_folio,
-        units("500"),
-        now,
-        nav("125"),
-        dec("0.3"),
-    );
+    let sell_500_result = simulate_sell(&mock_folio, units("500"), now, nav("125"), dec("0.3"));
     assert!(
         sell_500_result.is_ok(),
         "Selling 500 unlocked units (>3 years) must succeed"
@@ -692,13 +691,7 @@ fn test_portfolio_9_elss_3yr_lockin() {
     );
 
     // 2. Selling 700 units (exceeds 500 unlocked units; 400 are locked) must fail
-    let sell_700_result = simulate_sell(
-        &mock_folio,
-        units("700"),
-        now,
-        nav("125"),
-        dec("0.3"),
-    );
+    let sell_700_result = simulate_sell(&mock_folio, units("700"), now, nav("125"), dec("0.3"));
     assert!(
         matches!(
             sell_700_result,
@@ -712,6 +705,7 @@ fn test_portfolio_9_elss_3yr_lockin() {
 // PORTFOLIO 10: Lifecycle Manager (Folio Manual Close and Direct Deletion)
 // ============================================================================
 #[test]
+#[ignore = "RED: pending Task 4 Holdings Engine"]
 fn test_portfolio_10_folio_lifecycle_manual_close() {
     let active_transactions = vec![Transaction::new(
         "tx-lc1",

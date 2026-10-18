@@ -246,7 +246,7 @@ impl FamilyRegistry {
         _profile_id: &str,
     ) -> Result<ManagedProfile, PortfolioError> {
         // RED phase stub: fails to satisfy test assertion until GREEN phase is implemented
-        Err(PortfolioError::EmptyPortfolio)
+        Err(PortfolioError::ProfileNotFound(_profile_id.to_string()))
     }
 }
 
