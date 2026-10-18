@@ -5,3 +5,8 @@ edition.workspace = true
 
 [dependencies]
 portfolio-core = { path = "../portfolio-core" }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }

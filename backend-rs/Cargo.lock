@@ -377,7 +377,12 @@ dependencies = [
 name = "portfolio-parity"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "portfolio-core",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -750,6 +755,18 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "uuid"
+version = "1.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cc1186384beb7dd8eedea376413fd654937285ea6c9cfbb928dc3043ea4b606"
+dependencies = [
+ "getrandom 0.4.3",
+ "js-sys",
+ "serde_core",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "wait-timeout"
