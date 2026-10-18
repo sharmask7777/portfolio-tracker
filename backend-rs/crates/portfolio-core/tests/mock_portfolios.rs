@@ -329,7 +329,6 @@ fn test_portfolio_3_partial_redemption_retained() {
 // PORTFOLIO 4: Olympus Hybrid (Direct Equity and Mutual Fund Intersection)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 6 Performance Engine"]
 fn test_portfolio_4_direct_equity_and_mf_intersection() {
     let direct_stock_tx = vec![Transaction::new(
         "tx-s1",
@@ -385,7 +384,6 @@ fn test_portfolio_4_direct_equity_and_mf_intersection() {
 // PORTFOLIO 5: Sovereign Safety (Pure Debt & Liquid Funds - Zero Equity)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 6 Performance Engine"]
 fn test_portfolio_5_pure_debt_and_liquid_funds() {
     let liquid_tx = vec![Transaction::new(
         "tx-l1",
@@ -439,7 +437,6 @@ fn test_portfolio_5_pure_debt_and_liquid_funds() {
 // PORTFOLIO 6: Nova Multi-Asset (Alternative Assets: Gold & Real Estate)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 6 Performance Engine"]
 fn test_portfolio_6_alternative_assets_gold() {
     let gold_tx = vec![Transaction::new(
         "tx-g1",
