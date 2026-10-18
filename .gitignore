@@ -23,3 +23,5 @@ venv/
 appdata/
 frontend/playwright-report/
 frontend/test-results/
+parsed_cas.json
+*.cas.json

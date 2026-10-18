@@ -12,6 +12,7 @@ describe('consolidateFoliosIntoSchemes', () => {
       {
         id: 'folio-1',
         number: '12345678',
+        pan: 'ABCDE1234F',
         asset: {
           id: 'asset-1',
           name: 'HDFC Top 100 Fund - Direct Growth',
@@ -37,17 +38,19 @@ describe('consolidateFoliosIntoSchemes', () => {
     expect(result).toHaveLength(1);
     expect(result[0].schemeName).toBe('HDFC Top 100 Fund - Direct Growth');
     expect(result[0].folioCount).toBe(1);
+    expect(result[0].pans).toEqual(['ABCDE1234F']);
     expect(result[0].metrics.investedAmount).toBe(100000);
     expect(result[0].metrics.currentValue).toBe(150000);
     expect(result[0].metrics.dayChange).toBe(500);
     expect(result[0].metrics.xirr).toBe(0.15);
   });
 
-  it('consolidates multiple folios of Parag Parikh Flexi Cap Fund into a single master scheme group', () => {
+  it('consolidates multiple folios of Parag Parikh Flexi Cap Fund into a single master scheme group with unique PANs', () => {
     const folios = [
       {
         id: 'folio-pp-1',
         number: '10396016',
+        pan: 'ABCDE1234F',
         asset: {
           id: 'asset-ppfc',
           name: 'Parag Parikh Flexi Cap Fund - Direct Plan Growth',
@@ -71,6 +74,7 @@ describe('consolidateFoliosIntoSchemes', () => {
       {
         id: 'folio-pp-2',
         number: '18377890',
+        pan: 'WXYZP9876Q',
         asset: {
           id: 'asset-ppfc',
           name: 'Parag Parikh Flexi Cap Fund - Direct Plan Growth',
@@ -99,6 +103,7 @@ describe('consolidateFoliosIntoSchemes', () => {
     expect(ppfc.schemeName).toBe('Parag Parikh Flexi Cap Fund - Direct Plan Growth');
     expect(ppfc.folioCount).toBe(2);
     expect(ppfc.folios).toHaveLength(2);
+    expect(ppfc.pans).toEqual(['ABCDE1234F', 'WXYZP9876Q']);
 
     // Sum of invested and value
     expect(ppfc.metrics.investedAmount).toBe(800000);

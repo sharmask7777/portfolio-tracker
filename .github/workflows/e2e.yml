@@ -22,6 +22,10 @@ jobs:
         cd frontend && npm ci --legacy-peer-deps
         cd ../backend && npm ci --legacy-peer-deps
 
+    - name: Run Hermetic Unit Tests (Frontend)
+      run: |
+        (cd frontend && npm run test:unit)
+
     - name: Install Playwright Browsers
       run: cd frontend && npx playwright install --with-deps chromium
 
@@ -43,6 +47,10 @@ jobs:
         npm run docker:up
         echo "Waiting for services to become ready..."
         sleep 10
+
+        echo "Running backend test suite (unit + integration)..."
+        (cd backend && npm test)
+
         if [ "${{ github.event_name }}" == "pull_request" ]; then
           echo "Running smoke and responsiveness tests..."
           (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts)

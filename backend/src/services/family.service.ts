@@ -176,4 +176,54 @@ export class FamilyService {
       },
     });
   }
+
+  /**
+   * Deletes a managed profile and all associated portfolios, folios, and transactions.
+   */
+  public static async deleteManagedProfile(userId: string, profileId: string) {
+    const profile = await prisma.managedProfile.findFirst({
+      where: { id: profileId, userId },
+      include: {
+        portfolios: {
+          include: {
+            folios: true,
+          },
+        },
+      },
+    });
+
+    if (!profile) {
+      throw new Error('Profile not found or unauthorized');
+    }
+
+    const portfolioIds = profile.portfolios.map(p => p.id);
+    const folioIds = profile.portfolios.flatMap(p => p.folios.map(f => f.id));
+
+    return prisma.$transaction(async (tx) => {
+      if (folioIds.length > 0) {
+        await tx.transaction.deleteMany({
+          where: { folioId: { in: folioIds } },
+        });
+        await tx.folio.deleteMany({
+          where: { id: { in: folioIds } },
+        });
+      }
+
+      if (portfolioIds.length > 0) {
+        await tx.portfolioHistory.deleteMany({
+          where: { portfolioId: { in: portfolioIds } },
+        });
+        await tx.goal.deleteMany({
+          where: { portfolioId: { in: portfolioIds } },
+        });
+        await tx.portfolio.deleteMany({
+          where: { id: { in: portfolioIds } },
+        });
+      }
+
+      return tx.managedProfile.delete({
+        where: { id: profileId },
+      });
+    });
+  }
 }

@@ -25,7 +25,8 @@ import {
   ArrowDown,
   ArrowUpDown,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from 'lucide-react';
 import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
@@ -54,7 +55,19 @@ export function Dashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(() => {
+    return localStorage.getItem('portfolio_selected_profile_id') || null;
+  });
+
+  const handleProfileSelect = (id: string | null) => {
+    setSelectedProfileId(id);
+    setSelectedFamilyId(null);
+    if (id) {
+      localStorage.setItem('portfolio_selected_profile_id', id);
+    } else {
+      localStorage.removeItem('portfolio_selected_profile_id');
+    }
+  };
   const [portfolio, setPortfolio] = useState<any>(null);
   const [xrayData, setXRayData] = useState<any>(null);
   const [exposures, setExposures] = useState<any[]>([]);
@@ -153,7 +166,11 @@ export function Dashboard() {
       
       setPortfolio(summaryRes.data);
       setProfiles(profilesRes.data);
-      
+
+      if (selectedProfileId && Array.isArray(profilesRes.data) && profilesRes.data.length > 0 && !profilesRes.data.some((p: any) => p.id === selectedProfileId)) {
+        setSelectedProfileId(null);
+        localStorage.removeItem('portfolio_selected_profile_id');
+      }
       if (summaryRes?.data?.id) {
         const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.allSettled([
           api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/xray`),
@@ -230,6 +247,60 @@ export function Dashboard() {
     }
   };
 
+  const handleDeleteProfile = async (profile: any) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete member "${profile.name}" (${profile.pan})? This will permanently delete all associated folios, transactions, and performance history.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      await api.delete(`${API_ENDPOINTS.FAMILY}/profile/${profile.id}`);
+      if (selectedProfileId === profile.id) {
+        setSelectedProfileId(null);
+        localStorage.removeItem('portfolio_selected_profile_id');
+      }
+      await fetchSummary();
+    } catch (error: any) {
+      console.error('Failed to delete member profile:', error);
+      alert(error.response?.data?.error || 'Failed to delete member profile.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCloseFolio = async (folio: any) => {
+    const confirmed = window.confirm(
+      `Mark folio "${folio.number || 'N/A'}" as closed? Current units will be set to zero and moved to closed positions.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.post(`${API_ENDPOINTS.PORTFOLIO}/folio/${folio.id}/close`);
+      setSelectedFolioForTransactions(null);
+      await fetchSummary();
+    } catch (error: any) {
+      console.error('Failed to mark folio as closed:', error);
+      alert(error.response?.data?.error || 'Failed to mark folio as closed.');
+    }
+  };
+
+  const handleDeleteFolio = async (folio: any) => {
+    const confirmed = window.confirm(
+      `Permanently delete folio "${folio.number || 'N/A'}" and all its historical transactions?`
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`${API_ENDPOINTS.PORTFOLIO}/folio/${folio.id}`);
+      setSelectedFolioForTransactions(null);
+      await fetchSummary();
+    } catch (error: any) {
+      console.error('Failed to delete folio:', error);
+      alert(error.response?.data?.error || 'Failed to delete folio.');
+    }
+  };
+
   const handlePurge = async () => {
     if (!window.confirm('⚠️ CRITICAL ACTION: This will permanently delete ALL portfolios, transactions, goals, and family members. This cannot be undone. Proceed?')) {
       return;
@@ -247,6 +318,7 @@ export function Dashboard() {
       setHarvesting(null);
       setSelectedProfileId(null);
       setSelectedFamilyId(null);
+      localStorage.removeItem('portfolio_selected_profile_id');
       alert('Environment has been reset successfully.');
     } catch (error) {
       console.error('Failed to purge data:', error);
@@ -366,15 +438,13 @@ export function Dashboard() {
           <FamilySelector 
             profiles={profiles}
             selectedProfileId={selectedProfileId}
-            onSelect={(id) => {
-              setSelectedProfileId(id);
-              setSelectedFamilyId(null);
-            }}
+            onSelect={handleProfileSelect}
             onRename={(p) => {
               setProfileToEdit(p);
               setEditName(p.name);
               setEditTaxSlab(p.taxSlab || 0.3);
             }}
+            onDelete={handleDeleteProfile}
           />
 
           <div className="action-bar">
@@ -542,7 +612,7 @@ export function Dashboard() {
                               style={{ cursor: 'pointer' }}
                             >
                               <td style={{ fontWeight: 600 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                                   {isMultiFolio && (
                                     <button 
                                       className="theme-toggle" 
@@ -554,6 +624,15 @@ export function Dashboard() {
                                     </button>
                                   )}
                                   <span>{group.schemeName}</span>
+                                  {selectedProfileId === null && group.pans && group.pans.length > 0 && (
+                                    <span 
+                                      className="badge badge-slab" 
+                                      style={{ fontSize: '0.7rem', padding: '2px 6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}
+                                      title={`Member PAN: ${group.pans.join(', ')}`}
+                                    >
+                                      {group.pans.join(', ')}
+                                    </span>
+                                  )}
                                   {isMultiFolio && (
                                     <span className="badge badge-slab" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
                                       {group.folioCount} Folios
@@ -587,7 +666,7 @@ export function Dashboard() {
                               </td>
                               <td>
                                 {!isMultiFolio ? (
-                                  <>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                     <button 
                                       className="theme-toggle" 
                                       title="Simulate Sell Tax" 
@@ -599,7 +678,7 @@ export function Dashboard() {
                                     >
                                       <Calculator size={16} />
                                     </button>
-                                    {group.folios[0]?.number && group.folios[0].number.startsWith('MANUAL_') && (
+                                    {group.folios[0]?.number && group.folios[0].number.startsWith('MANUAL_') ? (
                                       <button 
                                         className="theme-toggle" 
                                         title="Delete Asset" 
@@ -614,12 +693,24 @@ export function Dashboard() {
                                             }
                                           }
                                         }}
-                                        style={{ marginLeft: '0.5rem', color: 'var(--danger-color)' }}
+                                        style={{ marginLeft: '0.25rem', color: 'var(--danger-color)' }}
                                       >
                                         <X size={16} />
                                       </button>
+                                    ) : (
+                                      <button
+                                        className="theme-toggle"
+                                        title="Mark Closed"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleCloseFolio(group.folios[0]);
+                                        }}
+                                        style={{ fontSize: '0.75rem', padding: '2px 6px', marginLeft: '0.25rem' }}
+                                      >
+                                        Close
+                                      </button>
                                     )}
-                                  </>
+                                  </div>
                                 ) : (
                                   <button 
                                     className="theme-toggle" 
@@ -671,37 +762,51 @@ export function Dashboard() {
                                   {formatPercent(performanceMode === 'XIRR' ? folio.metrics?.postTaxXirr : folio.metrics?.postTaxAbsoluteReturn)}
                                 </td>
                                 <td>
-                                  <button 
-                                    className="theme-toggle" 
-                                    title="Simulate Sell Tax" 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSimFolio(folio);
-                                      setSimUnits(null);
-                                    }}
-                                  >
-                                    <Calculator size={16} />
-                                  </button>
-                                  {folio.number && folio.number.startsWith('MANUAL_') && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                     <button 
                                       className="theme-toggle" 
-                                      title="Delete Asset" 
-                                      onClick={async (e) => {
+                                      title="Simulate Sell Tax" 
+                                      onClick={(e) => {
                                         e.stopPropagation();
-                                        if (window.confirm('Are you sure you want to delete this asset?')) {
-                                          try {
-                                            await api.delete(`${API_ENDPOINTS.PORTFOLIO}/manual-asset/${folio.id}`);
-                                            fetchSummary();
-                                          } catch (e) {
-                                            alert('Failed to delete asset');
-                                          }
-                                        }
+                                        setSimFolio(folio);
+                                        setSimUnits(null);
                                       }}
-                                      style={{ marginLeft: '0.5rem', color: 'var(--danger-color)' }}
                                     >
-                                      <X size={16} />
+                                      <Calculator size={16} />
                                     </button>
-                                  )}
+                                    {folio.number && folio.number.startsWith('MANUAL_') ? (
+                                      <button 
+                                        className="theme-toggle" 
+                                        title="Delete Asset" 
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          if (window.confirm('Are you sure you want to delete this asset?')) {
+                                            try {
+                                              await api.delete(`${API_ENDPOINTS.PORTFOLIO}/manual-asset/${folio.id}`);
+                                              fetchSummary();
+                                            } catch (e) {
+                                              alert('Failed to delete asset');
+                                            }
+                                          }
+                                        }}
+                                        style={{ marginLeft: '0.25rem', color: 'var(--danger-color)' }}
+                                      >
+                                        <X size={16} />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        className="theme-toggle"
+                                        title="Mark Closed"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleCloseFolio(folio);
+                                        }}
+                                        style={{ fontSize: '0.75rem', padding: '2px 6px', marginLeft: '0.25rem' }}
+                                      >
+                                        Close
+                                      </button>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -739,6 +844,7 @@ export function Dashboard() {
                               <th>Status</th>
                               <th>Type</th>
                               <th>Historical XIRR / Return</th>
+                              <th>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -753,6 +859,19 @@ export function Dashboard() {
                                 <td><span className="badge badge-slab" style={{ backgroundColor: 'rgba(100, 116, 139, 0.2)', color: 'var(--text-secondary)' }}>Fully Redeemed</span></td>
                                 <td><span className="badge badge-slab">{cf.asset?.type}</span></td>
                                 <td>{formatPercent(cf.metrics?.xirr || cf.metrics?.absoluteReturn || 0)}</td>
+                                <td>
+                                  <button
+                                    className="theme-toggle"
+                                    title="Delete Folio"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteFolio(cf);
+                                    }}
+                                    style={{ color: 'var(--danger-color)', padding: '2px 6px' }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -919,6 +1038,8 @@ export function Dashboard() {
         <TransactionSidePanel 
           folio={selectedFolioForTransactions} 
           onClose={() => setSelectedFolioForTransactions(null)} 
+          onCloseFolio={handleCloseFolio}
+          onDeleteFolio={handleDeleteFolio}
         />
       )}
     </div>

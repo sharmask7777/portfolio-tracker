@@ -5,6 +5,17 @@ test.describe('Scheme Consolidation and Zero-Holdings Isolation', () => {
   test.beforeEach(async ({ page }) => {
     await setupAuth(page);
 
+    await page.route('**/api/family/profiles*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: 'prof-1', name: 'Primary Member (ABCDE1234F)', pan: 'ABCDE1234F', taxSlab: 0.3 },
+          { id: 'prof-2', name: 'Secondary Member (WXYZP9876Q)', pan: 'WXYZP9876Q', taxSlab: 0.3 }
+        ])
+      });
+    });
+
     await page.route('**/api/portfolio/summary*', async (route) => {
       await route.fulfill({
         status: 200,
@@ -16,6 +27,7 @@ test.describe('Scheme Consolidation and Zero-Holdings Isolation', () => {
             {
               id: 'folio-ppfc-1',
               number: '10396016',
+              pan: 'ABCDE1234F',
               asset: {
                 id: 'asset-1',
                 name: 'Parag Parikh Flexi Cap Fund',
@@ -42,6 +54,7 @@ test.describe('Scheme Consolidation and Zero-Holdings Isolation', () => {
             {
               id: 'folio-ppfc-2',
               number: '18377890',
+              pan: 'WXYZP9876Q',
               asset: {
                 id: 'asset-1',
                 name: 'Parag Parikh Flexi Cap Fund',
@@ -68,6 +81,7 @@ test.describe('Scheme Consolidation and Zero-Holdings Isolation', () => {
             {
               id: 'folio-hdfc',
               number: '98765432',
+              pan: 'ABCDE1234F',
               asset: {
                 id: 'asset-2',
                 name: 'HDFC Mid-Cap Opportunities Fund',
@@ -160,10 +174,14 @@ test.describe('Scheme Consolidation and Zero-Holdings Isolation', () => {
     await expect(page.locator('tr', { hasText: '10396016' })).toBeVisible();
     await expect(page.locator('tr', { hasText: '18377890' })).toBeVisible();
 
-    // Single folio scheme (HDFC) should NOT show multiple folios badge
+    // Verify member PAN badges in Consolidated view
+    await expect(ppfcRows.locator('text=ABCDE1234F, WXYZP9876Q')).toBeVisible();
+
+    // Single folio scheme (HDFC) should NOT show multiple folios badge, but should show single PAN
     const hdfcRow = page.locator('tr', { hasText: 'HDFC Mid-Cap Opportunities Fund' });
     await expect(hdfcRow).toHaveCount(1);
     await expect(hdfcRow.locator('text=Folios')).not.toBeVisible();
+    await expect(hdfcRow.locator('text=ABCDE1234F')).toBeVisible();
   });
 
   test('Excludes fully sold / zero-holding funds (Nippon ELSS) from active table and places them in Closed Positions drawer', async ({ page }) => {
@@ -184,5 +202,74 @@ test.describe('Scheme Consolidation and Zero-Holdings Isolation', () => {
     await expect(page.locator('text=NIPPON INDIA ELSS TAX SAVER FUND')).toBeVisible();
     await expect(page.getByText('Fully Redeemed', { exact: true })).toBeVisible();
     await expect(page.locator('text=457159707423 / 0')).toBeVisible();
+  });
+
+  test('Allows closing an active folio via Close button, triggering the backend close endpoint', async ({ page }) => {
+    let closeEndpointCalled = false;
+    await page.route('**/api/portfolio/folio/folio-hdfc/close', async (route) => {
+      closeEndpointCalled = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'success' })
+      });
+    });
+
+    page.on('dialog', dialog => dialog.accept());
+    await page.goto('/');
+
+    const hdfcRow = page.locator('tr', { hasText: 'HDFC Mid-Cap Opportunities Fund' });
+    await expect(hdfcRow).toBeVisible();
+
+    const closeBtn = hdfcRow.locator('button[title="Mark Closed"]');
+    await expect(closeBtn).toBeVisible();
+    await closeBtn.click();
+
+    await expect.poll(() => closeEndpointCalled).toBe(true);
+  });
+
+  test('Allows deleting a closed folio from Closed Positions drawer, triggering the delete endpoint', async ({ page }) => {
+    let deleteFolioCalled = false;
+    await page.route('**/api/portfolio/folio/folio-nippon-sold', async (route) => {
+      deleteFolioCalled = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'success' })
+      });
+    });
+
+    page.on('dialog', dialog => dialog.accept());
+    await page.goto('/');
+
+    const closedDrawer = page.locator('text=Closed / Fully Redeemed Positions (1)');
+    await closedDrawer.click();
+
+    const deleteBtn = page.locator('button[title="Delete Folio"]');
+    await expect(deleteBtn).toBeVisible();
+    await deleteBtn.click();
+
+    await expect.poll(() => deleteFolioCalled).toBe(true);
+  });
+
+  test('Allows deleting a managed profile from FamilySelector, triggering profile delete endpoint', async ({ page }) => {
+    let deleteProfileCalled = false;
+    await page.route('**/api/family/profile/prof-2', async (route) => {
+      deleteProfileCalled = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'success' })
+      });
+    });
+
+    page.on('dialog', dialog => dialog.accept());
+    await page.goto('/');
+
+    const deleteProfileBtn = page.locator('button[title="Delete Profile"]').last();
+    await expect(deleteProfileBtn).toBeVisible();
+    await deleteProfileBtn.click();
+
+    await expect.poll(() => deleteProfileCalled).toBe(true);
   });
 });

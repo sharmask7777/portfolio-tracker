@@ -33,4 +33,13 @@ describe('FamilySelector', () => {
     fireEvent.click(editButtons[0]);
     expect(onRename).toHaveBeenCalledWith(profiles[0]);
   });
+
+  it('calls onDelete when delete icon is clicked', () => {
+    const onDelete = vi.fn();
+    render(<FamilySelector profiles={profiles} selectedProfileId={null} onSelect={() => {}} onRename={() => {}} onDelete={onDelete} />);
+    
+    const deleteButtons = screen.getAllByTitle('Delete Profile');
+    fireEvent.click(deleteButtons[1]);
+    expect(onDelete).toHaveBeenCalledWith(profiles[1]);
+  });
 });

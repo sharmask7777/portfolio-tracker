@@ -57,4 +57,22 @@ router.patch('/profile/:id', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Deletes a managed profile and all its portfolios and folios.
+ */
+router.delete('/profile/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+
+    await FamilyService.deleteManagedProfile(userId, id as string);
+    res.status(200).json({ status: 'success' });
+  } catch (error: any) {
+    if (error.message?.includes('not found') || error.message?.includes('unauthorized')) {
+      return res.status(404).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

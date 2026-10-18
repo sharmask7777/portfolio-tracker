@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
 vi.mock('lucide-react', () => ({
-  X: () => <div data-testid="x-icon" />
+  X: () => <div data-testid="x-icon" />,
+  CheckCircle2: () => <div data-testid="check-icon" />,
+  Trash2: () => <div data-testid="trash-icon" />,
 }));
 import { TransactionSidePanel } from './TransactionSidePanel';
 
@@ -10,6 +12,7 @@ describe('TransactionSidePanel', () => {
   const mockFolio = {
     id: '1',
     asset: { name: 'Test Fund' },
+    metrics: { currentValue: 1000 },
     transactions: [
       { id: 't1', date: '2023-01-01', type: 'Buy', amount: 1000, units: 100, nav: 10 },
       { id: 't2', date: '2023-02-01', type: 'Sell', amount: -500, units: -40, nav: 12.5 },
@@ -33,5 +36,21 @@ describe('TransactionSidePanel', () => {
     render(<TransactionSidePanel folio={mockFolio} onClose={onClose} />);
     fireEvent.click(screen.getByLabelText('Close panel'));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('calls onCloseFolio when Mark Closed button is clicked', async () => {
+    const onCloseFolio = vi.fn();
+    render(<TransactionSidePanel folio={mockFolio} onClose={vi.fn()} onCloseFolio={onCloseFolio} />);
+    const closeBtn = screen.getByText('Mark Closed');
+    fireEvent.click(closeBtn);
+    expect(onCloseFolio).toHaveBeenCalledWith(mockFolio);
+  });
+
+  it('calls onDeleteFolio when Delete Folio button is clicked', async () => {
+    const onDeleteFolio = vi.fn();
+    render(<TransactionSidePanel folio={mockFolio} onClose={vi.fn()} onDeleteFolio={onDeleteFolio} />);
+    const delBtn = screen.getByText('Delete Folio');
+    fireEvent.click(delBtn);
+    expect(onDeleteFolio).toHaveBeenCalledWith(mockFolio);
   });
 });

@@ -1,23 +1,64 @@
-import { X } from 'lucide-react';
+import { X, CheckCircle2, Trash2 } from 'lucide-react';
 
-export function TransactionSidePanel({ folio, onClose }: { folio: any, onClose: () => void }) {
+interface TransactionSidePanelProps {
+  folio: any;
+  onClose: () => void;
+  onCloseFolio?: (folio: any) => Promise<void>;
+  onDeleteFolio?: (folio: any) => Promise<void>;
+}
+
+export function TransactionSidePanel({ folio, onClose, onCloseFolio, onDeleteFolio }: TransactionSidePanelProps) {
   if (!folio) return null;
 
   const sortedTransactions = folio.transactions
     ? [...folio.transactions].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
     : [];
 
+  const isClosed = folio.metrics?.currentValue === 0 && (!folio.units || folio.units < 0.001);
+
   return (
     <>
       <div className="side-panel-overlay" onClick={onClose}></div>
       <div className="side-panel" onClick={(e) => e.stopPropagation()}>
         <div className="side-panel-header">
-          <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{folio.asset.name}</h2>
-          <button aria-label="Close panel" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{folio.asset?.name || 'Asset Transactions'}</h2>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+              Folio: {folio.number || 'N/A'} {folio.pan ? `• PAN: ${folio.pan}` : ''}
+            </div>
+          </div>
+          <button aria-label="Close panel" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-primary)' }}>
             <X />
           </button>
         </div>
         <div className="side-panel-content">
+          {(onCloseFolio || onDeleteFolio) && (
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
+              {onCloseFolio && !isClosed && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8125rem', padding: '0.4rem 0.75rem' }}
+                  onClick={() => onCloseFolio(folio)}
+                  title="Mark this folio as closed / fully redeemed"
+                >
+                  <CheckCircle2 size={14} />
+                  Mark Closed
+                </button>
+              )}
+              {onDeleteFolio && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8125rem', padding: '0.4rem 0.75rem', color: 'var(--danger-color, #ef4444)' }}
+                  onClick={() => onDeleteFolio(folio)}
+                  title="Delete this folio and all its transactions"
+                >
+                  <Trash2 size={14} />
+                  Delete Folio
+                </button>
+              )}
+            </div>
+          )}
+
           <h3>Transactions</h3>
           <div className="transaction-list">
             {sortedTransactions.map((tx: any, idx: number) => (

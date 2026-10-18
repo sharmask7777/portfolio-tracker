@@ -323,4 +323,64 @@ describe('Portfolio Routes - /upload endpoint', () => {
       expect(res.body.metrics.dayChangePercentage).toBe(0);
     });
   });
+
+  describe('Folio Management Routes', () => {
+    it('should close a folio with active units and create a redemption transaction', async () => {
+      prismaMock.folio.findUnique.mockResolvedValue({
+        id: 'f-active',
+        portfolio: { userId: 'testUserId' },
+        asset: { id: 'a-1', name: 'Fund A', type: 'MUTUAL_FUND' },
+        transactions: [
+          { id: 'tx-1', type: 'PURCHASE', date: new Date('2023-01-01'), amount: 1000, nav: 10, units: 100, balance: 100 },
+        ],
+      } as any);
+
+      (PortfolioUtils.getLatestUnits as jest.Mock).mockReturnValue(100);
+      (PortfolioUtils.getLatestNAV as jest.Mock).mockReturnValue(15);
+      prismaMock.transaction.create.mockResolvedValue({ id: 'tx-close' } as any);
+
+      const res = await request(app).post('/api/portfolio/folio/f-active/close');
+      expect(res.statusCode).toEqual(200);
+      expect(res.body).toEqual({ status: 'success' });
+      expect(prismaMock.transaction.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: 'REDEMPTION',
+          units: -100,
+          nav: 15,
+          balance: 0,
+          folioId: 'f-active',
+        }),
+      });
+    });
+
+    it('should return 404 when closing a folio that belongs to another user', async () => {
+      prismaMock.folio.findUnique.mockResolvedValue({
+        id: 'f-other',
+        portfolio: { userId: 'anotherUser' },
+      } as any);
+
+      const res = await request(app).post('/api/portfolio/folio/f-other/close');
+      expect(res.statusCode).toEqual(404);
+      expect(res.body).toEqual({ error: 'Folio not found' });
+    });
+
+    it('should delete a folio and its transactions when user owns it', async () => {
+      prismaMock.folio.findUnique.mockResolvedValue({
+        id: 'f-to-del',
+        assetId: 'a-del',
+        portfolio: { userId: 'testUserId' },
+      } as any);
+
+      prismaMock.$transaction.mockResolvedValue([{}, {}] as any);
+      prismaMock.folio.count.mockResolvedValue(0);
+      prismaMock.asset.delete.mockResolvedValue({} as any);
+
+      const res = await request(app).delete('/api/portfolio/folio/f-to-del');
+      expect(res.statusCode).toEqual(200);
+      expect(res.body).toEqual({ status: 'success' });
+      expect(prismaMock.$transaction).toHaveBeenCalled();
+      expect(prismaMock.transaction.deleteMany).toHaveBeenCalledWith({ where: { folioId: 'f-to-del' } });
+      expect(prismaMock.folio.delete).toHaveBeenCalledWith({ where: { id: 'f-to-del' } });
+    });
+  });
 });

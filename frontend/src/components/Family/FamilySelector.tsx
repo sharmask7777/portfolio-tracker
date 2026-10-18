@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Edit2, Users } from 'lucide-react';
+import { User, Edit2, Users, Trash2 } from 'lucide-react';
 
 interface ManagedProfile {
   id: string;
@@ -13,13 +13,15 @@ interface FamilySelectorProps {
   selectedProfileId: string | null;
   onSelect: (id: string | null) => void;
   onRename: (profile: ManagedProfile) => void;
+  onDelete?: (profile: ManagedProfile) => void;
 }
 
 export const FamilySelector: React.FC<FamilySelectorProps> = ({ 
   profiles, 
   selectedProfileId, 
   onSelect,
-  onRename 
+  onRename,
+  onDelete 
 }) => {
   return (
     <div className="family-selector-container">
@@ -54,7 +56,7 @@ export const FamilySelector: React.FC<FamilySelectorProps> = ({
               alignItems: 'center',
               gap: '0.5rem',
               padding: '0.5rem 1rem',
-              paddingRight: '2.5rem',
+              paddingRight: onDelete ? '3.75rem' : '2.5rem',
               borderRadius: '100px',
               border: '1px solid var(--border-color)',
               background: selectedProfileId === profile.id ? 'var(--accent-color)' : 'var(--bg-secondary)',
@@ -67,27 +69,48 @@ export const FamilySelector: React.FC<FamilySelectorProps> = ({
             <User size={16} />
             {profile.name}
           </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onRename(profile);
-            }}
-            style={{
-              position: 'absolute',
-              right: '0.75rem',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: selectedProfileId === profile.id ? 'var(--bg-primary)' : 'var(--text-secondary)',
-              padding: '0.25rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-            title="Rename Profile"
-          >
-            <Edit2 size={12} />
-          </button>
+          <div style={{ position: 'absolute', right: '0.5rem', display: 'flex', alignItems: 'center', gap: '2px' }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRename(profile);
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: selectedProfileId === profile.id ? 'var(--bg-primary)' : 'var(--text-secondary)',
+                padding: '0.2rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              title="Rename Profile"
+            >
+              <Edit2 size={12} />
+            </button>
+            {onDelete && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(profile);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: selectedProfileId === profile.id ? 'var(--bg-primary)' : 'var(--danger-color, #ef4444)',
+                  padding: '0.2rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title="Delete Profile"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
         </div>
       ))}
     </div>

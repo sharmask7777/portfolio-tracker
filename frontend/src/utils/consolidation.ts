@@ -4,6 +4,7 @@ export interface ConsolidatedSchemeGroup {
   isin?: string;
   amfiCode?: string;
   type: string;
+  pans: string[];
   metrics: {
     investedAmount: number;
     currentValue: number;
@@ -62,6 +63,7 @@ export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeG
         isin,
         amfiCode,
         type,
+        pans: f.pan ? [f.pan] : [],
         metrics: {
           investedAmount: f.metrics?.investedAmount ?? 0,
           currentValue: f.metrics?.currentValue ?? 0,
@@ -111,6 +113,9 @@ export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeG
     const postTaxCurrentValue = Math.max(0, currentValue - totalEstimatedTax);
     const postTaxAbsoluteReturn = investedAmount > 0 ? (postTaxCurrentValue - investedAmount) / investedAmount : 0;
 
+    // Unique PANs
+    const pans = Array.from(new Set(groupFolios.map(f => f.pan).filter(Boolean))) as string[];
+
     // Sort constituent folios descending by current value
     const sortedConstituents = [...groupFolios].sort((a, b) => (b.metrics?.currentValue ?? 0) - (a.metrics?.currentValue ?? 0));
 
@@ -120,6 +125,7 @@ export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeG
       isin,
       amfiCode,
       type,
+      pans,
       metrics: {
         investedAmount,
         currentValue,
