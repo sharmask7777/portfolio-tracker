@@ -26,6 +26,23 @@ jobs:
       run: |
         (cd frontend && npm run test:unit)
 
+    - name: Setup Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Run Rust Workspace Quality & Tests
+      run: |
+        cd backend-rs
+        cargo fmt --check
+        cargo clippy --workspace --all-targets -- -D warnings
+        cargo test --workspace
+
+    - name: Run Dual-Runner Parity Validation Harness
+      run: |
+        cd backend-rs
+        cargo run --package portfolio-parity
+
     - name: Install Playwright Browsers
       run: cd frontend && npx playwright install --with-deps chromium
 

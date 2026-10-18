@@ -205,23 +205,37 @@ docker-compose up -d db redis
    ```
 
 #### Backend (Rust - `backend-rs`)
-The high-performance Rust backend is organized as a Cargo workspace in `backend-rs/`:
-- `portfolio-core`: Zero-I/O deterministic financial calculations (holdings, FIFO, capital gains tax, performance metrics, X-Ray).
-- `portfolio-db`: Database persistence and SQLx query models.
-- `portfolio-api`: Axum HTTP REST server.
-- `portfolio-worker`: Asynchronous background task runner.
-- `portfolio-parity`: Cross-engine parity testing between Rust and TypeScript.
+The high-performance Rust backend is organized as a Cargo workspace in `backend-rs/` following hexagonal architecture:
+- **`portfolio-core`**: Pure domain financial calculation engine (Zero-I/O, synchronous, deterministic). Handles holdings aggregation, FIFO lot depletion, Section 112A grandfathering, LTCG/STCG capital gains, slab taxation, Brent's method XIRR, CAGR, absolute returns, and Jaccard portfolio overlap.
+- **`portfolio-db`**: PostgreSQL persistence layer using SQLx, with repository traits and an `InMemoryDatabase` for fast zero-Docker hermetic testing.
+- **`portfolio-api`**: High-throughput Axum REST API gateway with camelCase contract parity matching the Express API, JWT authentication middleware, and CORS.
+- **`portfolio-worker`**: Asynchronous background job worker supporting BullMQ-compatible Redis queueing (`bull:pdfUploadQueue:*`) and in-memory fallback, processing CAS statement parsing and NAV refreshes.
+- **`portfolio-parity`**: Differential parity validation harness certifying exact numerical equivalence between TypeScript and Rust calculation engines down to strict tolerances ($\Delta \le ₹0.01$, $\Delta \le 0.0001$ units, $\Delta \le 10^{-6}$ for XIRR).
 
-To compile and check all crates:
+**Rust Development & Verification Commands:**
 ```bash
 cd backend-rs
-cargo check
+
+# Type-check all workspace crates
+cargo check --workspace
+
+# Run all hermetic unit, mock portfolio, and property-based tests
+cargo test --workspace
+
+# Run differential parity harness against benchmark scenarios (100% parity certified)
+cargo run --package portfolio-parity
+
+# Run clippy linter with zero warnings
+cargo clippy --workspace --all-targets -- -D warnings
+
+# Verify code formatting
+cargo fmt --check
 ```
 
-To run workspace unit and property-based tests:
+**Running Rust Services with Docker Compose:**
 ```bash
-cd backend-rs
-cargo test --workspace
+# Launch Rust API server and background worker using the rust profile
+docker compose --profile rust up -d backend-rs worker-rs
 ```
 
 #### Frontend
@@ -271,6 +285,7 @@ Check your Docker Hub repository. It should show "OS/ARCH" as `linux/amd64` and 
 ## 🧪 Testing & Quality
 
 - **Rust Workspace Unit & PBT:** `cd backend-rs && cargo test --workspace`
+- **Rust Differential Parity Harness:** `cd backend-rs && cargo run --package portfolio-parity`
 - **TypeScript Backend Unit & PBT:** `npm test --prefix backend`
 - **E2E Testing (Local Server):** `npx playwright test --prefix frontend`
 - **E2E Testing (Docker Deployment):** You can verify a full Docker deployment (Frontend + Backend + Database) using Playwright. Make sure your docker containers are running, then execute:

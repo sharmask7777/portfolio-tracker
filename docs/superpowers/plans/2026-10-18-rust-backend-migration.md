@@ -610,14 +610,14 @@ Run: `git add backend-rs/crates/portfolio-api/ && git commit -m "feat(portfolio-
 - Create: `backend-rs/crates/portfolio-worker/src/jobs/nav_refresh.rs`
 - Create: `backend-rs/crates/portfolio-worker/tests/worker_tests.rs`
 
-- [ ] **Step 1: Write worker tests (RED)**
-- [ ] **Step 2: Implement Redis queue consumer matching BullMQ format (GREEN)**
-- [ ] **Step 3: Run worker tests**
+- [x] **Step 1: Write worker tests (RED)**
+- [x] **Step 2: Implement Redis queue consumer matching BullMQ format (GREEN)**
+- [x] **Step 3: Run worker tests**
 
 Run: `cargo test --package portfolio-worker`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Run: `git add backend-rs/crates/portfolio-worker/ && git commit -m "feat(portfolio-worker): implement redis background worker for cas parsing and nav refresh"`
 
@@ -632,11 +632,11 @@ Run: `git add backend-rs/crates/portfolio-worker/ && git commit -m "feat(portfol
 - Modify: `AGENTS.md`
 - Modify: `README.md`
 
-- [ ] **Step 1: Create multi-stage Rust Dockerfile**
-- [ ] **Step 2: Update GitHub Actions CI workflow to run Rust tests**
-- [ ] **Step 3: Verify full Playwright E2E and hermetic test suite against Rust backend**
-- [ ] **Step 4: Final update to `AGENTS.md` and `README.md`**
-- [ ] **Step 5: Commit and verify clean workspace**
+- [x] **Step 1: Create multi-stage Rust Dockerfile**
+- [x] **Step 2: Update GitHub Actions CI workflow to run Rust tests**
+- [x] **Step 3: Verify full Playwright E2E and hermetic test suite against Rust backend**
+- [x] **Step 4: Final update to `AGENTS.md` and `README.md`**
+- [x] **Step 5: Commit and verify clean workspace**
 
 Run: `cargo test --workspace` and `npm test`
 Expected: ALL GREEN
