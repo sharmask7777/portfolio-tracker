@@ -155,7 +155,8 @@ That's it! You can now access your application:
 ## 🛠️ Tech Stack
 
 - **Frontend:** React, TypeScript, Vite, Recharts, Lucide Icons, Nginx (Production).
-- **Backend:** Node.js, Express, TypeScript, Prisma 7 (PostgreSQL).
+- **Backend (Rust):** High-performance backend workspace (`backend-rs`) using Tokio, Axum, SQLx, Rust Decimal, and a zero-I/O deterministic engine (`portfolio-core`).
+- **Backend (Node.js):** Node.js, Express, TypeScript, Prisma 7 (PostgreSQL).
 - **Caching:** Redis.
 - **Infrastructure:** Docker, Multi-stage Builds, Persistent Volumes.
 - **Parsing:** Python 3 + `casparser` library.
@@ -168,6 +169,7 @@ That's it! You can now access your application:
 - Docker & Docker Compose
 - Node.js (v20+)
 - Python 3.10+
+- Rust (1.85+ / edition 2024) & Cargo
 
 ### 1. Local Build & Run
 The project includes a unified setup script to initialize everything locally.
@@ -185,7 +187,7 @@ If you prefer running services individually:
 docker-compose up -d db redis
 ```
 
-#### Backend
+#### Backend (Node.js)
 1. **Install System Dependencies (Linux only):**
    ```bash
    sudo apt-get install -y python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev
@@ -201,6 +203,26 @@ docker-compose up -d db redis
    npx prisma migrate dev
    npm run dev
    ```
+
+#### Backend (Rust - `backend-rs`)
+The high-performance Rust backend is organized as a Cargo workspace in `backend-rs/`:
+- `portfolio-core`: Zero-I/O deterministic financial calculations (holdings, FIFO, capital gains tax, performance metrics, X-Ray).
+- `portfolio-db`: Database persistence and SQLx query models.
+- `portfolio-api`: Axum HTTP REST server.
+- `portfolio-worker`: Asynchronous background task runner.
+- `portfolio-parity`: Cross-engine parity testing between Rust and TypeScript.
+
+To compile and check all crates:
+```bash
+cd backend-rs
+cargo check
+```
+
+To run workspace unit and property-based tests:
+```bash
+cd backend-rs
+cargo test --workspace
+```
 
 #### Frontend
 ```bash
@@ -248,7 +270,8 @@ Check your Docker Hub repository. It should show "OS/ARCH" as `linux/amd64` and 
 
 ## 🧪 Testing & Quality
 
-- **Unit & PBT:** `npm test --prefix backend`
+- **Rust Workspace Unit & PBT:** `cd backend-rs && cargo test --workspace`
+- **TypeScript Backend Unit & PBT:** `npm test --prefix backend`
 - **E2E Testing (Local Server):** `npx playwright test --prefix frontend`
 - **E2E Testing (Docker Deployment):** You can verify a full Docker deployment (Frontend + Backend + Database) using Playwright. Make sure your docker containers are running, then execute:
   ```bash

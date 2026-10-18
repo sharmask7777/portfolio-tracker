@@ -1,0 +1,7 @@
+[package]
+name = "portfolio-parity"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+portfolio-core = { path = "../portfolio-core" }

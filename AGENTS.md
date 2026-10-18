@@ -30,7 +30,14 @@ For any new functionalities or bug fixes, you MUST mandatorily update and run bo
 
 ## Backend Testing
 
-Whenever you write new unit tests in the backend, remember to manually import and use `jest.mock('@src/services/db.service', () => require('@src/test/db.mock'))` to avoid attempting real database connections. Run integration tests normally by spinning up the local test docker container!
+For any backend changes, both the TypeScript backend test suite (`npm test` in `backend`) and the Rust backend workspace test suite (`cargo test --workspace` in `backend-rs`) must be run and pass.
+
+### Rust Backend Guidelines
+- **Zero-I/O `portfolio-core` Invariant**: The `portfolio-core` crate (`crates/portfolio-core`) MUST remain strictly zero-I/O (no databases, no network, no async runtime, no filesystem). All calculations (holdings, FIFO, capital gains tax, performance/XIRR, and X-Ray) must be pure, deterministic functions operating solely in-memory.
+- **Fast Hermetic Tests**: Unit tests and property-based tests (`proptest`) in `portfolio-core` must be fast, self-contained, and run hermetically without external dependencies.
+- **Parity Verification**: Financial calculations in Rust must maintain numerical parity with the existing TypeScript calculations.
+
+Whenever you write new unit tests in the TypeScript backend, remember to manually import and use `jest.mock('@src/services/db.service', () => require('@src/test/db.mock'))` to avoid attempting real database connections. Run integration tests normally by spinning up the local test docker container!
 
 ## Git and Commits
 
