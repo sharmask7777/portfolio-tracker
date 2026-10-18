@@ -29,36 +29,80 @@ jobs:
     - name: Install Playwright Browsers
       run: cd frontend && npx playwright install --with-deps chromium
 
-    - name: Run Playwright tests
+    - name: Start Docker compose stack
       run: |
         cat <<EOF > .env
         DOCKER_REGISTRY_USER=shaleenks
         PORTFOLIO_DB_USER=postgres
         PORTFOLIO_DB_PASSWORD=password
         PORTFOLIO_DB_NAME=portfolio_tracker
-        IP_GLOBAL=localhost
+        IP_GLOBAL=127.0.0.1
         TZ_GLOBAL=UTC
         VOLUME_PREFIX_GLOBAL=.
         VITE_API_PORT=3001
-        VITE_API_URL=http://localhost:3001
+        VITE_API_URL=http://127.0.0.1:3001
         EOF
-        
+
+        cat <<EOF > backend/.env
+        DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/portfolio_tracker?schema=public
+        JWT_SECRET=your-super-secret-jwt-key-change-me
+        REDIS_HOST=127.0.0.1
+        REDIS_PORT=6379
+        NODE_ENV=test
+        EOF
+
         export NODE_ENV=development
         npm run docker:up
-        echo "Waiting for services to become ready..."
-        sleep 10
 
-        echo "Running backend test suite (unit + integration)..."
-        (cd backend && npm test)
+        echo "Waiting for postgres to become healthy..."
+        until docker exec portfolio_tracker_db pg_isready -U postgres -d portfolio_tracker; do
+          sleep 2
+        done
 
+        echo "Waiting for frontend to become ready..."
+        until curl -s http://127.0.0.1:8082 > /dev/null; do
+          sleep 2
+        done
+
+    - name: Apply Database Migrations
+      run: |
+        export DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/portfolio_tracker?schema=public"
+        cd backend
+        npx prisma migrate deploy
+        npx prisma generate
+
+    - name: Run Backend Integration & Unit Tests
+      run: |
+        export DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/portfolio_tracker?schema=public"
+        export JWT_SECRET="your-super-secret-jwt-key-change-me"
+        export REDIS_HOST="127.0.0.1"
+        export REDIS_PORT="6379"
+        export NODE_ENV=test
+        cd backend
+        npm test -- --colors --verbose 2>&1 | tee ../backend-test.log
+        TEST_EXIT_CODE=${PIPESTATUS[0]}
+        echo "Backend tests exited with code $TEST_EXIT_CODE"
+        if [ $TEST_EXIT_CODE -ne 0 ]; then
+          echo "### ❌ Backend Tests Failed" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          tail -n 250 ../backend-test.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          exit $TEST_EXIT_CODE
+        fi
+
+    - name: Run Playwright E2E tests
+      run: |
         if [ "${{ github.event_name }}" == "pull_request" ]; then
-          echo "Running smoke and responsiveness tests..."
-          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts)
+          echo "Running smoke, responsiveness, and mock portfolio tests..."
+          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts)
         else
           echo "Running full E2E suite..."
           (cd frontend && npm run test:e2e:docker)
         fi
-        npm run docker:down
+
+    - name: Tear down Docker stack
+      if: always()
+      run: npm run docker:down
 
     - uses: actions/upload-artifact@v4
       if: always()
@@ -66,3 +110,10 @@ jobs:
         name: playwright-report
         path: frontend/playwright-report/
         retention-days: 30
+
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: backend-test-log
+        path: backend-test.log
+        retention-days: 7

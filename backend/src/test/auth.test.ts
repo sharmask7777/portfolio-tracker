@@ -13,9 +13,7 @@ describe('Authentication API', () => {
   afterAll(async () => {
     await prisma.user.deleteMany({
       where: {
-        email: {
-          contains: 'test-',
-        },
+        email: testUser.email,
       },
     });
     await CacheService.disconnect();
