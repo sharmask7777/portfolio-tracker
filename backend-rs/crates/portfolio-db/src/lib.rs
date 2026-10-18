@@ -6,9 +6,11 @@
 pub mod entities;
 pub mod error;
 pub mod repositories;
+pub mod schema;
 pub mod test_mocks;
 
 pub use entities::*;
 pub use error::DbError;
 pub use repositories::*;
+pub use schema::{generate_ddl, init_schema};
 pub use test_mocks::InMemoryDatabase;

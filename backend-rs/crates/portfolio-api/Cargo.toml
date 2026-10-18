@@ -8,6 +8,7 @@ portfolio-core = { path = "../portfolio-core" }
 portfolio-db = { path = "../portfolio-db" }
 
 axum.workspace = true
+sqlx.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 serde.workspace = true

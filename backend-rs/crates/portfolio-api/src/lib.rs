@@ -10,4 +10,4 @@ pub mod state;
 
 pub use errors::{ApiError, AuthError, ErrorResponse};
 pub use middleware::{AuthUser, Claims, create_jwt, hash_password, verify_jwt, verify_password};
-pub use state::{AppState, create_app};
+pub use state::{AppState, DbBackend, create_app};

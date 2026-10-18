@@ -8,18 +8,59 @@ use tower_http::cors::CorsLayer;
 
 use crate::routes::{auth, family, health, portfolio, tax};
 
+/// Database backend variant powering the API service (in-memory or live PostgreSQL).
+#[derive(Clone, Debug)]
+pub enum DbBackend {
+    InMemory(Arc<InMemoryDatabase>),
+    Postgres(sqlx::PgPool),
+}
+
 /// Shared application state injected into Axum route handlers.
 #[derive(Clone)]
 pub struct AppState {
+    pub backend: DbBackend,
     pub db: Arc<InMemoryDatabase>,
     pub jwt_secret: String,
 }
 
 impl AppState {
+    /// Constructs state with an in-memory database mock (default for unit and contract testing).
     pub fn new(db: Arc<InMemoryDatabase>, jwt_secret: impl Into<String>) -> Self {
         Self {
+            backend: DbBackend::InMemory(Arc::clone(&db)),
             db,
             jwt_secret: jwt_secret.into(),
+        }
+    }
+
+    /// Constructs state with an explicit database backend (in-memory or live PostgreSQL).
+    pub fn with_backend(backend: DbBackend, jwt_secret: impl Into<String>) -> Self {
+        let db = match &backend {
+            DbBackend::InMemory(mem) => Arc::clone(mem),
+            DbBackend::Postgres(_) => Arc::new(InMemoryDatabase::new()),
+        };
+        Self {
+            backend,
+            db,
+            jwt_secret: jwt_secret.into(),
+        }
+    }
+
+    /// Constructs state backed by a live PostgreSQL connection pool.
+    pub fn with_postgres(pool: sqlx::PgPool, jwt_secret: impl Into<String>) -> Self {
+        Self::with_backend(DbBackend::Postgres(pool), jwt_secret)
+    }
+
+    /// Returns a reference to the in-memory database mock (or fallback instance).
+    pub fn db(&self) -> Arc<InMemoryDatabase> {
+        Arc::clone(&self.db)
+    }
+
+    /// Returns an optional reference to the live PostgreSQL connection pool if configured.
+    pub fn pool(&self) -> Option<&sqlx::PgPool> {
+        match &self.backend {
+            DbBackend::Postgres(pool) => Some(pool),
+            DbBackend::InMemory(_) => None,
         }
     }
 }
