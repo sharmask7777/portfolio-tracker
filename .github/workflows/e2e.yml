@@ -67,7 +67,9 @@ jobs:
     - name: Apply Database Migrations
       run: |
         export DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/portfolio_tracker?schema=public"
-        (cd backend && npx prisma migrate deploy)
+        cd backend
+        npx prisma migrate deploy
+        npx prisma generate
 
     - name: Run Backend Integration & Unit Tests
       run: |
@@ -76,7 +78,17 @@ jobs:
         export REDIS_HOST="127.0.0.1"
         export REDIS_PORT="6379"
         export NODE_ENV=test
-        (cd backend && npm test -- --colors --verbose)
+        cd backend
+        npm test -- --colors --verbose 2>&1 | tee ../backend-test.log
+        TEST_EXIT_CODE=${PIPESTATUS[0]}
+        echo "Backend tests exited with code $TEST_EXIT_CODE"
+        if [ $TEST_EXIT_CODE -ne 0 ]; then
+          echo "### ❌ Backend Tests Failed" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          tail -n 250 ../backend-test.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          exit $TEST_EXIT_CODE
+        fi
 
     - name: Run Playwright E2E tests
       run: |
@@ -98,3 +110,10 @@ jobs:
         name: playwright-report
         path: frontend/playwright-report/
         retention-days: 30
+
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: backend-test-log
+        path: backend-test.log
+        retention-days: 7
