@@ -20,6 +20,7 @@ pub struct AuthUser {
 /// JWT payload claims.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
+    #[serde(alias = "id")]
     pub sub: String,
     pub email: String,
     pub exp: usize,

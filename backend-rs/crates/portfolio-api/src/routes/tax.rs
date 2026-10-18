@@ -44,6 +44,7 @@ pub struct HarvestingQuery {
 }
 
 pub async fn simulate_sell(
+    auth_user: AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<SimulateSellRequest>,
 ) -> Result<Json<SellSimulation>, ApiError> {
@@ -63,6 +64,16 @@ pub async fn simulate_sell(
             .db
             .get_folio(folio_id)
             .ok_or(DbError::FolioNotFound(folio_id))?;
+        let portfolio = state
+            .db
+            .get_portfolio(folio.portfolio_id)
+            .await?
+            .ok_or(DbError::PortfolioNotFound(folio.portfolio_id))?;
+
+        if portfolio.user_id != auth_user.user_id {
+            return Err(ApiError::Forbidden);
+        }
+
         let asset = state
             .db
             .get_asset(folio.asset_id)
@@ -199,4 +210,5 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/simulate-sell", post(simulate_sell))
         .route("/harvesting", get(get_harvesting))
+        .route("/harvesting-opportunities", get(get_harvesting))
 }

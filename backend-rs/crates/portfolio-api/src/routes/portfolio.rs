@@ -97,6 +97,7 @@ pub async fn create_portfolio(
 }
 
 pub async fn get_summary(
+    auth_user: AuthUser,
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<PortfolioSummaryResponse>, ApiError> {
@@ -105,6 +106,10 @@ pub async fn get_summary(
         .get_portfolio(id)
         .await?
         .ok_or(DbError::PortfolioNotFound(id))?;
+
+    if portfolio.user_id != auth_user.user_id {
+        return Err(ApiError::Forbidden);
+    }
 
     let folios = state.db.list_folios_by_portfolio(id);
     let mut folio_summaries = Vec::with_capacity(folios.len());

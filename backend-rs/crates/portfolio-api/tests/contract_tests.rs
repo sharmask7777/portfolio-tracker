@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use portfolio_api::{AppState, create_app};
 use portfolio_db::InMemoryDatabase;
-use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
+use portfolio_db::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
 
 fn setup_test_app() -> (axum::Router, Arc<InMemoryDatabase>, String) {
     let db = Arc::new(InMemoryDatabase::new());
@@ -267,6 +267,7 @@ async fn test_portfolio_creation_and_summary_with_camel_case_parity() {
     let summary_req = Request::builder()
         .uri(format!("/api/portfolio/{portfolio_id}/summary"))
         .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -339,9 +340,10 @@ async fn test_fund_overlap_calculation_endpoint() {
 
 #[tokio::test]
 async fn test_tax_simulate_sell_blocks_locked_elss_units_with_400() {
-    let (app, db, _) = setup_test_app();
+    let (app, db, jwt_secret) = setup_test_app();
 
     let user = db.create_user("investor.elss@example.com", "pwd");
+    let token = portfolio_api::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
     let portfolio = db
         .create_portfolio(user.id, "Tax Saver Portfolio", None)
         .await
@@ -392,6 +394,7 @@ async fn test_tax_simulate_sell_blocks_locked_elss_units_with_400() {
     let sim_req = Request::builder()
         .uri("/api/tax/simulate-sell")
         .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(sim_payload.to_string()))
         .unwrap();
@@ -450,6 +453,7 @@ async fn test_tax_simulate_sell_blocks_locked_elss_units_with_400() {
     let reg_sim_req = Request::builder()
         .uri("/api/tax/simulate-sell")
         .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(reg_sim_payload.to_string()))
         .unwrap();
@@ -661,12 +665,16 @@ async fn test_tax_harvesting_opportunities_endpoint() {
 
 #[tokio::test]
 async fn test_portfolio_summary_not_found_returns_404() {
-    let (app, _, _) = setup_test_app();
+    let (app, db, jwt_secret) = setup_test_app();
+
+    let user = db.create_user("notfound.tester@example.com", "pwd");
+    let token = portfolio_api::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
 
     let random_id = Uuid::new_v4();
     let req = Request::builder()
         .uri(format!("/api/portfolio/{random_id}/summary"))
         .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
 
@@ -674,6 +682,155 @@ async fn test_portfolio_summary_not_found_returns_404() {
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
     let json = parse_json(res.into_body()).await;
     assert_eq!(json["code"], "PORTFOLIO_NOT_FOUND");
+}
+
+#[tokio::test]
+async fn test_portfolio_summary_forbidden_for_other_user() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    // User A owns the portfolio
+    let user_a = db.create_user("owner.user@example.com", "pwd");
+    let portfolio = db
+        .create_portfolio(user_a.id, "Owner Portfolio", None)
+        .await
+        .unwrap();
+
+    // User B attempts to access User A's portfolio summary
+    let user_b = db.create_user("attacker.user@example.com", "pwd");
+    let token_b = portfolio_api::create_jwt(user_b.id, &user_b.email, &jwt_secret).unwrap();
+
+    let req = Request::builder()
+        .uri(format!("/api/portfolio/{}/summary", portfolio.id))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token_b}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    let json = parse_json(res.into_body()).await;
+    assert_eq!(json["code"], "AUTH_FORBIDDEN");
+    assert_eq!(json["error"], "Forbidden");
+}
+
+#[tokio::test]
+async fn test_tax_simulate_sell_forbidden_for_other_user() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    // User A owns the portfolio and folio
+    let user_a = db.create_user("tax.owner@example.com", "pwd");
+    let portfolio = db
+        .create_portfolio(user_a.id, "Owner Tax Portfolio", None)
+        .await
+        .unwrap();
+    let asset = db.create_asset("MUTUAL_FUND", "Some Fund", None, None, None, None);
+    let folio = db
+        .create_folio(portfolio.id, asset.id, "FOLIO-A", None, None)
+        .unwrap();
+
+    // User B attempts to simulate sell User A's folio
+    let user_b = db.create_user("tax.other@example.com", "pwd");
+    let token_b = portfolio_api::create_jwt(user_b.id, &user_b.email, &jwt_secret).unwrap();
+
+    let sim_payload = json!({
+        "folioId": folio.id,
+        "units": "50",
+        "currentPrice": "100"
+    });
+    let sim_req = Request::builder()
+        .uri("/api/tax/simulate-sell")
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token_b}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(sim_payload.to_string()))
+        .unwrap();
+
+    let sim_res = app.oneshot(sim_req).await.unwrap();
+    assert_eq!(sim_res.status(), StatusCode::FORBIDDEN);
+    let sim_json = parse_json(sim_res.into_body()).await;
+    assert_eq!(sim_json["code"], "AUTH_FORBIDDEN");
+    assert_eq!(sim_json["error"], "Forbidden");
+}
+
+#[tokio::test]
+async fn test_route_aliases_harvesting_opportunities_and_delete_profile() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    let user = db.create_user("alias.tester@example.com", "pwd");
+    let token = portfolio_api::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
+
+    // 1. Verify GET /api/tax/harvesting-opportunities (alias of /harvesting)
+    let harvest_req = Request::builder()
+        .uri("/api/tax/harvesting-opportunities")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let harvest_res = app.clone().oneshot(harvest_req).await.unwrap();
+    assert_eq!(harvest_res.status(), StatusCode::OK);
+    let harvest_json = parse_json(harvest_res.into_body()).await;
+    assert!(harvest_json["opportunities"].is_array());
+
+    // 2. Verify DELETE /api/family/profile/{id} (singular alias of /profiles/{id})
+    let profile = db
+        .create_managed_profile(
+            user.id,
+            "Singular Member",
+            "XYZPA1234F",
+            Decimal::from_str("0.30").unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let del_req = Request::builder()
+        .uri(format!("/api/family/profile/{}", profile.id))
+        .method("DELETE")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let del_res = app.oneshot(del_req).await.unwrap();
+    assert_eq!(del_res.status(), StatusCode::OK);
+    let del_json = parse_json(del_res.into_body()).await;
+    assert_eq!(del_json["status"], "success");
+    assert_eq!(del_json["id"], profile.id.to_string());
+}
+
+#[tokio::test]
+async fn test_jwt_claims_id_alias_support() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    let user = db.create_user("jwt.alias@example.com", "pwd");
+
+    // Mint a token with "id" instead of "sub" in the payload
+    let now = Utc::now().timestamp() as usize;
+    let custom_claims = json!({
+        "id": user.id.to_string(),
+        "email": user.email,
+        "iat": now,
+        "exp": now + 3600,
+    });
+    let token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &custom_claims,
+        &jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_bytes()),
+    )
+    .unwrap();
+
+    // Verify /api/auth/me accepts this token and resolves user
+    let me_req = Request::builder()
+        .uri("/api/auth/me")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let me_res = app.oneshot(me_req).await.unwrap();
+    assert_eq!(me_res.status(), StatusCode::OK);
+    let me_json = parse_json(me_res.into_body()).await;
+    assert_eq!(me_json["email"], "jwt.alias@example.com");
+    assert_eq!(me_json["id"], user.id.to_string());
 }
 
 #[tokio::test]

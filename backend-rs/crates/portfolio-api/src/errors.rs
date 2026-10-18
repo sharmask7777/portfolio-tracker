@@ -66,8 +66,8 @@ pub enum ApiError {
     #[error("Not found: {0}")]
     NotFound(String),
 
-    #[error("Forbidden: {0}")]
-    Forbidden(String),
+    #[error("Forbidden")]
+    Forbidden,
 
     #[error("Internal server error: {0}")]
     Internal(String),
@@ -186,7 +186,12 @@ impl IntoResponse for ApiError {
                 None,
             ),
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg, "NOT_FOUND".to_string(), None),
-            ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg, "FORBIDDEN".to_string(), None),
+            ApiError::Forbidden => (
+                StatusCode::FORBIDDEN,
+                "Forbidden".to_string(),
+                "AUTH_FORBIDDEN".to_string(),
+                None,
+            ),
             ApiError::Internal(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 msg,

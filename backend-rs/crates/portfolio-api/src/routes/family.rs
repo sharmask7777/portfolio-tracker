@@ -88,4 +88,5 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/profiles", get(list_profiles).post(create_profile))
         .route("/profiles/{id}", axum::routing::delete(delete_profile))
+        .route("/profile/{id}", axum::routing::delete(delete_profile))
 }
