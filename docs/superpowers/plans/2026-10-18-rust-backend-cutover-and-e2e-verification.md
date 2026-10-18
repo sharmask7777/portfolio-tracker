@@ -407,16 +407,16 @@ Run: `git add backend-rs/crates/portfolio-api/ && git commit -m "feat(portfolio-
 - Modify: `backend-rs/crates/portfolio-worker/src/jobs/cas_parser.rs`
 - Test: `backend-rs/crates/portfolio-worker/tests/worker_tests.rs`
 
-- [ ] **Step 1: Write integration test for worker processing**
+- [x] **Step 1: Write integration test for worker processing**
 
 Add test to `backend-rs/crates/portfolio-worker/tests/worker_tests.rs` asserting that `process_pdf_job` correctly updates `UploadJob` status to `FAILED` with descriptive message when a dummy PDF is provided, and unlinks the file cleanly.
 
-- [ ] **Step 2: Run test to verify it passes**
+- [x] **Step 2: Run test to verify it passes**
 
 Run: `cargo test --package portfolio-worker --test worker_tests test_cas_upload_job_failure_missing_file`  
 Expected: PASS
 
-- [ ] **Step 3: Wire live PostgreSQL and Redis in `portfolio-worker/src/main.rs`**
+- [x] **Step 3: Wire live PostgreSQL and Redis in `portfolio-worker/src/main.rs`**
 
 In `backend-rs/crates/portfolio-worker/src/main.rs`:
 - Reads `DATABASE_URL` and `REDIS_URL` / `REDIS_HOST` + `REDIS_PORT`.
@@ -424,12 +424,12 @@ In `backend-rs/crates/portfolio-worker/src/main.rs`:
 - Connects to Redis BullMQ list `bull:pdfUploadQueue:id`.
 - Loops with `tokio::select!` handling `BRPOP`, job execution via `process_pdf_job`, and graceful termination on `SIGINT` / `SIGTERM`.
 
-- [ ] **Step 4: Run workspace tests to verify clean compilation**
+- [x] **Step 4: Run workspace tests to verify clean compilation**
 
 Run: `cargo test --workspace`  
 Expected: ALL PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add backend-rs/crates/portfolio-worker/ && git commit -m "feat(portfolio-worker): connect live redis bullmq queue and postgresql persistence"`
 
