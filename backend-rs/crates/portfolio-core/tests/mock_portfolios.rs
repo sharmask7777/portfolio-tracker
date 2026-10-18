@@ -584,7 +584,6 @@ fn test_portfolio_7_multi_member_cascading_deletion() {
 // PORTFOLIO 8: Vintage Heritage Fund (Section 112A LTCG Grandfathering)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 5 Tax Engine"]
 fn test_portfolio_8_grandfathering_section_112a() {
     let buy_lot = BuyLot::new(date(2016, 4, 1), units("1000"), nav("40"), money("40000"));
     let grandfather_nav = nav("70"); // FMV as of 31-Jan-2018
@@ -633,7 +632,6 @@ fn test_portfolio_8_grandfathering_section_112a() {
 // PORTFOLIO 9: Tax Optimizer ELSS (3-Year Lock-in Enforcement)
 // ============================================================================
 #[test]
-#[ignore = "RED: pending Task 5 Tax Engine"]
 fn test_portfolio_9_elss_3yr_lockin() {
     let now = date(2024, 1, 1);
     let four_years_ago = date(2020, 1, 1);
