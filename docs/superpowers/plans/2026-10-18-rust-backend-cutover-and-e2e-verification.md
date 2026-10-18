@@ -18,7 +18,7 @@
 - Modify: `backend-rs/crates/portfolio-api/src/state.rs`
 - Test: `backend-rs/crates/portfolio-db/tests/schema_test.rs`
 
-- [ ] **Step 1: Write the failing integration test for schema initialization**
+- [x] **Step 1: Write the failing integration test for schema initialization**
 
 Create `backend-rs/crates/portfolio-db/tests/schema_test.rs`:
 ```rust
@@ -41,12 +41,12 @@ fn test_schema_ddl_contains_all_core_tables() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --package portfolio-db --test schema_test`  
 Expected: FAIL with "cannot find module or function `generate_ddl`"
 
-- [ ] **Step 3: Implement `init_schema` and `generate_ddl` in `portfolio-db`**
+- [x] **Step 3: Implement `init_schema` and `generate_ddl` in `portfolio-db`**
 
 Create `backend-rs/crates/portfolio-db/src/schema.rs`:
 ```rust
@@ -212,12 +212,12 @@ pub enum DbBackend {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cargo test --package portfolio-db --test schema_test`  
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add backend-rs/crates/portfolio-db/ backend-rs/crates/portfolio-api/src/state.rs && git commit -m "feat(portfolio-db): add self-healing schema initialization DDL and dual-mode database state"`
 
@@ -230,7 +230,7 @@ Run: `git add backend-rs/crates/portfolio-db/ backend-rs/crates/portfolio-api/sr
 - Modify: `backend-rs/crates/portfolio-api/src/routes/portfolio.rs`
 - Modify: `backend-rs/crates/portfolio-api/tests/contract_tests.rs`
 
-- [ ] **Step 1: Write the failing contract test for upload and status polling**
+- [x] **Step 1: Write the failing contract test for upload and status polling**
 
 Add to `backend-rs/crates/portfolio-api/tests/contract_tests.rs`:
 ```rust
@@ -277,12 +277,12 @@ async fn test_cas_upload_and_status_polling_contract() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --package portfolio-api --test contract_tests test_cas_upload_and_status_polling_contract`  
 Expected: FAIL with 404 or method not allowed on `/api/portfolio/upload`
 
-- [ ] **Step 3: Implement upload and status endpoints in `portfolio-api`**
+- [x] **Step 3: Implement upload and status endpoints in `portfolio-api`**
 
 In `backend-rs/crates/portfolio-api/Cargo.toml`, ensure multipart features are enabled for Axum:
 ```toml
@@ -306,12 +306,12 @@ In `backend-rs/crates/portfolio-api/src/routes/portfolio.rs`:
   - `.route("/upload", post(upload_pdf))`
   - `.route("/upload-status/{id}", get(get_upload_status))`
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cargo test --package portfolio-api --test contract_tests test_cas_upload_and_status_polling_contract`  
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add backend-rs/crates/portfolio-api/ && git commit -m "feat(portfolio-api): implement multipart cas upload and status polling endpoints"`
 
@@ -324,7 +324,7 @@ Run: `git add backend-rs/crates/portfolio-api/ && git commit -m "feat(portfolio-
 - Modify: `backend-rs/crates/portfolio-api/src/routes/health.rs`
 - Modify: `backend-rs/crates/portfolio-api/tests/contract_tests.rs`
 
-- [ ] **Step 1: Write the failing contract test for summary and analytics**
+- [x] **Step 1: Write the failing contract test for summary and analytics**
 
 Add to `backend-rs/crates/portfolio-api/tests/contract_tests.rs`:
 ```rust
@@ -361,12 +361,12 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --package portfolio-api --test contract_tests test_portfolio_summary_and_health_endpoints_contract`  
 Expected: FAIL with 404 on `/api/portfolio/summary` or `/api/health/...`
 
-- [ ] **Step 3: Implement endpoints in `portfolio-api`**
+- [x] **Step 3: Implement endpoints in `portfolio-api`**
 
 In `backend-rs/crates/portfolio-api/src/routes/portfolio.rs`:
 - Implement `get_portfolio_summary(auth_user, State(state), Query(params))`:
@@ -389,12 +389,12 @@ In `backend-rs/crates/portfolio-api/src/routes/health.rs`:
 - Implement `get_goals(auth_user, Path(portfolio_id))`: returns goals list `[]`.
 - Implement `create_goal`, `update_goal`, `delete_goal`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cargo test --package portfolio-api --test contract_tests test_portfolio_summary_and_health_endpoints_contract`  
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add backend-rs/crates/portfolio-api/ && git commit -m "feat(portfolio-api): implement portfolio summary, dashboard analytics, and health insight routes"`
 
