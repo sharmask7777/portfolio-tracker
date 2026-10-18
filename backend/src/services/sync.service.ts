@@ -1,6 +1,7 @@
 import { prisma } from './db.service';
 import { FamilyService } from './family.service';
 import { AuthService } from './authService';
+import { PortfolioUtils } from '../utils/portfolio.utils';
 import crypto from 'crypto';
 
 export class SyncService {
@@ -149,6 +150,35 @@ export class SyncService {
           await prisma.transaction.deleteMany({
             where: { externalId: `ANCHOR-${folio.id}` }
           });
+
+          // Reconciliation: If statement closing balance is 0, but historical transactions in DB still leave positive balance
+          if (schemeData.close === 0 || schemeData.close <= 0.001) {
+            const allFolioTxs = await prisma.transaction.findMany({ where: { folioId: folio.id } });
+            const remainingUnits = PortfolioUtils.getLatestUnits(allFolioTxs);
+            if (remainingUnits > 0.001) {
+              const zeroDate = schemeData.valuation?.date ? new Date(schemeData.valuation.date) : new Date();
+              const zeroNav = schemeData.valuation?.nav || 1;
+              const extId = `ZEROING-${folio.id}`;
+              await prisma.transaction.upsert({
+                where: { externalId: extId },
+                update: {
+                  units: -remainingUnits,
+                  balance: 0,
+                  date: zeroDate,
+                },
+                create: {
+                  date: zeroDate,
+                  type: 'REDEMPTION',
+                  amount: -(remainingUnits * zeroNav),
+                  units: -remainingUnits,
+                  nav: zeroNav,
+                  balance: 0,
+                  folioId: folio.id,
+                  externalId: extId,
+                }
+              });
+            }
+          }
         } else {
           // FINANCIAL INTELLIGENCE: Intelligent Anchor Dating
           // Instead of guessing 1 year, we estimate the holding period based on the gain 

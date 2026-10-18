@@ -23,7 +23,9 @@ import {
   X,
   ArrowUp,
   ArrowDown,
-  ArrowUpDown
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
@@ -34,7 +36,8 @@ import { InsightsSidebar } from './components/Insights/InsightsSidebar';
 import { GoalTracker } from './components/Insights/GoalTracker';
 import { useSettings } from './contexts/SettingsContext';
 import { useAuth } from './contexts/AuthContext';
-import { sortFolios } from './utils/sorting';
+import { sortSchemeGroups } from './utils/sorting';
+import { consolidateFoliosIntoSchemes } from './utils/consolidation';
 import type { SortField, SortDirection } from './utils/sorting';
 import './App.css';
 
@@ -74,6 +77,26 @@ export function Dashboard() {
 
   const [sortField, setSortField] = useState<SortField | null>('value');
   const [sortDirection, setSortDirection] = useState<SortDirection | null>('desc');
+  const [expandedSchemeIds, setExpandedSchemeIds] = useState<Set<string>>(new Set());
+  const [showClosedFolios, setShowClosedFolios] = useState<boolean>(false);
+
+  const toggleSchemeExpanded = (schemeId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setExpandedSchemeIds(prev => {
+      const next = new Set(prev);
+      if (next.has(schemeId)) next.delete(schemeId);
+      else next.add(schemeId);
+      return next;
+    });
+  };
+
+  const schemeGroups = React.useMemo(() => {
+    return consolidateFoliosIntoSchemes(portfolio?.folios || []);
+  }, [portfolio?.folios]);
+
+  const sortedSchemeGroups = React.useMemo(() => {
+    return sortSchemeGroups(schemeGroups, sortField, sortDirection, performanceMode);
+  }, [schemeGroups, sortField, sortDirection, performanceMode]);
 
   const handleSort = (field: SortField) => {
     if (sortField !== field) {
@@ -426,7 +449,7 @@ export function Dashboard() {
                     <h3>Scheme Breakdown</h3>
                     <div className="chart-container" style={{ marginTop: '1rem' }}>
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={portfolio.folios.map((f: any) => ({ name: f.asset.name, value: f.metrics.currentValue }))}>
+                        <BarChart data={schemeGroups.map((g: any) => ({ name: g.schemeName, value: g.metrics.currentValue }))}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                           <XAxis 
                             dataKey="name" 
@@ -452,8 +475,10 @@ export function Dashboard() {
                   <div className="card">
                     <h3>Key Insights</h3>
                     <div style={{ marginTop: '1rem' }}>
-                      {portfolio.folios.length > 0 && (() => {
-                        const sorted = [...portfolio.folios].sort((a, b) => {
+                      {schemeGroups.length > 0 && (() => {
+                        const activeGroups = schemeGroups.filter((g: any) => g.metrics.currentValue >= 1.00);
+                        if (activeGroups.length === 0) return null;
+                        const sorted = [...activeGroups].sort((a: any, b: any) => {
                           const aVal = performanceMode === 'XIRR' ? (a.metrics.xirr ?? 0) : (a.metrics.absoluteReturn ?? 0);
                           const bVal = performanceMode === 'XIRR' ? (b.metrics.xirr ?? 0) : (b.metrics.absoluteReturn ?? 0);
                           return bVal - aVal;
@@ -462,7 +487,7 @@ export function Dashboard() {
                         const value = performanceMode === 'XIRR' ? top.metrics.xirr : top.metrics.absoluteReturn;
                         return (
                           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                            Your top performing asset is <strong>{top.asset.name}</strong> with {performanceMode === 'XIRR' ? 'an XIRR' : 'a return'} of <span className="positive">{formatPercent(value || 0)}</span>.
+                            Your top performing asset is <strong>{top.schemeName}</strong> with {performanceMode === 'XIRR' ? 'an XIRR' : 'a return'} of <span className="positive">{formatPercent(value || 0)}</span>.
                           </p>
                         );
                       })()}
@@ -499,75 +524,243 @@ export function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortFolios(portfolio.folios, sortField, sortDirection, performanceMode).map((folio: any) => (
-                        <tr 
-                          key={folio.id} 
-                          onClick={() => setSelectedFolioForTransactions(folio)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <td style={{ fontWeight: 500 }}>
-                            {folio.asset.name}
-                          </td>
-                          <td>
-                            <span className="badge badge-slab">{folio.asset.type.replace('_', ' ')}</span>
-                          </td>
-                          <td>{formatCurrency(folio.metrics.investedAmount)}</td>
-                          <td>{formatCurrency(folio.metrics.currentValue)}</td>
-                          <td className={getReturnClass(folio.metrics.dayChange)}>
-                            {isValidNumber(folio.metrics.dayChange) ? (
-                              <>
-                                {folio.metrics.dayChange > 0 ? '+' : ''}{formatCurrency(folio.metrics.dayChange)}
-                                <div style={{ fontSize: '0.75rem',  }}>
-                                  ({isValidNumber(folio.metrics.dayChangePercentage) ? `${folio.metrics.dayChangePercentage > 0 ? '+' : ''}${folio.metrics.dayChangePercentage.toFixed(2)}%` : 'N/A'})
-                                </div>
-                              </>
-                            ) : '-'}
-                          </td>
-                          <td className={getReturnClass(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn)}>
-                            {formatPercent(performanceMode === 'XIRR' ? folio.metrics.xirr : folio.metrics.absoluteReturn)}
-                          </td>
-                          <td 
-                            className={getReturnClass(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn)}
-                            style={{ opacity: isRefetching ? 0.5 : 1, transition: 'opacity 0.2s, color 0.2s' }}
-                          >
-                            {formatPercent(performanceMode === 'XIRR' ? folio.metrics.postTaxXirr : folio.metrics.postTaxAbsoluteReturn)}
-                          </td>
-                          <td>
-                            <button 
-                              className="theme-toggle" 
-                              title="Simulate Sell Tax" 
+                      {sortedSchemeGroups.map((group: any) => {
+                        const isMultiFolio = group.folioCount > 1;
+                        const isExpanded = expandedSchemeIds.has(group.id);
+
+                        return (
+                          <React.Fragment key={group.id}>
+                            <tr 
+                              className={`scheme-master-row ${isMultiFolio ? 'has-multiple-folios' : ''}`}
                               onClick={() => {
-                                setSimFolio(folio);
-                                setSimUnits(null);
+                                if (isMultiFolio) {
+                                  toggleSchemeExpanded(group.id);
+                                } else {
+                                  setSelectedFolioForTransactions(group.folios[0]);
+                                }
                               }}
+                              style={{ cursor: 'pointer' }}
                             >
-                              <Calculator size={16} />
-                            </button>
-                            {folio.number && folio.number.startsWith('MANUAL_') && (
-                              <button 
-                                className="theme-toggle" 
-                                title="Delete Asset" 
-                                onClick={async () => {
-                                  if (window.confirm('Are you sure you want to delete this asset?')) {
-                                    try {
-                                      await api.delete(`${API_ENDPOINTS.PORTFOLIO}/manual-asset/${folio.id}`);
-                                      fetchSummary();
-                                    } catch (e) {
-                                      alert('Failed to delete asset');
-                                    }
-                                  }
-                                }}
-                                style={{ marginLeft: '0.5rem', color: 'var(--danger-color)' }}
+                              <td style={{ fontWeight: 600 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  {isMultiFolio && (
+                                    <button 
+                                      className="theme-toggle" 
+                                      style={{ padding: '2px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+                                      onClick={(e) => toggleSchemeExpanded(group.id, e)}
+                                      title={isExpanded ? "Collapse folios" : "Expand folios"}
+                                    >
+                                      {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                    </button>
+                                  )}
+                                  <span>{group.schemeName}</span>
+                                  {isMultiFolio && (
+                                    <span className="badge badge-slab" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
+                                      {group.folioCount} Folios
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td>
+                                <span className="badge badge-slab">{group.type.replace('_', ' ')}</span>
+                              </td>
+                              <td>{formatCurrency(group.metrics.investedAmount)}</td>
+                              <td>{formatCurrency(group.metrics.currentValue)}</td>
+                              <td className={getReturnClass(group.metrics.dayChange)}>
+                                {isValidNumber(group.metrics.dayChange) ? (
+                                  <>
+                                    {group.metrics.dayChange > 0 ? '+' : ''}{formatCurrency(group.metrics.dayChange)}
+                                    <div style={{ fontSize: '0.75rem' }}>
+                                      ({isValidNumber(group.metrics.dayChangePercentage) ? `${group.metrics.dayChangePercentage > 0 ? '+' : ''}${group.metrics.dayChangePercentage.toFixed(2)}%` : 'N/A'})
+                                    </div>
+                                  </>
+                                ) : '-'}
+                              </td>
+                              <td className={getReturnClass(performanceMode === 'XIRR' ? group.metrics.xirr : group.metrics.absoluteReturn)}>
+                                {formatPercent(performanceMode === 'XIRR' ? group.metrics.xirr : group.metrics.absoluteReturn)}
+                              </td>
+                              <td 
+                                className={getReturnClass(performanceMode === 'XIRR' ? group.metrics.postTaxXirr : group.metrics.postTaxAbsoluteReturn)}
+                                style={{ opacity: isRefetching ? 0.5 : 1, transition: 'opacity 0.2s, color 0.2s' }}
                               >
-                                <X size={16} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                                {formatPercent(performanceMode === 'XIRR' ? group.metrics.postTaxXirr : group.metrics.postTaxAbsoluteReturn)}
+                              </td>
+                              <td>
+                                {!isMultiFolio ? (
+                                  <>
+                                    <button 
+                                      className="theme-toggle" 
+                                      title="Simulate Sell Tax" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSimFolio(group.folios[0]);
+                                        setSimUnits(null);
+                                      }}
+                                    >
+                                      <Calculator size={16} />
+                                    </button>
+                                    {group.folios[0]?.number && group.folios[0].number.startsWith('MANUAL_') && (
+                                      <button 
+                                        className="theme-toggle" 
+                                        title="Delete Asset" 
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          if (window.confirm('Are you sure you want to delete this asset?')) {
+                                            try {
+                                              await api.delete(`${API_ENDPOINTS.PORTFOLIO}/manual-asset/${group.folios[0].id}`);
+                                              fetchSummary();
+                                            } catch (e) {
+                                              alert('Failed to delete asset');
+                                            }
+                                          }
+                                        }}
+                                        style={{ marginLeft: '0.5rem', color: 'var(--danger-color)' }}
+                                      >
+                                        <X size={16} />
+                                      </button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <button 
+                                    className="theme-toggle" 
+                                    onClick={(e) => toggleSchemeExpanded(group.id, e)}
+                                    title={isExpanded ? "Collapse folios" : "Expand folios"}
+                                  >
+                                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+
+                            {isMultiFolio && isExpanded && group.folios.map((folio: any) => (
+                              <tr 
+                                key={folio.id} 
+                                onClick={() => setSelectedFolioForTransactions(folio)}
+                                style={{ cursor: 'pointer', backgroundColor: 'var(--bg-secondary, rgba(255,255,255,0.03))' }}
+                                className="folio-child-row"
+                              >
+                                <td style={{ paddingLeft: '2.5rem', fontSize: '0.875rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ color: 'var(--text-secondary)' }}>└─</span>
+                                    <span style={{ fontWeight: 500 }}>Folio: {folio.number || 'N/A'}</span>
+                                    {folio.pan && <span className="badge" style={{ fontSize: '0.65rem' }}>{folio.pan}</span>}
+                                  </div>
+                                </td>
+                                <td>
+                                  <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Individual Folio</span>
+                                </td>
+                                <td>{formatCurrency(folio.metrics?.investedAmount)}</td>
+                                <td>{formatCurrency(folio.metrics?.currentValue)}</td>
+                                <td className={getReturnClass(folio.metrics?.dayChange)}>
+                                  {isValidNumber(folio.metrics?.dayChange) ? (
+                                    <>
+                                      {folio.metrics.dayChange > 0 ? '+' : ''}{formatCurrency(folio.metrics.dayChange)}
+                                      <div style={{ fontSize: '0.75rem' }}>
+                                        ({isValidNumber(folio.metrics.dayChangePercentage) ? `${folio.metrics.dayChangePercentage > 0 ? '+' : ''}${folio.metrics.dayChangePercentage.toFixed(2)}%` : 'N/A'})
+                                      </div>
+                                    </>
+                                  ) : '-'}
+                                </td>
+                                <td className={getReturnClass(performanceMode === 'XIRR' ? folio.metrics?.xirr : folio.metrics?.absoluteReturn)}>
+                                  {formatPercent(performanceMode === 'XIRR' ? folio.metrics?.xirr : folio.metrics?.absoluteReturn)}
+                                </td>
+                                <td 
+                                  className={getReturnClass(performanceMode === 'XIRR' ? folio.metrics?.postTaxXirr : folio.metrics?.postTaxAbsoluteReturn)}
+                                  style={{ opacity: isRefetching ? 0.5 : 1, transition: 'opacity 0.2s, color 0.2s' }}
+                                >
+                                  {formatPercent(performanceMode === 'XIRR' ? folio.metrics?.postTaxXirr : folio.metrics?.postTaxAbsoluteReturn)}
+                                </td>
+                                <td>
+                                  <button 
+                                    className="theme-toggle" 
+                                    title="Simulate Sell Tax" 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSimFolio(folio);
+                                      setSimUnits(null);
+                                    }}
+                                  >
+                                    <Calculator size={16} />
+                                  </button>
+                                  {folio.number && folio.number.startsWith('MANUAL_') && (
+                                    <button 
+                                      className="theme-toggle" 
+                                      title="Delete Asset" 
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        if (window.confirm('Are you sure you want to delete this asset?')) {
+                                          try {
+                                            await api.delete(`${API_ENDPOINTS.PORTFOLIO}/manual-asset/${folio.id}`);
+                                            fetchSummary();
+                                          } catch (e) {
+                                            alert('Failed to delete asset');
+                                          }
+                                        }
+                                      }}
+                                      style={{ marginLeft: '0.5rem', color: 'var(--danger-color)' }}
+                                    >
+                                      <X size={16} />
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
+
+                {portfolio?.closedFolios && portfolio.closedFolios.length > 0 && (
+                  <div style={{ marginTop: '1.5rem', padding: '1rem', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                    <div 
+                      onClick={() => setShowClosedFolios(!showClosedFolios)}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {showClosedFolios ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>
+                          Closed / Fully Redeemed Positions ({portfolio.closedFolios.length})
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        {showClosedFolios ? 'Hide' : 'Show'}
+                      </span>
+                    </div>
+
+                    {showClosedFolios && (
+                      <div style={{ marginTop: '1rem', overflowX: 'auto' }}>
+                        <table className="data-table" style={{ opacity: 0.85 }}>
+                          <thead>
+                            <tr>
+                              <th>Scheme Name</th>
+                              <th>Folio</th>
+                              <th>Status</th>
+                              <th>Type</th>
+                              <th>Historical XIRR / Return</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {portfolio.closedFolios.map((cf: any) => (
+                              <tr 
+                                key={cf.id}
+                                onClick={() => setSelectedFolioForTransactions(cf)}
+                                style={{ cursor: 'pointer' }}
+                              >
+                                <td>{cf.asset?.name || 'Unknown'}</td>
+                                <td>{cf.number || 'N/A'}</td>
+                                <td><span className="badge badge-slab" style={{ backgroundColor: 'rgba(100, 116, 139, 0.2)', color: 'var(--text-secondary)' }}>Fully Redeemed</span></td>
+                                <td><span className="badge badge-slab">{cf.asset?.type}</span></td>
+                                <td>{formatPercent(cf.metrics?.xirr || cf.metrics?.absoluteReturn || 0)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
 

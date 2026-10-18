@@ -339,6 +339,70 @@ describe('OverlapService Suite', () => {
       expect(exposures[0].percentage).toBe(0.05);
     });
 
+    it('should resolve exposures for mutual funds with missing or synthetic ISINs via scheme name', async () => {
+      prismaMock.familyMember.findFirst.mockResolvedValue(null);
+      prismaMock.portfolio.findFirst.mockResolvedValue({
+        id: 'p_synthetic',
+        userId: 'u1',
+        folios: [
+          {
+            id: 'f_syn',
+            asset: { isin: 'MISSING-122639', amfiCode: null, name: 'Parag Parikh Flexi Cap Fund', type: 'MUTUAL_FUND' },
+            transactions: [
+              { type: 'PURCHASE', units: 100, balance: 100, nav: 50, amount: 5000, date: new Date('2024-01-01') },
+            ],
+          },
+        ],
+      } as any);
+
+      (MarketDataService.getHoldings as jest.Mock).mockResolvedValue({
+        schemeName: 'Parag Parikh Flexi Cap Fund',
+        holdings: [
+          { name: 'HDFC Bank Ltd.', sector: 'Financial Services', weightage: '10' },
+          { name: 'ITC Ltd.', sector: 'Consumer Defensive', weightage: '8' },
+        ],
+      });
+
+      const exposures = await OverlapService.getPortfolioExposures('p_synthetic', 'u1');
+      expect(exposures.length).toBe(2);
+      expect(exposures[0].name).toBe('HDFC Bank Ltd.');
+      expect(exposures[0].absoluteValue).toBe(500); // 5000 * 10% = 500
+      expect(exposures[0].percentage).toBe(0.1);
+      expect(MarketDataService.getHoldings).toHaveBeenCalledWith('MISSING-122639', 'Parag Parikh Flexi Cap Fund');
+    });
+
+    it('should fallback to transaction amount/invested calculation when both live NAV and tx NAV are 0', async () => {
+      prismaMock.familyMember.findFirst.mockResolvedValue(null);
+      prismaMock.portfolio.findFirst.mockResolvedValue({
+        id: 'p_nav_zero',
+        userId: 'u1',
+        folios: [
+          {
+            id: 'f_zero_nav',
+            asset: { isin: null, amfiCode: null, name: 'Axis Small Cap Fund', type: 'MUTUAL_FUND' },
+            transactions: [
+              { type: 'PURCHASE', units: 50, balance: 50, nav: 0, amount: 2500, date: new Date('2024-01-01') },
+            ],
+          },
+        ],
+      } as any);
+
+      (MarketDataService.getLatestNAV as jest.Mock).mockResolvedValue(0);
+      (MarketDataService.getHoldings as jest.Mock).mockResolvedValue({
+        schemeName: 'Axis Small Cap Fund',
+        holdings: [
+          { name: 'Tube Investments of India Ltd.', sector: 'Auto', weight: 10 },
+        ],
+      });
+
+      const exposures = await OverlapService.getPortfolioExposures('p_nav_zero', 'u1');
+      expect(exposures.length).toBe(1);
+      expect(exposures[0].name).toBe('Tube Investments of India Ltd.');
+      // 50 units * (2500/50 = 50 derived price) = 2500 folioValue. 10% = 250.
+      expect(exposures[0].absoluteValue).toBe(250);
+      expect(exposures[0].percentage).toBe(0.1);
+    });
+
     it('should return [] safely without NaN or crash when portfolio has 0 total value', async () => {
       prismaMock.familyMember.findFirst.mockResolvedValue(null);
       prismaMock.portfolio.findFirst.mockResolvedValue({

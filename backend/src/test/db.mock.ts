@@ -13,3 +13,4 @@ beforeEach(() => {
 });
 
 export const prismaMock = prisma as unknown as DeepMockProxy<PrismaClient>;
+export { prismaMock as prisma };

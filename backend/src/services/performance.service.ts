@@ -178,7 +178,12 @@ export class PerformanceService {
     // If the fund is closed (zero units), we don't have an "active" invested amount.
     // The historical net cash flow (realized profit/loss) is still preserved in normalizedTransactions 
     // for XIRR calculation, but for the summary view, invested should be 0.
-    const activeInvestedAmount = currentUnits > 0 ? investedAmount : 0;
+    let activeInvestedAmount = 0;
+    if (currentUnits >= 0.001) {
+      const activeLots = TaxService.getActiveBuyLots(transactions);
+      const fifoCost = activeLots.reduce((acc, lot) => acc + (lot.units * lot.nav), 0);
+      activeInvestedAmount = fifoCost > 0 ? fifoCost : Math.max(0, investedAmount);
+    }
     const totalGain = currentValue - activeInvestedAmount;
 
     const firstTxDate = normalizedTransactions.reduce(

@@ -151,6 +151,74 @@ router.delete('/manual-asset/:folioId', async (req: Request, res: Response) => {
   }
 });
 
+router.delete('/folio/:folioId', async (req: Request, res: Response) => {
+  try {
+    const folioId = req.params.folioId as string;
+    const userId = req.user!.id;
+
+    const folio = await prisma.folio.findUnique({
+      where: { id: folioId },
+      include: { portfolio: true }
+    });
+
+    if (!folio || folio.portfolio?.userId !== userId) {
+      return res.status(404).json({ error: 'Folio not found' });
+    }
+
+    await prisma.$transaction([
+      prisma.transaction.deleteMany({ where: { folioId } }),
+      prisma.folio.delete({ where: { id: folioId } })
+    ]);
+
+    const otherFolios = await prisma.folio.count({ where: { assetId: folio.assetId } });
+    if (otherFolios === 0) {
+      await prisma.asset.delete({ where: { id: folio.assetId } });
+    }
+
+    res.status(200).json({ status: 'success' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/folio/:folioId/close', async (req: Request, res: Response) => {
+  try {
+    const folioId = req.params.folioId as string;
+    const userId = req.user!.id;
+
+    const folio = await prisma.folio.findUnique({
+      where: { id: folioId },
+      include: { portfolio: true, transactions: { orderBy: { date: 'asc' } }, asset: true }
+    });
+
+    if (!folio || folio.portfolio?.userId !== userId) {
+      return res.status(404).json({ error: 'Folio not found' });
+    }
+
+    const currentUnits = PortfolioUtils.getLatestUnits(folio.transactions);
+    if (currentUnits > 0.001) {
+      const today = new Date();
+      const lastNav = PortfolioUtils.getLatestNAV(folio.transactions) || 1;
+      await prisma.transaction.create({
+        data: {
+          date: today,
+          type: 'REDEMPTION',
+          amount: -(currentUnits * lastNav),
+          units: -currentUnits,
+          nav: lastNav,
+          balance: 0,
+          folioId,
+          externalId: `MANUAL_CLOSE-${folioId}-${Date.now()}`
+        }
+      });
+    }
+
+    res.status(200).json({ status: 'success' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/summary', async (req: Request, res: Response) => {
   try {
     const { familyGroupId, profileId, taxSlab } = req.query;
@@ -235,26 +303,42 @@ router.get('/summary', async (req: Request, res: Response) => {
         
         if (currentUnits <= 0) {
           metrics.currentValue = 0;
+          metrics.investedAmount = 0;
         }
       } else {
         // Alternative Assets
-        const altMetrics = await AlternativeAssetService.calculateValue(
-          folio.asset.type,
-          currentUnits,
-          folio.transactions[folio.transactions.length - 1]?.date
-        );
-        metrics = {
-          investedAmount: folio.transactions[folio.transactions.length - 1]?.amount || 0,
-          currentValue: altMetrics.currentValue,
-          totalGain: altMetrics.accruedInterest || (altMetrics.currentValue - (folio.transactions[folio.transactions.length - 1]?.amount || 0)),
-          absoluteReturn: folio.transactions[folio.transactions.length - 1]?.amount ? (altMetrics.currentValue - folio.transactions[folio.transactions.length - 1].amount) / folio.transactions[folio.transactions.length - 1].amount : 0,
-          xirr: altMetrics.annualRate,
-          cagr: altMetrics.annualRate,
-          postTaxXirr: altMetrics.annualRate,
-          postTaxAbsoluteReturn: folio.transactions[folio.transactions.length - 1]?.amount ? (altMetrics.currentValue - folio.transactions[folio.transactions.length - 1].amount) / folio.transactions[folio.transactions.length - 1].amount : 0,
-          estimatedTax: 0,
-        };
-        currentPrice = altMetrics.currentValue / (currentUnits || 1);
+        if (currentUnits <= 0) {
+          metrics = {
+            investedAmount: 0,
+            currentValue: 0,
+            totalGain: 0,
+            absoluteReturn: 0,
+            xirr: 0,
+            cagr: 0,
+            postTaxXirr: 0,
+            postTaxAbsoluteReturn: 0,
+            estimatedTax: 0,
+          };
+          currentPrice = 0;
+        } else {
+          const altMetrics = await AlternativeAssetService.calculateValue(
+            folio.asset.type,
+            currentUnits,
+            folio.transactions[folio.transactions.length - 1]?.date
+          );
+          metrics = {
+            investedAmount: folio.transactions[folio.transactions.length - 1]?.amount || 0,
+            currentValue: altMetrics.currentValue,
+            totalGain: altMetrics.accruedInterest || (altMetrics.currentValue - (folio.transactions[folio.transactions.length - 1]?.amount || 0)),
+            absoluteReturn: folio.transactions[folio.transactions.length - 1]?.amount ? (altMetrics.currentValue - folio.transactions[folio.transactions.length - 1].amount) / folio.transactions[folio.transactions.length - 1].amount : 0,
+            xirr: altMetrics.annualRate,
+            cagr: altMetrics.annualRate,
+            postTaxXirr: altMetrics.annualRate,
+            postTaxAbsoluteReturn: folio.transactions[folio.transactions.length - 1]?.amount ? (altMetrics.currentValue - folio.transactions[folio.transactions.length - 1].amount) / folio.transactions[folio.transactions.length - 1].amount : 0,
+            estimatedTax: 0,
+          };
+          currentPrice = altMetrics.currentValue / (currentUnits || 1);
+        }
       }
 
       // Compute day change for all fund types that have an amfiCode
@@ -277,14 +361,21 @@ router.get('/summary', async (req: Request, res: Response) => {
       return { ...folio, metrics: { ...metrics, currentPrice, dayChange, dayChangePercentage } };
     }));
 
-    const totalInvested = enrichedFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
-    const totalValue = enrichedFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
-    const totalEstimatedTax = enrichedFolios.reduce((acc, f) => acc + (f.metrics.estimatedTax || 0), 0);
+    // FINANCIAL ACCURACY: Active holdings are those with non-zero units and active value.
+    // Closed or fully redeemed folios must not pollute the active overview table.
+    const activeFolios = enrichedFolios.filter(f => {
+      const units = PortfolioUtils.getLatestUnits(f.transactions);
+      return units >= 0.001 && f.metrics.currentValue >= 0.01;
+    });
 
-    const activeFolios = enrichedFolios.filter(f => Math.abs(f.metrics.currentValue) > 0.01 || Math.abs(f.metrics.investedAmount) > 0.01);
+    const closedFolios = enrichedFolios.filter(f => !activeFolios.includes(f) && f.transactions.length > 0);
 
-    const totalDayChange = enrichedFolios.reduce((acc, f) => acc + (f.metrics.dayChange || 0), 0);
-    const totalPreviousValue = enrichedFolios.reduce((acc, f) => {
+    const totalInvested = activeFolios.reduce((acc, f) => acc + f.metrics.investedAmount, 0);
+    const totalValue = activeFolios.reduce((acc, f) => acc + f.metrics.currentValue, 0);
+    const totalEstimatedTax = activeFolios.reduce((acc, f) => acc + (f.metrics.estimatedTax || 0), 0);
+
+    const totalDayChange = activeFolios.reduce((acc, f) => acc + (f.metrics.dayChange || 0), 0);
+    const totalPreviousValue = activeFolios.reduce((acc, f) => {
       if (f.metrics.currentValue > 0) {
         const prev = f.metrics.currentValue - (f.metrics.dayChange || 0);
         return acc + Math.max(0, prev);
@@ -314,6 +405,7 @@ router.get('/summary', async (req: Request, res: Response) => {
       id: profileId || familyGroupId || 'consolidated',
       name: profileId ? 'Member View' : familyGroupId ? 'Family Portfolio' : 'Consolidated Portfolio',
       folios: activeFolios,
+      closedFolios,
       taxSlab: slabValue,
       metrics: {
         totalInvested,

@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { CacheService } from './cache.service';
 import { prisma } from './db.service';
-import { resolveCuratedOrTemplateHoldings } from './holdings.registry';
+import { resolveCuratedOrTemplateHoldings, normalizeStockName } from './holdings.registry';
 
 export interface NAVChangeResult {
   currentPrice: number;
@@ -189,18 +189,27 @@ export class MarketDataService {
   /**
    * Fetches underlying portfolio holdings and sector breakdown.
    */
-  public static async getHoldings(isin: string, schemeName?: string, category?: string): Promise<any> {
-    if (!isin) return null;
-    const cacheKey = `holdings:${isin}`;
+  public static async getHoldings(isin?: string, schemeName?: string, category?: string): Promise<any> {
+    if (!isin && !schemeName) return null;
+    const isSynthetic = !isin || isin.startsWith('MISSING-');
+    const cacheKey = isSynthetic
+      ? (schemeName ? `holdings:name:${normalizeStockName(schemeName)}` : `holdings:${isin}`)
+      : `holdings:${isin}`;
+
     const cached = await CacheService.get<any>(cacheKey);
-    if (cached) return cached;
+    // Stale/invalid cache guard: only return cached data if it actually contains a valid holdings array.
+    if (cached && Array.isArray(cached.holdings)) {
+      return cached;
+    }
 
     let externalData: any = null;
-    try {
-      const response = await axios.get(`${this.FINAPI_BASE}/isin/${isin}`, { timeout: 3000 });
-      externalData = response.data?.data;
-    } catch (e) {
-      // Gracefully fall through to curated and category templates
+    if (!isSynthetic && isin) {
+      try {
+        const response = await axios.get(`${this.FINAPI_BASE}/isin/${isin}`, { timeout: 3000 });
+        externalData = response.data?.data;
+      } catch (e) {
+        // Gracefully fall through to curated and category templates
+      }
     }
 
     // If external API provided valid holdings array, enrich missing expenseRatio and cache
@@ -218,15 +227,16 @@ export class MarketDataService {
     }
 
     // Tier 1 / Tier 2 / Tier 3 Enrichment via holdings.registry
-    const effectiveSchemeName = externalData?.schemeName || schemeName || '';
-    const effectiveCategory = externalData?.schemeCategoryLabel || externalData?.category || category || '';
-    const enriched = resolveCuratedOrTemplateHoldings(isin, effectiveSchemeName, effectiveCategory);
+    const effectiveSchemeName = externalData?.schemeName || cached?.schemeName || schemeName || '';
+    const effectiveCategory = externalData?.schemeCategoryLabel || externalData?.category || cached?.schemeCategoryLabel || cached?.category || category || '';
+    const enriched = resolveCuratedOrTemplateHoldings(isin || '', effectiveSchemeName, effectiveCategory);
 
     // Merge external metadata if available (preserving isin, schemeCode, etc.)
     const finalResult = {
       ...(externalData || {}),
+      ...(cached || {}),
       ...enriched,
-      isin: externalData?.isin || isin,
+      isin: externalData?.isin || cached?.isin || isin || '',
     };
 
     await CacheService.set(cacheKey, finalResult, 86400 * 7);

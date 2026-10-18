@@ -70,6 +70,88 @@ describe('Analytical Services Regression Suite', () => {
       const data = await OverlapService.getPortfolioExposures('consolidated', userId);
       expect(Array.isArray(data)).toBe(true);
     });
+
+    it('should resolve and aggregate stock exposures for mutual funds with real and synthetic ISINs', async () => {
+      // Create or find mutual fund with real ISIN
+      const mfAsset = await prisma.asset.upsert({
+        where: { isin: 'INF879O01027' },
+        update: {},
+        create: {
+          type: 'MUTUAL_FUND',
+          name: 'Parag Parikh Flexi Cap Fund - Direct Plan Growth',
+          isin: 'INF879O01027',
+          amfiCode: '122639',
+        },
+      });
+
+      // Create mutual fund with synthetic ISIN
+      const synMfAsset = await prisma.asset.create({
+        data: {
+          type: 'MUTUAL_FUND',
+          name: 'Axis Bluechip Fund - Direct Growth',
+          isin: `MISSING-${Date.now()}`,
+          amfiCode: null,
+        },
+      });
+
+      const folio1 = await prisma.folio.create({
+        data: {
+          number: `FOLIO-MF-${Date.now()}`,
+          portfolioId,
+          assetId: mfAsset.id,
+        },
+      });
+
+      const folio2 = await prisma.folio.create({
+        data: {
+          number: `FOLIO-SYN-${Date.now()}`,
+          portfolioId,
+          assetId: synMfAsset.id,
+        },
+      });
+
+      await prisma.transaction.create({
+        data: {
+          folioId: folio1.id,
+          date: new Date('2024-01-01'),
+          type: 'PURCHASE',
+          amount: 50000,
+          units: 1000,
+          nav: 50,
+          balance: 1000,
+        },
+      });
+
+      await prisma.transaction.create({
+        data: {
+          folioId: folio2.id,
+          date: new Date('2024-01-01'),
+          type: 'PURCHASE',
+          amount: 50000,
+          units: 1000,
+          nav: 50,
+          balance: 1000,
+        },
+      });
+
+      const exposures = await OverlapService.getPortfolioExposures(portfolioId, userId);
+      expect(exposures.length).toBeGreaterThan(0);
+      expect(exposures[0].absoluteValue).toBeGreaterThan(0);
+      expect(exposures[0].percentage).toBeGreaterThan(0);
+      expect(exposures[0].percentage).toBeLessThanOrEqual(1);
+      expect(exposures[0].contributions.length).toBeGreaterThanOrEqual(1);
+
+      // Clean up test folios & assets
+      await prisma.transaction.deleteMany({ where: { folio: { assetId: synMfAsset.id } } });
+      await prisma.transaction.deleteMany({ where: { folioId: { in: [folio1.id, folio2.id] } } });
+      await prisma.folio.deleteMany({ where: { assetId: synMfAsset.id } });
+      await prisma.folio.deleteMany({ where: { id: { in: [folio1.id, folio2.id] } } });
+      await prisma.asset.deleteMany({ where: { id: synMfAsset.id } });
+      const remainingFolios = await prisma.folio.count({ where: { assetId: mfAsset.id } });
+      if (remainingFolios === 0) {
+        await prisma.asset.deleteMany({ where: { id: mfAsset.id } });
+      }
+    });
   });
 
   describe('Health Service Scope Support', () => {
