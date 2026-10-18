@@ -17,7 +17,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "your-super-secret-jwt-key-change-me".to_string());
 
     let db = Arc::new(InMemoryDatabase::new());
-    let state = AppState::new(db, jwt_secret);
+    let state = if let Ok(db_url) = std::env::var("DATABASE_URL") {
+        println!("Connecting to PostgreSQL database at {db_url}...");
+        match sqlx::postgres::PgPoolOptions::new()
+            .max_connections(10)
+            .connect(&db_url)
+            .await
+        {
+            Ok(pool) => {
+                println!("Connected to PostgreSQL. Initializing schema...");
+                if let Err(e) = portfolio_db::init_schema(&pool).await {
+                    eprintln!("Warning: Failed to initialize PostgreSQL schema: {e}");
+                }
+                AppState::with_postgres(pool, jwt_secret)
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to connect to PostgreSQL ({e}). Falling back to InMemoryDatabase."
+                );
+                AppState::new(db, jwt_secret)
+            }
+        }
+    } else {
+        AppState::new(db, jwt_secret)
+    };
+
     let app = create_app(state);
 
     let addr = format!("0.0.0.0:{port}");

@@ -33,13 +33,16 @@ RUN groupadd -g 1000 appuser && \
     mkdir -p /app/uploads && \
     chown -R appuser:appuser /app
 
-# Copy compiled binaries from builder stage
+# Copy compiled binaries and scripts from builder stage
 COPY --from=builder /app/target/release/portfolio-api /usr/local/bin/portfolio-api
 COPY --from=builder /app/target/release/portfolio-worker /usr/local/bin/portfolio-worker
+COPY --chown=appuser:appuser scripts /app/scripts
 
 USER appuser
 ENV PORT=3001
 ENV PYTHON_PATH=python3
+ENV UPLOADS_DIR=/app/uploads
+ENV PARSE_CAS_SCRIPT=/app/scripts/parse_cas.py
 EXPOSE 3001
 
 CMD ["portfolio-api"]

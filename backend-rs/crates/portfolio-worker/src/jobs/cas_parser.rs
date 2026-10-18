@@ -270,8 +270,51 @@ async fn process_cas_file_internal(
     db: &InMemoryDatabase,
     file_path: &Path,
 ) -> Result<(), WorkerError> {
-    // Read file content
-    let raw_content = std::fs::read_to_string(file_path)?;
+    let bytes = std::fs::read(file_path)?;
+    let is_pdf = bytes.starts_with(b"%PDF");
+
+    let raw_content = if is_pdf {
+        let python = std::env::var("PYTHON_PATH").unwrap_or_else(|_| "python3".to_string());
+        let script_path = std::env::var("PARSE_CAS_SCRIPT").unwrap_or_else(|_| {
+            if Path::new("/app/scripts/parse_cas.py").exists() {
+                "/app/scripts/parse_cas.py".to_string()
+            } else if Path::new("scripts/parse_cas.py").exists() {
+                "scripts/parse_cas.py".to_string()
+            } else if Path::new("backend-rs/scripts/parse_cas.py").exists() {
+                "backend-rs/scripts/parse_cas.py".to_string()
+            } else if Path::new("../scripts/parse_cas.py").exists() {
+                "../scripts/parse_cas.py".to_string()
+            } else if Path::new("../../scripts/parse_cas.py").exists() {
+                "../../scripts/parse_cas.py".to_string()
+            } else {
+                "backend-rs/scripts/parse_cas.py".to_string()
+            }
+        });
+
+        let mut cmd = std::process::Command::new(&python);
+        cmd.arg(&script_path).arg(file_path);
+        if let Some(ref pw) = job_data.password {
+            cmd.arg(pw);
+        }
+
+        let output = cmd.output().map_err(|e| {
+            WorkerError::ParseError(format!("Failed to execute casparser script: {e}"))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(WorkerError::ParseError(format!(
+                "casparser extraction failed: {stderr}"
+            )));
+        }
+
+        String::from_utf8(output.stdout).map_err(|e| {
+            WorkerError::ParseError(format!("Invalid UTF-8 from casparser output: {e}"))
+        })?
+    } else {
+        String::from_utf8(bytes)
+            .map_err(|e| WorkerError::ParseError(format!("Invalid UTF-8 in CAS JSON file: {e}")))?
+    };
 
     // Step 3: Parse statement JSON
     let statement: CasStatement = serde_json::from_str(&raw_content)

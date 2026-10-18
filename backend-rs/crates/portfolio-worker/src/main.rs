@@ -24,6 +24,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db = Arc::new(InMemoryDatabase::new());
 
+    // Connect to PostgreSQL database if DATABASE_URL is configured
+    let database_url = std::env::var("DATABASE_URL").ok();
+    let pg_pool = if let Some(ref db_url) = database_url {
+        println!("[Worker] Connecting to PostgreSQL at {db_url}...");
+        match sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .connect(db_url)
+            .await
+        {
+            Ok(pool) => {
+                println!("[Worker] Connected to PostgreSQL. Initializing schema...");
+                if let Err(e) = portfolio_db::init_schema(&pool).await {
+                    eprintln!("[Worker] Warning: schema initialization error: {e}");
+                }
+                Some(pool)
+            }
+            Err(e) => {
+                eprintln!(
+                    "[Worker] Warning: PostgreSQL connection failed: {e}. Running in memory-only mode."
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Connect to Redis BullMQ queue, or run in fallback polling mode if Redis is temporarily unreachable
     let redis_queue = match RedisBullQueue::connect(&redis_url, "pdfUploadQueue").await {
         Ok(queue) => {
@@ -58,12 +85,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match dequeue_result {
                         Ok(Some(job)) => {
                             println!("[Worker] Dequeued job {} for user {}", job.job_id, job.user_id);
+
+                            if let Some(ref pool) = pg_pool {
+                                let now = chrono::Utc::now();
+                                let _ = sqlx::query(
+                                    r#"
+                                    UPDATE "UploadJob"
+                                    SET status = 'PROCESSING', "startedAt" = $1, "updatedAt" = $1
+                                    WHERE id = $2
+                                    "#,
+                                )
+                                .bind(now)
+                                .bind(job.job_id.to_string())
+                                .execute(pool)
+                                .await;
+                            }
+
                             match process_pdf_job(&job, &db).await {
                                 Ok(()) => {
                                     println!("[Worker] Successfully processed job {}", job.job_id);
+                                    if let Some(ref pool) = pg_pool {
+                                        let now = chrono::Utc::now();
+                                        let _ = sqlx::query(
+                                            r#"
+                                            UPDATE "UploadJob"
+                                            SET status = 'COMPLETED', "completedAt" = $1, "updatedAt" = $1
+                                            WHERE id = $2
+                                            "#,
+                                        )
+                                        .bind(now)
+                                        .bind(job.job_id.to_string())
+                                        .execute(pool)
+                                        .await;
+                                    }
                                 }
                                 Err(err) => {
                                     eprintln!("[Worker] Failed to process job {}: {err}", job.job_id);
+                                    if let Some(ref pool) = pg_pool {
+                                        let now = chrono::Utc::now();
+                                        let _ = sqlx::query(
+                                            r#"
+                                            UPDATE "UploadJob"
+                                            SET status = 'FAILED', message = $1, "updatedAt" = $2
+                                            WHERE id = $3
+                                            "#,
+                                        )
+                                        .bind(err.to_string())
+                                        .bind(now)
+                                        .bind(job.job_id.to_string())
+                                        .execute(pool)
+                                        .await;
+                                    }
                                 }
                             }
                         }

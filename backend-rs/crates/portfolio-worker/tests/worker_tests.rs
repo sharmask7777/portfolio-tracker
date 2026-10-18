@@ -666,3 +666,32 @@ fn test_date_parsing_and_tx_type_normalization() {
     assert_eq!(normalize_tx_type("REDEMPTION"), "REDEMPTION");
     assert_eq!(normalize_tx_type("SELL"), "REDEMPTION");
 }
+
+#[tokio::test]
+async fn test_cas_upload_job_dummy_pdf_failure_and_cleanup() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("pdf.failure@example.com", "secret");
+    let job_id = Uuid::new_v4();
+
+    // Create a temporary file with %PDF header but invalid/empty CAS contents
+    let mut temp_file = NamedTempFile::new().expect("create temp file");
+    temp_file
+        .write_all(b"%PDF-1.4 dummy corrupt content")
+        .expect("write dummy pdf");
+    let temp_path = temp_file.path().to_path_buf();
+
+    db.create_upload_job(job_id, user.id, &temp_path.to_string_lossy());
+
+    let job_data =
+        ProcessPdfUploadJobData::new(user.id, temp_path.to_string_lossy().to_string(), job_id);
+    let result = process_pdf_job(&job_data, &db).await;
+
+    // Should fail with ParseError because dummy content cannot be parsed
+    assert!(result.is_err());
+    let failed_job = db.get_upload_job(job_id).expect("job exists");
+    assert_eq!(failed_job.status, UploadJobStatus::Failed);
+    assert!(failed_job.message.is_some());
+
+    // Verify temp file is cleanly removed
+    assert!(!temp_path.exists());
+}

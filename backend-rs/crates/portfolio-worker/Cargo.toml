@@ -8,6 +8,7 @@ portfolio-core = { path = "../portfolio-core" }
 portfolio-db = { path = "../portfolio-db" }
 
 tokio = { workspace = true }
+sqlx = { workspace = true }
 redis = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
