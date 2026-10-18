@@ -107,8 +107,9 @@ async fn test_transaction_insertion_and_chronological_listing() {
         Some("INF879O01019"),
         Some("122639"),
         None,
+        Some(r#"{"exitLoad": "1% for redemption within 365 days"}"#.to_string()),
     );
-    let asset2 = db.create_asset("STOCK", "HDFC Bank Ltd", None, None, Some("HDFCBANK"));
+    let asset2 = db.create_asset("STOCK", "HDFC Bank Ltd", None, None, Some("HDFCBANK"), None);
 
     // Create 2 folios under the portfolio
     let folio1 = db
@@ -285,7 +286,7 @@ async fn test_multi_member_profile_creation_and_cascading_deletion() {
         .expect("Failed to create portfolio");
 
     // Create assets and folios under both portfolios
-    let asset = db.create_asset("MUTUAL_FUND", "Nifty 50 Index", None, None, None);
+    let asset = db.create_asset("MUTUAL_FUND", "Nifty 50 Index", None, None, None, None);
     let folio_self = db
         .create_folio(
             port_self.id,
@@ -400,6 +401,7 @@ async fn test_entity_conversion_to_portfolio_core_and_financial_parity() {
         "UTI Nifty 50 Index Fund Direct Growth",
         Some("INF789FB1X41"),
         Some("120716"),
+        None,
         None,
     );
 
@@ -602,4 +604,119 @@ fn test_entity_serde_roundtrip() {
     let deserialized_tx: TransactionEntity =
         serde_json::from_str(&json_tx).expect("deserialize tx");
     assert_eq!(deserialized_tx, tx);
+
+    let asset = AssetEntity {
+        id: Uuid::new_v4(),
+        asset_type: "MUTUAL_FUND".to_string(),
+        name: "Parag Parikh Flexi Cap Fund".to_string(),
+        isin: Some("INF879O01019".to_string()),
+        amfi_code: Some("122639".to_string()),
+        symbol: None,
+        exit_load_metadata: Some(
+            r#"{"exitLoad": "1% for redemption within 365 days"}"#.to_string(),
+        ),
+        created_at: now,
+        updated_at: now,
+    };
+    let json_asset = serde_json::to_string(&asset).expect("serialize asset");
+    assert!(json_asset.contains("\"exitLoadMetadata\""));
+    assert!(json_asset.contains("\"assetType\""));
+    assert!(json_asset.contains("\"amfiCode\""));
+    let deserialized_asset: AssetEntity =
+        serde_json::from_str(&json_asset).expect("deserialize asset");
+    assert_eq!(deserialized_asset, asset);
+
+    // Test deserializing when exitLoadMetadata is omitted (verifying #[serde(default)])
+    let json_no_exit_load = r#"{
+        "id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+        "assetType": "STOCK",
+        "name": "HDFC Bank Ltd",
+        "isin": null,
+        "amfiCode": null,
+        "symbol": "HDFCBANK",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "updatedAt": "2024-01-01T00:00:00Z"
+    }"#;
+    let asset_default: AssetEntity =
+        serde_json::from_str(json_no_exit_load).expect("deserialize without exit load");
+    assert_eq!(asset_default.exit_load_metadata, None);
+}
+
+#[tokio::test]
+async fn test_portfolio_cascading_deletion_of_folios_and_transactions() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("aarav.cascading@example.com", "hashed_pwd");
+    let portfolio = db
+        .create_portfolio(user.id, "Cascading Test Portfolio", None)
+        .await
+        .expect("create portfolio");
+
+    let asset1 = db.create_asset(
+        "MUTUAL_FUND",
+        "Parag Parikh Flexi Cap Fund",
+        Some("INF879O01019"),
+        Some("122639"),
+        None,
+        Some("1% within 365 days".to_string()),
+    );
+    let asset2 = db.create_asset("STOCK", "TCS Ltd", None, None, Some("TCS"), None);
+
+    let folio1 = db
+        .create_folio(portfolio.id, asset1.id, "FOLIO-1", None, Some("ABCDE1234F"))
+        .expect("create folio 1");
+    let folio2 = db
+        .create_folio(portfolio.id, asset2.id, "FOLIO-2", None, Some("ABCDE1234F"))
+        .expect("create folio 2");
+
+    let tx1 = db
+        .create_transaction(
+            folio1.id,
+            NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+            "BUY",
+            dec("10000.00"),
+            dec("100.0000"),
+            dec("100.0000"),
+            dec("100.0000"),
+            Some("TX-F1-1"),
+        )
+        .await
+        .expect("create tx1");
+    let tx2 = db
+        .create_transaction(
+            folio2.id,
+            NaiveDate::from_ymd_opt(2023, 2, 1).unwrap(),
+            "BUY",
+            dec("5000.00"),
+            dec("50.0000"),
+            dec("100.0000"),
+            dec("50.0000"),
+            Some("TX-F2-1"),
+        )
+        .await
+        .expect("create tx2");
+
+    // Verify entities exist prior to deletion
+    assert!(db.get_portfolio(portfolio.id).await.unwrap().is_some());
+    assert!(db.get_folio(folio1.id).is_some());
+    assert!(db.get_folio(folio2.id).is_some());
+    let f1_txs = db.list_by_folio(folio1.id).await.unwrap();
+    assert_eq!(f1_txs.len(), 1);
+    assert_eq!(f1_txs[0].id, tx1.id);
+    let f2_txs = db.list_by_folio(folio2.id).await.unwrap();
+    assert_eq!(f2_txs.len(), 1);
+    assert_eq!(f2_txs[0].id, tx2.id);
+
+    // Perform portfolio deletion
+    db.delete_portfolio(portfolio.id)
+        .await
+        .expect("delete portfolio");
+
+    // Verify cascading deletion: portfolio, folios, and transactions all wiped
+    assert!(db.get_portfolio(portfolio.id).await.unwrap().is_none());
+    assert!(db.get_folio(folio1.id).is_none());
+    assert!(db.get_folio(folio2.id).is_none());
+    assert!(db.list_folios_by_portfolio(portfolio.id).is_empty());
+    assert!(db.list_by_folio(folio1.id).await.unwrap().is_empty());
+    assert!(db.list_by_folio(folio2.id).await.unwrap().is_empty());
+    assert!(db.list_by_portfolio(portfolio.id).await.unwrap().is_empty());
 }

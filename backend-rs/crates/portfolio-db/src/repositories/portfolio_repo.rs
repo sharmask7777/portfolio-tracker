@@ -99,6 +99,34 @@ impl PortfolioRepository for SqlxPortfolioRepo {
     }
 
     async fn delete_portfolio(&self, id: Uuid) -> Result<(), DbError> {
+        let mut tx = self.pool.begin().await?;
+
+        // 1. Delete all transactions belonging to folios of this portfolio
+        sqlx::query(
+            r#"
+            DELETE FROM "Transaction"
+            WHERE "folioId" IN (
+                SELECT id FROM "Folio"
+                WHERE "portfolioId" = $1
+            )
+            "#,
+        )
+        .bind(id.to_string())
+        .execute(&mut *tx)
+        .await?;
+
+        // 2. Delete all folios of this portfolio
+        sqlx::query(
+            r#"
+            DELETE FROM "Folio"
+            WHERE "portfolioId" = $1
+            "#,
+        )
+        .bind(id.to_string())
+        .execute(&mut *tx)
+        .await?;
+
+        // 3. Delete the portfolio itself
         sqlx::query(
             r#"
             DELETE FROM "Portfolio"
@@ -106,8 +134,10 @@ impl PortfolioRepository for SqlxPortfolioRepo {
             "#,
         )
         .bind(id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+
+        tx.commit().await?;
 
         Ok(())
     }

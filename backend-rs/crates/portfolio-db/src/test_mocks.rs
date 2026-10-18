@@ -83,6 +83,7 @@ impl InMemoryDatabase {
         isin: Option<&str>,
         amfi_code: Option<&str>,
         symbol: Option<&str>,
+        exit_load_metadata: Option<String>,
     ) -> AssetEntity {
         let mut state = self.state.write().expect("lock poisoned");
         let id = Uuid::new_v4();
@@ -94,6 +95,7 @@ impl InMemoryDatabase {
             isin: isin.map(|s| s.to_string()),
             amfi_code: amfi_code.map(|s| s.to_string()),
             symbol: symbol.map(|s| s.to_string()),
+            exit_load_metadata,
             created_at: now,
             updated_at: now,
         };

@@ -79,6 +79,9 @@ pub struct AssetEntity {
     #[serde(rename = "amfiCode", alias = "amfi_code")]
     pub amfi_code: Option<String>,
     pub symbol: Option<String>,
+    #[sqlx(rename = "exitLoadMetadata")]
+    #[serde(default, rename = "exitLoadMetadata", alias = "exit_load_metadata")]
+    pub exit_load_metadata: Option<String>,
     #[sqlx(rename = "createdAt")]
     #[serde(rename = "createdAt", alias = "created_at")]
     pub created_at: DateTime<Utc>,
