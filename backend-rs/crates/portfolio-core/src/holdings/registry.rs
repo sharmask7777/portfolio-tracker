@@ -71,7 +71,7 @@ pub fn get_latest_nav(transactions: &[Transaction]) -> Nav {
             return tx.nav;
         }
     }
-    transactions.last().map(|tx| tx.nav).unwrap_or(Nav::ZERO)
+    sorted.last().map(|tx| tx.nav).unwrap_or(Nav::ZERO)
 }
 
 /// Consolidates multiple folios for the same scheme (grouped by ISIN if present, or asset name),
@@ -127,4 +127,82 @@ pub fn consolidate_by_scheme(folios: &[Folio], current_nav: Nav) -> Vec<Consolid
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::holdings::TransactionType;
+    use chrono::NaiveDate;
+    use std::str::FromStr;
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).expect("valid date")
+    }
+
+    #[test]
+    fn test_get_latest_nav_empty_and_fallback() {
+        assert_eq!(get_latest_nav(&[]), Nav::ZERO);
+
+        // Transactions where none have positive NAV, entered out of order
+        let tx1 = Transaction::new(
+            "tx-later",
+            date(2023, 5, 1),
+            TransactionType::Buy,
+            Money::from_str("100").unwrap(),
+            Units::from_str("10").unwrap(),
+            Nav::ZERO,
+            Units::from_str("10").unwrap(),
+        );
+        let tx2 = Transaction::new(
+            "tx-earlier",
+            date(2023, 1, 1),
+            TransactionType::Buy,
+            Money::from_str("100").unwrap(),
+            Units::from_str("10").unwrap(),
+            Nav::ZERO,
+            Units::from_str("10").unwrap(),
+        );
+
+        // Input slice has tx1 then tx2. Sorted order is tx2 then tx1.
+        // Fallback sorted.last() must return tx1's NAV (Nav::ZERO).
+        let nav = get_latest_nav(&[tx1, tx2]);
+        assert_eq!(nav, Nav::ZERO);
+    }
+
+    #[test]
+    fn test_get_latest_nav_picks_latest_chronological_positive_nav() {
+        let tx_old = Transaction::new(
+            "tx-old",
+            date(2023, 1, 1),
+            TransactionType::Buy,
+            Money::from_str("1000").unwrap(),
+            Units::from_str("100").unwrap(),
+            Nav::from_str("10").unwrap(),
+            Units::from_str("100").unwrap(),
+        );
+        let tx_new = Transaction::new(
+            "tx-new",
+            date(2023, 6, 1),
+            TransactionType::Buy,
+            Money::from_str("2000").unwrap(),
+            Units::from_str("100").unwrap(),
+            Nav::from_str("20").unwrap(),
+            Units::from_str("200").unwrap(),
+        );
+        let tx_newest_zero_nav = Transaction::new(
+            "tx-newest-zero",
+            date(2023, 12, 1),
+            TransactionType::Redemption,
+            Money::from_str("1000").unwrap(),
+            Units::from_str("50").unwrap(),
+            Nav::ZERO,
+            Units::from_str("150").unwrap(),
+        );
+
+        // Unsorted input slice: newest (zero nav), then new (20), then old (10)
+        let nav = get_latest_nav(&[tx_newest_zero_nav, tx_new, tx_old]);
+        // Must return 20, the latest positive nav chronologically
+        assert_eq!(nav, Nav::from_str("20").unwrap());
+    }
 }
