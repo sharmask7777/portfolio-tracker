@@ -59,6 +59,9 @@ For any changes to the backend or calculation logic, run and pass:
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo fmt --check`
 
+### Docker Compose 100% Rust Architecture
+The production and local `docker-compose.yml` runs 100% on the Rust backend (`backend-rs`) as the native `backend` and `worker` services. The legacy Node.js/Express/Prisma containers have been replaced. Database initialization is completely self-healing on container boot via `portfolio_db::init_schema(&pool)` executing DDL idempotent migrations—no manual `npx prisma migrate deploy` is required.
+
 Whenever you write new unit tests in the TypeScript backend, remember to manually import and use `jest.mock('@src/services/db.service', () => require('@src/test/db.mock'))` to avoid attempting real database connections. Run integration tests normally by spinning up the local test docker container!
 
 ## Git and Commits

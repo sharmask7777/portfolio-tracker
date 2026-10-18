@@ -15,10 +15,11 @@ RUN cargo build --release --bin portfolio-api --bin portfolio-worker
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
-# Install runtime dependencies: OpenSSL, CA certificates, Python 3, and casparser
+# Install runtime dependencies: OpenSSL, CA certificates, curl, Python 3, and casparser
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     openssl \
+    curl \
     python3 \
     python3-pip \
     python3-cryptography \

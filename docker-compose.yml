@@ -37,20 +37,28 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ./backend-rs
       dockerfile: Dockerfile
-    image: ${DOCKER_REGISTRY_USER}/portfolio-backend:latest
+    image: ${DOCKER_REGISTRY_USER:-portfolio}/portfolio-backend:latest
     container_name: portfolio_tracker_backend
     restart: always
     ports:
-      - "${VITE_API_PORT}:3001"
+      - "${VITE_API_PORT:-3001}:3001"
     environment:
       DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3001
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-me}
       PYTHON_PATH: python3
+      UPLOADS_DIR: /app/uploads
+      PARSE_CAS_SCRIPT: /app/scripts/parse_cas.py
       TZ: ${TZ_GLOBAL}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,62 +69,10 @@ services:
 
   worker:
     build:
-      context: ./backend
+      context: ./backend-rs
       dockerfile: Dockerfile
-    image: ${DOCKER_REGISTRY_USER}/portfolio-backend:latest
+    image: ${DOCKER_REGISTRY_USER:-portfolio}/portfolio-backend:latest
     container_name: portfolio_tracker_worker
-    restart: always
-    environment:
-      DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      NODE_ENV: ${NODE_ENV:-production}
-      PYTHON_PATH: python3
-      TZ: ${TZ_GLOBAL}
-    command: ["node", "dist/worker.js"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_started
-    volumes:
-      - shared_uploads:/app/uploads
-
-  backend-rs:
-    profiles: ["rust"]
-    build:
-      context: ./backend-rs
-      dockerfile: Dockerfile
-    image: ${DOCKER_REGISTRY_USER:-portfolio}/portfolio-backend-rs:latest
-    container_name: portfolio_tracker_backend_rs
-    restart: always
-    ports:
-      - "${VITE_API_PORT_RS:-3002}:3001"
-    environment:
-      DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      PORT: 3001
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-me}
-      PYTHON_PATH: python3
-      TZ: ${TZ_GLOBAL}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - shared_uploads:/app/uploads
-
-  worker-rs:
-    profiles: ["rust"]
-    build:
-      context: ./backend-rs
-      dockerfile: Dockerfile
-    image: ${DOCKER_REGISTRY_USER:-portfolio}/portfolio-backend-rs:latest
-    container_name: portfolio_tracker_worker_rs
     restart: always
     command: ["portfolio-worker"]
     environment:
@@ -124,13 +80,15 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       PYTHON_PATH: python3
+      UPLOADS_DIR: /app/uploads
+      PARSE_CAS_SCRIPT: /app/scripts/parse_cas.py
       TZ: ${TZ_GLOBAL}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      backend-rs:
+      backend:
         condition: service_started
     volumes:
       - shared_uploads:/app/uploads
