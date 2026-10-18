@@ -29,7 +29,7 @@ jobs:
     - name: Install Playwright Browsers
       run: cd frontend && npx playwright install --with-deps chromium
 
-    - name: Run Integration Tests and Playwright E2E tests
+    - name: Start Docker compose stack
       run: |
         cat <<EOF > .env
         DOCKER_REGISTRY_USER=shaleenks
@@ -48,13 +48,10 @@ jobs:
         JWT_SECRET=your-super-secret-jwt-key-change-me
         REDIS_HOST=localhost
         REDIS_PORT=6379
-        NODE_ENV=development
+        NODE_ENV=test
         EOF
 
-        export DATABASE_URL="postgresql://postgres:password@localhost:5432/portfolio_tracker?schema=public"
-        export JWT_SECRET="your-super-secret-jwt-key-change-me"
         export NODE_ENV=development
-
         npm run docker:up
 
         echo "Waiting for postgres to become healthy..."
@@ -67,12 +64,22 @@ jobs:
           sleep 2
         done
 
-        echo "Applying Prisma migrations..."
+    - name: Apply Database Migrations
+      run: |
+        export DATABASE_URL="postgresql://postgres:password@localhost:5432/portfolio_tracker?schema=public"
         (cd backend && npx prisma migrate deploy)
 
-        echo "Running backend test suite (unit + integration)..."
+    - name: Run Backend Integration & Unit Tests
+      run: |
+        export DATABASE_URL="postgresql://postgres:password@localhost:5432/portfolio_tracker?schema=public"
+        export JWT_SECRET="your-super-secret-jwt-key-change-me"
+        export REDIS_HOST="localhost"
+        export REDIS_PORT="6379"
+        export NODE_ENV=test
         (cd backend && npm test)
 
+    - name: Run Playwright E2E tests
+      run: |
         if [ "${{ github.event_name }}" == "pull_request" ]; then
           echo "Running smoke, responsiveness, and mock portfolio tests..."
           (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts)
@@ -80,7 +87,10 @@ jobs:
           echo "Running full E2E suite..."
           (cd frontend && npm run test:e2e:docker)
         fi
-        npm run docker:down
+
+    - name: Tear down Docker stack
+      if: always()
+      run: npm run docker:down
 
     - uses: actions/upload-artifact@v4
       if: always()
