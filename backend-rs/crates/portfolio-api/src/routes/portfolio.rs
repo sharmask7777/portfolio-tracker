@@ -279,6 +279,8 @@ fn get_fund_holdings_for_isin(isin: &str) -> (String, Vec<FundHolding>) {
     }
 }
 
+use tokio::io::AsyncWriteExt;
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadPdfResponse {
@@ -291,10 +293,24 @@ pub async fn upload_pdf(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<UploadPdfResponse>), ApiError> {
-    let mut file_bytes: Option<Vec<u8>> = None;
+    let job_id = Uuid::new_v4();
+    let uploads_dir = std::env::var("UPLOADS_DIR").unwrap_or_else(|_| "uploads".to_string());
+    tokio::fs::create_dir_all(&uploads_dir)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+
+    let file_path = std::path::Path::new(&uploads_dir).join(format!("{job_id}.pdf"));
+    let file_path_str = file_path.to_string_lossy().to_string();
+
+    let mut bytes_written = 0usize;
+    let mut file_created = false;
     let mut _password: Option<String> = None;
 
-    while let Ok(Some(field)) = multipart.next_field().await {
+    while let Some(mut field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?
+    {
         let name = field.name().unwrap_or_default().to_string();
         match name.as_str() {
             "password" => {
@@ -303,35 +319,40 @@ pub async fn upload_pdf(
                 }
             }
             "file" => {
-                if let Ok(bytes) = field.bytes().await {
-                    file_bytes = Some(bytes.to_vec());
+                let mut dest = tokio::fs::File::create(&file_path)
+                    .await
+                    .map_err(|e| ApiError::Internal(e.to_string()))?;
+                file_created = true;
+                while let Some(chunk) = field
+                    .chunk()
+                    .await
+                    .map_err(|e| ApiError::BadRequest(e.to_string()))?
+                {
+                    bytes_written += chunk.len();
+                    dest.write_all(&chunk)
+                        .await
+                        .map_err(|e| ApiError::Internal(e.to_string()))?;
                 }
+                dest.flush()
+                    .await
+                    .map_err(|e| ApiError::Internal(e.to_string()))?;
             }
             _ => {}
         }
     }
 
-    let file_data = match file_bytes {
-        Some(bytes) if !bytes.is_empty() => bytes,
-        _ => return Err(ApiError::ValidationFailed("No file uploaded".to_string())),
-    };
-
-    let job_id = Uuid::new_v4();
-    let uploads_dir = std::env::var("UPLOADS_DIR").unwrap_or_else(|_| "uploads".to_string());
-    tokio::fs::create_dir_all(&uploads_dir)
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
-
-    let file_path = format!("{uploads_dir}/{job_id}.pdf");
-    tokio::fs::write(&file_path, &file_data)
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    if !file_created || bytes_written == 0 {
+        if file_created {
+            let _ = tokio::fs::remove_file(&file_path).await;
+        }
+        return Err(ApiError::ValidationFailed("No file uploaded".to_string()));
+    }
 
     let now = Utc::now();
     let job = UploadJobEntity {
         id: job_id,
         user_id: auth_user.user_id,
-        file_path: file_path.clone(),
+        file_path: file_path_str.clone(),
         status: UploadJobStatus::Pending,
         message: None,
         created_at: now,
@@ -341,7 +362,7 @@ pub async fn upload_pdf(
     };
 
     if let Some(pool) = state.pool() {
-        sqlx::query(
+        let insert_res = sqlx::query(
             r#"
             INSERT INTO "UploadJob" ("id", "userId", "filePath", "status", "message", "createdAt", "updatedAt")
             VALUES ($1, $2, $3, $4, $5, $6, $6)
@@ -349,13 +370,17 @@ pub async fn upload_pdf(
         )
         .bind(job_id.to_string())
         .bind(auth_user.user_id.to_string())
-        .bind(&file_path)
+        .bind(&file_path_str)
         .bind("PENDING")
         .bind(None::<String>)
         .bind(now)
         .execute(pool)
-        .await
-        .map_err(DbError::from)?;
+        .await;
+
+        if let Err(e) = insert_res {
+            let _ = tokio::fs::remove_file(&file_path).await;
+            return Err(DbError::from(e).into());
+        }
     }
 
     state.db.insert_upload_job(job);
@@ -405,7 +430,10 @@ pub async fn get_upload_status(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_portfolios).post(create_portfolio))
-        .route("/upload", post(upload_pdf))
+        .route(
+            "/upload",
+            post(upload_pdf).layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024)),
+        )
         .route("/upload-status/{id}", get(get_upload_status))
         .route("/overlap", get(get_overlap))
         .route("/{id}/summary", get(get_summary))
