@@ -442,7 +442,7 @@ Run: `git add backend-rs/crates/portfolio-worker/ && git commit -m "feat(portfol
 - Modify: `README.md`
 - Modify: `AGENTS.md`
 
-- [ ] **Step 1: Update `docker-compose.yml`**
+- [x] **Step 1: Update `docker-compose.yml`**
 
 - Point `backend` service directly to `context: ./backend-rs`, `dockerfile: Dockerfile`.
 - Point `worker` service directly to `context: ./backend-rs`, `dockerfile: Dockerfile` with command `["portfolio-worker"]`.
@@ -450,16 +450,16 @@ Run: `git add backend-rs/crates/portfolio-worker/ && git commit -m "feat(portfol
 - Ensure `ports: ["${VITE_API_PORT:-3001}:3001"]` is mapped to Rust backend.
 - Ensure `frontend` depends on `backend`.
 
-- [ ] **Step 2: Validate docker-compose syntax**
+- [x] **Step 2: Validate docker-compose syntax**
 
 Run: `docker compose config`  
 Expected: Clean valid configuration with 0 errors.
 
-- [ ] **Step 3: Update documentation in `README.md` and `AGENTS.md`**
+- [x] **Step 3: Update documentation in `README.md` and `AGENTS.md`**
 
 Document that the default backend and worker are now 100% Rust in Docker Compose.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Run: `git add docker-compose.yml README.md AGENTS.md && git commit -m "chore: cut over docker-compose.yml completely to rust backend and worker"`
 
