@@ -18,10 +18,13 @@ use portfolio_core::tax::harvesting::{
 use portfolio_core::tax::rules::simulate_sell_transactions;
 use portfolio_core::types::{AssetType, Money, Nav, Units};
 use portfolio_db::error::DbError;
-use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
 
 use crate::errors::ApiError;
 use crate::middleware::AuthUser;
+use crate::routes::portfolio::{
+    fetch_asset_for_folio, fetch_folio, fetch_folios_for_portfolio, fetch_latest_nav,
+    fetch_portfolio, fetch_transactions_for_folio, fetch_user_portfolios,
+};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -60,13 +63,10 @@ pub async fn simulate_sell(
         .unwrap_or_else(|| Decimal::from_str("0.30").unwrap());
 
     if let Some(folio_id) = payload.folio_id {
-        let folio = state
-            .db
-            .get_folio(folio_id)
+        let folio = fetch_folio(&state, folio_id)
+            .await?
             .ok_or(DbError::FolioNotFound(folio_id))?;
-        let portfolio = state
-            .db
-            .get_portfolio(folio.portfolio_id)
+        let portfolio = fetch_portfolio(&state, folio.portfolio_id)
             .await?
             .ok_or(DbError::PortfolioNotFound(folio.portfolio_id))?;
 
@@ -74,25 +74,26 @@ pub async fn simulate_sell(
             return Err(ApiError::Forbidden);
         }
 
-        let asset = state
-            .db
-            .get_asset(folio.asset_id)
+        let asset = fetch_asset_for_folio(&state, folio.asset_id)
+            .await?
             .ok_or(DbError::AssetNotFound(folio.asset_id))?;
 
-        let tx_entities = state.db.list_by_folio(folio.id).await?;
+        let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
         let mut core_txs = Vec::with_capacity(tx_entities.len());
         for t in &tx_entities {
             core_txs.push(t.to_core_transaction()?);
         }
 
+        let fallback_nav = core_txs
+            .iter()
+            .rev()
+            .find(|t| t.nav.is_positive())
+            .map(|t| t.nav)
+            .unwrap_or(Nav::ZERO);
+
         let current_price = match payload.current_price {
             Some(p) => Nav::new(p),
-            None => core_txs
-                .iter()
-                .rev()
-                .find(|t| t.nav.is_positive())
-                .map(|t| t.nav)
-                .unwrap_or(Nav::ZERO),
+            None => fetch_latest_nav(&state, Some(&asset), fallback_nav).await,
         };
 
         let asset_type = asset
@@ -155,30 +156,32 @@ pub async fn get_harvesting(
     let as_of = query.as_of.unwrap_or_else(|| Utc::now().date_naive());
     let realized_ltcg = Money::new(query.realized_ltcg.unwrap_or(Decimal::ZERO));
 
-    let portfolios = state.db.list_user_portfolios(auth_user.user_id).await?;
+    let portfolios = fetch_user_portfolios(&state, auth_user.user_id).await?;
 
     let mut folio_data = Vec::new();
 
     for portfolio in &portfolios {
-        let folios = state.db.list_folios_by_portfolio(portfolio.id);
+        let folios = fetch_folios_for_portfolio(&state, portfolio.id).await?;
         for folio in folios {
-            let asset = match state.db.get_asset(folio.asset_id) {
+            let asset = match fetch_asset_for_folio(&state, folio.asset_id).await? {
                 Some(a) => a,
                 None => continue,
             };
 
-            let tx_entities = state.db.list_by_folio(folio.id).await?;
+            let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
             let mut core_txs = Vec::with_capacity(tx_entities.len());
             for t in &tx_entities {
                 core_txs.push(t.to_core_transaction()?);
             }
 
-            let current_nav = core_txs
+            let fallback_nav = core_txs
                 .iter()
                 .rev()
                 .find(|t| t.nav.is_positive())
                 .map(|t| t.nav)
                 .unwrap_or(Nav::ZERO);
+
+            let current_nav = fetch_latest_nav(&state, Some(&asset), fallback_nav).await;
 
             let asset_type = asset
                 .asset_type

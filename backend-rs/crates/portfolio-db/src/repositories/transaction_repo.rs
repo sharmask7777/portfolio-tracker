@@ -74,7 +74,9 @@ impl TransactionRepository for SqlxTransactionRepo {
             RETURNING id::uuid, "folioId"::uuid, date::date as date, type,
                       amount::numeric as amount, units::numeric as units,
                       nav::numeric as nav, balance::numeric as balance,
-                      "externalId", "createdAt", "updatedAt"
+                      "externalId",
+                      "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                      "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             "#,
         )
         .bind(id.to_string())
@@ -99,7 +101,9 @@ impl TransactionRepository for SqlxTransactionRepo {
             SELECT id::uuid, "folioId"::uuid, date::date as date, type,
                    amount::numeric as amount, units::numeric as units,
                    nav::numeric as nav, balance::numeric as balance,
-                   "externalId", "createdAt", "updatedAt"
+                   "externalId",
+                   "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                   "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             FROM "Transaction"
             WHERE "folioId" = $1
             ORDER BY date ASC, "createdAt" ASC, id ASC
@@ -121,7 +125,9 @@ impl TransactionRepository for SqlxTransactionRepo {
             SELECT t.id::uuid, t."folioId"::uuid, t.date::date as date, t.type,
                    t.amount::numeric as amount, t.units::numeric as units,
                    t.nav::numeric as nav, t.balance::numeric as balance,
-                   t."externalId", t."createdAt", t."updatedAt"
+                   t."externalId",
+                   t."createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                   t."updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             FROM "Transaction" t
             JOIN "Folio" f ON t."folioId" = f.id
             WHERE f."portfolioId" = $1

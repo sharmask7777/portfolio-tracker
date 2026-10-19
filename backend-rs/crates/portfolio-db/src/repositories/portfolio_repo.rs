@@ -53,7 +53,9 @@ impl PortfolioRepository for SqlxPortfolioRepo {
             r#"
             INSERT INTO "Portfolio" (id, "userId", name, "managedProfileId", "createdAt", "updatedAt")
             VALUES ($1, $2, $3, $4, $5, $5)
-            RETURNING id::uuid, "userId"::uuid, "managedProfileId"::uuid, name, "createdAt", "updatedAt"
+            RETURNING id::uuid, "userId"::uuid, "managedProfileId"::uuid, name,
+                      "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                      "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             "#,
         )
         .bind(id.to_string())
@@ -70,7 +72,9 @@ impl PortfolioRepository for SqlxPortfolioRepo {
     async fn get_portfolio(&self, id: Uuid) -> Result<Option<PortfolioEntity>, DbError> {
         let record = sqlx::query_as::<_, PortfolioEntity>(
             r#"
-            SELECT id::uuid, "userId"::uuid, "managedProfileId"::uuid, name, "createdAt", "updatedAt"
+            SELECT id::uuid, "userId"::uuid, "managedProfileId"::uuid, name,
+                   "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                   "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             FROM "Portfolio"
             WHERE id = $1
             "#,
@@ -85,7 +89,9 @@ impl PortfolioRepository for SqlxPortfolioRepo {
     async fn list_user_portfolios(&self, user_id: Uuid) -> Result<Vec<PortfolioEntity>, DbError> {
         let records = sqlx::query_as::<_, PortfolioEntity>(
             r#"
-            SELECT id::uuid, "userId"::uuid, "managedProfileId"::uuid, name, "createdAt", "updatedAt"
+            SELECT id::uuid, "userId"::uuid, "managedProfileId"::uuid, name,
+                   "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                   "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             FROM "Portfolio"
             WHERE "userId" = $1
             ORDER BY "createdAt" ASC

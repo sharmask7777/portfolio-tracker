@@ -60,7 +60,9 @@ impl FamilyRepository for SqlxFamilyRepo {
                 id, "userId", name, pan, "taxSlab", "createdAt", "updatedAt"
             )
             VALUES ($1, $2, $3, $4, $5::text::float8, $6, $6)
-            RETURNING id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab", "createdAt", "updatedAt"
+            RETURNING id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
+                      "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                      "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             "#,
         )
         .bind(id.to_string())
@@ -78,7 +80,9 @@ impl FamilyRepository for SqlxFamilyRepo {
     async fn list_profiles(&self, user_id: Uuid) -> Result<Vec<ManagedProfileEntity>, DbError> {
         let records = sqlx::query_as::<_, ManagedProfileEntity>(
             r#"
-            SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab", "createdAt", "updatedAt"
+            SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
+                   "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                   "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             FROM "ManagedProfile"
             WHERE "userId" = $1
             ORDER BY "createdAt" ASC
@@ -101,7 +105,9 @@ impl FamilyRepository for SqlxFamilyRepo {
         // 1. Get profile to delete
         let profile = sqlx::query_as::<_, ManagedProfileEntity>(
             r#"
-            SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab", "createdAt", "updatedAt"
+            SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
+                   "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                   "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             FROM "ManagedProfile"
             WHERE id = $1 AND "userId" = $2
             "#,
