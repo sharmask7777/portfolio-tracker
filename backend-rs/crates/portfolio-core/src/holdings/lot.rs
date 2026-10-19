@@ -22,7 +22,10 @@ pub fn is_unit_addition(tx_type: TransactionType) -> bool {
 pub fn is_unit_redemption(tx_type: TransactionType) -> bool {
     matches!(
         tx_type,
-        TransactionType::Redemption | TransactionType::Sell | TransactionType::SwitchOut
+        TransactionType::Redemption
+            | TransactionType::Sell
+            | TransactionType::SwitchOut
+            | TransactionType::Reversal
     )
 }
 
@@ -36,8 +39,8 @@ pub fn sort_transactions(transactions: &[Transaction]) -> Vec<Transaction> {
         a.date
             .cmp(&b.date)
             .then_with(|| {
-                let a_is_sell = is_unit_redemption(a.tx_type);
-                let b_is_sell = is_unit_redemption(b.tx_type);
+                let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
+                let b_is_sell = is_unit_redemption(b.tx_type) || b.units.is_negative();
                 a_is_sell.cmp(&b_is_sell)
             })
             .then_with(|| a.id.cmp(&b.id))
@@ -117,7 +120,11 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
     let mut depletions: Vec<LotDepletion> = Vec::new();
 
     for tx in &sorted {
-        if is_unit_addition(tx.tx_type) {
+        let is_addition = is_unit_addition(tx.tx_type) && !tx.units.is_negative();
+        let is_redemption = is_unit_redemption(tx.tx_type)
+            || (is_unit_addition(tx.tx_type) && tx.units.is_negative());
+
+        if is_addition {
             let units = tx.units.abs();
             if units.is_positive() {
                 let nav = if tx.nav.is_positive() {
@@ -134,7 +141,7 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
                 };
                 lots.push(TaxLot::new(tx.date, units, nav, amount));
             }
-        } else if is_unit_redemption(tx.tx_type) {
+        } else if is_redemption {
             let mut units_to_sell = tx.units.abs();
             let effective_nav = if tx.nav.is_positive() {
                 tx.nav

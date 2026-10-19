@@ -241,14 +241,8 @@ test.describe('Mock Portfolios E2E Suite (Multi-Member, Zero Holdings & Lifecycl
     await expect(apexRow).toContainText('₹1,00,000');
   });
 
-  test('Allows manual close of an active folio and deletion of a profile', async ({ page }) => {
-    let closeCalled = false;
+  test('Does not show manual close button and allows deletion of a profile', async ({ page }) => {
     let deleteProfileCalled = false;
-
-    await page.route('**/api/portfolio/folio/folio-standalone/close', async (route) => {
-      closeCalled = true;
-      await route.fulfill({ status: 200, body: JSON.stringify({ status: 'success' }) });
-    });
 
     await page.route('**/api/family/profile/prof-gamma', async (route) => {
       deleteProfileCalled = true;
@@ -258,12 +252,9 @@ test.describe('Mock Portfolios E2E Suite (Multi-Member, Zero Holdings & Lifecycl
     page.on('dialog', dialog => dialog.accept());
     await page.goto('/');
 
-    // Test Mark Closed button on Titan Bluechip row
-    const titanRow = page.locator('tr', { hasText: 'Titan Bluechip Opportunities Fund' });
-    const closeBtn = titanRow.locator('button[title="Mark Closed"]');
-    await expect(closeBtn).toBeVisible();
-    await closeBtn.click();
-    await expect.poll(() => closeCalled).toBe(true);
+    // Verify Mark Closed button is absent (closure is derived automatically from data)
+    const closeBtns = page.locator('button[title="Mark Closed"]');
+    await expect(closeBtns).toHaveCount(0);
 
     // Test Delete Profile button on Gamma Retiring chip in FamilySelector
     const deleteGammaBtn = page.locator('button[title="Delete Profile"]').last();

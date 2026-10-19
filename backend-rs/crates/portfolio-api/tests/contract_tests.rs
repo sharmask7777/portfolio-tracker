@@ -461,9 +461,11 @@ async fn test_tax_simulate_sell_blocks_locked_elss_units_with_400() {
     let reg_sim_res = app.oneshot(reg_sim_req).await.unwrap();
     assert_eq!(reg_sim_res.status(), StatusCode::OK);
     let reg_sim_json = parse_json(reg_sim_res.into_body()).await;
-    assert_eq!(reg_sim_json["unitsToSell"], "50");
-    assert_eq!(reg_sim_json["estimatedValue"], "7500"); // 50 * 150 = 7500
-    assert_eq!(reg_sim_json["totalGain"], "2500"); // 7500 - 5000 = 2500
+    assert_eq!(reg_sim_json["unitsToSell"], 50.0);
+    assert_eq!(reg_sim_json["estimatedValue"], 7500.0); // 50 * 150 = 7500
+    assert_eq!(reg_sim_json["totalGain"], 2500.0); // 7500 - 5000 = 2500
+    assert!(reg_sim_json["taxBreakdown"].is_object());
+    assert!(reg_sim_json["taxBreakdown"]["totalTax"].is_number());
 }
 
 #[tokio::test]
@@ -966,7 +968,7 @@ async fn test_cas_upload_and_status_polling_contract() {
 
 #[tokio::test]
 async fn test_portfolio_summary_and_health_endpoints_contract() {
-    let (app, _db, _jwt_secret) = setup_test_app();
+    let (app, db, _jwt_secret) = setup_test_app();
 
     // 1. Register user & get token
     let reg_payload = json!({
@@ -984,8 +986,90 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     assert_eq!(reg_res.status(), StatusCode::CREATED);
     let reg_json = parse_json(reg_res.into_body()).await;
     let token = reg_json["token"].as_str().unwrap().to_string();
+    let user_id = Uuid::parse_str(reg_json["id"].as_str().unwrap()).unwrap();
 
-    // 2. Call GET /api/portfolio/summary. Assert 200 OK and JSON has metrics, folios, closedFolios.
+    // Create user portfolio
+    let portfolio = db
+        .create_portfolio(user_id, "Main Portfolio", None)
+        .await
+        .unwrap();
+    let port_id = portfolio.id.to_string();
+
+    // Active equity asset
+    let asset_eq = db.create_asset(
+        "MUTUAL_FUND",
+        "Parag Parikh Flexi Cap Fund",
+        Some("INF879O01019"),
+        Some("122639"),
+        Some("PPFAS_EQUITY"),
+        None,
+    );
+    let folio_eq = db
+        .create_folio(
+            portfolio.id,
+            asset_eq.id,
+            "12345678",
+            Some("PPFAS"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+    db.create_transaction(
+        folio_eq.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap(),
+        "PURCHASE",
+        Decimal::from(10000),
+        Decimal::from(100),
+        Decimal::from(100),
+        Decimal::from(100),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Closed liquid asset (fully redeemed: balance = 0)
+    let asset_liq = db.create_asset(
+        "MUTUAL_FUND",
+        "Axis Liquid Fund - Growth",
+        Some("INF846K01CX4"),
+        Some("112090"),
+        Some("AXIS_LIQUID"),
+        None,
+    );
+    let folio_liq = db
+        .create_folio(
+            portfolio.id,
+            asset_liq.id,
+            "87654321",
+            Some("AXIS"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+    db.create_transaction(
+        folio_liq.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 2, 1).unwrap(),
+        "PURCHASE",
+        Decimal::from(50000),
+        Decimal::from(50),
+        Decimal::from(1000),
+        Decimal::from(50),
+        None,
+    )
+    .await
+    .unwrap();
+    db.create_transaction(
+        folio_liq.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 6, 1).unwrap(),
+        "REDEMPTION",
+        Decimal::from(-55000),
+        Decimal::from(-50),
+        Decimal::from(1100),
+        Decimal::ZERO,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // 2. Call GET /api/portfolio/summary. Assert 200 OK and JSON has metrics, active folios, closedFolios.
     let sum_req = Request::builder()
         .uri("/api/portfolio/summary")
         .method("GET")
@@ -1000,8 +1084,31 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     assert!(sum_json["metrics"]["totalInvested"].is_number());
     assert!(sum_json["metrics"]["totalValue"].is_number());
     assert!(sum_json["metrics"]["xirr"].is_number());
-    assert!(sum_json.get("folios").is_some());
-    assert!(sum_json.get("closedFolios").is_some());
+
+    // Assert active folio isolation
+    let folios = sum_json["folios"].as_array().expect("folios must be array");
+    assert_eq!(folios.len(), 1, "Should have exactly 1 active folio");
+    assert_eq!(folios[0]["units"], 100.0);
+    assert_eq!(folios[0]["metrics"]["currentValue"], 10000.0);
+
+    // Assert closed folio clean zeroing
+    let closed = sum_json["closedFolios"]
+        .as_array()
+        .expect("closedFolios must be array");
+    assert_eq!(closed.len(), 1, "Should have exactly 1 closed folio");
+    assert_eq!(closed[0]["units"], 0.0, "Closed folio must show 0.0 units");
+    assert_eq!(
+        closed[0]["metrics"]["currentValue"], 0.0,
+        "Closed folio currentValue must be 0.0"
+    );
+    assert_eq!(
+        closed[0]["metrics"]["investedAmount"], 0.0,
+        "Closed folio investedAmount must be 0.0"
+    );
+    assert_eq!(
+        closed[0]["metrics"]["totalGain"], 0.0,
+        "Closed folio totalGain must be 0.0"
+    );
 
     // 3. Call GET /api/portfolio/summary?profileId=some-id. Assert 200 OK.
     let prof_sum_req = Request::builder()
@@ -1014,9 +1121,9 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let prof_sum_res = app.clone().oneshot(prof_sum_req).await.unwrap();
     assert_eq!(prof_sum_res.status(), StatusCode::OK);
 
-    // 4. Call GET /api/portfolio/test-id/xray. Assert 200 OK with assetAllocation.
+    // 4. Call GET /api/portfolio/{port_id}/xray. Assert 200 OK with assetAllocation.
     let xray_req = Request::builder()
-        .uri("/api/portfolio/test-id/xray")
+        .uri(format!("/api/portfolio/{port_id}/xray"))
         .method("GET")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
@@ -1026,10 +1133,11 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     assert_eq!(xray_res.status(), StatusCode::OK);
     let xray_json = parse_json(xray_res.into_body()).await;
     assert!(xray_json.get("assetAllocation").is_some());
+    assert!(xray_json["assetAllocation"]["equity"]["percentage"].is_number());
 
-    // 5. Call GET /api/portfolio/test-id/exposures. Assert 200 OK with array.
+    // 5. Call GET /api/portfolio/{port_id}/exposures. Assert 200 OK with non-empty stock exposures.
     let exp_req = Request::builder()
-        .uri("/api/portfolio/test-id/exposures")
+        .uri(format!("/api/portfolio/{port_id}/exposures"))
         .method("GET")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
@@ -1038,11 +1146,26 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let exp_res = app.clone().oneshot(exp_req).await.unwrap();
     assert_eq!(exp_res.status(), StatusCode::OK);
     let exp_json = parse_json(exp_res.into_body()).await;
-    assert!(exp_json.is_array());
+    let exposures = exp_json
+        .as_array()
+        .expect("exposures response must be an array");
+    assert!(
+        !exposures.is_empty(),
+        "Active equity folio must produce identified stock exposures"
+    );
+    for exp in exposures {
+        assert!(exp["name"].is_string());
+        assert!(exp["sector"].is_string());
+        assert!(exp["percentage"].is_number());
+        assert!(exp["percentage"].as_f64().unwrap() > 0.0);
+        assert!(exp["absoluteValue"].is_number());
+        assert!(exp["absoluteValue"].as_f64().unwrap() > 0.0);
+        assert!(exp["contributions"].is_array());
+    }
 
-    // 6. Call GET /api/portfolio/test-id/tax-summary. Assert 200 OK with realized and unrealized.
+    // 6. Call GET /api/portfolio/{port_id}/tax-summary. Assert 200 OK with realized details containing sellDate.
     let tax_req = Request::builder()
-        .uri("/api/portfolio/test-id/tax-summary")
+        .uri(format!("/api/portfolio/{port_id}/tax-summary"))
         .method("GET")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
@@ -1053,10 +1176,25 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let tax_json = parse_json(tax_res.into_body()).await;
     assert!(tax_json.get("realized").is_some());
     assert!(tax_json.get("unrealized").is_some());
+    let details = tax_json["realized"]["details"]
+        .as_array()
+        .expect("realized.details must be array");
+    assert!(
+        !details.is_empty(),
+        "Redeemed liquid folio must produce realized tax trade lots"
+    );
+    let detail0 = &details[0];
+    assert_eq!(detail0["sellDate"], "2023-06-01");
+    assert_eq!(detail0["buyDate"], "2023-02-01");
+    assert_eq!(detail0["units"], 50.0);
+    assert_eq!(detail0["grossConsideration"], 55000.0);
+    assert_eq!(detail0["costOfAcquisition"], 50000.0);
+    assert_eq!(detail0["gain"], 5000.0);
+    assert!(detail0["taxType"].is_string());
 
-    // 7. Call GET /api/portfolio/test-id/history. Assert 200 OK with array.
+    // 7. Call GET /api/portfolio/{port_id}/history. Assert 200 OK with array.
     let hist_req = Request::builder()
-        .uri("/api/portfolio/test-id/history")
+        .uri(format!("/api/portfolio/{port_id}/history"))
         .method("GET")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
@@ -1067,9 +1205,9 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let hist_json = parse_json(hist_res.into_body()).await;
     assert!(hist_json.is_array());
 
-    // 8. Call GET /api/portfolio/test-id/stats. Assert 200 OK with ath and maxInvested.
+    // 8. Call GET /api/portfolio/{port_id}/stats. Assert 200 OK with ath and maxInvested.
     let stats_req = Request::builder()
-        .uri("/api/portfolio/test-id/stats")
+        .uri(format!("/api/portfolio/{port_id}/stats"))
         .method("GET")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
@@ -1118,9 +1256,9 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let purge_json = parse_json(purge_res.into_body()).await;
     assert_eq!(purge_json["status"], "success");
 
-    // 11. Call GET /api/health/test-id/insights. Assert 200 OK and array response.
+    // 11. Call GET /api/health/{port_id}/insights. Assert 200 OK and non-empty smart insights.
     let insights_req = Request::builder()
-        .uri("/api/health/test-id/insights")
+        .uri(format!("/api/health/{port_id}/insights"))
         .method("GET")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
@@ -1129,7 +1267,19 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let insights_res = app.clone().oneshot(insights_req).await.unwrap();
     assert_eq!(insights_res.status(), StatusCode::OK);
     let insights_json = parse_json(insights_res.into_body()).await;
-    assert!(insights_json.is_array());
+    let insights_arr = insights_json
+        .as_array()
+        .expect("insights response must be an array");
+    assert!(
+        !insights_arr.is_empty(),
+        "Portfolio health endpoint must return smart insights"
+    );
+    for ins in insights_arr {
+        assert!(ins["type"].is_string());
+        assert!(ins["severity"].is_string());
+        assert!(ins["message"].is_string());
+        assert!(ins["recommendation"].is_string());
+    }
 
     // 12. Call GET /api/health/test-id/goals. Assert 200 OK and array response.
     let goals_req = Request::builder()

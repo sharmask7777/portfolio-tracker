@@ -18,6 +18,7 @@ pub enum TransactionType {
     SwitchOut,
     DividendPayout,
     DividendReinvestment,
+    Reversal,
     Other,
 }
 
@@ -30,6 +31,7 @@ impl TransactionType {
                 | TransactionType::Sell
                 | TransactionType::SwitchOut
                 | TransactionType::DividendPayout
+                | TransactionType::Reversal
         )
     }
 

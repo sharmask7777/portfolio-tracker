@@ -1,20 +1,17 @@
-import { X, CheckCircle2, Trash2 } from 'lucide-react';
+import { X, Trash2 } from 'lucide-react';
 
 interface TransactionSidePanelProps {
   folio: any;
   onClose: () => void;
-  onCloseFolio?: (folio: any) => Promise<void>;
   onDeleteFolio?: (folio: any) => Promise<void>;
 }
 
-export function TransactionSidePanel({ folio, onClose, onCloseFolio, onDeleteFolio }: TransactionSidePanelProps) {
+export function TransactionSidePanel({ folio, onClose, onDeleteFolio }: TransactionSidePanelProps) {
   if (!folio) return null;
 
   const sortedTransactions = folio.transactions
     ? [...folio.transactions].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
     : [];
-
-  const isClosed = folio.metrics?.currentValue === 0 && (!folio.units || folio.units < 0.001);
 
   return (
     <>
@@ -32,30 +29,17 @@ export function TransactionSidePanel({ folio, onClose, onCloseFolio, onDeleteFol
           </button>
         </div>
         <div className="side-panel-content">
-          {(onCloseFolio || onDeleteFolio) && (
+          {onDeleteFolio && (
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-color)' }}>
-              {onCloseFolio && !isClosed && (
-                <button
-                  className="btn btn-secondary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8125rem', padding: '0.4rem 0.75rem' }}
-                  onClick={() => onCloseFolio(folio)}
-                  title="Mark this folio as closed / fully redeemed"
-                >
-                  <CheckCircle2 size={14} />
-                  Mark Closed
-                </button>
-              )}
-              {onDeleteFolio && (
-                <button
-                  className="btn btn-secondary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8125rem', padding: '0.4rem 0.75rem', color: 'var(--danger-color, #ef4444)' }}
-                  onClick={() => onDeleteFolio(folio)}
-                  title="Delete this folio and all its transactions"
-                >
-                  <Trash2 size={14} />
-                  Delete Folio
-                </button>
-              )}
+              <button
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8125rem', padding: '0.4rem 0.75rem', color: 'var(--danger-color, #ef4444)' }}
+                onClick={() => onDeleteFolio(folio)}
+                title="Delete this folio and all its transactions"
+              >
+                <Trash2 size={14} />
+                Delete Folio
+              </button>
             </div>
           )}
 

@@ -289,6 +289,7 @@ impl TransactionEntity {
             "DIVIDEND_REINVESTMENT" => {
                 portfolio_core::holdings::TransactionType::DividendReinvestment
             }
+            "REVERSAL" => portfolio_core::holdings::TransactionType::Reversal,
             _ => portfolio_core::holdings::TransactionType::Other,
         };
 

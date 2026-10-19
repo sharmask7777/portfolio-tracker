@@ -48,6 +48,21 @@ pub enum TaxSection {
     Slab,
 }
 
+impl std::fmt::Display for TaxSection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaxSection::Sec111A15 => write!(f, "111A (15%)"),
+            TaxSection::Sec111A20 => write!(f, "111A (20%)"),
+            TaxSection::Sec112A10 => write!(f, "112A (10%)"),
+            TaxSection::Sec112A12_5 => write!(f, "112A (12.5%)"),
+            TaxSection::Sec50AA => write!(f, "50AA (Slab)"),
+            TaxSection::Sec112Debt12_5 => write!(f, "112 Debt (12.5%)"),
+            TaxSection::Sec112Debt20 => write!(f, "112 Debt (20% Indexed)"),
+            TaxSection::Slab => write!(f, "SLAB"),
+        }
+    }
+}
+
 /// Holding period classification (Short-Term vs Long-Term).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HoldingType {

@@ -2,7 +2,7 @@
 
 use crate::error::PortfolioError;
 use crate::holdings::lot::process_fifo_lots;
-use crate::holdings::{ConsolidatedScheme, Folio, ManagedProfile, Transaction};
+use crate::holdings::{ConsolidatedScheme, Folio, ManagedProfile, Transaction, TransactionType};
 use crate::performance::{PerformanceOptions, get_metrics};
 use crate::types::{Isin, Money, Nav, Units};
 
@@ -55,9 +55,29 @@ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
     if transactions.is_empty() {
         return Units::ZERO;
     }
+    let threshold = Units::new(rust_decimal::Decimal::from_parts(1, 0, 0, false, 3)); // 0.001
+
+    // Check if the latest unit-bearing transaction has an explicit balance recorded (matching CAS statements)
+    let sorted = crate::holdings::lot::sort_transactions(transactions);
+    for tx in sorted.iter().rev() {
+        let is_auxiliary = tx.tx_type == TransactionType::Other && tx.units.is_zero();
+        if !is_auxiliary {
+            let bal = tx.balance;
+            if bal >= threshold {
+                return bal;
+            } else if bal.is_zero() {
+                return Units::ZERO;
+            }
+        }
+    }
+
     let (active_lots, _) = process_fifo_lots(transactions);
     let total_remaining: Units = active_lots.iter().map(|l| l.remaining_units).sum();
-    total_remaining
+    if total_remaining < threshold {
+        Units::ZERO
+    } else {
+        total_remaining
+    }
 }
 
 /// Safely gets the latest NAV from a list of transactions.

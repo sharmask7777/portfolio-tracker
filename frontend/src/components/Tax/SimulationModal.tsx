@@ -78,7 +78,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <div>
             <h2 style={{ fontSize: '1.25rem' }}>Withdrawal Simulation</h2>
-            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{folio.asset.name}</div>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{folio.asset?.name || folio.name || 'Asset'}</div>
           </div>
           <button onClick={onClose} className="theme-toggle" style={{ border: 'none' }}><X size={24} /></button>
         </div>
@@ -164,65 +164,79 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
             )}
           </div>
         ) : (
-          <div className="animate-fade">
-            <div className="stats-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-              <div className="card" style={{ padding: '1.25rem' }}>
-                <div className="stat-label">Market Value</div>
-                <div className="stat-value" style={{ fontSize: '1.5rem' }}>{formatCurrency(result.estimatedValue)}</div>
-              </div>
-              <div className="card" style={{ padding: '1.25rem' }}>
-                <div className="stat-label">Total Deductions</div>
-                <div className="stat-value" style={{ color: 'var(--danger-color)', fontSize: '1.5rem' }}>
-                  {formatCurrency(result.taxBreakdown.totalTax + result.exitLoad)}
-                </div>
-              </div>
-            </div>
+          (() => {
+            const tb = result.taxBreakdown || {
+              stcg: { amount: 0, tax: 0, cess: 0 },
+              ltcg: { amount: 0, tax: 0, cess: 0 },
+              slab: { amount: 0, tax: 0, cess: 0 },
+              totalTax: result.estimatedTax ?? 0,
+            };
+            const totalTax = tb.totalTax ?? result.estimatedTax ?? 0;
+            const exitLoad = result.exitLoad ?? 0;
+            const estValue = result.estimatedValue ?? 0;
 
-            <div className="card" style={{ background: 'var(--bg-secondary)', border: 'none', marginBottom: '1rem' }}>
-              <h4 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <TrendingDown size={18} /> Impact Breakdown
-              </h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>LTCG Tax Estimate:</span>
-                  <strong className={result.taxBreakdown.ltcg.tax > 0 ? 'negative' : ''}>{formatCurrency(result.taxBreakdown.ltcg.tax)}</strong>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>STCG Tax Estimate:</span>
-                  <strong className={result.taxBreakdown.stcg.tax > 0 ? 'negative' : ''}>{formatCurrency(result.taxBreakdown.stcg.tax)}</strong>
-                </div>
-                {result.taxBreakdown.slab.amount !== 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Slab Rate Gains:</span>
-                    <strong>{formatCurrency(result.taxBreakdown.slab.amount)}</strong>
+            return (
+              <div className="animate-fade">
+                <div className="stats-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div className="card" style={{ padding: '1.25rem' }}>
+                    <div className="stat-label">Market Value</div>
+                    <div className="stat-value" style={{ fontSize: '1.5rem' }}>{formatCurrency(estValue)}</div>
                   </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Exit Load (1% estimate):</span>
-                  <strong className={result.exitLoad > 0 ? 'negative' : ''}>{formatCurrency(result.exitLoad)}</strong>
+                  <div className="card" style={{ padding: '1.25rem' }}>
+                    <div className="stat-label">Total Deductions</div>
+                    <div className="stat-value" style={{ color: 'var(--danger-color)', fontSize: '1.5rem' }}>
+                      {formatCurrency(totalTax + exitLoad)}
+                    </div>
+                  </div>
                 </div>
-                <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontWeight: 600 }}>Net Withdrawal:</span>
-                  <span className="positive" style={{ fontWeight: 700, fontSize: '1.125rem' }}>
-                    {formatCurrency(result.estimatedValue - result.taxBreakdown.totalTax - result.exitLoad)}
-                  </span>
+
+                <div className="card" style={{ background: 'var(--bg-secondary)', border: 'none', marginBottom: '1rem' }}>
+                  <h4 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <TrendingDown size={18} /> Impact Breakdown
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>LTCG Tax Estimate:</span>
+                      <strong className={(tb.ltcg?.tax ?? 0) > 0 ? 'negative' : ''}>{formatCurrency(tb.ltcg?.tax ?? 0)}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>STCG Tax Estimate:</span>
+                      <strong className={(tb.stcg?.tax ?? 0) > 0 ? 'negative' : ''}>{formatCurrency(tb.stcg?.tax ?? 0)}</strong>
+                    </div>
+                    {(tb.slab?.amount ?? 0) !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Slab Rate Gains:</span>
+                        <strong>{formatCurrency(tb.slab?.amount ?? 0)}</strong>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Exit Load (1% estimate):</span>
+                      <strong className={exitLoad > 0 ? 'negative' : ''}>{formatCurrency(exitLoad)}</strong>
+                    </div>
+                    <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 600 }}>Net Withdrawal:</span>
+                      <span className="positive" style={{ fontWeight: 700, fontSize: '1.125rem' }}>
+                        {formatCurrency(estValue - totalTax - exitLoad)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                  <Info size={14} style={{ flexShrink: 0 }} />
+                  <p>Exit loads are estimated based on holding period (1% for &lt;1yr). Actual loads may vary by fund policy. Tax estimates do not include cess.</p>
+                </div>
+
+                <button 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={() => setResult(null)}
+                >
+                  Adjust Amount
+                </button>
               </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-              <Info size={14} style={{ flexShrink: 0 }} />
-              <p>Exit loads are estimated based on holding period (1% for &lt;1yr). Actual loads may vary by fund policy. Tax estimates do not include cess.</p>
-            </div>
-
-            <button 
-              className="btn btn-primary" 
-              style={{ width: '100%', justifyContent: 'center' }}
-              onClick={() => setResult(null)}
-            >
-              Adjust Amount
-            </button>
-          </div>
+            );
+          })()
         )}
       </div>
     </div>

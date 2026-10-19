@@ -151,10 +151,12 @@ pub fn normalize_tx_type(raw_type: &str) -> &'static str {
         "SWITCH_OUT"
     } else if upper.contains("SIP") {
         "PURCHASE_SIP"
-    } else if upper.contains("PURCHASE") || upper.contains("BUY") {
-        "PURCHASE"
+    } else if upper.contains("REVERSAL") {
+        "REVERSAL"
     } else if upper.contains("REDEMPTION") || upper.contains("SELL") {
         "REDEMPTION"
+    } else if upper.contains("PURCHASE") || upper.contains("BUY") {
+        "PURCHASE"
     } else if upper.contains("REINVEST") {
         "DIVIDEND_REINVESTMENT"
     } else if upper.contains("DIVIDEND") {

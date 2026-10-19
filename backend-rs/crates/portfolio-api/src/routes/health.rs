@@ -1,6 +1,6 @@
 //! Health check and goal management endpoints.
 
-use axum::extract::Path;
+use axum::extract::{Path, State};
 use axum::routing::{get, put};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
@@ -11,6 +11,15 @@ use uuid::Uuid;
 use crate::errors::ApiError;
 use crate::middleware::AuthUser;
 use crate::state::AppState;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Insight {
+    pub r#type: String,
+    pub severity: String,
+    pub message: String,
+    pub recommendation: String,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,10 +94,82 @@ pub async fn health_check() -> Json<HealthResponse> {
 }
 
 pub async fn get_insights(
-    _auth_user: AuthUser,
-    Path(_portfolio_id): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    Ok(Json(json!([])))
+    auth_user: AuthUser,
+    State(state): State<AppState>,
+    Path(portfolio_id): Path<String>,
+) -> Result<Json<Vec<Insight>>, ApiError> {
+    let exposures = crate::routes::portfolio::compute_portfolio_exposures(
+        &state,
+        auth_user.user_id,
+        &portfolio_id,
+    )
+    .await
+    .unwrap_or_default();
+
+    let mut insights = Vec::new();
+
+    // 1. Sector Concentration Check
+    let mut sector_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for exp in &exposures {
+        *sector_map.entry(exp.sector.clone()).or_insert(0.0) += exp.percentage;
+    }
+
+    let mut sectors: Vec<(String, f64)> = sector_map.into_iter().collect();
+    sectors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (sector_name, pct) in sectors {
+        if pct > 0.3 {
+            let severity = if pct > 0.45 { "HIGH" } else { "MEDIUM" };
+            insights.push(Insight {
+                r#type: "CONCENTRATION".to_string(),
+                severity: severity.to_string(),
+                message: format!(
+                    "High concentration in {} sector ({:.1}%).",
+                    sector_name,
+                    pct * 100.0
+                ),
+                recommendation:
+                    "Consider diversifying into other sectors to reduce structural risk."
+                        .to_string(),
+            });
+        }
+    }
+
+    // 2. Stock Overlap Check
+    for stock in exposures.iter().take(5) {
+        if stock.percentage > 0.1 {
+            let severity = if stock.percentage > 0.15 {
+                "HIGH"
+            } else {
+                "MEDIUM"
+            };
+            insights.push(Insight {
+                r#type: "OVERLAP".to_string(),
+                severity: severity.to_string(),
+                message: format!(
+                    "Significant exposure to {} ({:.1}%).",
+                    stock.name,
+                    stock.percentage * 100.0
+                ),
+                recommendation: format!(
+                    "This stock is held across {} funds. Review if you are over-exposed.",
+                    stock.contributions.len()
+                ),
+            });
+        }
+    }
+
+    // 3. Fallback Info Insight if no risks detected
+    if insights.is_empty() {
+        insights.push(Insight {
+            r#type: "INFO".to_string(),
+            severity: "LOW".to_string(),
+            message: "Your portfolio looks well-diversified.".to_string(),
+            recommendation: "Continue monitoring regular rebalancing opportunities.".to_string(),
+        });
+    }
+
+    Ok(Json(insights))
 }
 
 pub async fn get_goals(

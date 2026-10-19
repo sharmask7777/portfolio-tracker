@@ -204,28 +204,14 @@ test.describe('Scheme Consolidation and Zero-Holdings Isolation', () => {
     await expect(page.locator('text=457159707423 / 0')).toBeVisible();
   });
 
-  test('Allows closing an active folio via Close button, triggering the backend close endpoint', async ({ page }) => {
-    let closeEndpointCalled = false;
-    await page.route('**/api/portfolio/folio/folio-hdfc/close', async (route) => {
-      closeEndpointCalled = true;
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ status: 'success' })
-      });
-    });
-
-    page.on('dialog', dialog => dialog.accept());
+  test('Does not show manual close button; position closure is determined automatically from data', async ({ page }) => {
     await page.goto('/');
 
     const hdfcRow = page.locator('tr', { hasText: 'HDFC Mid-Cap Opportunities Fund' });
     await expect(hdfcRow).toBeVisible();
 
-    const closeBtn = hdfcRow.locator('button[title="Mark Closed"]');
-    await expect(closeBtn).toBeVisible();
-    await closeBtn.click();
-
-    await expect.poll(() => closeEndpointCalled).toBe(true);
+    const closeBtn = page.locator('button[title="Mark Closed"]');
+    await expect(closeBtn).toHaveCount(0);
   });
 
   test('Allows deleting a closed folio from Closed Positions drawer, triggering the delete endpoint', async ({ page }) => {

@@ -17,7 +17,6 @@ use portfolio_core::performance::metrics::{
     calculate_absolute_return, calculate_cagr, get_metrics,
 };
 use portfolio_core::performance::xirr::{CashFlow, calculate_xirr};
-use portfolio_core::tax::harvesting::{FolioHarvestingInput, compute_unrealized_gains};
 use portfolio_core::types::{AssetType, Money, Nav};
 use portfolio_core::xray::{FundHolding, FundOverlap, calculate_fund_overlap};
 use portfolio_db::entities::{
@@ -111,6 +110,8 @@ pub struct EnrichedFolio {
     pub pan: Option<String>,
     pub portfolio_id: Uuid,
     pub asset_id: Uuid,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub units: Decimal,
     pub asset: Option<portfolio_db::entities::AssetEntity>,
     pub transactions: Vec<portfolio_db::entities::TransactionEntity>,
     pub metrics: FolioMetrics,
@@ -616,12 +617,98 @@ pub async fn get_overlap(
     Ok(Json(overlap))
 }
 
-fn get_fund_holdings_for_isin(isin: &str) -> (String, Vec<FundHolding>) {
+pub fn get_stock_sector(name: &str) -> &'static str {
+    let lower = name.to_lowercase();
+    if lower.contains("bank") || lower.contains("financial") || lower.contains("bajaj") {
+        "Financial Services"
+    } else if lower.contains("tech")
+        || lower.contains("infosys")
+        || lower.contains("tcs")
+        || lower.contains("wipro")
+        || lower.contains("alphabet")
+        || lower.contains("microsoft")
+    {
+        "Technology"
+    } else if lower.contains("reliance")
+        || lower.contains("coal")
+        || lower.contains("oil")
+        || lower.contains("petro")
+        || lower.contains("energy")
+    {
+        "Energy"
+    } else if lower.contains("airtel")
+        || lower.contains("telecom")
+        || lower.contains("communication")
+    {
+        "Communication Services"
+    } else if lower.contains("pharma") || lower.contains("health") || lower.contains("sun") {
+        "Healthcare"
+    } else if lower.contains("power")
+        || lower.contains("ntpc")
+        || lower.contains("utility")
+        || lower.contains("grid")
+    {
+        "Utilities"
+    } else if lower.contains("itc")
+        || lower.contains("unilever")
+        || lower.contains("nestle")
+        || lower.contains("defensive")
+    {
+        "Consumer Defensive"
+    } else if lower.contains("motor")
+        || lower.contains("maruti")
+        || lower.contains("tata motor")
+        || lower.contains("titan")
+        || lower.contains("paint")
+        || lower.contains("cyclical")
+    {
+        "Consumer Cyclical"
+    } else if lower.contains("larsen")
+        || lower.contains("toubro")
+        || lower.contains("cummins")
+        || lower.contains("apar")
+        || lower.contains("industrials")
+    {
+        "Industrials"
+    } else if lower.contains("steel") || lower.contains("cement") || lower.contains("materials") {
+        "Basic Materials"
+    } else {
+        "Other"
+    }
+}
+
+pub fn resolve_holdings(isin: &str, scheme_name: &str) -> (String, Vec<FundHolding>) {
     use std::str::FromStr;
     let dec = |s: &str| Decimal::from_str(s).unwrap();
 
-    match isin {
-        "INF179K01BE2" => (
+    let lower_name = scheme_name.to_lowercase();
+    if isin == "INF879O01018"
+        || isin == "INF879O01026"
+        || isin == "INF879O01027"
+        || isin == "INF879O01034"
+        || isin == "INF879O01042"
+        || lower_name.contains("parag parikh")
+        || lower_name.contains("ppfas")
+    {
+        (
+            "Parag Parikh Flexi Cap Fund".to_string(),
+            vec![
+                FundHolding::new("HDFC Bank Ltd.", dec("8.2")),
+                FundHolding::new("Bajaj Holdings & Investment Ltd.", dec("7.1")),
+                FundHolding::new("Power Grid Corporation of India Ltd.", dec("6.4")),
+                FundHolding::new("ITC Ltd.", dec("5.8")),
+                FundHolding::new("Coal India Ltd.", dec("5.2")),
+                FundHolding::new("ICICI Bank Ltd.", dec("4.9")),
+                FundHolding::new("HCL Technologies Ltd.", dec("4.5")),
+                FundHolding::new("Alphabet Inc.", dec("4.2")),
+                FundHolding::new("Microsoft Corp.", dec("4.1")),
+                FundHolding::new("Maruti Suzuki India Ltd.", dec("3.8")),
+            ],
+        )
+    } else if isin == "INF179K01BE2"
+        || (lower_name.contains("hdfc") && lower_name.contains("top 100"))
+    {
+        (
             "HDFC Top 100 Fund".to_string(),
             vec![
                 FundHolding::new("HDFC Bank Ltd.", dec("9.8")),
@@ -630,8 +717,10 @@ fn get_fund_holdings_for_isin(isin: &str) -> (String, Vec<FundHolding>) {
                 FundHolding::new("Infosys Ltd.", dec("6.0")),
                 FundHolding::new("Tata Consultancy Services Ltd.", dec("4.5")),
             ],
-        ),
-        "INF209K01157" => (
+        )
+    } else if isin == "INF209K01157" || (lower_name.contains("sbi") && lower_name.contains("large"))
+    {
+        (
             "SBI Large Cap Fund".to_string(),
             vec![
                 FundHolding::new("HDFC Bank Limited", dec("8.5")),
@@ -640,8 +729,9 @@ fn get_fund_holdings_for_isin(isin: &str) -> (String, Vec<FundHolding>) {
                 FundHolding::new("ICICI Bank Limited", dec("5.5")),
                 FundHolding::new("Bharti Airtel Ltd.", dec("4.0")),
             ],
-        ),
-        "INF769K01DP4" => (
+        )
+    } else if isin == "INF769K01DP4" || lower_name.contains("mirae") {
+        (
             "Mirae Asset Large Cap Fund".to_string(),
             vec![
                 FundHolding::new("HDFC Bank Ltd.", dec("9.0")),
@@ -650,17 +740,203 @@ fn get_fund_holdings_for_isin(isin: &str) -> (String, Vec<FundHolding>) {
                 FundHolding::new("Infosys Ltd.", dec("6.5")),
                 FundHolding::new("Larsen & Toubro Ltd.", dec("4.0")),
             ],
-        ),
-        other => {
-            let name = format!("Fund {}", other);
-            let holdings = vec![
-                FundHolding::new("HDFC Bank Ltd.", dec("10.0")),
-                FundHolding::new("Reliance Industries Ltd.", dec("8.0")),
-                FundHolding::new("Infosys Ltd.", dec("7.0")),
-            ];
-            (name, holdings)
+        )
+    } else if lower_name.contains("small") {
+        (
+            scheme_name.to_string(),
+            vec![
+                FundHolding::new("Tube Investments of India Ltd.", dec("4.5")),
+                FundHolding::new("Apar Industries Ltd.", dec("4.0")),
+                FundHolding::new("Federal Bank Ltd.", dec("3.8")),
+                FundHolding::new("Trent Ltd.", dec("3.5")),
+                FundHolding::new("Cummins India Ltd.", dec("3.2")),
+            ],
+        )
+    } else if lower_name.contains("mid") {
+        (
+            scheme_name.to_string(),
+            vec![
+                FundHolding::new("Indian Hotels Co. Ltd.", dec("4.5")),
+                FundHolding::new("Max Healthcare Institute Ltd.", dec("4.0")),
+                FundHolding::new("Tata Motors Ltd.", dec("3.8")),
+                FundHolding::new("Federal Bank Ltd.", dec("3.5")),
+                FundHolding::new("Cummins India Ltd.", dec("3.0")),
+            ],
+        )
+    } else {
+        (
+            if scheme_name.is_empty() {
+                format!("Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("HDFC Bank Ltd.", dec("9.0")),
+                FundHolding::new("Reliance Industries Ltd.", dec("8.5")),
+                FundHolding::new("ICICI Bank Ltd.", dec("7.0")),
+                FundHolding::new("Infosys Ltd.", dec("6.5")),
+                FundHolding::new("Tata Consultancy Services Ltd.", dec("5.0")),
+                FundHolding::new("Larsen & Toubro Ltd.", dec("4.0")),
+                FundHolding::new("Bharti Airtel Ltd.", dec("3.5")),
+                FundHolding::new("ITC Ltd.", dec("3.0")),
+            ],
+        )
+    }
+}
+
+pub fn get_fund_holdings_for_isin(isin: &str) -> (String, Vec<FundHolding>) {
+    resolve_holdings(isin, "")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StockContribution {
+    pub scheme_name: String,
+    pub value: f64,
+    pub weight: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StockExposure {
+    pub name: String,
+    pub sector: String,
+    pub absolute_value: f64,
+    pub percentage: f64,
+    pub contributions: Vec<StockContribution>,
+}
+
+pub async fn compute_portfolio_exposures(
+    state: &AppState,
+    user_id: Uuid,
+    target_id: &str,
+) -> Result<Vec<StockExposure>, ApiError> {
+    let portfolios = resolve_target_portfolios(state, user_id, target_id).await?;
+    if portfolios.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    use rust_decimal::prelude::ToPrimitive;
+    let mut active_equity_folios = Vec::new();
+    let mut total_equity_value = 0.0f64;
+
+    for portfolio in &portfolios {
+        let folios = fetch_folios_for_portfolio(state, portfolio.id).await?;
+        for folio in folios {
+            let asset = match fetch_asset_for_folio(state, folio.asset_id).await? {
+                Some(a) => a,
+                None => continue,
+            };
+            let tx_entities = fetch_transactions_for_folio(state, folio.id).await?;
+            if tx_entities.is_empty() {
+                continue;
+            }
+
+            let mut core_txs = Vec::with_capacity(tx_entities.len());
+            for t in &tx_entities {
+                if let Ok(ctx) = t.to_core_transaction() {
+                    core_txs.push(ctx);
+                }
+            }
+
+            let units = get_latest_units(&core_txs);
+            let fallback_nav = core_txs
+                .iter()
+                .rev()
+                .find(|t| t.nav.is_positive())
+                .map(|t| t.nav)
+                .unwrap_or(Nav::ZERO);
+
+            let latest_nav = fetch_latest_nav(state, Some(&asset), fallback_nav).await;
+            let val_dec = units.to_decimal() * latest_nav.to_decimal();
+            let is_active = units.to_decimal() >= Decimal::from_str("0.001").unwrap()
+                && val_dec >= Decimal::from_str("0.01").unwrap();
+
+            if !is_active {
+                continue;
+            }
+
+            let lower = asset.name.to_lowercase();
+            let is_debt = lower.contains("debt")
+                || lower.contains("liquid")
+                || lower.contains("bond")
+                || lower.contains("gilt");
+            let is_gold = lower.contains("gold") || asset.asset_type == "GOLD";
+            let is_cash = lower.contains("cash") || asset.asset_type == "CASH";
+
+            if is_debt || is_gold || is_cash {
+                continue;
+            }
+
+            let folio_val = val_dec.to_f64().unwrap_or(0.0);
+            if folio_val > 0.0 {
+                total_equity_value += folio_val;
+                active_equity_folios.push((asset, folio_val));
+            }
         }
     }
+
+    if total_equity_value <= 0.0 {
+        return Ok(Vec::new());
+    }
+
+    let mut stock_map: std::collections::BTreeMap<
+        String,
+        (String, String, f64, Vec<StockContribution>),
+    > = std::collections::BTreeMap::new();
+
+    for (asset, folio_val) in active_equity_folios {
+        let isin = asset.isin.as_deref().unwrap_or("");
+        let (fund_name, holdings) = resolve_holdings(isin, &asset.name);
+        let effective_name = if asset.name.is_empty() {
+            fund_name
+        } else {
+            asset.name
+        };
+
+        for h in holdings {
+            let norm_key = portfolio_core::xray::overlap::normalize_stock_name(&h.name);
+            let sector = get_stock_sector(&h.name).to_string();
+            let weight_pct = h.weight.to_f64().unwrap_or(0.0);
+            let stock_val = folio_val * (weight_pct / 100.0);
+
+            let entry = stock_map
+                .entry(norm_key)
+                .or_insert_with(|| (h.name.clone(), sector, 0.0, Vec::new()));
+            entry.2 += stock_val;
+            entry.3.push(StockContribution {
+                scheme_name: effective_name.clone(),
+                value: stock_val,
+                weight: weight_pct,
+            });
+        }
+    }
+
+    let mut exposures: Vec<StockExposure> = stock_map
+        .into_values()
+        .map(|(name, sector, absolute_value, contributions)| {
+            let percentage = if total_equity_value > 0.0 {
+                absolute_value / total_equity_value
+            } else {
+                0.0
+            };
+            StockExposure {
+                name,
+                sector,
+                absolute_value,
+                percentage,
+                contributions,
+            }
+        })
+        .collect();
+
+    exposures.sort_by(|a, b| {
+        b.absolute_value
+            .partial_cmp(&a.absolute_value)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Ok(exposures)
 }
 
 use tokio::io::AsyncWriteExt;
@@ -950,6 +1226,26 @@ pub async fn get_portfolio_summary(
                 >= Decimal::from_str("0.001").unwrap_or(Decimal::ZERO)
                 && val_dec >= Decimal::from_str("0.01").unwrap_or(Decimal::ZERO);
 
+            let (enriched_units, final_metrics) = if is_active {
+                (units.to_decimal(), folio_metrics)
+            } else {
+                (
+                    Decimal::ZERO,
+                    FolioMetrics {
+                        invested_amount: Decimal::ZERO,
+                        current_value: Decimal::ZERO,
+                        total_gain: Decimal::ZERO,
+                        absolute_return: Decimal::ZERO,
+                        xirr: None,
+                        post_tax_xirr: None,
+                        post_tax_absolute_return: None,
+                        current_price: latest_nav.to_decimal(),
+                        day_change: Decimal::ZERO,
+                        day_change_percentage: Decimal::ZERO,
+                    },
+                )
+            };
+
             let enriched = EnrichedFolio {
                 id: folio.id,
                 number: folio.number.clone(),
@@ -957,9 +1253,10 @@ pub async fn get_portfolio_summary(
                 pan: folio.pan.clone(),
                 portfolio_id: folio.portfolio_id,
                 asset_id: folio.asset_id,
+                units: enriched_units,
                 asset,
                 transactions: tx_entities,
-                metrics: folio_metrics,
+                metrics: final_metrics,
             };
 
             for tx in &core_txs {
@@ -1214,11 +1511,12 @@ pub async fn get_xray(
 }
 
 pub async fn get_exposures(
-    _auth_user: AuthUser,
-    Path(_id): Path<String>,
-    State(_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    Ok(Json(json!([])))
+    auth_user: AuthUser,
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<StockExposure>>, ApiError> {
+    let exposures = compute_portfolio_exposures(&state, auth_user.user_id, &id).await?;
+    Ok(Json(exposures))
 }
 
 pub async fn get_tax_summary(
@@ -1227,14 +1525,26 @@ pub async fn get_tax_summary(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
+    let slab_value = Decimal::new(3, 1); // 0.30
 
-    let today = Utc::now().date_naive();
-    let mut holding_data = Vec::new();
+    let mut all_realized_details = Vec::new();
+    let mut total_realized_stcg = Decimal::ZERO;
+    let mut total_realized_ltcg = Decimal::ZERO;
+    let mut total_realized_slab = Decimal::ZERO;
+    let mut total_realized = Decimal::ZERO;
+
+    let mut total_unrealized_stcg = Decimal::ZERO;
+    let mut total_unrealized_ltcg = Decimal::ZERO;
+    let mut total_unrealized_slab = Decimal::ZERO;
+    let mut total_unrealized = Decimal::ZERO;
 
     for portfolio in &portfolios {
         let folios = fetch_folios_for_portfolio(&state, portfolio.id).await?;
         for folio in folios {
-            let asset = fetch_asset_for_folio(&state, folio.asset_id).await?;
+            let asset = match fetch_asset_for_folio(&state, folio.asset_id).await? {
+                Some(a) => a,
+                None => continue,
+            };
             let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
             if tx_entities.is_empty() {
                 continue;
@@ -1253,75 +1563,101 @@ pub async fn get_tax_summary(
                 .find(|t| t.nav.is_positive())
                 .map(|t| t.nav)
                 .unwrap_or(Nav::ZERO);
-            let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback_nav).await;
-
-            let scheme_name = asset
-                .as_ref()
-                .map(|a| a.name.clone())
-                .unwrap_or_else(|| "Asset".to_string());
+            let latest_nav = fetch_latest_nav(&state, Some(&asset), fallback_nav).await;
             let asset_type = asset
-                .as_ref()
-                .and_then(|a| a.asset_type.parse::<AssetType>().ok())
+                .asset_type
+                .parse::<AssetType>()
                 .unwrap_or(AssetType::MutualFund);
 
-            holding_data.push((
-                folio.id.to_string(),
-                scheme_name,
+            let tax_summary = portfolio_core::tax::calculate_portfolio_tax(
+                &asset.name,
                 asset_type,
-                core_txs,
+                &core_txs,
                 latest_nav,
-            ));
+                slab_value,
+                None,
+            );
+
+            total_realized_stcg += tax_summary.realized.stcg.to_decimal();
+            total_realized_ltcg += tax_summary.realized.ltcg.to_decimal();
+            total_realized_slab += tax_summary.realized.slab.to_decimal();
+            total_realized += tax_summary.realized.total.to_decimal();
+
+            total_unrealized_stcg += tax_summary.unrealized.stcg.to_decimal();
+            total_unrealized_ltcg += tax_summary.unrealized.ltcg.to_decimal();
+            total_unrealized_slab += tax_summary.unrealized.slab.to_decimal();
+            total_unrealized += tax_summary.unrealized.total.to_decimal();
+
+            for mut gain in tax_summary.realized.details {
+                if gain.folio_number.is_none() {
+                    gain.folio_number = portfolio_core::types::FolioNumber::new(&folio.number).ok();
+                }
+                if gain.pan.is_none() {
+                    gain.pan = folio
+                        .pan
+                        .as_deref()
+                        .and_then(|p| portfolio_core::types::Pan::new(p).ok());
+                }
+                if gain.isin.is_none() {
+                    gain.isin = asset
+                        .isin
+                        .as_deref()
+                        .and_then(|isin_str| portfolio_core::types::Isin::new(isin_str).ok());
+                }
+                all_realized_details.push(gain);
+            }
         }
     }
 
-    let mut folio_inputs = Vec::with_capacity(holding_data.len());
-    for (folio_id, scheme_name, asset_type, core_txs, latest_nav) in &holding_data {
-        folio_inputs.push(FolioHarvestingInput {
-            folio_id: Some(folio_id.as_str()),
-            scheme_name: scheme_name.as_str(),
-            asset_type: *asset_type,
-            transactions: core_txs,
-            current_nav: *latest_nav,
-        });
-    }
-
-    let summary = compute_unrealized_gains(&folio_inputs, today);
+    all_realized_details.sort_by(|a, b| b.sell_date.cmp(&a.sell_date));
 
     use rust_decimal::prelude::ToPrimitive;
     let to_f = |v: Decimal| v.to_f64().unwrap_or(0.0);
 
-    let details: Vec<_> = summary
-        .lots
-        .into_iter()
-        .map(|lot| {
-            let cost_basis = (lot.purchase_nav * lot.units).to_decimal();
-            let current_value = (lot.current_nav * lot.units).to_decimal();
+    let details: Vec<_> = all_realized_details
+        .iter()
+        .map(|g| {
             json!({
-                "schemeName": lot.scheme_name,
-                "buyDate": lot.buy_date.to_string(),
-                "units": to_f(lot.units.to_decimal()),
-                "costBasis": to_f(cost_basis),
-                "currentValue": to_f(current_value),
-                "gain": to_f(lot.unrealized_gain.to_decimal()),
-                "isLongTerm": lot.is_ltcg,
+                "assetName": g.asset_name,
+                "folioNumber": g.folio_number.as_ref().map(|f| f.as_str()),
+                "isin": g.isin.as_ref().map(|i| i.as_str()),
+                "pan": g.pan.as_ref().map(|p| p.as_str()),
+                "assetClass": g.asset_class,
+                "section": g.section.to_string(),
+                "buyDate": g.buy_date.to_string(),
+                "sellDate": g.sell_date.to_string(),
+                "holdingPeriodDays": g.holding_period_days,
+                "holdingType": format!("{:?}", g.holding_type),
+                "units": to_f(g.units.to_decimal()),
+                "buyNav": to_f(g.buy_nav.to_decimal()),
+                "sellNav": to_f(g.sell_nav.to_decimal()),
+                "grossConsideration": to_f(g.gross_consideration.to_decimal()),
+                "costOfAcquisition": to_f(g.cost_of_acquisition.to_decimal()),
+                "gain": to_f(g.gain.to_decimal()),
+                "taxType": format!("{:?}", g.tax_type).to_uppercase(),
+                "taxRate": to_f(g.tax_rate),
+                "taxBeforeCess": to_f(g.tax_before_cess.to_decimal()),
+                "cess": to_f(g.cess.to_decimal()),
+                "estimatedTax": to_f(g.estimated_tax.to_decimal()),
+                "isGrandfathered": g.is_grandfathered,
+                "grandfatheredStatus": g.grandfathered_status,
             })
         })
         .collect();
 
-    let unrealized_total = summary.stcg.to_decimal() + summary.ltcg.to_decimal();
-
     Ok(Json(json!({
         "realized": {
-            "total": 0.0,
-            "stcg": 0.0,
-            "ltcg": 0.0,
-            "slab": 0.0
+            "total": to_f(total_realized),
+            "stcg": to_f(total_realized_stcg),
+            "ltcg": to_f(total_realized_ltcg),
+            "slab": to_f(total_realized_slab),
+            "details": details
         },
         "unrealized": {
-            "total": to_f(unrealized_total),
-            "stcg": to_f(summary.stcg.to_decimal()),
-            "ltcg": to_f(summary.ltcg.to_decimal()),
-            "slab": 0.0
+            "total": to_f(total_unrealized),
+            "stcg": to_f(total_unrealized_stcg),
+            "ltcg": to_f(total_unrealized_ltcg),
+            "slab": to_f(total_unrealized_slab),
         },
         "details": details
     })))

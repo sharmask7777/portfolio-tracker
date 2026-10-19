@@ -7,15 +7,15 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use portfolio_core::error::PortfolioError;
-use portfolio_core::tax::SellSimulation;
 use portfolio_core::tax::harvesting::{
     FolioHarvestingInput, HarvestingSummary, get_harvesting_opportunities,
 };
 use portfolio_core::tax::rules::simulate_sell_transactions;
+use portfolio_core::tax::{RealizedGain, SellSimulation, TaxType};
 use portfolio_core::types::{AssetType, Money, Nav, Units};
 use portfolio_db::error::DbError;
 
@@ -24,6 +24,7 @@ use crate::middleware::AuthUser;
 use crate::routes::portfolio::{
     fetch_asset_for_folio, fetch_folio, fetch_folios_for_portfolio, fetch_latest_nav,
     fetch_portfolio, fetch_transactions_for_folio, fetch_user_portfolios,
+    resolve_target_portfolios,
 };
 use crate::state::AppState;
 
@@ -39,9 +40,114 @@ pub struct SimulateSellRequest {
     pub sell_date: Option<NaiveDate>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxBreakdownItem {
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub tax: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub cess: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxBreakdown {
+    pub stcg: TaxBreakdownItem,
+    pub ltcg: TaxBreakdownItem,
+    pub slab: TaxBreakdownItem,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub total_tax: Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SimulationResponse {
+    pub asset_name: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub units_to_sell: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub estimated_value: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub total_gain: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub taxable_gain: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub estimated_tax: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub exit_load: Decimal,
+    pub tax_breakdown: TaxBreakdown,
+    pub matched_lots: Vec<RealizedGain>,
+}
+
+fn to_simulation_response(sim: SellSimulation) -> SimulationResponse {
+    let mut stcg_amt = Decimal::ZERO;
+    let mut stcg_tax = Decimal::ZERO;
+    let mut stcg_cess = Decimal::ZERO;
+    let mut ltcg_amt = Decimal::ZERO;
+    let mut ltcg_tax = Decimal::ZERO;
+    let mut ltcg_cess = Decimal::ZERO;
+    let mut slab_amt = Decimal::ZERO;
+    let mut slab_tax = Decimal::ZERO;
+    let mut slab_cess = Decimal::ZERO;
+    let mut total_tax = Decimal::ZERO;
+
+    for lot in &sim.matched_lots {
+        match lot.tax_type {
+            TaxType::Stcg => {
+                stcg_amt += lot.gain.to_decimal();
+                stcg_tax += lot.estimated_tax.to_decimal();
+                stcg_cess += lot.cess.to_decimal();
+            }
+            TaxType::Ltcg => {
+                ltcg_amt += lot.gain.to_decimal();
+                ltcg_tax += lot.estimated_tax.to_decimal();
+                ltcg_cess += lot.cess.to_decimal();
+            }
+            TaxType::Slab => {
+                slab_amt += lot.gain.to_decimal();
+                slab_tax += lot.estimated_tax.to_decimal();
+                slab_cess += lot.cess.to_decimal();
+            }
+        }
+        total_tax += lot.estimated_tax.to_decimal();
+    }
+
+    SimulationResponse {
+        asset_name: sim.asset_name,
+        units_to_sell: sim.units_to_sell.to_decimal(),
+        estimated_value: sim.estimated_value.to_decimal(),
+        total_gain: sim.total_gain.to_decimal(),
+        taxable_gain: sim.taxable_gain.to_decimal(),
+        estimated_tax: sim.estimated_tax.to_decimal(),
+        exit_load: sim.exit_load.to_decimal(),
+        tax_breakdown: TaxBreakdown {
+            stcg: TaxBreakdownItem {
+                amount: stcg_amt,
+                tax: stcg_tax,
+                cess: stcg_cess,
+            },
+            ltcg: TaxBreakdownItem {
+                amount: ltcg_amt,
+                tax: ltcg_tax,
+                cess: ltcg_cess,
+            },
+            slab: TaxBreakdownItem {
+                amount: slab_amt,
+                tax: slab_tax,
+                cess: slab_cess,
+            },
+            total_tax,
+        },
+        matched_lots: sim.matched_lots,
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HarvestingQuery {
+    pub scope_id: Option<String>,
     pub as_of: Option<NaiveDate>,
     pub realized_ltcg: Option<Decimal>,
 }
@@ -50,7 +156,7 @@ pub async fn simulate_sell(
     auth_user: AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<SimulateSellRequest>,
-) -> Result<Json<SellSimulation>, ApiError> {
+) -> Result<Json<SimulationResponse>, ApiError> {
     if payload.units <= Decimal::ZERO {
         return Err(ApiError::BadRequest(
             "Valid positive units are required for simulation".to_string(),
@@ -111,7 +217,7 @@ pub async fn simulate_sell(
             tax_slab,
             None,
         ) {
-            Ok(simulation) => Ok(Json(simulation)),
+            Ok(simulation) => Ok(Json(to_simulation_response(simulation))),
             Err(PortfolioError::UnitsLocked { available, locked }) => {
                 Err(ApiError::UnitsLocked { available, locked })
             }
@@ -139,7 +245,7 @@ pub async fn simulate_sell(
             tax_slab,
             None,
         ) {
-            Ok(simulation) => Ok(Json(simulation)),
+            Ok(simulation) => Ok(Json(to_simulation_response(simulation))),
             Err(PortfolioError::UnitsLocked { available, locked }) => {
                 Err(ApiError::UnitsLocked { available, locked })
             }
@@ -156,7 +262,11 @@ pub async fn get_harvesting(
     let as_of = query.as_of.unwrap_or_else(|| Utc::now().date_naive());
     let realized_ltcg = Money::new(query.realized_ltcg.unwrap_or(Decimal::ZERO));
 
-    let portfolios = fetch_user_portfolios(&state, auth_user.user_id).await?;
+    let portfolios = if let Some(ref scope_id) = query.scope_id {
+        resolve_target_portfolios(&state, auth_user.user_id, scope_id).await?
+    } else {
+        fetch_user_portfolios(&state, auth_user.user_id).await?
+    };
 
     let mut folio_data = Vec::new();
 
