@@ -997,6 +997,9 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     assert_eq!(sum_res.status(), StatusCode::OK);
     let sum_json = parse_json(sum_res.into_body()).await;
     assert!(sum_json.get("metrics").is_some());
+    assert!(sum_json["metrics"]["totalInvested"].is_number());
+    assert!(sum_json["metrics"]["totalValue"].is_number());
+    assert!(sum_json["metrics"]["xirr"].is_number());
     assert!(sum_json.get("folios").is_some());
     assert!(sum_json.get("closedFolios").is_some());
 
@@ -1076,7 +1079,11 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     assert_eq!(stats_res.status(), StatusCode::OK);
     let stats_json = parse_json(stats_res.into_body()).await;
     assert!(stats_json.get("ath").is_some());
+    assert!(stats_json["ath"]["value"].is_number());
     assert!(stats_json.get("maxInvested").is_some());
+    assert!(stats_json["maxInvested"]["value"].is_number());
+    assert!(stats_json.get("yearly").is_some());
+    assert!(stats_json["yearly"].is_array());
 
     // 9. Call POST /api/portfolio/manual-asset with { "type": "FIXED_DEPOSIT", "name": "FD 1", "units": "10000" }. Assert 200 OK.
     let asset_payload = json!({

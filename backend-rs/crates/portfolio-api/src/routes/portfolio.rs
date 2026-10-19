@@ -55,30 +55,50 @@ pub struct SummaryParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SummaryMetrics {
+    #[serde(with = "rust_decimal::serde::float")]
     pub total_invested: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub total_value: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub post_tax_total_value: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub total_gain: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub absolute_return: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub xirr: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub post_tax_xirr: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub estimated_tax: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub day_change: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub day_change_percentage: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FolioMetrics {
+    #[serde(with = "rust_decimal::serde::float")]
     pub invested_amount: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub current_value: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub total_gain: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub absolute_return: Decimal,
+    #[serde(with = "rust_decimal::serde::float_option")]
     pub xirr: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::float_option")]
     pub post_tax_xirr: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::float_option")]
     pub post_tax_absolute_return: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::float")]
     pub current_price: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub day_change: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub day_change_percentage: Decimal,
 }
 
@@ -103,6 +123,7 @@ pub struct ConsolidatedSummaryResponse {
     pub name: String,
     pub folios: Vec<EnrichedFolio>,
     pub closed_folios: Vec<EnrichedFolio>,
+    #[serde(with = "rust_decimal::serde::float")]
     pub tax_slab: Decimal,
     pub metrics: SummaryMetrics,
 }
@@ -247,6 +268,45 @@ pub async fn fetch_portfolio(
         Ok(p)
     } else {
         Ok(state.db.get_portfolio(id).await?)
+    }
+}
+
+pub async fn resolve_target_portfolios(
+    state: &AppState,
+    user_id: Uuid,
+    target_id: &str,
+) -> Result<Vec<PortfolioEntity>, ApiError> {
+    let all_portfolios = fetch_user_portfolios(state, user_id).await?;
+    if let Ok(target_uuid) = Uuid::parse_str(target_id) {
+        let matched: Vec<PortfolioEntity> = all_portfolios
+            .iter()
+            .filter(|p| p.id == target_uuid || p.managed_profile_id == Some(target_uuid))
+            .cloned()
+            .collect();
+        if !matched.is_empty() {
+            return Ok(matched);
+        }
+        if let Some(pool) = state.pool() {
+            let direct = sqlx::query_as::<_, PortfolioEntity>(
+                r#"
+                SELECT id::uuid, "userId"::uuid, "managedProfileId"::uuid, name,
+                       "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                       "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
+                FROM "Portfolio"
+                WHERE id = $1 OR "managedProfileId" = $1
+                "#,
+            )
+            .bind(target_uuid.to_string())
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+            if !direct.is_empty() {
+                return Ok(direct);
+            }
+        }
+        Ok(Vec::new())
+    } else {
+        Ok(all_portfolios)
     }
 }
 
@@ -811,18 +871,10 @@ pub async fn get_portfolio_summary(
         "Consolidated Portfolio".to_string()
     };
 
-    let user_portfolios = fetch_user_portfolios(&state, auth_user.user_id).await?;
-    let filtered_portfolios: Vec<_> = if let Some(ref prof_str) = params.profile_id {
-        if let Ok(prof_uuid) = Uuid::parse_str(prof_str) {
-            user_portfolios
-                .into_iter()
-                .filter(|p| p.managed_profile_id == Some(prof_uuid))
-                .collect()
-        } else {
-            Vec::new()
-        }
+    let filtered_portfolios = if let Some(ref prof_str) = params.profile_id {
+        resolve_target_portfolios(&state, auth_user.user_id, prof_str).await?
     } else {
-        user_portfolios
+        fetch_user_portfolios(&state, auth_user.user_id).await?
     };
 
     if filtered_portfolios.is_empty() {
@@ -971,15 +1023,7 @@ pub async fn get_xray(
     Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let portfolios = if let Ok(p_id) = Uuid::parse_str(&id) {
-        if let Some(p) = fetch_portfolio(&state, p_id).await? {
-            vec![p]
-        } else {
-            fetch_user_portfolios(&state, auth_user.user_id).await?
-        }
-    } else {
-        fetch_user_portfolios(&state, auth_user.user_id).await?
-    };
+    let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
 
     let mut total_val = Decimal::ZERO;
     let mut equity_val = Decimal::ZERO;
@@ -1102,7 +1146,14 @@ pub async fn get_xray(
         })));
     }
 
-    let pct = |v: Decimal| (v / total_val * Decimal::from(100)).round_dp(2);
+    use rust_decimal::prelude::ToPrimitive;
+    let to_f = |v: Decimal| v.to_f64().unwrap_or(0.0);
+    let pct = |v: Decimal| {
+        (v / total_val * Decimal::from(100))
+            .round_dp(2)
+            .to_f64()
+            .unwrap_or(0.0)
+    };
     let large_val = (equity_val * Decimal::new(6, 1)).round_dp(2);
     let mid_val = (equity_val * Decimal::new(25, 2)).round_dp(2);
     let small_val = equity_val - large_val - mid_val;
@@ -1116,43 +1167,46 @@ pub async fn get_xray(
         })
         .sum();
     let weighted_ter = if total_val > Decimal::ZERO {
-        (total_annual_fees / total_val * Decimal::from(100)).round_dp(2)
+        (total_annual_fees / total_val * Decimal::from(100))
+            .round_dp(2)
+            .to_f64()
+            .unwrap_or(0.0)
     } else {
-        Decimal::ZERO
+        0.0
     };
 
     Ok(Json(json!({
         "sectors": [
-            { "name": "Financial Services", "percentage": 32.5, "value": (equity_val * Decimal::new(325, 3)).round_dp(2) },
-            { "name": "Information Technology", "percentage": 18.2, "value": (equity_val * Decimal::new(182, 3)).round_dp(2) },
-            { "name": "Oil & Gas", "percentage": 12.0, "value": (equity_val * Decimal::new(12, 2)).round_dp(2) },
-            { "name": "Consumer Goods", "percentage": 11.5, "value": (equity_val * Decimal::new(115, 3)).round_dp(2) },
-            { "name": "Automobile", "percentage": 8.0, "value": (equity_val * Decimal::new(8, 2)).round_dp(2) }
+            { "name": "Financial Services", "percentage": 32.5, "value": to_f((equity_val * Decimal::new(325, 3)).round_dp(2)) },
+            { "name": "Information Technology", "percentage": 18.2, "value": to_f((equity_val * Decimal::new(182, 3)).round_dp(2)) },
+            { "name": "Oil & Gas", "percentage": 12.0, "value": to_f((equity_val * Decimal::new(12, 2)).round_dp(2)) },
+            { "name": "Consumer Goods", "percentage": 11.5, "value": to_f((equity_val * Decimal::new(115, 3)).round_dp(2)) },
+            { "name": "Automobile", "percentage": 8.0, "value": to_f((equity_val * Decimal::new(8, 2)).round_dp(2)) }
         ],
-        "totalValue": total_val,
+        "totalValue": to_f(total_val),
         "marketCap": {
-            "large": { "percentage": pct(large_val), "value": large_val },
-            "mid": { "percentage": pct(mid_val), "value": mid_val },
-            "small": { "percentage": pct(small_val), "value": small_val }
+            "large": { "percentage": pct(large_val), "value": to_f(large_val) },
+            "mid": { "percentage": pct(mid_val), "value": to_f(mid_val) },
+            "small": { "percentage": pct(small_val), "value": to_f(small_val) }
         },
         "assetAllocation": {
-            "equity": { "percentage": pct(equity_val), "value": equity_val },
-            "debt": { "percentage": pct(debt_val), "value": debt_val },
-            "cash": { "percentage": pct(cash_val), "value": cash_val },
-            "gold": { "percentage": pct(gold_val), "value": gold_val },
-            "other": { "percentage": pct(other_val), "value": other_val }
+            "equity": { "percentage": pct(equity_val), "value": to_f(equity_val) },
+            "debt": { "percentage": pct(debt_val), "value": to_f(debt_val) },
+            "cash": { "percentage": pct(cash_val), "value": to_f(cash_val) },
+            "gold": { "percentage": pct(gold_val), "value": to_f(gold_val) },
+            "other": { "percentage": pct(other_val), "value": to_f(other_val) }
         },
         "expenseAnalysis": {
-            "totalAnnualFees": total_annual_fees,
+            "totalAnnualFees": to_f(total_annual_fees),
             "weightedAvgTer": weighted_ter,
             "categoryBreakdown": [
-                { "category": "Equity", "totalFees": total_annual_fees, "avgTer": weighted_ter, "percentage": 100.0, "value": total_val }
+                { "category": "Equity", "totalFees": to_f(total_annual_fees), "avgTer": weighted_ter, "percentage": 100.0, "value": to_f(total_val) }
             ],
             "fundBreakdown": fund_breakdowns
         },
         "fundCategoryAllocation": {
-            "active": { "percentage": 85.0, "value": (total_val * Decimal::new(85, 2)).round_dp(2) },
-            "index": { "percentage": 15.0, "value": (total_val * Decimal::new(15, 2)).round_dp(2) },
+            "active": { "percentage": 85.0, "value": to_f((total_val * Decimal::new(85, 2)).round_dp(2)) },
+            "index": { "percentage": 15.0, "value": to_f((total_val * Decimal::new(15, 2)).round_dp(2)) },
             "arbitrage": { "percentage": 0.0, "value": 0.0 },
             "other": { "percentage": 0.0, "value": 0.0 }
         }
@@ -1172,15 +1226,7 @@ pub async fn get_tax_summary(
     Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let portfolios = if let Ok(p_id) = Uuid::parse_str(&id) {
-        if let Some(p) = fetch_portfolio(&state, p_id).await? {
-            vec![p]
-        } else {
-            fetch_user_portfolios(&state, auth_user.user_id).await?
-        }
-    } else {
-        fetch_user_portfolios(&state, auth_user.user_id).await?
-    };
+    let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
 
     let today = Utc::now().date_naive();
     let mut holding_data = Vec::new();
@@ -1241,6 +1287,9 @@ pub async fn get_tax_summary(
 
     let summary = compute_unrealized_gains(&folio_inputs, today);
 
+    use rust_decimal::prelude::ToPrimitive;
+    let to_f = |v: Decimal| v.to_f64().unwrap_or(0.0);
+
     let details: Vec<_> = summary
         .lots
         .into_iter()
@@ -1250,10 +1299,10 @@ pub async fn get_tax_summary(
             json!({
                 "schemeName": lot.scheme_name,
                 "buyDate": lot.buy_date.to_string(),
-                "units": lot.units.to_decimal(),
-                "costBasis": cost_basis,
-                "currentValue": current_value,
-                "gain": lot.unrealized_gain.to_decimal(),
+                "units": to_f(lot.units.to_decimal()),
+                "costBasis": to_f(cost_basis),
+                "currentValue": to_f(current_value),
+                "gain": to_f(lot.unrealized_gain.to_decimal()),
                 "isLongTerm": lot.is_ltcg,
             })
         })
@@ -1263,16 +1312,16 @@ pub async fn get_tax_summary(
 
     Ok(Json(json!({
         "realized": {
-            "total": Decimal::ZERO,
-            "stcg": Decimal::ZERO,
-            "ltcg": Decimal::ZERO,
-            "slab": Decimal::ZERO
+            "total": 0.0,
+            "stcg": 0.0,
+            "ltcg": 0.0,
+            "slab": 0.0
         },
         "unrealized": {
-            "total": unrealized_total,
-            "stcg": summary.stcg.to_decimal(),
-            "ltcg": summary.ltcg.to_decimal(),
-            "slab": Decimal::ZERO
+            "total": to_f(unrealized_total),
+            "stcg": to_f(summary.stcg.to_decimal()),
+            "ltcg": to_f(summary.ltcg.to_decimal()),
+            "slab": 0.0
         },
         "details": details
     })))
@@ -1296,41 +1345,33 @@ pub async fn get_history(
         #[serde(rename_all = "camelCase")]
         struct HistoryRow {
             date: NaiveDate,
+            #[serde(with = "rust_decimal::serde::float")]
             value: Decimal,
             #[sqlx(rename = "investedAmount")]
+            #[serde(with = "rust_decimal::serde::float")]
             invested_amount: Decimal,
         }
 
-        let rows = if let Ok(portfolio_uuid) = Uuid::parse_str(&id) {
-            sqlx::query_as::<_, HistoryRow>(
-                r#"
-                SELECT date::date as date, value::numeric as value, "investedAmount"::numeric as "investedAmount"
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = $1
-                ORDER BY date ASC
-                "#,
-            )
-            .bind(portfolio_uuid.to_string())
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default()
-        } else {
-            let portfolios = fetch_user_portfolios(&state, auth_user.user_id).await?;
-            let p_ids: Vec<String> = portfolios.into_iter().map(|p| p.id.to_string()).collect();
-            sqlx::query_as::<_, HistoryRow>(
-                r#"
-                SELECT date::date as date, SUM(value)::numeric as value, SUM("investedAmount")::numeric as "investedAmount"
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = ANY($1)
-                GROUP BY date::date
-                ORDER BY date ASC
-                "#,
-            )
-            .bind(&p_ids)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default()
-        };
+        let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
+        let p_ids: Vec<String> = portfolios.into_iter().map(|p| p.id.to_string()).collect();
+
+        if p_ids.is_empty() {
+            return Ok(Json(json!([])));
+        }
+
+        let rows = sqlx::query_as::<_, HistoryRow>(
+            r#"
+            SELECT date::date as date, SUM(value)::numeric as value, SUM("investedAmount")::numeric as "investedAmount"
+            FROM "PortfolioHistory"
+            WHERE "portfolioId" = ANY($1)
+            GROUP BY date::date
+            ORDER BY date ASC
+            "#,
+        )
+        .bind(&p_ids)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
 
         Ok(Json(
             serde_json::to_value(rows).unwrap_or_else(|_| json!([])),
@@ -1352,86 +1393,99 @@ pub async fn get_stats(
             date: NaiveDate,
         }
 
-        let (ath, max_invested) = if let Ok(portfolio_uuid) = Uuid::parse_str(&id) {
-            let ath = sqlx::query_as::<_, StatRow>(
-                r#"
-                SELECT value::numeric as value, date::date as date
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = $1
-                ORDER BY value DESC
-                LIMIT 1
-                "#,
-            )
-            .bind(portfolio_uuid.to_string())
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
+        let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
+        let p_ids: Vec<String> = portfolios.into_iter().map(|p| p.id.to_string()).collect();
 
-            let max_inv = sqlx::query_as::<_, StatRow>(
-                r#"
-                SELECT "investedAmount"::numeric as value, date::date as date
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = $1
-                ORDER BY "investedAmount" DESC
-                LIMIT 1
-                "#,
-            )
-            .bind(portfolio_uuid.to_string())
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
+        if p_ids.is_empty() {
+            return Ok(Json(json!({
+                "ath": { "value": 0.0, "date": serde_json::Value::Null },
+                "maxInvested": { "value": 0.0, "date": serde_json::Value::Null },
+                "yearly": []
+            })));
+        }
 
-            (ath, max_inv)
-        } else {
-            let portfolios = fetch_user_portfolios(&state, auth_user.user_id).await?;
-            let p_ids: Vec<String> = portfolios.into_iter().map(|p| p.id.to_string()).collect();
-            let ath = sqlx::query_as::<_, StatRow>(
-                r#"
-                SELECT SUM(value)::numeric as value, date::date as date
+        let ath = sqlx::query_as::<_, StatRow>(
+            r#"
+            SELECT SUM(value)::numeric as value, date::date as date
+            FROM "PortfolioHistory"
+            WHERE "portfolioId" = ANY($1)
+            GROUP BY date::date
+            ORDER BY value DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(&p_ids)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        let max_inv = sqlx::query_as::<_, StatRow>(
+            r#"
+            SELECT SUM("investedAmount")::numeric as value, date::date as date
+            FROM "PortfolioHistory"
+            WHERE "portfolioId" = ANY($1)
+            GROUP BY date::date
+            ORDER BY value DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(&p_ids)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        #[derive(sqlx::FromRow)]
+        struct YearlyRow {
+            year: i32,
+            max_value: Decimal,
+            max_invested: Decimal,
+        }
+
+        let yearly_rows = sqlx::query_as::<_, YearlyRow>(
+            r#"
+            SELECT
+                EXTRACT(YEAR FROM date)::int as year,
+                MAX(value)::numeric as max_value,
+                MAX("investedAmount")::numeric as max_invested
+            FROM (
+                SELECT date::date as date, SUM(value)::numeric as value, SUM("investedAmount")::numeric as "investedAmount"
                 FROM "PortfolioHistory"
                 WHERE "portfolioId" = ANY($1)
                 GROUP BY date::date
-                ORDER BY value DESC
-                LIMIT 1
-                "#,
-            )
-            .bind(&p_ids)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
+            ) sub
+            GROUP BY EXTRACT(YEAR FROM date)
+            ORDER BY year DESC
+            "#,
+        )
+        .bind(&p_ids)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
 
-            let max_inv = sqlx::query_as::<_, StatRow>(
-                r#"
-                SELECT SUM("investedAmount")::numeric as value, date::date as date
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = ANY($1)
-                GROUP BY date::date
-                ORDER BY value DESC
-                LIMIT 1
-                "#,
-            )
-            .bind(&p_ids)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-
-            (ath, max_inv)
-        };
+        use rust_decimal::prelude::ToPrimitive;
+        let yearly: Vec<_> = yearly_rows
+            .into_iter()
+            .map(|y| {
+                json!({
+                    "year": y.year,
+                    "ath": { "value": y.max_value.to_f64().unwrap_or(0.0), "date": format!("{}-12-31", y.year) },
+                    "maxInvested": { "value": y.max_invested.to_f64().unwrap_or(0.0), "date": format!("{}-12-31", y.year) }
+                })
+            })
+            .collect();
 
         Ok(Json(json!({
             "ath": {
-                "value": ath.as_ref().map(|a| a.value).unwrap_or(Decimal::ZERO),
+                "value": ath.as_ref().and_then(|a| a.value.to_f64()).unwrap_or(0.0),
                 "date": ath.as_ref().map(|a| a.date.to_string())
             },
             "maxInvested": {
-                "value": max_invested.as_ref().map(|m| m.value).unwrap_or(Decimal::ZERO),
-                "date": max_invested.as_ref().map(|m| m.date.to_string())
+                "value": max_inv.as_ref().and_then(|m| m.value.to_f64()).unwrap_or(0.0),
+                "date": max_inv.as_ref().map(|m| m.date.to_string())
             },
-            "yearly": []
+            "yearly": yearly
         })))
     } else {
         Ok(Json(json!({
