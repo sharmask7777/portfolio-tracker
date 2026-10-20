@@ -57,9 +57,15 @@ pub fn generate_ddl() -> &'static str {
     );
     CREATE INDEX IF NOT EXISTS "Portfolio_userId_idx" ON "Portfolio"("userId");
 
+    DO $$ BEGIN
+        CREATE TYPE "AssetType" AS ENUM ('MUTUAL_FUND', 'STOCK', 'FIXED_DEPOSIT', 'EPF', 'PPF', 'SGB', 'PHYSICAL_GOLD');
+    EXCEPTION
+        WHEN duplicate_object THEN null;
+    END $$;
+
     CREATE TABLE IF NOT EXISTS "Asset" (
         "id" TEXT PRIMARY KEY,
-        "type" TEXT NOT NULL,
+        "type" "AssetType" NOT NULL,
         "name" TEXT NOT NULL,
         "isin" TEXT UNIQUE,
         "amfiCode" TEXT UNIQUE,
