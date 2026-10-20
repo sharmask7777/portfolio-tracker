@@ -33,18 +33,18 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./backend-rs
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: shaleenks/portfolio-backend:latest
-          cache-from: type=registry,ref=shaleenks/portfolio-backend:buildcache
-          cache-to: type=registry,ref=shaleenks/portfolio-backend:buildcache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and push Frontend
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: shaleenks/portfolio-frontend:latest
-          cache-from: type=registry,ref=shaleenks/portfolio-frontend:buildcache
-          cache-to: type=registry,ref=shaleenks/portfolio-frontend:buildcache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
