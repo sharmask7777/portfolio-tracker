@@ -19,6 +19,14 @@ export interface ConsolidatedSchemeGroup {
   folioCount: number;
 }
 
+function sanitizeReturnRate(rate: number | null | undefined, fallback: number = 0): number {
+  if (rate == null || isNaN(rate) || !isFinite(rate)) {
+    return fallback;
+  }
+  // Clamp between -100% (-1.0) and +1000% (10.0) to prevent astronomical rendering anomalies
+  return Math.min(10.0, Math.max(-1.0, rate));
+}
+
 export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeGroup[] {
   if (!folios || !Array.isArray(folios) || folios.length === 0) {
     return [];
@@ -57,6 +65,8 @@ export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeG
 
     if (groupFolios.length === 1) {
       const f = groupFolios[0];
+      const absReturn = f.metrics?.absoluteReturn ?? 0;
+      const postTaxAbsReturn = f.metrics?.postTaxAbsoluteReturn ?? 0;
       result.push({
         id: f.id,
         schemeName,
@@ -69,10 +79,10 @@ export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeG
           currentValue: f.metrics?.currentValue ?? 0,
           dayChange: f.metrics?.dayChange ?? 0,
           dayChangePercentage: f.metrics?.dayChangePercentage ?? 0,
-          xirr: f.metrics?.xirr ?? 0,
-          postTaxXirr: f.metrics?.postTaxXirr ?? 0,
-          absoluteReturn: f.metrics?.absoluteReturn ?? 0,
-          postTaxAbsoluteReturn: f.metrics?.postTaxAbsoluteReturn ?? 0,
+          xirr: sanitizeReturnRate(f.metrics?.xirr, absReturn),
+          postTaxXirr: sanitizeReturnRate(f.metrics?.postTaxXirr, postTaxAbsReturn),
+          absoluteReturn: absReturn,
+          postTaxAbsoluteReturn: postTaxAbsReturn,
         },
         folios: groupFolios,
         folioCount: 1,
@@ -97,16 +107,21 @@ export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeG
     if (totalValWeight > 0) {
       weightedXirr = groupFolios.reduce((acc, f) => {
         const val = Math.max(0, f.metrics?.currentValue ?? 0);
-        return acc + (f.metrics?.xirr ?? 0) * (val / totalValWeight);
+        const folioXirr = sanitizeReturnRate(f.metrics?.xirr, f.metrics?.absoluteReturn ?? 0);
+        return acc + folioXirr * (val / totalValWeight);
       }, 0);
       weightedPostTaxXirr = groupFolios.reduce((acc, f) => {
         const val = Math.max(0, f.metrics?.currentValue ?? 0);
-        return acc + (f.metrics?.postTaxXirr ?? 0) * (val / totalValWeight);
+        const folioPostXirr = sanitizeReturnRate(f.metrics?.postTaxXirr, f.metrics?.postTaxAbsoluteReturn ?? 0);
+        return acc + folioPostXirr * (val / totalValWeight);
       }, 0);
     } else {
-      weightedXirr = groupFolios.reduce((acc, f) => acc + (f.metrics?.xirr ?? 0), 0) / groupFolios.length;
-      weightedPostTaxXirr = groupFolios.reduce((acc, f) => acc + (f.metrics?.postTaxXirr ?? 0), 0) / groupFolios.length;
+      weightedXirr = groupFolios.reduce((acc, f) => acc + sanitizeReturnRate(f.metrics?.xirr, f.metrics?.absoluteReturn ?? 0), 0) / groupFolios.length;
+      weightedPostTaxXirr = groupFolios.reduce((acc, f) => acc + sanitizeReturnRate(f.metrics?.postTaxXirr, f.metrics?.postTaxAbsoluteReturn ?? 0), 0) / groupFolios.length;
     }
+
+    weightedXirr = sanitizeReturnRate(weightedXirr, absoluteReturn);
+    weightedPostTaxXirr = sanitizeReturnRate(weightedPostTaxXirr, 0);
 
     // Post-tax absolute return based on post-tax current value
     const totalEstimatedTax = groupFolios.reduce((acc, f) => acc + (f.metrics?.estimatedTax ?? 0), 0);

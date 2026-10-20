@@ -3,6 +3,9 @@
 
 set -e
 
+echo "Running Rust backend workspace tests..."
+(cd backend-rs && cargo test --workspace)
+
 echo "Running frontend hermetic unit tests..."
 (cd frontend && npm run test:unit)
 

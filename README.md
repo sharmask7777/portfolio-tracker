@@ -71,21 +71,20 @@ services:
       retries: 5
 
   backend:
-    image: shaleenks/portfolio-backend:latest
+    image: ${DOCKER_REGISTRY_USER:-portfolio}/portfolio-backend:latest
     container_name: portfolio_tracker_backend
     restart: always
     ports:
-      - "${VITE_API_PORT}:3001"
+      - "${VITE_API_PORT:-3001}:3001"
     environment:
       DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      NODE_ENV: production
+      PORT: 3001
       PYTHON_PATH: python3
+      UPLOADS_DIR: /app/uploads
       TZ: ${TZ_GLOBAL}
-      # Authentication
       JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
     volumes:
       - shared_uploads:/app/uploads
     depends_on:
@@ -95,18 +94,17 @@ services:
         condition: service_healthy
 
   worker:
-    image: shaleenks/portfolio-backend:latest
+    image: ${DOCKER_REGISTRY_USER:-portfolio}/portfolio-backend:latest
     container_name: portfolio_tracker_worker
     restart: always
-    command: ["node", "dist/worker.js"]
+    command: ["portfolio-worker"]
     environment:
       DATABASE_URL: "postgresql://${PORTFOLIO_DB_USER}:${PORTFOLIO_DB_PASSWORD}@postgres:5432/${PORTFOLIO_DB_NAME}?schema=public"
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      NODE_ENV: production
       PYTHON_PATH: python3
+      UPLOADS_DIR: /app/uploads
       TZ: ${TZ_GLOBAL}
-      JWT_SECRET: ${JWT_SECRET}
     volumes:
       - shared_uploads:/app/uploads
     depends_on:
@@ -155,7 +153,8 @@ That's it! You can now access your application:
 ## 🛠️ Tech Stack
 
 - **Frontend:** React, TypeScript, Vite, Recharts, Lucide Icons, Nginx (Production).
-- **Backend:** Node.js, Express, TypeScript, Prisma 7 (PostgreSQL).
+- **Backend (Rust):** High-performance backend workspace (`backend-rs`) using Tokio, Axum, SQLx, Rust Decimal, and a zero-I/O deterministic engine (`portfolio-core`).
+- **Backend (Node.js):** Node.js, Express, TypeScript, Prisma 7 (PostgreSQL).
 - **Caching:** Redis.
 - **Infrastructure:** Docker, Multi-stage Builds, Persistent Volumes.
 - **Parsing:** Python 3 + `casparser` library.
@@ -168,6 +167,7 @@ That's it! You can now access your application:
 - Docker & Docker Compose
 - Node.js (v20+)
 - Python 3.10+
+- Rust (1.85+ / edition 2024) & Cargo
 
 ### 1. Local Build & Run
 The project includes a unified setup script to initialize everything locally.
@@ -185,7 +185,7 @@ If you prefer running services individually:
 docker-compose up -d db redis
 ```
 
-#### Backend
+#### Backend (Node.js)
 1. **Install System Dependencies (Linux only):**
    ```bash
    sudo apt-get install -y python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev
@@ -201,6 +201,40 @@ docker-compose up -d db redis
    npx prisma migrate dev
    npm run dev
    ```
+
+#### Backend (Rust - `backend-rs`)
+The high-performance Rust backend is organized as a Cargo workspace in `backend-rs/` following hexagonal architecture:
+- **`portfolio-core`**: Pure domain financial calculation engine (Zero-I/O, synchronous, deterministic). Handles holdings aggregation, FIFO lot depletion, Section 112A grandfathering, LTCG/STCG capital gains, slab taxation, Brent's method XIRR, CAGR, absolute returns, and Jaccard portfolio overlap.
+- **`portfolio-db`**: PostgreSQL persistence layer using SQLx, with repository traits and an `InMemoryDatabase` for fast zero-Docker hermetic testing.
+- **`portfolio-api`**: High-throughput Axum REST API gateway with camelCase contract parity matching the Express API, JWT authentication middleware, and CORS.
+- **`portfolio-worker`**: Asynchronous background job worker supporting BullMQ-compatible Redis queueing (`bull:pdfUploadQueue:*`) and in-memory fallback, processing CAS statement parsing and NAV refreshes.
+- **`portfolio-parity`**: Differential parity validation harness certifying exact numerical equivalence between TypeScript and Rust calculation engines down to strict tolerances ($\Delta \le ₹0.01$, $\Delta \le 0.0001$ units, $\Delta \le 10^{-6}$ for XIRR).
+
+**Rust Development & Verification Commands:**
+```bash
+cd backend-rs
+
+# Type-check all workspace crates
+cargo check --workspace
+
+# Run all hermetic unit, mock portfolio, and property-based tests
+cargo test --workspace
+
+# Run differential parity harness against benchmark scenarios (100% parity certified)
+cargo run --package portfolio-parity
+
+# Run clippy linter with zero warnings
+cargo clippy --workspace --all-targets -- -D warnings
+
+# Verify code formatting
+cargo fmt --check
+```
+
+**Running Rust Services with Docker Compose:**
+```bash
+# Launch full stack (Rust backend, Rust worker, Frontend, DB, Redis)
+docker compose up -d
+```
 
 #### Frontend
 ```bash
@@ -231,13 +265,13 @@ To support both `arm64` (Mac) and `amd64` (NAS/Intel), use Docker Buildx:
 docker buildx create --use
 
 # 2. Build & Push both architectures simultaneously
-# Backend
+# Rust Backend & Worker
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ${DOCKER_REGISTRY_USER}/portfolio-backend:latest ./backend --push
+  -t ${DOCKER_REGISTRY_USER:-portfolio}/portfolio-backend:latest ./backend-rs --push
 
 # Frontend
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ${DOCKER_REGISTRY_USER}/portfolio-frontend:latest ./frontend --push
+  -t ${DOCKER_REGISTRY_USER:-portfolio}/portfolio-frontend:latest ./frontend --push
 ```
 
 #### Verification
@@ -248,9 +282,11 @@ Check your Docker Hub repository. It should show "OS/ARCH" as `linux/amd64` and 
 
 ## 🧪 Testing & Quality
 
-- **Unit & PBT:** `npm test --prefix backend`
+- **Rust Workspace Unit & PBT:** `cd backend-rs && cargo test --workspace`
+- **Rust Differential Parity Harness:** `cd backend-rs && cargo run --package portfolio-parity`
+- **TypeScript Backend Unit & PBT:** `npm test --prefix backend`
 - **E2E Testing (Local Server):** `npx playwright test --prefix frontend`
-- **E2E Testing (Docker Deployment):** You can verify a full Docker deployment (Frontend + Backend + Database) using Playwright. Make sure your docker containers are running, then execute:
+- **E2E Testing (Docker Deployment):** You can verify a full Docker deployment (Frontend + Rust Backend + Database) using Playwright. Make sure your docker containers are running, then execute:
   ```bash
   cd frontend
   npm run test:e2e:docker
@@ -262,7 +298,7 @@ Check your Docker Hub repository. It should show "OS/ARCH" as `linux/amd64` and 
 
 ## 📖 Maintenance
 
-- **Database Migrations:** The backend container runs `prisma migrate deploy` automatically on startup.
+- **Database Migrations:** The Rust backend features self-healing database initialization (`portfolio_db::init_schema`) executing automatically on startup—no manual `prisma migrate deploy` is needed.
 - **Updating Tax Rules:** Modify logic in `TaxService.ts` (Budget 2024 ready).
 
 

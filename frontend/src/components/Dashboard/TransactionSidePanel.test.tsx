@@ -38,12 +38,9 @@ describe('TransactionSidePanel', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('calls onCloseFolio when Mark Closed button is clicked', async () => {
-    const onCloseFolio = vi.fn();
-    render(<TransactionSidePanel folio={mockFolio} onClose={vi.fn()} onCloseFolio={onCloseFolio} />);
-    const closeBtn = screen.getByText('Mark Closed');
-    fireEvent.click(closeBtn);
-    expect(onCloseFolio).toHaveBeenCalledWith(mockFolio);
+  it('does not render a Mark Closed button', () => {
+    render(<TransactionSidePanel folio={mockFolio} onClose={vi.fn()} />);
+    expect(screen.queryByText('Mark Closed')).not.toBeInTheDocument();
   });
 
   it('calls onDeleteFolio when Delete Folio button is clicked', async () => {

@@ -269,21 +269,7 @@ export function Dashboard() {
     }
   };
 
-  const handleCloseFolio = async (folio: any) => {
-    const confirmed = window.confirm(
-      `Mark folio "${folio.number || 'N/A'}" as closed? Current units will be set to zero and moved to closed positions.`
-    );
-    if (!confirmed) return;
 
-    try {
-      await api.post(`${API_ENDPOINTS.PORTFOLIO}/folio/${folio.id}/close`);
-      setSelectedFolioForTransactions(null);
-      await fetchSummary();
-    } catch (error: any) {
-      console.error('Failed to mark folio as closed:', error);
-      alert(error.response?.data?.error || 'Failed to mark folio as closed.');
-    }
-  };
 
   const handleDeleteFolio = async (folio: any) => {
     const confirmed = window.confirm(
@@ -697,19 +683,7 @@ export function Dashboard() {
                                       >
                                         <X size={16} />
                                       </button>
-                                    ) : (
-                                      <button
-                                        className="theme-toggle"
-                                        title="Mark Closed"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleCloseFolio(group.folios[0]);
-                                        }}
-                                        style={{ fontSize: '0.75rem', padding: '2px 6px', marginLeft: '0.25rem' }}
-                                      >
-                                        Close
-                                      </button>
-                                    )}
+                                    ) : null}
                                   </div>
                                 ) : (
                                   <button 
@@ -793,19 +767,7 @@ export function Dashboard() {
                                       >
                                         <X size={16} />
                                       </button>
-                                    ) : (
-                                      <button
-                                        className="theme-toggle"
-                                        title="Mark Closed"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleCloseFolio(folio);
-                                        }}
-                                        style={{ fontSize: '0.75rem', padding: '2px 6px', marginLeft: '0.25rem' }}
-                                      >
-                                        Close
-                                      </button>
-                                    )}
+                                    ) : null}
                                   </div>
                                 </td>
                               </tr>
@@ -1038,7 +1000,6 @@ export function Dashboard() {
         <TransactionSidePanel 
           folio={selectedFolioForTransactions} 
           onClose={() => setSelectedFolioForTransactions(null)} 
-          onCloseFolio={handleCloseFolio}
           onDeleteFolio={handleDeleteFolio}
         />
       )}

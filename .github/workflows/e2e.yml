@@ -26,6 +26,28 @@ jobs:
       run: |
         (cd frontend && npm run test:unit)
 
+    - name: Setup Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Rust Dependency Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "backend-rs -> target"
+
+    - name: Run Rust Workspace Quality & Tests
+      run: |
+        cd backend-rs
+        cargo fmt --check
+        cargo clippy --workspace --all-targets -- -D warnings
+        cargo test --workspace
+
+    - name: Run Dual-Runner Parity Validation Harness
+      run: |
+        cd backend-rs
+        cargo run --package portfolio-parity
+
     - name: Install Playwright Browsers
       run: cd frontend && npx playwright install --with-deps chromium
 
@@ -64,11 +86,10 @@ jobs:
           sleep 2
         done
 
-    - name: Apply Database Migrations
+    - name: Generate Prisma Client
       run: |
         export DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/portfolio_tracker?schema=public"
         cd backend
-        npx prisma migrate deploy
         npx prisma generate
 
     - name: Run Backend Integration & Unit Tests
@@ -93,8 +114,8 @@ jobs:
     - name: Run Playwright E2E tests
       run: |
         if [ "${{ github.event_name }}" == "pull_request" ]; then
-          echo "Running smoke, responsiveness, and mock portfolio tests..."
-          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts)
+          echo "Running smoke, responsiveness, mock portfolio, and regression tests..."
+          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts tests/dashboard-regression-verification.spec.ts)
         else
           echo "Running full E2E suite..."
           (cd frontend && npm run test:e2e:docker)

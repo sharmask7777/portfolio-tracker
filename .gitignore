@@ -18,6 +18,7 @@ venv/
 !playwright.config.ts
 !tsconfig.app.json
 !tsconfig.node.json
+!tests/fixtures/**
 !*.toml
 
 appdata/

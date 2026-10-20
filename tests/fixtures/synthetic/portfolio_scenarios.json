@@ -1,0 +1,398 @@
+{
+  "version": "1.0",
+  "description": "Synthetic multi-scenario test fixtures for differential parity verification between TypeScript and Rust engines.",
+  "scenarios": [
+    {
+      "id": "scenario_01_scheme_consolidation",
+      "name": "Scheme Consolidation Across Multiple Folios",
+      "category": "scheme_consolidation",
+      "description": "Groups multiple folios for the same scheme without duplicate valuation or unit counting.",
+      "inputs": {
+        "current_nav": "150.0000",
+        "asset_name": "Apex Large & Mid Cap Fund - Direct Growth",
+        "asset_type": "MUTUAL_FUND",
+        "isin": "INF999K01001",
+        "folios": [
+          {
+            "id": "folio-aurora-1",
+            "folio_number": "AUR-101/01",
+            "pan": "ALPAC1001A",
+            "transactions": [
+              {
+                "id": "tx-1",
+                "date": "2023-01-10",
+                "type": "PURCHASE",
+                "amount": "-50000.00",
+                "units": "500.0000",
+                "nav": "100.0000",
+                "balance": "500.0000"
+              },
+              {
+                "id": "tx-2",
+                "date": "2023-06-15",
+                "type": "PURCHASE_SIP",
+                "amount": "-50000.00",
+                "units": "400.0000",
+                "nav": "125.0000",
+                "balance": "900.0000"
+              }
+            ]
+          },
+          {
+            "id": "folio-aurora-2",
+            "folio_number": "AUR-102/02",
+            "pan": "BETAB2002B",
+            "transactions": [
+              {
+                "id": "tx-3",
+                "date": "2023-03-20",
+                "type": "PURCHASE",
+                "amount": "-30000.00",
+                "units": "250.0000",
+                "nav": "120.0000",
+                "balance": "250.0000"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "folio_1_units": "900.0000",
+        "folio_1_invested": "100000.00",
+        "folio_1_current_value": "135000.00",
+        "folio_2_units": "250.0000",
+        "folio_2_invested": "30000.00",
+        "folio_2_current_value": "37500.00",
+        "consolidated_total_units": "1150.0000",
+        "consolidated_invested_amount": "130000.00",
+        "consolidated_current_value": "172500.00",
+        "consolidated_total_gain": "42500.00"
+      }
+    },
+    {
+      "id": "scenario_02_zero_holding_fund",
+      "name": "Fully Redeemed Zero-Holding Fund Isolation",
+      "category": "zero_holding_fund",
+      "description": "Fully redeemed positions have 0 remaining units and 0 current valuation while cleanly preserving realized gains.",
+      "inputs": {
+        "current_nav": "160.0000",
+        "asset_name": "Zephyr Momentum Fund",
+        "asset_type": "MUTUAL_FUND",
+        "isin": "INF999K01002",
+        "folio_number": "ZEPH-999/01",
+        "pan": "GAMMG3003C",
+        "tax_slab": "0.30",
+        "transactions": [
+          {
+            "id": "tx-z1",
+            "date": "2022-01-01",
+            "type": "PURCHASE",
+            "amount": "-100000.00",
+            "units": "1000.0000",
+            "nav": "100.0000",
+            "balance": "1000.0000"
+          },
+          {
+            "id": "tx-z2",
+            "date": "2023-05-15",
+            "type": "REDEMPTION",
+            "amount": "150000.00",
+            "units": "-1000.0000",
+            "nav": "150.0000",
+            "balance": "0.0000"
+          }
+        ]
+      },
+      "expected": {
+        "latest_units": "0.0000",
+        "invested_amount": "0.00",
+        "current_value": "0.00",
+        "total_gain": "0.00",
+        "absolute_return": "0.000000",
+        "realized_gain_total": "50000.00",
+        "realized_ltcg": "50000.00",
+        "realized_stcg": "0.00",
+        "unrealized_total": "0.00"
+      }
+    },
+    {
+      "id": "scenario_03_partial_redemptions",
+      "name": "Partial Redemptions with Remaining Active Units",
+      "category": "partial_redemption",
+      "description": "Calculates FIFO depletion on partial redemption with accurate remaining units and proportional cost basis.",
+      "inputs": {
+        "current_nav": "180.0000",
+        "asset_name": "Titan Bluechip Opportunities Fund",
+        "asset_type": "MUTUAL_FUND",
+        "isin": "INF999K01003",
+        "folio_number": "TITAN-301/01",
+        "pan": "DELTD4004D",
+        "transactions": [
+          {
+            "id": "tx-t1",
+            "date": "2022-02-01",
+            "type": "PURCHASE",
+            "amount": "-200000.00",
+            "units": "2000.0000",
+            "nav": "100.0000",
+            "balance": "2000.0000"
+          },
+          {
+            "id": "tx-t2",
+            "date": "2023-04-10",
+            "type": "REDEMPTION",
+            "amount": "140000.00",
+            "units": "-1000.0000",
+            "nav": "140.0000",
+            "balance": "1000.0000"
+          }
+        ]
+      },
+      "expected": {
+        "remaining_units": "1000.0000",
+        "invested_amount": "100000.00",
+        "current_value": "180000.00",
+        "total_gain": "80000.00",
+        "absolute_return": "0.800000",
+        "realized_gain_total": "40000.00"
+      }
+    },
+    {
+      "id": "scenario_04_section_112a_grandfathering",
+      "name": "Section 112A LTCG Grandfathering (Jan 31, 2018 FMV)",
+      "category": "section_112a_grandfathering",
+      "description": "Calculates Section 112A capital gains using Section 55(2)(ac) deemed cost formula: max(buy_nav, min(fmv, sell_nav)).",
+      "inputs": {
+        "asset_name": "Vintage Heritage Equity Fund",
+        "asset_type": "MUTUAL_FUND",
+        "isin": "INF999K01008",
+        "folio_number": "VIN-801/01",
+        "pan": "EPSIE5005E",
+        "buy_date": "2016-04-01",
+        "buy_units": "1000.0000",
+        "buy_nav": "40.0000",
+        "buy_amount": "40000.00",
+        "grandfather_date": "2018-01-31",
+        "grandfather_nav": "70.0000",
+        "sell_date": "2024-08-15",
+        "sell_units": "1000.0000",
+        "sell_nav": "120.0000",
+        "tax_slab": "0.30"
+      },
+      "expected": {
+        "is_grandfathered": true,
+        "grandfathered_status": "Grandfathered u/s 55(2)(ac)",
+        "deemed_unit_cost": "70.0000",
+        "deemed_cost_of_acquisition": "70000.00",
+        "gross_consideration": "120000.00",
+        "gain": "50000.00",
+        "tax_type": "LTCG",
+        "tax_section": "Sec112A12_5",
+        "tax_rate": "0.125000",
+        "tax_before_cess": "6250.00",
+        "cess": "250.00",
+        "estimated_tax": "6500.00"
+      }
+    },
+    {
+      "id": "scenario_05_elss_3yr_lockin",
+      "name": "ELSS 3-Year Statutory Lock-in Enforcement",
+      "category": "elss_3yr_lockin",
+      "description": "Enforces statutory 3-year lock-in per lot for ELSS funds, allowing redemption of matured units while blocking locked units.",
+      "inputs": {
+        "asset_name": "Apex ELSS Tax Shield Fund",
+        "asset_type": "MUTUAL_FUND",
+        "isin": "INF999K01009",
+        "folio_number": "ELSS-909/01",
+        "pan": "ZETAZ6006F",
+        "as_of_date": "2024-01-01",
+        "current_nav": "125.0000",
+        "tax_slab": "0.30",
+        "transactions": [
+          {
+            "id": "tx-e1",
+            "date": "2020-01-01",
+            "type": "PURCHASE",
+            "amount": "-50000.00",
+            "units": "500.0000",
+            "nav": "100.0000",
+            "balance": "500.0000"
+          },
+          {
+            "id": "tx-e2",
+            "date": "2023-01-01",
+            "type": "PURCHASE_SIP",
+            "amount": "-50000.00",
+            "units": "400.0000",
+            "nav": "125.0000",
+            "balance": "900.0000"
+          }
+        ]
+      },
+      "expected": {
+        "is_elss": true,
+        "total_units": "900.0000",
+        "locked_units": "400.0000",
+        "unlocked_units": "500.0000",
+        "sell_500_allowed": true,
+        "sell_500_estimated_value": "62500.00",
+        "sell_700_allowed": false
+      }
+    },
+    {
+      "id": "scenario_06_alternative_assets_gold",
+      "name": "Alternative Assets (Gold / SGB) Accounting",
+      "category": "alternative_assets_gold",
+      "description": "Evaluates alternative asset classes (Sovereign Gold Bonds) with correct categorization and valuation.",
+      "inputs": {
+        "asset_name": "Sovereign Gold Bond Series V",
+        "asset_type": "SGB",
+        "isin": "IN0020180010",
+        "folio_number": "SGB-601/01",
+        "pan": "ETAE7007G",
+        "current_price": "7200.0000",
+        "transactions": [
+          {
+            "id": "tx-g1",
+            "date": "2022-01-01",
+            "type": "BUY",
+            "amount": "-250000.00",
+            "units": "50.0000",
+            "nav": "5000.0000",
+            "balance": "50.0000"
+          }
+        ]
+      },
+      "expected": {
+        "is_alternative": true,
+        "is_gold": true,
+        "units": "50.0000",
+        "current_value": "360000.00",
+        "invested_amount": "250000.00",
+        "total_gain": "110000.00",
+        "absolute_return": "0.440000"
+      }
+    },
+    {
+      "id": "scenario_07_debt_fund_slab_tax",
+      "name": "Debt Fund Slab Rate Taxation (Section 50AA)",
+      "category": "debt_fund_slab_tax",
+      "description": "Applies post-April 2023 Section 50AA taxation rules for debt mutual funds where gains are taxed at slab rates as short-term.",
+      "inputs": {
+        "asset_name": "Corporate Bond Debt Fund",
+        "asset_type": "MUTUAL_FUND",
+        "isin": "INF999K01007",
+        "folio_number": "DEBT-701/01",
+        "pan": "THETT8008H",
+        "buy_date": "2023-04-02",
+        "buy_units": "1000.0000",
+        "buy_nav": "100.0000",
+        "buy_amount": "100000.00",
+        "sell_date": "2027-04-02",
+        "sell_units": "1000.0000",
+        "sell_nav": "130.0000",
+        "tax_slab": "0.30"
+      },
+      "expected": {
+        "gross_consideration": "130000.00",
+        "cost_of_acquisition": "100000.00",
+        "gain": "30000.00",
+        "tax_type": "SLAB",
+        "holding_type": "Short-Term",
+        "section": "Sec50AA",
+        "tax_rate": "0.300000",
+        "tax_before_cess": "9000.00",
+        "cess": "360.00",
+        "estimated_tax": "9360.00",
+        "is_grandfathered": false
+      }
+    },
+    {
+      "id": "scenario_08_multi_year_sip_xirr",
+      "name": "Multi-Year SIP Sequence with Annualized XIRR",
+      "category": "multi_year_sip_xirr",
+      "description": "Calculates periodic SIP investment compounding, final balance, gain, and exact XIRR.",
+      "inputs": {
+        "asset_name": "Horizon Bluechip Index Fund",
+        "asset_type": "MUTUAL_FUND",
+        "isin": "INF999K01011",
+        "folio_number": "SIP-1101/01",
+        "pan": "IOTAI9009I",
+        "as_of_date": "2024-01-01",
+        "current_nav": "220.0000",
+        "transactions": [
+          {
+            "id": "tx-sip-1",
+            "date": "2021-01-01",
+            "type": "PURCHASE_SIP",
+            "amount": "-100000.00",
+            "units": "1000.0000",
+            "nav": "100.0000",
+            "balance": "1000.0000"
+          },
+          {
+            "id": "tx-sip-2",
+            "date": "2022-01-01",
+            "type": "PURCHASE_SIP",
+            "amount": "-100000.00",
+            "units": "800.0000",
+            "nav": "125.0000",
+            "balance": "1800.0000"
+          },
+          {
+            "id": "tx-sip-3",
+            "date": "2023-01-01",
+            "type": "PURCHASE_SIP",
+            "amount": "-100000.00",
+            "units": "500.0000",
+            "nav": "200.0000",
+            "balance": "2300.0000"
+          }
+        ]
+      },
+      "expected": {
+        "total_units": "2300.0000",
+        "invested_amount": "300000.00",
+        "current_value": "506000.00",
+        "total_gain": "206000.00",
+        "absolute_return": "0.68666667",
+        "xirr": "0.28522885"
+      }
+    },
+    {
+      "id": "scenario_09_fund_overlap",
+      "name": "Multi-Fund Overlap and Stock Intersection",
+      "category": "fund_overlap",
+      "description": "Calculates stock name normalization, intersection, and weighted portfolio overlap between two funds.",
+      "inputs": {
+        "fund_a": {
+          "name": "Alpha Focused Growth Fund",
+          "holdings": [
+            { "name": "HDFC Bank Ltd.", "weight": "10.0" },
+            { "name": "Reliance Industries Ltd", "weight": "8.5" },
+            { "name": "Infosys Ltd", "weight": "7.0" },
+            { "name": "TCS Ltd", "weight": "5.0" }
+          ]
+        },
+        "fund_b": {
+          "name": "Beta Multicap Advantage Fund",
+          "holdings": [
+            { "name": "HDFC Bank Limited", "weight": "6.0" },
+            { "name": "Reliance Industries", "weight": "9.0" },
+            { "name": "ICICI Bank Ltd", "weight": "8.0" },
+            { "name": "Infosys Limited", "weight": "7.0" }
+          ]
+        }
+      },
+      "expected": {
+        "overlap_percentage": "21.50",
+        "common_stocks_count": 3,
+        "common_stocks": [
+          { "name": "HDFC Bank Ltd.", "weight_a": "10.0", "weight_b": "6.0" },
+          { "name": "Reliance Industries Ltd", "weight_a": "8.5", "weight_b": "9.0" },
+          { "name": "Infosys Ltd", "weight_a": "7.0", "weight_b": "7.0" }
+        ]
+      }
+    }
+  ]
+}

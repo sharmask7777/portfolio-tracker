@@ -152,4 +152,77 @@ describe('consolidateFoliosIntoSchemes', () => {
     expect(result.map(r => r.isin)).toContain('INF879O01027');
     expect(result.map(r => r.isin)).toContain('INF879O01019');
   });
+
+  it('clamps astronomical XIRR and prevents runaway percentage values like 1685111%', () => {
+    const folios = [
+      {
+        id: 'folio-invesco-1',
+        number: '31040701585 / 0',
+        asset: {
+          name: 'Invesco India Arbitrage Fund - Direct Plan Growth (Non Demat)',
+          type: 'MUTUAL_FUND',
+          isin: 'INF205K01KR8',
+        },
+        metrics: {
+          investedAmount: 49997.52,
+          currentValue: 51971.31,
+          xirr: 1398099.12, // Astronomical raw value
+          postTaxXirr: 1398099.12,
+          absoluteReturn: 0.0395,
+          postTaxAbsoluteReturn: 0.0395,
+        },
+      },
+      {
+        id: 'folio-invesco-2',
+        number: '31040731356 / 0',
+        asset: {
+          name: 'Invesco India Arbitrage Fund - Direct Plan Growth (Non Demat)',
+          type: 'MUTUAL_FUND',
+          isin: 'INF205K01KR8',
+        },
+        metrics: {
+          investedAmount: 4129793.48,
+          currentValue: 4259982.65,
+          xirr: 0.049,
+          postTaxXirr: 0.049,
+          absoluteReturn: 0.0315,
+          postTaxAbsoluteReturn: 0.0315,
+        },
+      },
+    ];
+
+    const result = consolidateFoliosIntoSchemes(folios);
+    expect(result).toHaveLength(1);
+    const invesco = result[0];
+    // Must be clamped to <= 10.0 (1000%), and definitely NOT 1685111%
+    expect(invesco.metrics.xirr).toBeLessThanOrEqual(10.0);
+    expect(invesco.metrics.postTaxXirr).toBeLessThanOrEqual(10.0);
+  });
+
+  it('handles null and NaN XIRRs by falling back to constituent absolute returns', () => {
+    const folios = [
+      {
+        id: 'folio-null-xirr',
+        number: '1234',
+        asset: {
+          name: 'Test Fund',
+          type: 'MUTUAL_FUND',
+          isin: 'INF000000001',
+        },
+        metrics: {
+          investedAmount: 50000,
+          currentValue: 55000,
+          xirr: null as any,
+          postTaxXirr: undefined as any,
+          absoluteReturn: 0.10,
+          postTaxAbsoluteReturn: 0.09,
+        },
+      },
+    ];
+
+    const result = consolidateFoliosIntoSchemes(folios);
+    expect(result).toHaveLength(1);
+    expect(result[0].metrics.xirr).toBe(0.10);
+    expect(result[0].metrics.postTaxXirr).toBe(0.09);
+  });
 });
