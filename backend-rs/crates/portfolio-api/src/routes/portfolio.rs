@@ -1630,7 +1630,7 @@ pub async fn get_tax_summary(
         }
     }
 
-    all_realized_details.sort_by(|a, b| b.sell_date.cmp(&a.sell_date));
+    all_realized_details.sort_by_key(|a| std::cmp::Reverse(a.sell_date));
 
     use rust_decimal::prelude::ToPrimitive;
     let to_f = |v: Decimal| v.to_f64().unwrap_or(0.0);
