@@ -60,7 +60,9 @@ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
     // Check if the latest unit-bearing transaction has an explicit balance recorded (matching CAS statements)
     let sorted = crate::holdings::lot::sort_transactions(transactions);
     for tx in sorted.iter().rev() {
-        let is_auxiliary = tx.tx_type == TransactionType::Other && tx.units.is_zero();
+        let is_auxiliary = (tx.tx_type == TransactionType::Other
+            || tx.tx_type == TransactionType::StampDuty)
+            && tx.units.is_zero();
         if !is_auxiliary {
             let bal = tx.balance;
             if bal >= threshold {

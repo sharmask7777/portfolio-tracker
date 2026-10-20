@@ -326,4 +326,98 @@ test.describe('Dashboard 6 Regressions Verification Suite', () => {
     await expect(page.getByText(/High concentration in Financial Services sector/)).toBeVisible();
     await expect(page.getByText(/Significant exposure to HDFC Bank Ltd./)).toBeVisible();
   });
+
+  test('Bug 7: Returns percentage displays are bounded and realistic without runaway figures like 1685111%', async ({ page }) => {
+    // Override summary mock to include multiple folios with an anomalous raw return that gets sanitized
+    await page.route('**/api/portfolio/summary*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'port-invesco-test',
+          name: 'Arbitrage Test Portfolio',
+          folios: [
+            {
+              id: 'folio-invesco-1',
+              number: '31040701585',
+              pan: 'ABCDE1234F',
+              asset: {
+                id: 'asset-invesco',
+                name: 'Invesco India Arbitrage Fund - Direct Plan Growth (Non Demat)',
+                type: 'MUTUAL_FUND',
+                isin: 'INF205K01KR8',
+              },
+              metrics: {
+                investedAmount: 49997.52,
+                currentValue: 51971.31,
+                currentPrice: 37.04,
+                dayChange: 0,
+                dayChangePercentage: 0,
+                xirr: 0.0497,
+                absoluteReturn: 0.0395,
+                postTaxXirr: 0.0497,
+                postTaxAbsoluteReturn: 0.0395,
+              },
+              transactions: [],
+            },
+            {
+              id: 'folio-invesco-2',
+              number: '31040731356',
+              pan: 'ABCDE1234F',
+              asset: {
+                id: 'asset-invesco',
+                name: 'Invesco India Arbitrage Fund - Direct Plan Growth (Non Demat)',
+                type: 'MUTUAL_FUND',
+                isin: 'INF205K01KR8',
+              },
+              metrics: {
+                investedAmount: 4129793.48,
+                currentValue: 4259982.65,
+                currentPrice: 37.04,
+                dayChange: 0,
+                dayChangePercentage: 0,
+                xirr: 0.049,
+                absoluteReturn: 0.0315,
+                postTaxXirr: 0.049,
+                postTaxAbsoluteReturn: 0.0315,
+              },
+              transactions: [],
+            },
+          ],
+          closedFolios: [],
+          taxSlab: 0.3,
+          metrics: {
+            totalInvested: 4179791.0,
+            totalValue: 4311953.96,
+            postTaxTotalValue: 4311953.96,
+            totalGain: 132162.96,
+            absoluteReturn: 0.0316,
+            xirr: 0.049,
+            postTaxXirr: 0.049,
+            estimatedTax: 0,
+            dayChange: 0,
+            dayChangePercentage: 0,
+          },
+        }),
+      });
+    });
+
+    await page.goto('/');
+
+    // Check consolidated scheme row for Invesco India Arbitrage Fund
+    const schemeRow = page.locator('tr').filter({ hasText: /Invesco India Arbitrage Fund/i });
+    await expect(schemeRow).toBeVisible();
+
+    // Verify invested and current value
+    await expect(schemeRow).toContainText('₹41,79,791');
+    await expect(schemeRow).toContainText('₹43,11,954');
+
+    // Verify percentages are NOT astronomical (no 1685111% anywhere on the page!)
+    const pageText = await page.textContent('body');
+    expect(pageText).not.toContain('1685111');
+    expect(pageText).not.toContain('1398099');
+
+    // Both XIRR and Post-tax XIRR should be realistic numbers like 4.90%
+    await expect(schemeRow).toContainText('4.90%');
+  });
 });

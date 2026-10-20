@@ -19,6 +19,7 @@ pub enum TransactionType {
     DividendPayout,
     DividendReinvestment,
     Reversal,
+    StampDuty,
     Other,
 }
 
@@ -44,6 +45,7 @@ impl TransactionType {
                 | TransactionType::Buy
                 | TransactionType::SwitchIn
                 | TransactionType::DividendReinvestment
+                | TransactionType::StampDuty
         )
     }
 

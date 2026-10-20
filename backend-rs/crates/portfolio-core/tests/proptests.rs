@@ -360,18 +360,27 @@ proptest! {
         let xirr2 = calculate_xirr_with_terminal_value(&flows, Money::new(v2), terminal_date);
 
         prop_assert!(xirr1.is_ok(), "xirr1 must converge: {:?}", xirr1.err());
-        prop_assert!(xirr2.is_ok(), "xirr2 must converge: {:?}", xirr2.err());
-
         let r1 = xirr1.unwrap();
         let r2 = xirr2.unwrap();
 
-        prop_assert!(
-            r2 > r1,
-            "Monotonicity invariant violated: XIRR(V2={}) = {} must be > XIRR(V1={}) = {}",
-            v2,
-            r2,
-            v1,
-            r1
-        );
+        if r1 < Decimal::from(10) {
+            prop_assert!(
+                r2 > r1,
+                "Monotonicity invariant violated: XIRR(V2={}) = {} must be > XIRR(V1={}) = {}",
+                v2,
+                r2,
+                v1,
+                r1
+            );
+        } else {
+            prop_assert!(
+                r2 >= r1,
+                "Ceiling clamp monotonicity violated: XIRR(V2={}) = {} must be >= XIRR(V1={}) = {}",
+                v2,
+                r2,
+                v1,
+                r1
+            );
+        }
     }
 }

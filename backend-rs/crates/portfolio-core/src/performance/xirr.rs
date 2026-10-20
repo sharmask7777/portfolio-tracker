@@ -203,10 +203,32 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
 
     sorted_flows.sort_by_key(|f| f.date);
     let first_date = sorted_flows[0].date;
+    let last_date = sorted_flows.last().unwrap().date;
     if sorted_flows.iter().all(|f| f.date == first_date) {
         return Err(PortfolioError::InvalidTransaction {
             reason: "All cash flow dates are identical".to_string(),
         });
+    }
+
+    let diff_days = (last_date - first_date).num_days();
+    // Safety guardrail: If duration is extremely short (< 30 days),
+    // compounding causes astronomical, financially useless annualized rates (e.g. 1% in 1 day = 3678%).
+    // Return Absolute Return as a proxy matching standard financial conventions.
+    if diff_days < 30 {
+        let total_invested: Decimal = sorted_flows
+            .iter()
+            .filter(|f| f.amount < Decimal::ZERO)
+            .map(|f| f.amount.abs())
+            .sum();
+        let total_redeemed: Decimal = sorted_flows
+            .iter()
+            .filter(|f| f.amount > Decimal::ZERO)
+            .map(|f| f.amount)
+            .sum();
+        if total_invested > Decimal::ZERO {
+            let abs_ret = (total_redeemed - total_invested) / total_invested;
+            return Ok(abs_ret.round_dp(8).normalize());
+        }
     }
 
     let t0 = sorted_flows[0].date;
@@ -308,6 +330,10 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
             last_guess: Decimal::ZERO,
         });
     }
+
+    // Clamp astronomical XIRR values (usually data errors or ultra-short terms).
+    // 10.0 = 1000% annual return. -1.0 = -100% loss.
+    let rate = rate.clamp(-1.0, 10.0);
 
     let dec_rate =
         Decimal::from_f64_retain(rate).ok_or(PortfolioError::XirrConvergenceFailure {

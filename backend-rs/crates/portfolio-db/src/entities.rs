@@ -290,6 +290,9 @@ impl TransactionEntity {
                 portfolio_core::holdings::TransactionType::DividendReinvestment
             }
             "REVERSAL" => portfolio_core::holdings::TransactionType::Reversal,
+            "STAMP_DUTY_TAX" | "STAMP_DUTY" | "STT" | "TAX" | "CHARGES" | "FEE" => {
+                portfolio_core::holdings::TransactionType::StampDuty
+            }
             _ => portfolio_core::holdings::TransactionType::Other,
         };
 

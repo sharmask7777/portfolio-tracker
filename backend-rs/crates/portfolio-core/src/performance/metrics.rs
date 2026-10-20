@@ -209,7 +209,7 @@ pub fn get_metrics(
             } else if t.tx_type.is_inflow() {
                 t.amount.abs()
             } else {
-                t.amount
+                -t.amount.abs()
             };
             CashFlow::new(t.date, amount.to_decimal())
         })
@@ -257,7 +257,7 @@ pub fn get_metrics(
                 } else if t.tx_type.is_inflow() {
                     t.amount.abs()
                 } else {
-                    t.amount
+                    -t.amount.abs()
                 };
                 CashFlow::new(t.date, amount.to_decimal())
             })

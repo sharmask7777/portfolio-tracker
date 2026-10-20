@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use portfolio_core::holdings::get_latest_units;
 use portfolio_core::performance::metrics::{
-    calculate_absolute_return, calculate_cagr, get_metrics,
+    PerformanceOptions, calculate_absolute_return, calculate_cagr, get_metrics,
 };
 use portfolio_core::performance::xirr::{CashFlow, calculate_xirr};
 use portfolio_core::types::{AssetType, Money, Nav};
@@ -501,6 +501,7 @@ pub async fn get_summary(
     let mut total_current_value = Decimal::ZERO;
     let mut all_cash_flows = Vec::new();
     let mut earliest_date = None;
+    let today = Utc::now().date_naive();
 
     for folio in &folios {
         let asset = fetch_asset_for_folio(&state, folio.asset_id).await?;
@@ -529,7 +530,8 @@ pub async fn get_summary(
 
         let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback_nav).await;
 
-        let metrics = get_metrics(&core_txs, latest_nav, None);
+        let perf_options = PerformanceOptions::new().with_as_of_date(today);
+        let metrics = get_metrics(&core_txs, latest_nav, Some(perf_options));
 
         let inv_dec = metrics.invested_amount.to_decimal();
         let val_dec = metrics.current_value.to_decimal();
@@ -542,7 +544,7 @@ pub async fn get_summary(
             } else if tx.tx_type.is_inflow() {
                 tx.amount.abs().to_decimal()
             } else {
-                tx.amount.to_decimal()
+                -tx.amount.abs().to_decimal()
             };
             all_cash_flows.push(CashFlow::new(tx.date, flow_amount));
 
@@ -568,7 +570,6 @@ pub async fn get_summary(
         });
     }
 
-    let today = Utc::now().date_naive();
     let total_gain = total_current_value - total_invested;
     let absolute_return =
         calculate_absolute_return(Money::new(total_invested), Money::new(total_current_value));
@@ -1180,6 +1181,7 @@ pub async fn get_portfolio_summary(
     let mut total_invested = Decimal::ZERO;
     let mut total_current_value = Decimal::ZERO;
     let mut all_cash_flows = Vec::new();
+    let today = Utc::now().date_naive();
 
     for portfolio in &filtered_portfolios {
         let folios = fetch_folios_for_portfolio(&state, portfolio.id).await?;
@@ -1205,7 +1207,25 @@ pub async fn get_portfolio_summary(
 
             let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback_nav).await;
 
-            let metrics = get_metrics(&core_txs, latest_nav, None);
+            let core_asset_type = match asset
+                .as_ref()
+                .map(|a| a.asset_type.as_str())
+                .unwrap_or("MUTUAL_FUND")
+            {
+                "STOCK" | "EQUITY" => AssetType::Stock,
+                _ => AssetType::MutualFund,
+            };
+            let asset_name = asset
+                .as_ref()
+                .map(|a| a.name.as_str())
+                .unwrap_or("Unknown Asset");
+            let perf_options = PerformanceOptions::new()
+                .with_as_of_date(today)
+                .with_tax_slab(slab_value)
+                .with_asset_type(core_asset_type)
+                .with_asset_name(asset_name);
+
+            let metrics = get_metrics(&core_txs, latest_nav, Some(perf_options));
             let inv_dec = metrics.invested_amount.to_decimal();
             let val_dec = metrics.current_value.to_decimal();
 
@@ -1215,8 +1235,10 @@ pub async fn get_portfolio_summary(
                 total_gain: metrics.total_gain.to_decimal(),
                 absolute_return: metrics.absolute_return,
                 xirr: metrics.xirr,
-                post_tax_xirr: metrics.xirr,
-                post_tax_absolute_return: Some(metrics.absolute_return),
+                post_tax_xirr: metrics.post_tax_xirr.or(metrics.xirr),
+                post_tax_absolute_return: metrics
+                    .post_tax_absolute_return
+                    .or(Some(metrics.absolute_return)),
                 current_price: latest_nav.to_decimal(),
                 day_change: Decimal::ZERO,
                 day_change_percentage: Decimal::ZERO,
@@ -1265,7 +1287,7 @@ pub async fn get_portfolio_summary(
                 } else if tx.tx_type.is_inflow() {
                     tx.amount.abs().to_decimal()
                 } else {
-                    tx.amount.to_decimal()
+                    -tx.amount.abs().to_decimal()
                 };
                 all_cash_flows.push(CashFlow::new(tx.date, flow_amount));
             }
@@ -1280,7 +1302,6 @@ pub async fn get_portfolio_summary(
         }
     }
 
-    let today = Utc::now().date_naive();
     if total_current_value > Decimal::ZERO {
         all_cash_flows.push(CashFlow::new(today, total_current_value));
     }
