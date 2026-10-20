@@ -86,11 +86,10 @@ jobs:
           sleep 2
         done
 
-    - name: Apply Database Migrations
+    - name: Generate Prisma Client
       run: |
         export DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/portfolio_tracker?schema=public"
         cd backend
-        npx prisma migrate deploy
         npx prisma generate
 
     - name: Run Backend Integration & Unit Tests
@@ -115,8 +114,8 @@ jobs:
     - name: Run Playwright E2E tests
       run: |
         if [ "${{ github.event_name }}" == "pull_request" ]; then
-          echo "Running smoke, responsiveness, and mock portfolio tests..."
-          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts)
+          echo "Running smoke, responsiveness, mock portfolio, and regression tests..."
+          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts tests/dashboard-regression-verification.spec.ts)
         else
           echo "Running full E2E suite..."
           (cd frontend && npm run test:e2e:docker)
