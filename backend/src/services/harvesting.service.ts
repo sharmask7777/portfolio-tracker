@@ -131,15 +131,16 @@ export class HarvestingService {
           if (isELSS && diffYears < 3.0) continue;
 
           // Only LTCG lots (> 1 year) with gains
-          if (diffYears >= 1.0 && currentPrice > lot.nav) {
-            const unrealizedGain = (currentPrice - lot.nav) * lot.units;
+          const priceDiff = currentPrice - lot.nav;
+          if (diffYears >= 1.0 && priceDiff > 0) {
+            const unrealizedGain = priceDiff * lot.units;
             
             // We can only harvest up to the remaining exemption across all lots
             const harvestableGain = Math.min(unrealizedGain, remainingExemption - totalPotentialHarvest);
             
             // Ignore negligible gains (less than ₹1) to avoid precision noise
             if (harvestableGain >= 1.0) {
-              const unitsToHarvest = harvestableGain / (currentPrice - lot.nav);
+              const unitsToHarvest = harvestableGain / priceDiff;
               
               opportunities.push({
                 folioId: folio.id,

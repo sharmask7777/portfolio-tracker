@@ -99,6 +99,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
           for (const tx of sorted) {
             const units = Math.abs(tx.units || 0);
             if (units <= 0.000001) continue;
+            if (!tx.type) continue; // skip transactions with missing type
             const type = tx.type.toLowerCase();
             if (type.includes('buy') || type.includes('purchase') || type.includes('sip') || type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance') || type.includes('bonus')) {
               lots.push({ type: tx.type, units });

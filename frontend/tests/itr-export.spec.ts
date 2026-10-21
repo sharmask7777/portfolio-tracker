@@ -156,4 +156,91 @@ test.describe('ITR Export & Schedule CG Compliance', () => {
       expect(content).toContain('Parag Parikh Flexi Cap Fund');
     }
   });
+
+  test('Simulate Sell Tax: does not blank the page when a transaction has no type field (regression)', async ({ page }) => {
+    const folioWithUntypedTx = {
+      id: 'folio-regression-1',
+      number: 'REG001',
+      pan: 'ABCDE1234F',
+      asset: { name: 'Test Equity Fund', type: 'EQUITY_LARGE_CAP' },
+      metrics: { currentPrice: 150, currentValue: 15000, investedAmount: 10000, xirr: 0.15, absoluteReturn: 0.5 },
+      transactions: [
+        // missing `type` field — simulates malformed or manual-asset data
+        { units: 100, nav: 100, date: '2023-01-15', amount: 10000 },
+        { type: 'BUY', units: 100, nav: 100, date: '2023-01-15', amount: 10000 },
+      ],
+    };
+
+    await page.route('**/api/portfolio/summary*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'mock-portfolio-id',
+          name: 'Mock Portfolio',
+          taxSlab: 0.3,
+          folios: [folioWithUntypedTx],
+          metrics: { totalInvested: 10000, totalValue: 15000, totalGain: 5000, absoluteReturn: 0.5, xirr: 0.15, postTaxAbsoluteReturn: 0.45, postTaxXirr: 0.12, dayChange: 50, dayChangePercentage: 0.33 },
+        }),
+      });
+    });
+    await page.route('**/api/tax/**', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ realized: { details: [] }, unrealized: { details: [] } }) });
+    });
+
+    await page.goto('/');
+    // Expand the holdings row to see the child folio row
+    const holdingsRow = page.locator('tr.holdings-row').first();
+    await holdingsRow.click();
+    // Click the Simulate Sell Tax button
+    await page.locator('button[title="Simulate Sell Tax"]').first().click();
+    // Modal must open — not a blank page
+    await expect(page.getByText(/Withdrawal Simulation/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('main')).not.toBeEmpty();
+  });
+
+  test('Tax Optimization tab: does not crash when harvesting unitsToHarvest is Infinity (regression)', async ({ page }) => {
+    await page.route('**/api/portfolio/summary*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'mock-portfolio-id',
+          name: 'Mock Portfolio',
+          folios: [],
+          metrics: { totalInvested: 1000, totalValue: 1200, totalGain: 200, absoluteReturn: 0.2, xirr: 0.15, postTaxAbsoluteReturn: 0.18, postTaxXirr: 0.12, dayChange: 15, dayChangePercentage: 1.25 },
+        }),
+      });
+    });
+    // Infinity unitsToHarvest — reproduces the backend zero-denominator division bug
+    await page.route('**/api/tax/harvesting-opportunities*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          totalPotentialHarvest: 125000,
+          estimatedTaxSavings: 15625,
+          opportunities: [
+            { folioId: 'f1', schemeName: 'Regression Equity Fund', unitsToHarvest: Infinity, unrealizedGain: 125000, currentValue: 200000 },
+          ],
+        }),
+      });
+    });
+    await page.route('**/api/portfolio/*/tax-summary*', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ realized: { stcg: 0, ltcg: 0, slab: 0, total: 0 }, unrealized: { stcg: 0, ltcg: 0, slab: 0, total: 0 }, details: [] }),
+      });
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /Tax Optimization/i }).click();
+    // Page must not be blank
+    await expect(page.getByText(/Advance Tax Accrual Matrix/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/Tax Harvesting Opportunity/i)).toBeVisible();
+    // Safe fallback "0.000" units rendered, not a crash
+    await expect(page.getByText(/0\.000 units/i)).toBeVisible();
+    await expect(page.locator('main')).not.toBeEmpty();
+  });
 });
