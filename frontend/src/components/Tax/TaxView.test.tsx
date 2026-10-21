@@ -262,4 +262,73 @@ describe('TaxView', () => {
     // 4% Cess
     expect(screen.getByText(/Health & Education Cess \(4%\)/i)).toBeInTheDocument();
   });
+
+  it('does NOT crash when unitsToHarvest is Infinity or NaN (regression: toFixed is not a function)', () => {
+    // Harvesting opportunity with Infinity unitsToHarvest (caused by zero price-diff division in backend)
+    const harvestingWithInfinity = {
+      totalPotentialHarvest: 125000,
+      estimatedTaxSavings: 15625,
+      opportunities: [
+        { folioId: 'f1', schemeName: 'Some Equity Fund', unitsToHarvest: Infinity, unrealizedGain: 125000, currentValue: 200000 },
+        { folioId: 'f2', schemeName: 'Another Fund', unitsToHarvest: NaN, unrealizedGain: 0, currentValue: 0 },
+      ],
+    };
+
+    // Use a sell date in the CURRENT FY (2026-27) so the harvesting card renders
+    const currentFYSummary = {
+      ...mockSummary,
+      details: [
+        {
+          ...mockSummary.details[0],
+          sellDate: '2026-10-10', // current FY 2026-27
+          advanceTaxQuarter: 'Q3 (16/09 - 15/12)',
+        },
+      ],
+    };
+
+    expect(() =>
+      render(<TaxView summary={currentFYSummary} harvesting={harvestingWithInfinity} />)
+    ).not.toThrow();
+
+    // Should render a safe fallback instead of crashing
+    expect(screen.getByText(/Tax Harvesting Opportunity/i)).toBeInTheDocument();
+    // Safe fallback "0.000 units" shown for NaN
+    expect(screen.getAllByText(/0\.000 units/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does NOT crash when a gain detail has an undefined taxType (regression: toLowerCase on undefined)', () => {
+    const summaryWithUndefinedTaxType = {
+      ...mockSummary,
+      details: [
+        ...mockSummary.details,
+        {
+          assetName: 'Unknown Fund',
+          folioNumber: '00000',
+          isin: 'INF000000000',
+          assetClass: 'EQUITY',
+          buyDate: '2023-01-01',
+          sellDate: '2025-01-01',
+          holdingPeriodDays: 730,
+          holdingType: 'Long-Term',
+          units: 10,
+          buyNav: 100,
+          sellNav: 120,
+          grossConsideration: 1200,
+          costOfAcquisition: 1000,
+          gain: 200,
+          taxType: undefined as any, // missing taxType — real-world edge case
+          taxRate: 0.10,
+          taxBeforeCess: 0,
+          cess: 0,
+          estimatedTax: 0,
+          isGrandfathered: false,
+          isAnchorDependent: false,
+        },
+      ],
+    };
+
+    expect(() =>
+      render(<TaxView summary={summaryWithUndefinedTaxType} harvesting={null} />)
+    ).not.toThrow();
+  });
 });

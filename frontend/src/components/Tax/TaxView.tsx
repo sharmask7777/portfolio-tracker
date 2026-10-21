@@ -345,7 +345,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
                     }
                   >
                     <span className="btn-link">
-                      {op.schemeName}: Sell {op.unitsToHarvest.toFixed(3)} units
+                      {op.schemeName}: Sell {Number.isFinite(op.unitsToHarvest) ? op.unitsToHarvest.toFixed(3) : '0.000'} units
                     </span>
                   </div>
                 ))}
@@ -600,12 +600,12 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
                       </td>
                       <td>
                         <span
-                          className={`badge badge-${g.taxType.toLowerCase()}${
+                          className={`badge badge-${(g.taxType || 'unknown').toLowerCase()}${
                             g.isGrandfathered ? '-grandfathered' : ''
                           }`}
                         >
                           {g.isGrandfathered ? 'GF-' : ''}
-                          {g.taxType}
+                          {g.taxType || '---'}
                         </span>
                       </td>
                     </tr>
