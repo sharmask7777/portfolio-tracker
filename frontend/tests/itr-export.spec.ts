@@ -163,9 +163,13 @@ test.describe('ITR Export & Schedule CG Compliance', () => {
       number: 'REG001',
       pan: 'ABCDE1234F',
       asset: { name: 'Test Equity Fund', type: 'EQUITY_LARGE_CAP' },
-      metrics: { currentPrice: 150, currentValue: 15000, investedAmount: 10000, xirr: 0.15, absoluteReturn: 0.5 },
+      metrics: {
+        currentPrice: 150, currentValue: 15000, investedAmount: 10000,
+        xirr: 0.15, absoluteReturn: 0.5, postTaxXirr: 0.12, postTaxAbsoluteReturn: 0.45,
+        dayChange: 50, dayChangePercentage: 0.33,
+      },
       transactions: [
-        // missing `type` field — simulates malformed or manual-asset data
+        // intentionally missing `type` field — simulates malformed/manual-asset data
         { units: 100, nav: 100, date: '2023-01-15', amount: 10000 },
         { type: 'BUY', units: 100, nav: 100, date: '2023-01-15', amount: 10000 },
       ],
@@ -180,21 +184,38 @@ test.describe('ITR Export & Schedule CG Compliance', () => {
           name: 'Mock Portfolio',
           taxSlab: 0.3,
           folios: [folioWithUntypedTx],
-          metrics: { totalInvested: 10000, totalValue: 15000, totalGain: 5000, absoluteReturn: 0.5, xirr: 0.15, postTaxAbsoluteReturn: 0.45, postTaxXirr: 0.12, dayChange: 50, dayChangePercentage: 0.33 },
+          metrics: {
+            totalInvested: 10000, totalValue: 15000, totalGain: 5000,
+            absoluteReturn: 0.5, xirr: 0.15, postTaxAbsoluteReturn: 0.45,
+            postTaxXirr: 0.12, dayChange: 50, dayChangePercentage: 0.33,
+          },
         }),
       });
     });
-    await page.route('**/api/tax/**', async route => {
+
+    // Mock all secondary calls App.tsx fires in parallel after loading the portfolio
+    await page.route('**/api/portfolio/*/xray*', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ stockAllocations: [], sectorAllocations: [] }) });
+    });
+    await page.route('**/api/portfolio/*/exposures*', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/api/portfolio/*/tax-summary*', async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ realized: { details: [] }, unrealized: { details: [] } }) });
+    });
+    await page.route('**/api/tax/harvesting-opportunities*', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ totalPotentialHarvest: 0, estimatedTaxSavings: 0, opportunities: [] }) });
     });
 
     await page.goto('/');
-    // Expand the holdings row to see the child folio row
-    const holdingsRow = page.locator('tr.holdings-row').first();
-    await holdingsRow.click();
-    // Click the Simulate Sell Tax button
-    await page.locator('button[title="Simulate Sell Tax"]').first().click();
-    // Modal must open — not a blank page
+
+    // For a single-folio group, the "Simulate Sell Tax" button is directly visible
+    // on the scheme-master-row — no row expansion needed
+    const simButton = page.getByRole('button', { name: /Simulate Sell Tax/i }).first();
+    await expect(simButton).toBeVisible({ timeout: 10000 });
+    await simButton.click();
+
+    // Modal must open — not a blank page crash
     await expect(page.getByText(/Withdrawal Simulation/i)).toBeVisible({ timeout: 5000 });
     await expect(page.locator('main')).not.toBeEmpty();
   });
@@ -212,20 +233,19 @@ test.describe('ITR Export & Schedule CG Compliance', () => {
         }),
       });
     });
-    // Infinity unitsToHarvest — reproduces the backend zero-denominator division bug
+
+    // JSON can't represent Infinity (it becomes null), but null is equally non-finite —
+    // both exercise the Number.isFinite() guard in TaxView. Use a raw body string to
+    // simulate exactly what a buggy backend would send.
     await page.route('**/api/tax/harvesting-opportunities*', async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          totalPotentialHarvest: 125000,
-          estimatedTaxSavings: 15625,
-          opportunities: [
-            { folioId: 'f1', schemeName: 'Regression Equity Fund', unitsToHarvest: Infinity, unrealizedGain: 125000, currentValue: 200000 },
-          ],
-        }),
+        // Send raw JSON with a very large number that behaves like Infinity from toFixed's perspective
+        body: '{"totalPotentialHarvest":125000,"estimatedTaxSavings":15625,"opportunities":[{"folioId":"f1","schemeName":"Regression Equity Fund","unitsToHarvest":null,"unrealizedGain":125000,"currentValue":200000}]}',
       });
     });
+
     await page.route('**/api/portfolio/*/tax-summary*', async route => {
       await route.fulfill({
         status: 200,
@@ -233,13 +253,21 @@ test.describe('ITR Export & Schedule CG Compliance', () => {
         body: JSON.stringify({ realized: { stcg: 0, ltcg: 0, slab: 0, total: 0 }, unrealized: { stcg: 0, ltcg: 0, slab: 0, total: 0 }, details: [] }),
       });
     });
+    await page.route('**/api/portfolio/*/xray*', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ stockAllocations: [], sectorAllocations: [] }) });
+    });
+    await page.route('**/api/portfolio/*/exposures*', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
 
     await page.goto('/');
     await page.getByRole('button', { name: /Tax Optimization/i }).click();
-    // Page must not be blank
+
+    // Page must not be blank — tax view must render
     await expect(page.getByText(/Advance Tax Accrual Matrix/i)).toBeVisible({ timeout: 5000 });
+    // Harvesting card must render (not crash from toFixed on null/non-finite)
     await expect(page.getByText(/Tax Harvesting Opportunity/i)).toBeVisible();
-    // Safe fallback "0.000" units rendered, not a crash
+    // Safe fallback "0.000 units" shown instead of crash
     await expect(page.getByText(/0\.000 units/i)).toBeVisible();
     await expect(page.locator('main')).not.toBeEmpty();
   });
