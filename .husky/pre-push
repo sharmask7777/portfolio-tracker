@@ -32,7 +32,7 @@ echo "⏳ Waiting for services to become ready (10s)..."
 sleep 10
 
 echo "Running backend test suite (unit + integration)..."
-(cd backend && npm test)
+(cd backend && npm test -- --runInBand)
 
 echo "⏳ Running Playwright E2E tests against Docker stack..."
 npm run test:e2e:docker --prefix frontend
