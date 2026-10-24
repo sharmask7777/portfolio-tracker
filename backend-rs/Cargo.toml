@@ -30,4 +30,5 @@ bcrypt = "0.17"
 uuid = { version = "1.13", features = ["v4", "serde"] }
 proptest = "1.6"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tracing = "0.1"
 
