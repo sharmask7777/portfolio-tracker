@@ -11,7 +11,7 @@ pub mod nav_refresh;
 
 pub use cas_parser::{normalize_tx_type, parse_cas_date, process_pdf_job, validate_file_path};
 pub use history_refresh::process_history_refresh_job;
-pub use nav_refresh::process_nav_refresh_job;
+pub use nav_refresh::{process_nav_refresh_job, process_nav_refresh_job_with_pool};
 
 /// Payload for processing uploaded CAS PDF / JSON statements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

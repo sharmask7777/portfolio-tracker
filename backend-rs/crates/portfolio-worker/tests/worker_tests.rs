@@ -14,6 +14,9 @@ use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
 
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::{Json, Router};
 use chrono::NaiveDate;
 use portfolio_db::InMemoryDatabase;
 use portfolio_db::entities::UploadJobStatus;
@@ -21,11 +24,12 @@ use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
 use portfolio_worker::WorkerError;
 use portfolio_worker::jobs::{
     HistoryRefreshJobData, NavRefreshJobData, ProcessPdfUploadJobData, normalize_tx_type,
-    parse_cas_date, process_history_refresh_job, process_nav_refresh_job, process_pdf_job,
-    validate_file_path,
+    parse_cas_date, process_history_refresh_job, process_nav_refresh_job,
+    process_nav_refresh_job_with_pool, process_pdf_job, validate_file_path,
 };
 use portfolio_worker::queue::{InMemoryJobQueue, JobQueue, RedisBullQueue};
 use rust_decimal::Decimal;
+use serde_json::json;
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 
@@ -306,7 +310,12 @@ async fn test_nav_refresh_job_processing() {
     let found = db.get_nav("122639", test_date).expect("nav found in db");
     assert_eq!(found.nav, dec("145.7500"));
 
-    // 2. Refresh with default date and default NAV
+    // 2. Refresh with default date and default NAV (offline fallback)
+    if std::env::var("MFAPI_BASE_URL").is_err() {
+        unsafe {
+            std::env::set_var("MFAPI_BASE_URL", "http://127.0.0.1:1");
+        }
+    }
     let job_default = NavRefreshJobData::new("120716");
     let rec_default = process_nav_refresh_job(&job_default, &db)
         .await
@@ -323,6 +332,107 @@ async fn test_nav_refresh_job_processing() {
     let empty_job = NavRefreshJobData::new("   ");
     let err_empty = process_nav_refresh_job(&empty_job, &db).await;
     assert!(matches!(err_empty, Err(WorkerError::InvalidAmfiCode(_))));
+}
+
+#[tokio::test]
+async fn test_process_nav_refresh_job_with_mfapi_payload() {
+    let mock_app = Router::new().route(
+        "/mf/{scheme_code}/latest",
+        get(
+            |axum::extract::Path(scheme_code): axum::extract::Path<String>| async move {
+                if scheme_code == "122639" {
+                    Json(json!({
+                        "status": "SUCCESS",
+                        "meta": {
+                            "scheme_code": 122639,
+                            "scheme_name": "Parag Parikh Flexi Cap Fund"
+                        },
+                        "data": [
+                            {
+                                "date": "24-10-2026",
+                                "nav": "89.4520"
+                            }
+                        ]
+                    }))
+                    .into_response()
+                } else {
+                    axum::http::StatusCode::NOT_FOUND.into_response()
+                }
+            },
+        ),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind ephemeral port");
+    let port = listener.local_addr().unwrap().port();
+    let base_url = format!("http://127.0.0.1:{port}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.ok();
+    });
+
+    unsafe {
+        std::env::set_var("MFAPI_BASE_URL", &base_url);
+    }
+
+    let db = InMemoryDatabase::new();
+    let job_data = NavRefreshJobData::new("122639");
+
+    let record = process_nav_refresh_job(&job_data, &db)
+        .await
+        .expect("NAV refresh should succeed");
+
+    assert_eq!(record.amfi_code, "122639");
+    let expected_date = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
+    assert_eq!(record.date, expected_date);
+    assert_eq!(record.nav, dec("89.4520"));
+
+    let stored = db
+        .get_nav("122639", expected_date)
+        .expect("nav stored in db");
+    assert_eq!(stored.nav, dec("89.4520"));
+
+    // Also test process_nav_refresh_job_with_pool with None pool
+    let rec_pool = process_nav_refresh_job_with_pool(&job_data, &db, None)
+        .await
+        .expect("process_nav_refresh_job_with_pool should succeed");
+    assert_eq!(rec_pool.amfi_code, "122639");
+    assert_eq!(rec_pool.nav, dec("89.4520"));
+}
+
+#[tokio::test]
+async fn test_process_nav_refresh_job_fallback_when_http_fails() {
+    // Point to non-responsive or 404 endpoint
+    let mock_app = Router::new().route(
+        "/mf/{scheme_code}/latest",
+        get(|| async { axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response() }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind ephemeral port");
+    let port = listener.local_addr().unwrap().port();
+    let base_url = format!("http://127.0.0.1:{port}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.ok();
+    });
+
+    unsafe {
+        std::env::set_var("MFAPI_BASE_URL", &base_url);
+    }
+
+    let db = InMemoryDatabase::new();
+    let job_data = NavRefreshJobData::new("118989");
+
+    // Must fallback gracefully to default 100.00 without panicking
+    let record = process_nav_refresh_job(&job_data, &db)
+        .await
+        .expect("NAV refresh fallback should succeed");
+
+    assert_eq!(record.amfi_code, "118989");
+    assert_eq!(record.nav, dec("100.00"));
 }
 
 #[tokio::test]

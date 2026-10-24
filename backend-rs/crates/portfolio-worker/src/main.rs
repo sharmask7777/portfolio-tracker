@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use portfolio_db::InMemoryDatabase;
-use portfolio_worker::jobs::{ProcessPdfUploadJobData, process_pdf_job};
+use portfolio_worker::jobs::{
+    NavRefreshJobData, ProcessPdfUploadJobData, process_nav_refresh_job_with_pool, process_pdf_job,
+};
 use portfolio_worker::queue::{JobQueue, RedisBullQueue};
 
 #[tokio::main]
@@ -51,15 +53,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
-    // Connect to Redis BullMQ queue, or run in fallback polling mode if Redis is temporarily unreachable
+    // Connect to Redis BullMQ queues, or run in fallback polling mode if Redis is temporarily unreachable
     let redis_queue = match RedisBullQueue::connect(&redis_url, "pdfUploadQueue").await {
         Ok(queue) => {
-            println!("[Worker] Successfully connected to Redis BullMQ queue at {redis_url}");
+            println!(
+                "[Worker] Successfully connected to Redis BullMQ queue (pdfUploadQueue) at {redis_url}"
+            );
             Some(queue)
         }
         Err(err) => {
             eprintln!(
-                "[Worker] Warning: Redis connection to '{redis_url}' failed ({err}). Running in fallback mode."
+                "[Worker] Warning: Redis connection to 'pdfUploadQueue' at '{redis_url}' failed ({err}). Running in fallback mode."
+            );
+            None
+        }
+    };
+
+    let nav_refresh_queue = match RedisBullQueue::connect(&redis_url, "navRefreshQueue").await {
+        Ok(queue) => {
+            println!(
+                "[Worker] Successfully connected to Redis BullMQ queue (navRefreshQueue) at {redis_url}"
+            );
+            Some(queue)
+        }
+        Err(err) => {
+            eprintln!(
+                "[Worker] Warning: Redis connection to 'navRefreshQueue' at '{redis_url}' failed ({err}). Running in fallback mode."
             );
             None
         }
@@ -144,6 +163,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Err(err) => {
                             eprintln!("[Worker] Error dequeuing job from Redis: {err}");
+                            tokio::time::sleep(Duration::from_secs(2)).await;
+                        }
+                    }
+                }
+
+                if let Some(ref queue) = nav_refresh_queue {
+                    let dequeue_result: Result<Option<NavRefreshJobData>, _> =
+                        queue.dequeue().await;
+                    match dequeue_result {
+                        Ok(Some(job)) => {
+                            println!(
+                                "[Worker] Dequeued NAV refresh job for AMFI code {}",
+                                job.amfi_code
+                            );
+
+                            match process_nav_refresh_job_with_pool(
+                                &job,
+                                &db,
+                                pg_pool.as_ref(),
+                            )
+                            .await
+                            {
+                                Ok(record) => {
+                                    println!(
+                                        "[Worker] Successfully refreshed NAV for AMFI code {} (date: {}, nav: {})",
+                                        record.amfi_code, record.date, record.nav
+                                    );
+                                }
+                                Err(err) => {
+                                    eprintln!(
+                                        "[Worker] Failed to process NAV refresh job for AMFI code {}: {err}",
+                                        job.amfi_code
+                                    );
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            // Queue is empty, continue waiting
+                        }
+                        Err(err) => {
+                            eprintln!("[Worker] Error dequeuing NAV refresh job from Redis: {err}");
                             tokio::time::sleep(Duration::from_secs(2)).await;
                         }
                     }

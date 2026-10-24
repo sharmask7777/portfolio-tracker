@@ -1389,6 +1389,7 @@ name = "portfolio-worker"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
  "chrono",
  "portfolio-core",
  "portfolio-db",
