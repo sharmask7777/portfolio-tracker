@@ -25,8 +25,10 @@ use crate::types::{AssetType, Money, Nav, Units};
 /// Loss limitation rule: if `sell_nav < fmv`, deemed NAV drops to `sell_nav`
 /// (or `actual_purchase_nav` if `sell_nav < actual_purchase_nav`),
 /// preventing artificial capital loss claims while allowing genuine economic loss.
+#[allow(clippy::too_many_arguments)]
 pub fn compute_deemed_cost(
     buy_date: NaiveDate,
+    sell_date: NaiveDate,
     units: Units,
     actual_nav: Nav,
     sell_nav: Nav,
@@ -35,8 +37,12 @@ pub fn compute_deemed_cost(
     is_anchor: bool,
 ) -> (Money, bool, String, Nav, Money) {
     let cost_of_acquisition = actual_nav * units;
+    let anniversary = buy_date
+        .checked_add_months(chrono::Months::new(12))
+        .unwrap_or(buy_date + chrono::Duration::days(365));
+    let is_long_term = sell_date > anniversary;
 
-    if is_equity_asset && buy_date <= GRANDFATHER_DATE && !is_anchor {
+    if is_equity_asset && buy_date <= GRANDFATHER_DATE && is_long_term && !is_anchor {
         let is_grandfathered = true;
         let status = "Grandfathered u/s 55(2)(ac)".to_string();
 
@@ -141,6 +147,7 @@ pub fn calculate_gain_with_expenses(
         total_fmv_jan31_2018,
     ) = compute_deemed_cost(
         buy_date,
+        sell_date,
         units_sold,
         actual_buy_nav,
         sell_nav,

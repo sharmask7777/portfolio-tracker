@@ -4,23 +4,20 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
-    "build": "npm run build --prefix backend && npm run build --prefix frontend",
-    "lint": "npm run lint --prefix backend && npm run lint --prefix frontend",
+    "dev": "concurrently \"(cd backend-rs && cargo run --bin portfolio-api)\" \"npm run dev --prefix frontend\"",
+    "build": "(cd backend-rs && cargo build --release) && npm run build --prefix frontend",
+    "lint": "(cd backend-rs && cargo clippy --workspace --all-targets -- -D warnings) && npm run lint --prefix frontend",
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
     "start": "npm run docker:up && npm run docker:logs",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "(cd backend-rs && cargo test --workspace) && npm run test:unit --prefix frontend",
     "prepare": "husky"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-  "prisma": {
-    "schema": "backend/prisma/schema.prisma"
-  },
   "devDependencies": {
     "concurrently": "^9.2.1",
     "husky": "^9.1.7"

@@ -320,7 +320,7 @@ async fn test_fund_overlap_calculation_endpoint() {
     // Reliance: min(7.5, 9.0) = 7.5
     // Infosys: min(6.0, 7.0) = 6.0
     // Total = 8.5 + 5.5 + 7.5 + 6.0 = 27.5
-    assert_eq!(json["overlapPercentage"], "27.5");
+    assert_eq!(json["overlapPercentage"], 27.5);
 
     let common = json["commonStocks"].as_array().unwrap();
     assert_eq!(common.len(), 4);
@@ -335,7 +335,7 @@ async fn test_fund_overlap_calculation_endpoint() {
     let sym_res = app.oneshot(sym_req).await.unwrap();
     assert_eq!(sym_res.status(), StatusCode::OK);
     let sym_json = parse_json(sym_res.into_body()).await;
-    assert_eq!(sym_json["overlapPercentage"], "27.5");
+    assert_eq!(sym_json["overlapPercentage"], 27.5);
 }
 
 #[tokio::test]

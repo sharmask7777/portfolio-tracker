@@ -22,6 +22,7 @@ error() {
 log "Checking pre-requisites..."
 command -v node >/dev/null 2>&1 || error "node is not installed."
 command -v npm >/dev/null 2>&1 || error "npm is not installed."
+command -v cargo >/dev/null 2>&1 || error "cargo (Rust) is not installed."
 command -v python3 >/dev/null 2>&1 || error "python3 is not installed."
 
 # Environment Variable Initialization
@@ -44,7 +45,6 @@ init_env() {
 
 log "Initializing environment variables..."
 init_env "."
-init_env "backend"
 init_env "frontend"
 
 log "Environment initialization complete."
@@ -52,33 +52,13 @@ log "Environment initialization complete."
 # Dependency Installation
 log "Installing dependencies..."
 
-# Backend Dependencies
-log "Setting up backend..."
-cd backend
-log "Installing Node.js dependencies for backend..."
-npm install
-log "Generating Prisma client..."
-npx prisma generate
-
-# Python virtual environment for backend
-if [ ! -d "venv" ]; then
-    log "Creating Python virtual environment..."
-    python3 -m venv venv
-else
-    log "Python virtual environment already exists."
-fi
-
-log "Installing Python dependencies (casparser)..."
-./venv/bin/pip install --quiet casparser
-
-cd ..
+# Backend (Rust Workspace)
+log "Setting up Rust backend (backend-rs)..."
+(cd backend-rs && cargo build)
 
 # Frontend Dependencies
 log "Setting up frontend..."
-cd frontend
-log "Installing Node.js dependencies for frontend..."
-npm install
-cd ..
+(cd frontend && npm install)
 
 log "All dependencies installed successfully."
 
@@ -88,11 +68,11 @@ read -p "Setup complete. Would you like to start the application via Docker? (y/
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     log "Starting application via Docker..."
-    docker-compose up --build -d
+    docker compose up --build -d
     log "Application started!"
     log "Backend: http://localhost:3001"
-    log "Frontend: http://localhost:5173"
+    log "Frontend: http://localhost:8082"
     log "To view logs, run: npm run docker:logs"
 else
-    log "Setup finished. You can start the app later with 'npm start' or 'docker-compose up'."
+    log "Setup finished. You can start the app later with 'npm start' or 'docker compose up'."
 fi

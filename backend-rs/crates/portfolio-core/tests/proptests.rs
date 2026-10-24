@@ -174,8 +174,9 @@ proptest! {
         let fmv = Nav::new(Decimal::new(fmv_raw, 2));
         let units = Units::new(Decimal::from(10));
 
+        let sell_date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
         let (deemed_cost, is_grandfathered, _, _, _) =
-            compute_deemed_cost(buy_date, units, actual_nav, sell_nav, Some(fmv), true, false);
+            compute_deemed_cost(buy_date, sell_date, units, actual_nav, sell_nav, Some(fmv), true, false);
 
         prop_assert!(is_grandfathered);
 

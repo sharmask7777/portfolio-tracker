@@ -33,8 +33,21 @@ impl TaxClassification {
         let is_post_budget_2024 = realization_date >= BUDGET_2024_DATE;
         let is_post_debt_regime = purchase_date >= DEBT_NEW_REGIME_DATE;
 
+        let is_ltcg = if is_equity {
+            let anniversary = purchase_date
+                .checked_add_months(chrono::Months::new(12))
+                .unwrap_or(purchase_date + chrono::Duration::days(365));
+            realization_date >= anniversary
+        } else {
+            let months = if is_post_budget_2024 { 24 } else { 36 };
+            let anniversary = purchase_date
+                .checked_add_months(chrono::Months::new(months))
+                .unwrap_or(purchase_date + chrono::Duration::days(months as i64 * 30));
+            realization_date >= anniversary
+        };
+
         let (holding_type, tax_type, section, tax_rate) = if is_equity {
-            if holding_days >= HOLDING_DAYS_EQUITY_LTCG {
+            if is_ltcg {
                 let (sec, rate) = if is_post_budget_2024 {
                     (TaxSection::Sec112A12_5, RATE_EQUITY_LTCG_POST_BUDGET)
                 } else {
@@ -59,12 +72,7 @@ impl TaxClassification {
             )
         } else {
             // Pre-01-Apr-2023 debt funds: indexation / LTCG threshold
-            let lt_threshold = if is_post_budget_2024 {
-                HOLDING_DAYS_DEBT_LTCG_POST_BUDGET
-            } else {
-                HOLDING_DAYS_DEBT_LTCG_PRE_BUDGET
-            };
-            if holding_days >= lt_threshold {
+            if is_ltcg {
                 let (sec, rate) = if is_post_budget_2024 {
                     (TaxSection::Sec112Debt12_5, RATE_DEBT_LTCG_POST_BUDGET)
                 } else {

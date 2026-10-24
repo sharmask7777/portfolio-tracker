@@ -219,6 +219,7 @@ impl BuyLot {
 
 /// Detailed calculation for a single realized gain matching a redemption to a buy lot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RealizedGain {
     pub asset_name: String,
     pub folio_number: Option<FolioNumber>,
@@ -260,6 +261,8 @@ pub struct TaxCategorySummary {
     pub total: Money,
     pub taxable_stcg: Money,
     pub taxable_ltcg: Money,
+    #[serde(default)]
+    pub taxable_slab: Money,
     pub details: Vec<RealizedGain>,
 }
 
@@ -374,23 +377,44 @@ pub fn build_section_totals(details: &[RealizedGain]) -> SectionTotalsMap {
 }
 
 /// Applies statutory capital loss set-off rules:
+/// Applies statutory capital loss set-off rules under Section 70 of the Income Tax Act, 1961:
 /// 1. LTCL can ONLY set off LTCG.
 /// 2. STCL can set off both STCG and LTCG.
 ///
 /// Returns (taxable_stcg, taxable_ltcg).
 pub fn apply_capital_loss_set_off(realized_stcg: Money, realized_ltcg: Money) -> (Money, Money) {
-    let stcl = if realized_stcg.is_negative() {
-        realized_stcg.abs()
+    let (stcg, ltcg, _) =
+        apply_capital_loss_set_off_with_slab(realized_stcg, realized_ltcg, Money::ZERO);
+    (stcg, ltcg)
+}
+
+/// Applies Section 70 loss set-off rules including Section 50AA deemed short-term capital gains/losses.
+///
+/// Section 50AA gains/losses are statutorily deemed as short-term capital gains/losses.
+/// Returns `(taxable_stcg, taxable_ltcg, taxable_slab)`.
+pub fn apply_capital_loss_set_off_with_slab(
+    realized_stcg: Money,
+    realized_ltcg: Money,
+    realized_slab: Money,
+) -> (Money, Money, Money) {
+    let mut total_stcl = Money::ZERO;
+    let mut stcg = Money::ZERO;
+    let mut slab_gain = Money::ZERO;
+
+    if realized_stcg.is_negative() {
+        total_stcl += realized_stcg.abs();
     } else {
-        Money::ZERO
-    };
+        stcg = realized_stcg;
+    }
+
+    if realized_slab.is_negative() {
+        total_stcl += realized_slab.abs();
+    } else {
+        slab_gain = realized_slab;
+    }
+
     let ltcl = if realized_ltcg.is_negative() {
         realized_ltcg.abs()
-    } else {
-        Money::ZERO
-    };
-    let mut stcg = if realized_stcg.is_positive() {
-        realized_stcg
     } else {
         Money::ZERO
     };
@@ -404,8 +428,13 @@ pub fn apply_capital_loss_set_off(realized_stcg: Money, realized_ltcg: Money) ->
     let set_off_lt = ltcg.min(ltcl);
     ltcg -= set_off_lt;
 
-    // 2. STCL can set off both STCG and LTCG
-    let mut remaining_stcl = stcl;
+    // 2. STCL can set off Slab STCG first (highest tax efficiency), then Equity STCG, then LTCG
+    let mut remaining_stcl = total_stcl;
+
+    let set_off_slab = slab_gain.min(remaining_stcl);
+    slab_gain -= set_off_slab;
+    remaining_stcl -= set_off_slab;
+
     let set_off_st = stcg.min(remaining_stcl);
     stcg -= set_off_st;
     remaining_stcl -= set_off_st;
@@ -413,7 +442,7 @@ pub fn apply_capital_loss_set_off(realized_stcg: Money, realized_ltcg: Money) ->
     let set_off_st_lt = ltcg.min(remaining_stcl);
     ltcg -= set_off_st_lt;
 
-    (stcg, ltcg)
+    (stcg, ltcg, slab_gain)
 }
 
 /// Calculates portfolio-level realized and unrealized tax across all transactions in a scheme/folio,
@@ -457,7 +486,8 @@ pub fn calculate_portfolio_tax_with_as_of(
         realized_details.push(gain_record);
     }
 
-    let (taxable_stcg, taxable_ltcg) = apply_capital_loss_set_off(realized_stcg, realized_ltcg);
+    let (taxable_stcg, taxable_ltcg, taxable_slab) =
+        apply_capital_loss_set_off_with_slab(realized_stcg, realized_ltcg, realized_slab);
 
     let as_of_date = as_of.unwrap_or_else(|| chrono::Utc::now().date_naive());
     let is_eq = is_equity(asset_type, asset_name);
@@ -474,6 +504,7 @@ pub fn calculate_portfolio_tax_with_as_of(
 
         let (deemed_cost, _, _, _, _) = compute_deemed_cost(
             lot.purchase_date,
+            as_of_date,
             lot.remaining_units,
             lot.purchase_nav,
             current_nav,
@@ -509,6 +540,7 @@ pub fn calculate_portfolio_tax_with_as_of(
             total: realized_stcg + realized_ltcg + realized_slab,
             taxable_stcg,
             taxable_ltcg,
+            taxable_slab,
             details: realized_details,
         },
         unrealized: TaxCategorySummary {
@@ -523,6 +555,11 @@ pub fn calculate_portfolio_tax_with_as_of(
             },
             taxable_ltcg: if u_ltcg.is_positive() {
                 u_ltcg
+            } else {
+                Money::ZERO
+            },
+            taxable_slab: if u_slab.is_positive() {
+                u_slab
             } else {
                 Money::ZERO
             },

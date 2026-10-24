@@ -13,7 +13,7 @@ For any new functionalities or bug fixes, you MUST mandatorily update and run bo
 
 ## Mandatory Mock Portfolio Test Suite
 
-- **Comprehensive Mock Suite**: All financial logic, portfolio calculations, consolidation behaviors, and UI views MUST be validated against the 10+ synthetic mock portfolios suite (`backend/src/test/mock-portfolios.spec.ts`, `frontend/src/utils/mock-portfolios.test.ts`, and `frontend/tests/mock-portfolios.spec.ts`).
+- **Comprehensive Mock Suite**: All financial logic, portfolio calculations, consolidation behaviors, and UI views MUST be validated against the 10+ synthetic mock portfolios suite (`backend-rs/crates/portfolio-core/tests/mock_portfolios.rs`, `frontend/src/utils/mock-portfolios.test.ts`, and `frontend/tests/mock-portfolios.spec.ts`).
 - **Coverage of Financial Scenarios**: Any new feature or bug fix must ensure the mock portfolio suite covers:
   1. **Scheme Consolidation**: Grouping multiple folios/PANs for the same scheme without duplicate valuation.
   2. **Zero-Holding / Full Redemption Isolation**: Fully redeemed positions must never show active holdings/valuation and must be cleanly isolated in closed positions.
@@ -30,25 +30,25 @@ For any new functionalities or bug fixes, you MUST mandatorily update and run bo
 
 ## Backend Testing
 
-For any backend changes, both the TypeScript backend test suite (`npm test` in `backend`) and the Rust backend workspace test suite (`cargo test --workspace` in `backend-rs`) must be run and pass.
+The project backend is 100% Rust (`backend-rs`). All backend calculation and API endpoints are tested via the Rust cargo workspace.
 
 ### Rust Backend Workspace Architecture
 
 The Rust backend (`backend-rs`) follows hexagonal architecture across 5 specialized member crates:
 1. **`portfolio-core`**: The pure domain calculation engine.
    - **Strict Zero-I/O Invariant**: MUST remain strictly zero-I/O (no databases, no network, no async runtime, no filesystem). All calculations (holdings, FIFO, capital gains tax, performance/XIRR, and X-Ray) must be pure, deterministic functions operating solely in-memory.
-   - Contains the hermetic 10 mock portfolios suite (`tests/mock_portfolios.rs`) and property-based invariant tests (`tests/proptests.rs`).
+   - Contains the hermetic 10 mock portfolios suite (`tests/mock_portfolios.rs`), defensive test suite (`tests/auditor_defensive_test.rs`), and property-based invariant tests (`tests/proptests.rs`).
 2. **`portfolio-db`**: Database persistence layer with SQLx.
    - Provides strongly-typed PostgreSQL entity mappings and repository interfaces (`PortfolioRepository`, `TransactionRepository`, `FamilyRepository`).
    - Includes `InMemoryDatabase` for sub-millisecond, Docker-free hermetic testing.
 3. **`portfolio-api`**: High-performance HTTP REST API gateway.
-   - Built with Axum and Tokio, providing camelCase JSON response parity matching the Express API contracts.
+   - Built with Axum and Tokio, providing camelCase JSON response parity matching frontend contracts.
    - Includes JWT authentication middleware, CORS configuration, and centralized error mapping.
 4. **`portfolio-worker`**: Asynchronous background job worker.
    - Connects to BullMQ-compatible Redis queues (`bull:<queue_name>:*`) with fallback in-memory queuing.
    - Handles CAS PDF / JSON upload processing, multi-PAN transaction ingestion, and historical valuation refreshes.
 5. **`portfolio-parity`**: Differential parity validation harness.
-   - Validates numerical parity between TypeScript and Rust calculation engines across all synthetic scenarios.
+   - Validates numerical parity across synthetic scenarios.
    - Enforces precision bounds: Units $\Delta \le 0.0001$, Financial Amounts $\Delta \le ₹0.01$, Returns & XIRR $\Delta \le 10^{-6}$.
 
 ### Rust Testing & Quality Mandates
@@ -60,9 +60,7 @@ For any changes to the backend or calculation logic, run and pass:
 - `cargo fmt --check`
 
 ### Docker Compose 100% Rust Architecture
-The production and local `docker-compose.yml` runs 100% on the Rust backend (`backend-rs`) as the native `backend` and `worker` services. The legacy Node.js/Express/Prisma containers have been replaced. Database initialization is completely self-healing on container boot via `portfolio_db::init_schema(&pool)` executing DDL idempotent migrations—no manual `npx prisma migrate deploy` is required.
-
-Whenever you write new unit tests in the TypeScript backend, remember to manually import and use `jest.mock('@src/services/db.service', () => require('@src/test/db.mock'))` to avoid attempting real database connections. Run integration tests normally by spinning up the local test docker container!
+The production and local `docker-compose.yml` runs 100% on the Rust backend (`backend-rs`) as the native `backend` and `worker` services. Database initialization is completely self-healing on container boot via `portfolio_db::init_schema(&pool)` executing DDL idempotent migrations.
 
 ## Git and Commits
 

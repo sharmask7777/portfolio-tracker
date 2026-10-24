@@ -57,18 +57,22 @@ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
     }
     let threshold = Units::new(rust_decimal::Decimal::from_parts(1, 0, 0, false, 3)); // 0.001
 
-    // Check if the latest unit-bearing transaction has an explicit balance recorded (matching CAS statements)
+    // Check if transactions carry explicit cumulative balance tracking (matching CAS statements)
     let sorted = crate::holdings::lot::sort_transactions(transactions);
-    for tx in sorted.iter().rev() {
-        let is_auxiliary = (tx.tx_type == TransactionType::Other
-            || tx.tx_type == TransactionType::StampDuty)
-            && tx.units.is_zero();
-        if !is_auxiliary {
-            let bal = tx.balance;
-            if bal >= threshold {
-                return bal;
-            } else if bal.is_zero() {
-                return Units::ZERO;
+    let has_explicit_balances = sorted.iter().any(|tx| !tx.balance.is_zero());
+
+    if has_explicit_balances {
+        for tx in sorted.iter().rev() {
+            let is_auxiliary = (tx.tx_type == TransactionType::Other
+                || tx.tx_type == TransactionType::StampDuty)
+                && tx.units.is_zero();
+            if !is_auxiliary {
+                let bal = tx.balance;
+                if bal >= threshold {
+                    return bal;
+                } else {
+                    return Units::ZERO;
+                }
             }
         }
     }
@@ -128,9 +132,14 @@ pub fn consolidate_by_scheme(folios: &[Folio], current_nav: Nav) -> Vec<Consolid
 
         for folio in &group_folios {
             let units = get_latest_units(&folio.transactions);
+            let nav_to_use = if current_nav.is_positive() {
+                current_nav
+            } else {
+                get_latest_nav(&folio.transactions)
+            };
             let metrics = get_metrics(
                 &folio.transactions,
-                current_nav,
+                nav_to_use,
                 Some(PerformanceOptions::new().with_units_override(units)),
             );
             total_units += units;

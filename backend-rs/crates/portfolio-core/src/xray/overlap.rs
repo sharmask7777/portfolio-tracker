@@ -27,7 +27,9 @@ impl FundHolding {
 #[serde(rename_all = "camelCase")]
 pub struct CommonStock {
     pub name: String,
+    #[serde(with = "rust_decimal::serde::float")]
     pub weight_a: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
     pub weight_b: Decimal,
 }
 
@@ -37,6 +39,7 @@ pub struct CommonStock {
 pub struct FundOverlap {
     pub fund_a: String,
     pub fund_b: String,
+    #[serde(with = "rust_decimal::serde::float")]
     pub overlap_percentage: Decimal,
     pub common_stocks: Vec<CommonStock>,
 }
