@@ -11,10 +11,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use portfolio_core::error::PortfolioError;
+use portfolio_core::tax::grandfathering::GRANDFATHER_DATE;
 use portfolio_core::tax::harvesting::{
     FolioHarvestingInput, HarvestingSummary, get_harvesting_opportunities,
 };
-use portfolio_core::tax::rules::simulate_sell_transactions;
+use portfolio_core::tax::rules::simulate_sell_transactions_with_metadata;
 use portfolio_core::tax::{RealizedGain, SellSimulation, TaxType};
 use portfolio_core::types::{AssetType, Money, Nav, Units};
 use portfolio_db::error::DbError;
@@ -22,8 +23,8 @@ use portfolio_db::error::DbError;
 use crate::errors::ApiError;
 use crate::middleware::AuthUser;
 use crate::routes::portfolio::{
-    fetch_asset_for_folio, fetch_folio, fetch_folios_for_portfolio, fetch_latest_nav,
-    fetch_portfolio, fetch_transactions_for_folio, fetch_user_portfolios,
+    fetch_asset_for_folio, fetch_folio, fetch_folios_for_portfolio, fetch_historical_nav_by_date,
+    fetch_latest_nav, fetch_portfolio, fetch_transactions_for_folio, fetch_user_portfolios,
     resolve_target_portfolios,
 };
 use crate::state::AppState;
@@ -97,17 +98,17 @@ fn to_simulation_response(sim: SellSimulation) -> SimulationResponse {
         match lot.tax_type {
             TaxType::Stcg => {
                 stcg_amt += lot.gain.to_decimal();
-                stcg_tax += lot.estimated_tax.to_decimal();
+                stcg_tax += lot.tax_before_cess.to_decimal();
                 stcg_cess += lot.cess.to_decimal();
             }
             TaxType::Ltcg => {
                 ltcg_amt += lot.gain.to_decimal();
-                ltcg_tax += lot.estimated_tax.to_decimal();
+                ltcg_tax += lot.tax_before_cess.to_decimal();
                 ltcg_cess += lot.cess.to_decimal();
             }
             TaxType::Slab => {
                 slab_amt += lot.gain.to_decimal();
-                slab_tax += lot.estimated_tax.to_decimal();
+                slab_tax += lot.tax_before_cess.to_decimal();
                 slab_cess += lot.cess.to_decimal();
             }
         }
@@ -207,7 +208,13 @@ pub async fn simulate_sell(
             .parse::<AssetType>()
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-        match simulate_sell_transactions(
+        let grandfather_nav = if let Some(ref amfi) = asset.amfi_code {
+            fetch_historical_nav_by_date(&state, amfi, GRANDFATHER_DATE).await
+        } else {
+            None
+        };
+
+        match simulate_sell_transactions_with_metadata(
             &asset.name,
             asset_type,
             &core_txs,
@@ -215,7 +222,8 @@ pub async fn simulate_sell(
             sell_date,
             current_price,
             tax_slab,
-            None,
+            grandfather_nav,
+            asset.exit_load_metadata.as_deref(),
         ) {
             Ok(simulation) => Ok(Json(to_simulation_response(simulation))),
             Err(PortfolioError::UnitsLocked { available, locked }) => {
@@ -235,7 +243,7 @@ pub async fn simulate_sell(
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
         let current_price = Nav::new(payload.current_price.unwrap_or(Decimal::ZERO));
 
-        match simulate_sell_transactions(
+        match simulate_sell_transactions_with_metadata(
             &asset_name,
             asset_type,
             &[],
@@ -243,6 +251,7 @@ pub async fn simulate_sell(
             sell_date,
             current_price,
             tax_slab,
+            None,
             None,
         ) {
             Ok(simulation) => Ok(Json(to_simulation_response(simulation))),
