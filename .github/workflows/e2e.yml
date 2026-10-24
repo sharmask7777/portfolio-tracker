@@ -20,7 +20,6 @@ jobs:
       run: |
         npm ci --legacy-peer-deps
         cd frontend && npm ci --legacy-peer-deps
-        cd ../backend && npm ci --legacy-peer-deps
 
     - name: Run Hermetic Unit Tests (Frontend)
       run: |
@@ -65,14 +64,6 @@ jobs:
         VITE_API_URL=http://127.0.0.1:3001
         EOF
 
-        cat <<EOF > backend/.env
-        DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/portfolio_tracker?schema=public
-        JWT_SECRET=your-super-secret-jwt-key-change-me
-        REDIS_HOST=127.0.0.1
-        REDIS_PORT=6379
-        NODE_ENV=test
-        EOF
-
         export NODE_ENV=development
         npm run docker:up
 
@@ -85,31 +76,6 @@ jobs:
         until curl -s http://127.0.0.1:8082 > /dev/null; do
           sleep 2
         done
-
-    - name: Generate Prisma Client
-      run: |
-        export DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/portfolio_tracker?schema=public"
-        cd backend
-        npx prisma generate
-
-    - name: Run Backend Integration & Unit Tests
-      run: |
-        export DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/portfolio_tracker?schema=public"
-        export JWT_SECRET="your-super-secret-jwt-key-change-me"
-        export REDIS_HOST="127.0.0.1"
-        export REDIS_PORT="6379"
-        export NODE_ENV=test
-        cd backend
-        npm test -- --colors --verbose 2>&1 | tee ../backend-test.log
-        TEST_EXIT_CODE=${PIPESTATUS[0]}
-        echo "Backend tests exited with code $TEST_EXIT_CODE"
-        if [ $TEST_EXIT_CODE -ne 0 ]; then
-          echo "### ❌ Backend Tests Failed" >> $GITHUB_STEP_SUMMARY
-          echo '```text' >> $GITHUB_STEP_SUMMARY
-          tail -n 250 ../backend-test.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          exit $TEST_EXIT_CODE
-        fi
 
     - name: Run Playwright E2E tests
       run: |
@@ -131,10 +97,3 @@ jobs:
         name: playwright-report
         path: frontend/playwright-report/
         retention-days: 30
-
-    - uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: backend-test-log
-        path: backend-test.log
-        retention-days: 7

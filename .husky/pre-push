@@ -6,16 +6,14 @@ set -e
 echo "Running Rust backend workspace tests..."
 (cd backend-rs && cargo test --workspace)
 
+echo "Running Rust parity validation harness..."
+(cd backend-rs && cargo run --package portfolio-parity)
+
+echo "Running Rust clippy and formatting checks..."
+(cd backend-rs && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check)
+
 echo "Running frontend hermetic unit tests..."
 (cd frontend && npm run test:unit)
-
-echo "Running backend Docker smoke test..."
-cd backend && npm run test:docker
-cd ..
-
-echo "Running frontend Docker smoke test..."
-cd frontend && npm run test:docker
-cd ..
 
 echo "🐳 Starting Docker compose stack for tests..."
 export NODE_ENV=development
@@ -31,9 +29,5 @@ trap cleanup EXIT
 echo "⏳ Waiting for services to become ready (10s)..."
 sleep 10
 
-echo "Running backend test suite (unit + integration)..."
-(cd backend && npm test -- --runInBand)
-
 echo "⏳ Running Playwright E2E tests against Docker stack..."
 npm run test:e2e:docker --prefix frontend
-

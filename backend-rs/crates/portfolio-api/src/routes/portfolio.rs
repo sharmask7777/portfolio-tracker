@@ -1239,14 +1239,10 @@ pub async fn get_portfolio_summary(
 
             let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback_nav).await;
 
-            let core_asset_type = match asset
+            let core_asset_type = asset
                 .as_ref()
-                .map(|a| a.asset_type.as_str())
-                .unwrap_or("MUTUAL_FUND")
-            {
-                "STOCK" | "EQUITY" => AssetType::Stock,
-                _ => AssetType::MutualFund,
-            };
+                .and_then(|a| a.asset_type.parse::<AssetType>().ok())
+                .unwrap_or(AssetType::MutualFund);
             let asset_name = asset
                 .as_ref()
                 .map(|a| a.name.as_str())
@@ -1504,10 +1500,11 @@ pub async fn get_xray(
     use rust_decimal::prelude::ToPrimitive;
     let to_f = |v: Decimal| v.to_f64().unwrap_or(0.0);
     let pct = |v: Decimal| {
-        (v / total_val * Decimal::from(100))
-            .round_dp(2)
-            .to_f64()
-            .unwrap_or(0.0)
+        if total_val > Decimal::ZERO {
+            (v / total_val).round_dp(4).to_f64().unwrap_or(0.0)
+        } else {
+            0.0
+        }
     };
     let large_val = (equity_val * Decimal::new(6, 1)).round_dp(2);
     let mid_val = (equity_val * Decimal::new(25, 2)).round_dp(2);
@@ -1532,11 +1529,11 @@ pub async fn get_xray(
 
     Ok(Json(json!({
         "sectors": [
-            { "name": "Financial Services", "percentage": 32.5, "value": to_f((equity_val * Decimal::new(325, 3)).round_dp(2)) },
-            { "name": "Information Technology", "percentage": 18.2, "value": to_f((equity_val * Decimal::new(182, 3)).round_dp(2)) },
-            { "name": "Oil & Gas", "percentage": 12.0, "value": to_f((equity_val * Decimal::new(12, 2)).round_dp(2)) },
-            { "name": "Consumer Goods", "percentage": 11.5, "value": to_f((equity_val * Decimal::new(115, 3)).round_dp(2)) },
-            { "name": "Automobile", "percentage": 8.0, "value": to_f((equity_val * Decimal::new(8, 2)).round_dp(2)) }
+            { "name": "Financial Services", "percentage": 0.325, "value": to_f((equity_val * Decimal::new(325, 3)).round_dp(2)) },
+            { "name": "Information Technology", "percentage": 0.182, "value": to_f((equity_val * Decimal::new(182, 3)).round_dp(2)) },
+            { "name": "Oil & Gas", "percentage": 0.120, "value": to_f((equity_val * Decimal::new(12, 2)).round_dp(2)) },
+            { "name": "Consumer Goods", "percentage": 0.115, "value": to_f((equity_val * Decimal::new(115, 3)).round_dp(2)) },
+            { "name": "Automobile", "percentage": 0.080, "value": to_f((equity_val * Decimal::new(8, 2)).round_dp(2)) }
         ],
         "totalValue": to_f(total_val),
         "marketCap": {
@@ -1555,13 +1552,13 @@ pub async fn get_xray(
             "totalAnnualFees": to_f(total_annual_fees),
             "weightedAvgTer": weighted_ter,
             "categoryBreakdown": [
-                { "category": "Equity", "totalFees": to_f(total_annual_fees), "avgTer": weighted_ter, "percentage": 100.0, "value": to_f(total_val) }
+                { "category": "Equity", "totalFees": to_f(total_annual_fees), "avgTer": weighted_ter, "percentage": 1.0, "value": to_f(total_val) }
             ],
             "fundBreakdown": fund_breakdowns
         },
         "fundCategoryAllocation": {
-            "active": { "percentage": 85.0, "value": to_f((total_val * Decimal::new(85, 2)).round_dp(2)) },
-            "index": { "percentage": 15.0, "value": to_f((total_val * Decimal::new(15, 2)).round_dp(2)) },
+            "active": { "percentage": 0.85, "value": to_f((total_val * Decimal::new(85, 2)).round_dp(2)) },
+            "index": { "percentage": 0.15, "value": to_f((total_val * Decimal::new(15, 2)).round_dp(2)) },
             "arbitrage": { "percentage": 0.0, "value": 0.0 },
             "other": { "percentage": 0.0, "value": 0.0 }
         }
@@ -1631,13 +1628,20 @@ pub async fn get_tax_summary(
                 .parse::<AssetType>()
                 .unwrap_or(AssetType::MutualFund);
 
+            let grandfather_nav = if let Some(ref amfi) = asset.amfi_code {
+                fetch_historical_nav_by_date(&state, amfi, portfolio_core::tax::GRANDFATHER_DATE)
+                    .await
+            } else {
+                None
+            };
+
             let tax_summary = portfolio_core::tax::calculate_portfolio_tax(
                 &asset.name,
                 asset_type,
                 &core_txs,
                 latest_nav,
                 slab_value,
-                None,
+                grandfather_nav,
             );
 
             total_realized_stcg += tax_summary.realized.stcg.to_decimal();

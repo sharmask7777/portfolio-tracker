@@ -35,7 +35,7 @@ pub fn is_equity(asset_type: AssetType, asset_name: &str) -> bool {
     }
     if asset_type == AssetType::MutualFund {
         let lower = asset_name.to_lowercase();
-        let debt_keywords = [
+        let non_equity_keywords = [
             "debt",
             "bond",
             "liquid",
@@ -47,8 +47,22 @@ pub fn is_equity(asset_type: AssetType, asset_name: &str) -> bool {
             "income",
             "duration",
             "treasury",
+            "gold",
+            "silver",
+            "commodity",
+            "fof",
+            "fund of fund",
+            "fund of funds",
+            "international",
+            "overseas",
+            "global",
+            "nasdaq",
+            "s&p 500",
+            "us equity",
         ];
-        return !debt_keywords.iter().any(|keyword| lower.contains(keyword));
+        return !non_equity_keywords
+            .iter()
+            .any(|keyword| lower.contains(keyword));
     }
     false
 }

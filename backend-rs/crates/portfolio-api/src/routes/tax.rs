@@ -12,9 +12,7 @@ use uuid::Uuid;
 
 use portfolio_core::error::PortfolioError;
 use portfolio_core::tax::grandfathering::GRANDFATHER_DATE;
-use portfolio_core::tax::harvesting::{
-    FolioHarvestingInput, HarvestingSummary, get_harvesting_opportunities,
-};
+use portfolio_core::tax::harvesting::{FolioHarvestingInput, get_harvesting_opportunities};
 use portfolio_core::tax::rules::simulate_sell_transactions_with_metadata;
 use portfolio_core::tax::{RealizedGain, SellSimulation, TaxType};
 use portfolio_core::types::{AssetType, Money, Nav, Units};
@@ -265,7 +263,8 @@ pub async fn get_harvesting(
     auth_user: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<HarvestingQuery>,
-) -> Result<Json<HarvestingSummary>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
+    use rust_decimal::prelude::ToPrimitive;
     let as_of = query.as_of.unwrap_or_else(|| Utc::now().date_naive());
     let realized_ltcg = Money::new(query.realized_ltcg.unwrap_or(Decimal::ZERO));
 
@@ -323,7 +322,41 @@ pub async fn get_harvesting(
         .collect();
 
     let summary = get_harvesting_opportunities(&inputs, as_of, realized_ltcg, None);
-    Ok(Json(summary))
+    let to_f = |v: Decimal| v.to_f64().unwrap_or(0.0);
+    let json_val = serde_json::json!({
+        "realizedLtcgFy": to_f(summary.realized_ltcg_fy.to_decimal()),
+        "remainingExemption": to_f(summary.remaining_exemption.to_decimal()),
+        "totalPotentialHarvest": to_f(summary.total_potential_harvest.to_decimal()),
+        "estimatedTaxSavings": to_f(summary.estimated_tax_savings.to_decimal()),
+        "opportunities": summary.opportunities.iter().map(|op| {
+            serde_json::json!({
+                "folioId": op.folio_id,
+                "schemeName": op.scheme_name,
+                "unitsToHarvest": to_f(op.units_to_harvest.to_decimal()),
+                "unrealizedGain": to_f(op.unrealized_gain.to_decimal()),
+                "currentValue": to_f(op.current_value.to_decimal()),
+            })
+        }).collect::<Vec<_>>(),
+        "unrealizedSummary": {
+            "stcg": to_f(summary.unrealized_summary.stcg.to_decimal()),
+            "ltcg": to_f(summary.unrealized_summary.ltcg.to_decimal()),
+            "losses": to_f(summary.unrealized_summary.losses.to_decimal()),
+            "netGain": to_f(summary.unrealized_summary.net_gain.to_decimal()),
+            "lots": summary.unrealized_summary.lots.iter().map(|lot| {
+                serde_json::json!({
+                    "schemeName": lot.scheme_name,
+                    "buyDate": lot.buy_date,
+                    "units": to_f(lot.units.to_decimal()),
+                    "purchaseNav": to_f(lot.purchase_nav.to_decimal()),
+                    "currentNav": to_f(lot.current_nav.to_decimal()),
+                    "holdingDays": lot.holding_days,
+                    "isLtcg": lot.is_ltcg,
+                    "unrealizedGain": to_f(lot.unrealized_gain.to_decimal()),
+                })
+            }).collect::<Vec<_>>(),
+        }
+    });
+    Ok(Json(json_val))
 }
 
 pub fn routes() -> Router<AppState> {

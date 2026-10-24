@@ -98,7 +98,10 @@ impl Transaction {
     /// Returns the signed cash flow amount from the investor's perspective.
     /// Outflows (investments/purchases) are negative, inflows (redemptions/payouts) are positive.
     pub fn cash_flow_amount(&self) -> Money {
-        if self.tx_type.is_outflow() {
+        if self.tx_type == TransactionType::DividendReinvestment {
+            // Dividend reinvestment is an internal scheme action; no cash leaves investor's bank account
+            Money::ZERO
+        } else if self.tx_type.is_outflow() {
             -self.amount.abs()
         } else if self.tx_type.is_inflow() {
             self.amount.abs()
