@@ -1,5 +1,5 @@
-//! Capital gains tax, Section 112A grandfathering, ELSS lock-in, and tax harvesting engine.
-
+pub mod classification;
+pub mod constants;
 pub mod grandfathering;
 pub mod harvesting;
 pub mod rules;
@@ -11,16 +11,12 @@ use serde::{Deserialize, Serialize};
 use crate::holdings::{Transaction, process_fifo_lots};
 use crate::types::{AssetType, FolioNumber, Isin, Money, Nav, Pan, Units};
 
-pub use grandfathering::{
-    BUDGET_2024_DATE, CESS_RATE, DEBT_NEW_REGIME_DATE, GRANDFATHER_DATE, calculate_gain,
-    calculate_gain_with_expenses, compute_deemed_cost,
-};
+pub use classification::TaxClassification;
+pub use constants::*;
+pub use grandfathering::{calculate_gain, calculate_gain_with_expenses, compute_deemed_cost};
 pub use harvesting::{
-    FolioHarvestingInput, HarvestingOpportunity, HarvestingSummary,
-    LTCG_EXEMPTION_LIMIT_BUDGET_2024_DECIMAL, LTCG_EXEMPTION_LIMIT_PRE_BUDGET_2024_DECIMAL,
-    LTCG_TAX_RATE_BUDGET_2024, UnrealizedLotGain, UnrealizedTaxSummary, compute_unrealized_gains,
-    get_harvesting_opportunities, ltcg_exemption_limit_budget_2024,
-    ltcg_exemption_limit_pre_budget_2024,
+    FolioHarvestingInput, HarvestingOpportunity, HarvestingSummary, UnrealizedLotGain,
+    UnrealizedTaxSummary, compute_unrealized_gains, get_harvesting_opportunities,
 };
 pub use rules::{
     elss_lock_in_expiry, get_exit_load, get_locked_units, is_elss, is_elss_scheme, is_equity,
@@ -377,6 +373,49 @@ pub fn build_section_totals(details: &[RealizedGain]) -> SectionTotalsMap {
     totals
 }
 
+/// Applies statutory capital loss set-off rules:
+/// 1. LTCL can ONLY set off LTCG.
+/// 2. STCL can set off both STCG and LTCG.
+///
+/// Returns (taxable_stcg, taxable_ltcg).
+pub fn apply_capital_loss_set_off(realized_stcg: Money, realized_ltcg: Money) -> (Money, Money) {
+    let stcl = if realized_stcg.is_negative() {
+        realized_stcg.abs()
+    } else {
+        Money::ZERO
+    };
+    let ltcl = if realized_ltcg.is_negative() {
+        realized_ltcg.abs()
+    } else {
+        Money::ZERO
+    };
+    let mut stcg = if realized_stcg.is_positive() {
+        realized_stcg
+    } else {
+        Money::ZERO
+    };
+    let mut ltcg = if realized_ltcg.is_positive() {
+        realized_ltcg
+    } else {
+        Money::ZERO
+    };
+
+    // 1. LTCL can ONLY set off LTCG
+    let set_off_lt = ltcg.min(ltcl);
+    ltcg -= set_off_lt;
+
+    // 2. STCL can set off both STCG and LTCG
+    let mut remaining_stcl = stcl;
+    let set_off_st = stcg.min(remaining_stcl);
+    stcg -= set_off_st;
+    remaining_stcl -= set_off_st;
+
+    let set_off_st_lt = ltcg.min(remaining_stcl);
+    ltcg -= set_off_st_lt;
+
+    (stcg, ltcg)
+}
+
 /// Calculates portfolio-level realized and unrealized tax across all transactions in a scheme/folio,
 /// with an explicit valuation date `as_of`.
 pub fn calculate_portfolio_tax_with_as_of(
@@ -418,51 +457,7 @@ pub fn calculate_portfolio_tax_with_as_of(
         realized_details.push(gain_record);
     }
 
-    // Set-off Logic Implementation (matching TS TaxService)
-    let stcg_realized = realized_stcg;
-    let ltcg_realized = realized_ltcg;
-
-    let stcl = if stcg_realized.is_negative() {
-        stcg_realized.abs()
-    } else {
-        Money::ZERO
-    };
-    let ltcl = if ltcg_realized.is_negative() {
-        ltcg_realized.abs()
-    } else {
-        Money::ZERO
-    };
-    let mut stcg = if stcg_realized.is_positive() {
-        stcg_realized
-    } else {
-        Money::ZERO
-    };
-    let mut ltcg = if ltcg_realized.is_positive() {
-        ltcg_realized
-    } else {
-        Money::ZERO
-    };
-
-    // 1. LTCL can ONLY set off LTCG
-    let mut remaining_ltcl = ltcl;
-    let set_off_lt = ltcg.min(remaining_ltcl);
-    ltcg -= set_off_lt;
-    remaining_ltcl -= set_off_lt;
-    let _ = remaining_ltcl;
-
-    // 2. STCL can set off both STCG and LTCG
-    let mut remaining_stcl = stcl;
-    let set_off_st = stcg.min(remaining_stcl);
-    stcg -= set_off_st;
-    remaining_stcl -= set_off_st;
-
-    let set_off_st_lt = ltcg.min(remaining_stcl);
-    ltcg -= set_off_st_lt;
-    remaining_stcl -= set_off_st_lt;
-    let _ = remaining_stcl;
-
-    let taxable_stcg = stcg;
-    let taxable_ltcg = ltcg;
+    let (taxable_stcg, taxable_ltcg) = apply_capital_loss_set_off(realized_stcg, realized_ltcg);
 
     let as_of_date = as_of.unwrap_or_else(|| chrono::Utc::now().date_naive());
     let is_eq = is_equity(asset_type, asset_name);
@@ -491,25 +486,12 @@ pub fn calculate_portfolio_tax_with_as_of(
         let gain = current_val - deemed_cost;
         unrealized_total += gain;
 
-        let holding_days = (as_of_date - lot.purchase_date).num_days();
-        let is_post_budget_2024 = as_of_date >= BUDGET_2024_DATE;
-        let is_post_debt_regime = lot.purchase_date >= DEBT_NEW_REGIME_DATE;
-
-        if is_eq {
-            if holding_days >= 365 {
-                u_ltcg += gain;
-            } else {
-                u_stcg += gain;
-            }
-        } else if is_post_debt_regime {
-            u_slab += gain;
-        } else {
-            let lt_threshold = if is_post_budget_2024 { 730 } else { 1095 };
-            if holding_days >= lt_threshold {
-                u_ltcg += gain;
-            } else {
-                u_slab += gain;
-            }
+        let classification =
+            TaxClassification::classify(is_eq, lot.purchase_date, as_of_date, tax_slab);
+        match classification.tax_type {
+            TaxType::Ltcg => u_ltcg += gain,
+            TaxType::Stcg => u_stcg += gain,
+            TaxType::Slab => u_slab += gain,
         }
     }
 
@@ -597,24 +579,22 @@ pub fn calculate_unrealized_tax(
 
     let stcg_rate = if is_eq {
         if is_post_budget {
-            Decimal::from_parts(20, 0, 0, false, 2) // 0.20 (20%)
+            RATE_EQUITY_STCG_POST_BUDGET
         } else {
-            Decimal::from_parts(15, 0, 0, false, 2) // 0.15 (15%)
+            RATE_EQUITY_STCG_PRE_BUDGET
         }
     } else {
         tax_slab
     };
 
-    let ltcg_rate = if is_eq {
+    let ltcg_rate = if is_eq || is_post_budget {
         if is_post_budget {
-            Decimal::from_parts(125, 0, 0, false, 3) // 0.125 (12.5%)
+            RATE_EQUITY_LTCG_POST_BUDGET
         } else {
-            Decimal::from_parts(10, 0, 0, false, 2) // 0.10 (10%)
+            RATE_EQUITY_LTCG_PRE_BUDGET
         }
-    } else if is_post_budget {
-        Decimal::from_parts(125, 0, 0, false, 3) // 0.125 (12.5%)
     } else {
-        Decimal::from_parts(20, 0, 0, false, 2) // 0.20 (20%)
+        RATE_DEBT_LTCG_PRE_BUDGET
     };
 
     let mut estimated_tax = Money::ZERO;

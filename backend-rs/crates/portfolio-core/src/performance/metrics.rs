@@ -144,19 +144,7 @@ pub fn get_metrics(
         .unwrap_or_else(|| crate::holdings::get_latest_units(transactions));
 
     if current_units.is_zero() || current_units.is_negative() {
-        let flows: Vec<CashFlow> = transactions
-            .iter()
-            .map(|t| {
-                let amount = if t.tx_type.is_outflow() {
-                    -t.amount.abs()
-                } else if t.tx_type.is_inflow() {
-                    t.amount.abs()
-                } else {
-                    -t.amount.abs()
-                };
-                CashFlow::new(t.date, amount.to_decimal())
-            })
-            .collect();
+        let flows: Vec<CashFlow> = transactions.iter().map(|t| t.to_cash_flow()).collect();
         let xirr = calculate_xirr(&flows).ok();
 
         return PerformanceMetrics {
@@ -216,19 +204,7 @@ pub fn get_metrics(
         None
     };
 
-    let mut flows: Vec<CashFlow> = transactions
-        .iter()
-        .map(|t| {
-            let amount = if t.tx_type.is_outflow() {
-                -t.amount.abs()
-            } else if t.tx_type.is_inflow() {
-                t.amount.abs()
-            } else {
-                -t.amount.abs()
-            };
-            CashFlow::new(t.date, amount.to_decimal())
-        })
-        .collect();
+    let mut flows: Vec<CashFlow> = transactions.iter().map(|t| t.to_cash_flow()).collect();
 
     if current_value.is_positive() {
         flows.push(CashFlow::new(as_of_date, current_value.to_decimal()));
@@ -264,19 +240,8 @@ pub fn get_metrics(
         };
         post_tax_absolute_return = Some(calculate_absolute_return(invested_amount, post_tax_val));
 
-        let mut post_tax_flows: Vec<CashFlow> = transactions
-            .iter()
-            .map(|t| {
-                let amount = if t.tx_type.is_outflow() {
-                    -t.amount.abs()
-                } else if t.tx_type.is_inflow() {
-                    t.amount.abs()
-                } else {
-                    -t.amount.abs()
-                };
-                CashFlow::new(t.date, amount.to_decimal())
-            })
-            .collect();
+        let mut post_tax_flows: Vec<CashFlow> =
+            transactions.iter().map(|t| t.to_cash_flow()).collect();
         if post_tax_val.is_positive() {
             post_tax_flows.push(CashFlow::new(as_of_date, post_tax_val.to_decimal()));
         }

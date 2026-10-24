@@ -9,30 +9,11 @@
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
+pub use crate::tax::classification::TaxClassification;
+pub use crate::tax::constants::*;
 use crate::tax::rules::is_equity;
-use crate::tax::{BuyLot, HoldingType, RealizedGain, TaxSection, TaxType};
+use crate::tax::{BuyLot, RealizedGain};
 use crate::types::{AssetType, Money, Nav, Units};
-
-/// Statutory date for Section 55(2)(ac) LTCG Grandfathering (31 January 2018).
-pub const GRANDFATHER_DATE: NaiveDate = match NaiveDate::from_ymd_opt(2018, 1, 31) {
-    Some(d) => d,
-    None => panic!("invalid statutory grandfather date"),
-};
-
-/// Budget 2024 effective enactment date (23 July 2024).
-pub const BUDGET_2024_DATE: NaiveDate = match NaiveDate::from_ymd_opt(2024, 7, 23) {
-    Some(d) => d,
-    None => panic!("invalid budget 2024 date"),
-};
-
-/// Finance Act 2023 Section 50AA effective purchase date for specified mutual funds (01 April 2023).
-pub const DEBT_NEW_REGIME_DATE: NaiveDate = match NaiveDate::from_ymd_opt(2023, 4, 1) {
-    Some(d) => d,
-    None => panic!("invalid debt regime date"),
-};
-
-/// Statutory Health and Education Cess rate (4%).
-pub const CESS_RATE: Decimal = Decimal::from_parts(4, 0, 0, false, 2);
 
 /// Computes Section 55(2)(ac) / Section 112A deemed cost of acquisition:
 ///
@@ -132,8 +113,6 @@ pub fn calculate_gain_with_expenses(
     transfer_expenses: Money,
 ) -> RealizedGain {
     let buy_date = lot.date;
-    let holding_period_days = (sell_date - buy_date).num_days();
-
     let is_eq = is_equity(asset_type, asset_name);
     let asset_class = if is_eq {
         "Equity".to_string()
@@ -143,88 +122,12 @@ pub fn calculate_gain_with_expenses(
         "Debt".to_string()
     };
 
-    let is_post_budget_2024 = sell_date >= BUDGET_2024_DATE;
-    let is_post_debt_regime = buy_date >= DEBT_NEW_REGIME_DATE;
-
-    let holding_type: HoldingType;
-    let tax_type: TaxType;
-    let section: TaxSection;
-    let tax_rate: Decimal;
-
-    if is_eq {
-        let is_long_term = holding_period_days >= 365;
-        holding_type = if is_long_term {
-            HoldingType::LongTerm
-        } else {
-            HoldingType::ShortTerm
-        };
-        tax_type = if is_long_term {
-            TaxType::Ltcg
-        } else {
-            TaxType::Stcg
-        };
-
-        if is_long_term {
-            section = if is_post_budget_2024 {
-                TaxSection::Sec112A12_5
-            } else {
-                TaxSection::Sec112A10
-            };
-            tax_rate = if is_post_budget_2024 {
-                Decimal::from_parts(125, 0, 0, false, 3) // 0.125 (12.5%)
-            } else {
-                Decimal::from_parts(10, 0, 0, false, 2) // 0.10 (10%)
-            };
-        } else {
-            section = if is_post_budget_2024 {
-                TaxSection::Sec111A20
-            } else {
-                TaxSection::Sec111A15
-            };
-            tax_rate = if is_post_budget_2024 {
-                Decimal::from_parts(20, 0, 0, false, 2) // 0.20 (20%)
-            } else {
-                Decimal::from_parts(15, 0, 0, false, 2) // 0.15 (15%)
-            };
-        }
-    } else if is_post_debt_regime {
-        // Finance Act 2023 Sec 50AA: All debt mutual funds purchased >= 01-Apr-2023 are taxed at slab rates
-        holding_type = HoldingType::ShortTerm;
-        tax_type = TaxType::Slab;
-        section = TaxSection::Sec50AA;
-        tax_rate = tax_slab;
-    } else {
-        // Pre-01-Apr-2023 debt funds: indexation / LTCG threshold (3 years / 1095 days, or 730 days post-Budget 2024)
-        let lt_threshold = if is_post_budget_2024 { 730 } else { 1095 };
-        let is_debt_long_term = holding_period_days >= lt_threshold;
-
-        holding_type = if is_debt_long_term {
-            HoldingType::LongTerm
-        } else {
-            HoldingType::ShortTerm
-        };
-        tax_type = if is_debt_long_term {
-            TaxType::Ltcg
-        } else {
-            TaxType::Slab
-        };
-
-        if is_debt_long_term {
-            section = if is_post_budget_2024 {
-                TaxSection::Sec112Debt12_5
-            } else {
-                TaxSection::Sec112Debt20
-            };
-            tax_rate = if is_post_budget_2024 {
-                Decimal::from_parts(125, 0, 0, false, 3) // 12.5%
-            } else {
-                Decimal::from_parts(20, 0, 0, false, 2) // 20%
-            };
-        } else {
-            section = TaxSection::Slab;
-            tax_rate = tax_slab;
-        }
-    }
+    let classification = TaxClassification::classify(is_eq, buy_date, sell_date, tax_slab);
+    let holding_type = classification.holding_type;
+    let tax_type = classification.tax_type;
+    let section = classification.section;
+    let tax_rate = classification.tax_rate;
+    let holding_period_days = classification.holding_days;
 
     let actual_buy_nav = if lot.is_bonus { Nav::ZERO } else { lot.nav };
     let cost_of_acquisition = actual_buy_nav * units_sold;

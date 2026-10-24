@@ -11,27 +11,10 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::holdings::{Folio, Transaction, process_fifo_lots};
+use crate::tax::classification::TaxClassification;
+pub use crate::tax::constants::*;
 use crate::tax::rules::{elss_lock_in_expiry, is_elss, is_equity};
 use crate::types::{AssetType, Money, Nav, Units};
-
-/// Annual LTCG statutory tax exemption under Section 112A (Post-Budget 2024: ₹1,25,000).
-pub const LTCG_EXEMPTION_LIMIT_BUDGET_2024_DECIMAL: Decimal =
-    Decimal::from_parts(125000, 0, 0, false, 0);
-
-/// Annual LTCG statutory tax exemption under Section 112A (Pre-Budget 2024: ₹1,00,000).
-pub const LTCG_EXEMPTION_LIMIT_PRE_BUDGET_2024_DECIMAL: Decimal =
-    Decimal::from_parts(100000, 0, 0, false, 0);
-
-pub fn ltcg_exemption_limit_budget_2024() -> Money {
-    Money::new(LTCG_EXEMPTION_LIMIT_BUDGET_2024_DECIMAL)
-}
-
-pub fn ltcg_exemption_limit_pre_budget_2024() -> Money {
-    Money::new(LTCG_EXEMPTION_LIMIT_PRE_BUDGET_2024_DECIMAL)
-}
-
-/// Statutory Section 112A LTCG tax rate (Post-Budget 2024: 12.5%).
-pub const LTCG_TAX_RATE_BUDGET_2024: Decimal = Decimal::from_parts(125, 0, 0, false, 3);
 
 /// Specific harvesting recommendation for an individual scheme holding lot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,12 +126,10 @@ pub fn compute_unrealized_gains(
                 continue;
             }
 
-            let holding_days = (as_of - lot.purchase_date).num_days();
-            let is_lt = if is_eq {
-                holding_days >= 365
-            } else {
-                holding_days >= 1095
-            };
+            let classification =
+                TaxClassification::classify(is_eq, lot.purchase_date, as_of, Decimal::ZERO);
+            let is_lt = classification.holding_type == crate::tax::HoldingType::LongTerm;
+            let holding_days = classification.holding_days;
 
             let current_value = input.current_nav * lot.remaining_units;
             let cost_basis = lot.purchase_nav * lot.remaining_units;
@@ -223,7 +204,8 @@ pub fn get_harvesting_opportunities(
                 let holding_days = (as_of - lot.purchase_date).num_days();
 
                 // Only LTCG lots (holding >= 365 days) with unrealized gains
-                if holding_days >= 365 && input.current_nav > lot.purchase_nav {
+                if holding_days >= HOLDING_DAYS_EQUITY_LTCG && input.current_nav > lot.purchase_nav
+                {
                     let nav_gain = input.current_nav.to_decimal() - lot.purchase_nav.to_decimal();
                     let lot_gain = input.current_nav * lot.remaining_units
                         - lot.purchase_nav * lot.remaining_units;
