@@ -285,5 +285,6 @@ pub fn calculate_gain_with_expenses(
         estimated_tax,
         is_grandfathered,
         grandfathered_status,
+        advance_tax_quarter: Some(crate::tax::AdvanceTaxQuarter::from_date(sell_date)),
     }
 }

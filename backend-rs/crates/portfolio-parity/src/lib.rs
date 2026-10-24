@@ -1125,6 +1125,83 @@ pub fn run_scenario(scenario: &ScenarioDefinition) -> ScenarioResult {
             }
         }
 
+        "post_tax_xirr_and_unrealized_tax" => {
+            let current_nav =
+                Nav::from_str(scenario.inputs["current_nav"].as_str().unwrap()).unwrap();
+            let asset_name = scenario.inputs["asset_name"].as_str().unwrap();
+            let tax_slab =
+                Decimal::from_str(scenario.inputs["tax_slab"].as_str().unwrap()).unwrap();
+            let as_of =
+                NaiveDate::from_str(scenario.inputs["as_of_date"].as_str().unwrap()).unwrap();
+
+            let txs: Vec<Transaction> = scenario.inputs["transactions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(parse_tx)
+                .collect();
+
+            let units = get_latest_units(&txs);
+            let perf_options = PerformanceOptions::new()
+                .with_units_override(units)
+                .with_tax_slab(tax_slab)
+                .with_asset_type(AssetType::MutualFund)
+                .with_asset_name(asset_name)
+                .with_as_of_date(as_of);
+
+            let metrics = get_metrics(&txs, current_nav, Some(perf_options));
+
+            let exp_inv =
+                Money::from_str(scenario.expected["invested_amount"].as_str().unwrap()).unwrap();
+            let exp_cur =
+                Money::from_str(scenario.expected["current_value"].as_str().unwrap()).unwrap();
+            let exp_gain =
+                Money::from_str(scenario.expected["total_gain"].as_str().unwrap()).unwrap();
+            let exp_tax =
+                Money::from_str(scenario.expected["estimated_tax"].as_str().unwrap()).unwrap();
+            let exp_abs =
+                Decimal::from_str(scenario.expected["absolute_return"].as_str().unwrap()).unwrap();
+            let exp_post_abs = Decimal::from_str(
+                scenario.expected["post_tax_absolute_return"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+
+            checks.push(check_money(
+                "Invested Amount",
+                metrics.invested_amount,
+                exp_inv,
+            ));
+            checks.push(check_money("Current Value", metrics.current_value, exp_cur));
+            checks.push(check_money("Total Gain", metrics.total_gain, exp_gain));
+            checks.push(check_money(
+                "Estimated Tax",
+                metrics.estimated_tax.unwrap_or(Money::ZERO),
+                exp_tax,
+            ));
+            checks.push(check_rate(
+                "Absolute Return",
+                metrics.absolute_return,
+                exp_abs,
+            ));
+            checks.push(check_rate(
+                "Post-Tax Absolute Return",
+                metrics.post_tax_absolute_return.unwrap_or(Decimal::ZERO),
+                exp_post_abs,
+            ));
+
+            let xirr = metrics.xirr.unwrap_or(Decimal::ZERO);
+            let post_tax_xirr = metrics.post_tax_xirr.unwrap_or(Decimal::ZERO);
+
+            checks.push(check_bool("XIRR is Positive", xirr > Decimal::ZERO, true));
+            checks.push(check_bool(
+                "Post-Tax XIRR <= Pre-Tax XIRR",
+                post_tax_xirr <= xirr && post_tax_xirr > Decimal::ZERO,
+                true,
+            ));
+        }
+
         other => {
             checks.push(CheckResult {
                 name: format!("Unknown category: {other}"),
