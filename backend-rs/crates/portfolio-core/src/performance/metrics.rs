@@ -144,14 +144,29 @@ pub fn get_metrics(
         .unwrap_or_else(|| crate::holdings::get_latest_units(transactions));
 
     if current_units.is_zero() || current_units.is_negative() {
+        let flows: Vec<CashFlow> = transactions
+            .iter()
+            .map(|t| {
+                let amount = if t.tx_type.is_outflow() {
+                    -t.amount.abs()
+                } else if t.tx_type.is_inflow() {
+                    t.amount.abs()
+                } else {
+                    -t.amount.abs()
+                };
+                CashFlow::new(t.date, amount.to_decimal())
+            })
+            .collect();
+        let xirr = calculate_xirr(&flows).ok();
+
         return PerformanceMetrics {
             invested_amount: Money::ZERO,
             current_value: Money::ZERO,
             total_gain: Money::ZERO,
             absolute_return: Decimal::ZERO,
             cagr: None,
-            xirr: None,
-            post_tax_xirr: None,
+            xirr,
+            post_tax_xirr: xirr,
             post_tax_absolute_return: None,
             estimated_tax: None,
         };
@@ -232,18 +247,18 @@ pub fn get_metrics(
         ..
     }) = options.as_ref()
     {
-        let tax_summary = crate::tax::calculate_portfolio_tax(
+        let est_tax = crate::tax::calculate_unrealized_tax(
             asset_name,
             *asset_type,
             transactions,
             current_price,
             *tax_slab,
+            Some(as_of_date),
             None,
         );
-        let tax = tax_summary.unrealized.total;
-        estimated_tax = Some(tax);
-        let post_tax_val = if current_value > tax {
-            current_value - tax
+        estimated_tax = Some(est_tax);
+        let post_tax_val = if current_value > est_tax {
+            current_value - est_tax
         } else {
             Money::ZERO
         };
@@ -471,9 +486,11 @@ mod tests {
         assert_eq!(metrics.xirr, Some(dec("0.5")));
 
         // Post-tax metrics
-        assert_eq!(metrics.estimated_tax, Some(money("5000")));
-        assert_eq!(metrics.post_tax_absolute_return, Some(Decimal::ZERO));
-        assert_eq!(metrics.post_tax_xirr, Some(Decimal::ZERO));
+        // Gain = 5,000; LTCG rate (pre-budget 2024) = 10% -> Tax = 500
+        // Post-tax value = 14,500 -> Post-tax return = 45% (0.45)
+        assert_eq!(metrics.estimated_tax, Some(money("500")));
+        assert_eq!(metrics.post_tax_absolute_return, Some(dec("0.45")));
+        assert_eq!(metrics.post_tax_xirr, Some(dec("0.45")));
     }
 
     #[test]

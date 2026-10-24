@@ -393,6 +393,37 @@
           { "name": "Infosys Ltd", "weight_a": "7.0", "weight_b": "7.0" }
         ]
       }
+    },
+    {
+      "id": "scenario_10_post_tax_xirr_and_unrealized_tax",
+      "name": "Post-Tax XIRR and Unrealized Tax Compliance",
+      "category": "post_tax_xirr_and_unrealized_tax",
+      "description": "Calculates unrealized tax liability using post-Budget 2024 LTCG rates, netting estimated tax from current valuation to compute post-tax absolute return and annualized XIRR.",
+      "inputs": {
+        "asset_name": "HDFC Top 100 Fund - Growth",
+        "current_nav": "150.00",
+        "tax_slab": "0.30",
+        "as_of_date": "2025-01-01",
+        "transactions": [
+          {
+            "id": "tx_pt_01",
+            "date": "2024-01-01",
+            "type": "BUY",
+            "amount": "100000.00",
+            "units": "1000.0000",
+            "nav": "100.00",
+            "balance": "1000.0000"
+          }
+        ]
+      },
+      "expected": {
+        "invested_amount": "100000.00",
+        "current_value": "150000.00",
+        "total_gain": "50000.00",
+        "estimated_tax": "6250.00",
+        "absolute_return": "0.50",
+        "post_tax_absolute_return": "0.4375"
+      }
     }
   ]
 }

@@ -93,6 +93,8 @@ pub struct FolioMetrics {
     pub post_tax_xirr: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::float_option")]
     pub post_tax_absolute_return: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::float_option")]
+    pub estimated_tax: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::float")]
     pub current_price: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
@@ -1239,6 +1241,7 @@ pub async fn get_portfolio_summary(
                 post_tax_absolute_return: metrics
                     .post_tax_absolute_return
                     .or(Some(metrics.absolute_return)),
+                estimated_tax: metrics.estimated_tax.map(|t| t.to_decimal()),
                 current_price: latest_nav.to_decimal(),
                 day_change: Decimal::ZERO,
                 day_change_percentage: Decimal::ZERO,
@@ -1258,9 +1261,10 @@ pub async fn get_portfolio_summary(
                         current_value: Decimal::ZERO,
                         total_gain: Decimal::ZERO,
                         absolute_return: Decimal::ZERO,
-                        xirr: None,
-                        post_tax_xirr: None,
+                        xirr: metrics.xirr,
+                        post_tax_xirr: metrics.post_tax_xirr.or(metrics.xirr),
                         post_tax_absolute_return: None,
+                        estimated_tax: None,
                         current_price: latest_nav.to_decimal(),
                         day_change: Decimal::ZERO,
                         day_change_percentage: Decimal::ZERO,
@@ -1302,12 +1306,28 @@ pub async fn get_portfolio_summary(
         }
     }
 
+    let total_estimated_tax: Decimal = active_folios
+        .iter()
+        .filter_map(|f| f.metrics.estimated_tax)
+        .sum();
+    let post_tax_total_value = (total_current_value - total_estimated_tax).max(Decimal::ZERO);
+
+    let mut pre_tax_cash_flows = all_cash_flows.clone();
     if total_current_value > Decimal::ZERO {
-        all_cash_flows.push(CashFlow::new(today, total_current_value));
+        pre_tax_cash_flows.push(CashFlow::new(today, total_current_value));
     }
-    let overall_xirr = calculate_xirr(&all_cash_flows)
+    let overall_xirr = calculate_xirr(&pre_tax_cash_flows)
         .ok()
         .unwrap_or(Decimal::ZERO);
+
+    let mut post_tax_cash_flows = all_cash_flows;
+    if post_tax_total_value > Decimal::ZERO {
+        post_tax_cash_flows.push(CashFlow::new(today, post_tax_total_value));
+    }
+    let overall_post_tax_xirr = calculate_xirr(&post_tax_cash_flows)
+        .ok()
+        .unwrap_or(Decimal::ZERO);
+
     let total_gain = total_current_value - total_invested;
     let absolute_return = if total_invested > Decimal::ZERO {
         total_gain / total_invested
@@ -1324,12 +1344,12 @@ pub async fn get_portfolio_summary(
         metrics: SummaryMetrics {
             total_invested,
             total_value: total_current_value,
-            post_tax_total_value: total_current_value,
+            post_tax_total_value,
             total_gain,
             absolute_return,
             xirr: overall_xirr,
-            post_tax_xirr: overall_xirr,
-            estimated_tax: Decimal::ZERO,
+            post_tax_xirr: overall_post_tax_xirr,
+            estimated_tax: total_estimated_tax,
             day_change: Decimal::ZERO,
             day_change_percentage: Decimal::ZERO,
         },
@@ -1543,10 +1563,14 @@ pub async fn get_exposures(
 pub async fn get_tax_summary(
     auth_user: AuthUser,
     Path(id): Path<String>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
-    let slab_value = Decimal::new(3, 1); // 0.30
+    let slab_value = query
+        .get("taxSlab")
+        .and_then(|s| Decimal::from_str(s).ok())
+        .unwrap_or_else(|| Decimal::new(3, 1)); // 0.30
 
     let mut all_realized_details = Vec::new();
     let mut total_realized_stcg = Decimal::ZERO;
@@ -1632,6 +1656,46 @@ pub async fn get_tax_summary(
 
     all_realized_details.sort_by_key(|a| std::cmp::Reverse(a.sell_date));
 
+    let table_f = portfolio_core::tax::build_advance_tax_matrix(&all_realized_details);
+    let section_totals = portfolio_core::tax::build_section_totals(&all_realized_details);
+
+    let stcl = if total_realized_stcg < Decimal::ZERO {
+        total_realized_stcg.abs()
+    } else {
+        Decimal::ZERO
+    };
+    let ltcl = if total_realized_ltcg < Decimal::ZERO {
+        total_realized_ltcg.abs()
+    } else {
+        Decimal::ZERO
+    };
+    let mut stcg = if total_realized_stcg > Decimal::ZERO {
+        total_realized_stcg
+    } else {
+        Decimal::ZERO
+    };
+    let mut ltcg = if total_realized_ltcg > Decimal::ZERO {
+        total_realized_ltcg
+    } else {
+        Decimal::ZERO
+    };
+
+    // 1. LTCL can ONLY set off LTCG
+    let set_off_lt = ltcg.min(ltcl);
+    ltcg -= set_off_lt;
+
+    // 2. STCL can set off STCG then LTCG
+    let mut rem_stcl = stcl;
+    let set_off_st = stcg.min(rem_stcl);
+    stcg -= set_off_st;
+    rem_stcl -= set_off_st;
+
+    let set_off_st_lt = ltcg.min(rem_stcl);
+    ltcg -= set_off_st_lt;
+
+    let taxable_stcg = stcg;
+    let taxable_ltcg = ltcg;
+
     use rust_decimal::prelude::ToPrimitive;
     let to_f = |v: Decimal| v.to_f64().unwrap_or(0.0);
 
@@ -1654,12 +1718,17 @@ pub async fn get_tax_summary(
                 "sellNav": to_f(g.sell_nav.to_decimal()),
                 "grossConsideration": to_f(g.gross_consideration.to_decimal()),
                 "costOfAcquisition": to_f(g.cost_of_acquisition.to_decimal()),
+                "deemedCostOfAcquisition": to_f(g.deemed_cost_of_acquisition.to_decimal()),
+                "fmvAsOfJan31_2018": to_f(g.fmv_as_of_jan31_2018.to_decimal()),
+                "totalFmvJan31_2018": to_f(g.total_fmv_jan31_2018.to_decimal()),
+                "transferExpenses": to_f(g.transfer_expenses.to_decimal()),
                 "gain": to_f(g.gain.to_decimal()),
                 "taxType": format!("{:?}", g.tax_type).to_uppercase(),
                 "taxRate": to_f(g.tax_rate),
                 "taxBeforeCess": to_f(g.tax_before_cess.to_decimal()),
                 "cess": to_f(g.cess.to_decimal()),
                 "estimatedTax": to_f(g.estimated_tax.to_decimal()),
+                "advanceTaxQuarter": g.advance_tax_quarter.as_ref().map(|q| q.as_str()),
                 "isGrandfathered": g.is_grandfathered,
                 "grandfatheredStatus": g.grandfathered_status,
             })
@@ -1672,7 +1741,11 @@ pub async fn get_tax_summary(
             "stcg": to_f(total_realized_stcg),
             "ltcg": to_f(total_realized_ltcg),
             "slab": to_f(total_realized_slab),
-            "details": details
+            "taxableSTCG": to_f(taxable_stcg),
+            "taxableLTCG": to_f(taxable_ltcg),
+            "details": details,
+            "tableF": table_f,
+            "sectionTotals": section_totals,
         },
         "unrealized": {
             "total": to_f(total_unrealized),
@@ -1680,16 +1753,24 @@ pub async fn get_tax_summary(
             "ltcg": to_f(total_unrealized_ltcg),
             "slab": to_f(total_unrealized_slab),
         },
+        "tableF": table_f,
+        "sectionTotals": section_totals,
         "details": details
     })))
 }
 
 pub async fn get_tax_impact_query(
     auth_user: AuthUser,
-    Query(_query): Query<std::collections::HashMap<String, String>>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    get_tax_summary(auth_user, Path("consolidated".to_string()), State(state)).await
+    get_tax_summary(
+        auth_user,
+        Path("consolidated".to_string()),
+        Query(query),
+        State(state),
+    )
+    .await
 }
 
 pub async fn get_history(

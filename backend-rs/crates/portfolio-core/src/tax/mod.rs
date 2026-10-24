@@ -70,6 +70,113 @@ pub enum HoldingType {
     LongTerm,
 }
 
+/// Statutory advance tax quarters adjusted for Budget 2024 (23 July 2024).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AdvanceTaxQuarter {
+    #[serde(rename = "Q1 (01/04 - 15/06)")]
+    Q1,
+    #[serde(rename = "Q2a (16/06 - 22/07)")]
+    Q2A,
+    #[serde(rename = "Q2b (23/07 - 15/09)")]
+    Q2B,
+    #[serde(rename = "Q3 (16/09 - 15/12)")]
+    Q3,
+    #[serde(rename = "Q4 (16/12 - 15/03)")]
+    Q4,
+    #[serde(rename = "Q5 (16/03 - 31/03)")]
+    Q5,
+}
+
+impl AdvanceTaxQuarter {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AdvanceTaxQuarter::Q1 => "Q1 (01/04 - 15/06)",
+            AdvanceTaxQuarter::Q2A => "Q2a (16/06 - 22/07)",
+            AdvanceTaxQuarter::Q2B => "Q2b (23/07 - 15/09)",
+            AdvanceTaxQuarter::Q3 => "Q3 (16/09 - 15/12)",
+            AdvanceTaxQuarter::Q4 => "Q4 (16/12 - 15/03)",
+            AdvanceTaxQuarter::Q5 => "Q5 (16/03 - 31/03)",
+        }
+    }
+
+    pub fn from_date(date: NaiveDate) -> Self {
+        use chrono::Datelike;
+        let month = date.month();
+        let day = date.day();
+
+        if (month == 4) || (month == 5) || (month == 6 && day <= 15) {
+            AdvanceTaxQuarter::Q1
+        } else if (month == 6 && day >= 16) || (month == 7 && day <= 22) {
+            AdvanceTaxQuarter::Q2A
+        } else if (month == 7 && day >= 23) || (month == 8) || (month == 9 && day <= 15) {
+            AdvanceTaxQuarter::Q2B
+        } else if (month == 9 && day >= 16)
+            || (month == 10)
+            || (month == 11)
+            || (month == 12 && day <= 15)
+        {
+            AdvanceTaxQuarter::Q3
+        } else if (month == 12 && day >= 16)
+            || (month == 1)
+            || (month == 2)
+            || (month == 3 && day <= 15)
+        {
+            AdvanceTaxQuarter::Q4
+        } else {
+            AdvanceTaxQuarter::Q5
+        }
+    }
+}
+
+impl std::fmt::Display for AdvanceTaxQuarter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Data for a single quarter in Schedule CG Table F.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TableFQuarterData {
+    pub stcg15: Money,
+    pub stcg20: Money,
+    pub ltcg10: Money,
+    pub ltcg12_5: Money,
+    pub debt_ltcg12_5: Money,
+    pub debt_ltcg20: Money,
+    pub slab: Money,
+    pub total_gain: Money,
+    pub tax_before_cess: Money,
+    pub cess: Money,
+    pub estimated_tax: Money,
+}
+
+/// Schedule CG Table F: Advance Tax Accrual Matrix across the statutory quarters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvanceTaxAccrualMatrix {
+    pub quarters: std::collections::HashMap<String, TableFQuarterData>,
+    pub quarter_totals: std::collections::HashMap<String, Money>,
+}
+
+/// Summary metrics for a specific statutory tax section.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SectionTotalData {
+    pub section: String,
+    pub gross_consideration: Money,
+    pub cost_of_acquisition: Money,
+    pub deemed_cost_of_acquisition: Money,
+    pub transfer_expenses: Money,
+    pub total_gain: Money,
+    pub tax_rate: Decimal,
+    pub tax_before_cess: Money,
+    pub cess: Money,
+    pub total_tax: Money,
+}
+
+pub type SectionTotalsMap = std::collections::HashMap<String, SectionTotalData>;
+
 /// An active or historical purchase lot tracked for FIFO matching.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuyLot {
@@ -143,24 +250,31 @@ pub struct RealizedGain {
     pub estimated_tax: Money,
     pub is_grandfathered: bool,
     pub grandfathered_status: String,
+    pub advance_tax_quarter: Option<AdvanceTaxQuarter>,
 }
 
 /// Tax summary for a category (realized or unrealized).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct TaxCategorySummary {
     pub stcg: Money,
     pub ltcg: Money,
     pub slab: Money,
     pub total: Money,
+    pub taxable_stcg: Money,
+    pub taxable_ltcg: Money,
     pub details: Vec<RealizedGain>,
 }
 
 /// Overall portfolio tax summary separating realized from unrealized gains.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct TaxPortfolioSummary {
     pub has_synthetic_anchors: bool,
     pub realized: TaxCategorySummary,
     pub unrealized: TaxCategorySummary,
+    pub table_f: Option<AdvanceTaxAccrualMatrix>,
+    pub section_totals: Option<SectionTotalsMap>,
 }
 
 /// Result of simulating a unit redemption, including tax impact and lock-in verification.
@@ -177,14 +291,101 @@ pub struct SellSimulation {
     pub matched_lots: Vec<RealizedGain>,
 }
 
-/// Calculates portfolio-level realized and unrealized tax across all transactions in a scheme/folio.
-pub fn calculate_portfolio_tax(
+/// Builds Schedule CG Table F: Advance Tax Accrual Matrix across the statutory quarters.
+pub fn build_advance_tax_matrix(details: &[RealizedGain]) -> AdvanceTaxAccrualMatrix {
+    let quarters_list = [
+        AdvanceTaxQuarter::Q1,
+        AdvanceTaxQuarter::Q2A,
+        AdvanceTaxQuarter::Q2B,
+        AdvanceTaxQuarter::Q3,
+        AdvanceTaxQuarter::Q4,
+        AdvanceTaxQuarter::Q5,
+    ];
+
+    let mut quarters = std::collections::HashMap::new();
+    let mut quarter_totals = std::collections::HashMap::new();
+
+    for q in quarters_list {
+        quarters.insert(q.as_str().to_string(), TableFQuarterData::default());
+        quarter_totals.insert(q.as_str().to_string(), Money::ZERO);
+    }
+
+    for g in details {
+        let q = g
+            .advance_tax_quarter
+            .unwrap_or_else(|| AdvanceTaxQuarter::from_date(g.sell_date));
+        let q_str = q.as_str().to_string();
+        if let Some(data) = quarters.get_mut(&q_str) {
+            match g.section {
+                TaxSection::Sec111A15 => data.stcg15 += g.gain,
+                TaxSection::Sec111A20 => data.stcg20 += g.gain,
+                TaxSection::Sec112A10 => data.ltcg10 += g.gain,
+                TaxSection::Sec112A12_5 => data.ltcg12_5 += g.gain,
+                TaxSection::Sec112Debt12_5 => data.debt_ltcg12_5 += g.gain,
+                TaxSection::Sec112Debt20 => data.debt_ltcg20 += g.gain,
+                TaxSection::Sec50AA | TaxSection::Slab => data.slab += g.gain,
+            }
+            data.total_gain += g.gain;
+            data.tax_before_cess += g.tax_before_cess;
+            data.cess += g.cess;
+            data.estimated_tax += g.estimated_tax;
+
+            if let Some(total) = quarter_totals.get_mut(&q_str) {
+                *total += g.estimated_tax;
+            }
+        }
+    }
+
+    AdvanceTaxAccrualMatrix {
+        quarters,
+        quarter_totals,
+    }
+}
+
+/// Builds statutory totals grouped by TaxSection matching Schedule CG.
+pub fn build_section_totals(details: &[RealizedGain]) -> SectionTotalsMap {
+    let mut totals = std::collections::HashMap::new();
+
+    for g in details {
+        let sec_str = g.section.to_string();
+        let entry = totals
+            .entry(sec_str.clone())
+            .or_insert_with(|| SectionTotalData {
+                section: sec_str,
+                gross_consideration: Money::ZERO,
+                cost_of_acquisition: Money::ZERO,
+                deemed_cost_of_acquisition: Money::ZERO,
+                transfer_expenses: Money::ZERO,
+                total_gain: Money::ZERO,
+                tax_rate: g.tax_rate,
+                tax_before_cess: Money::ZERO,
+                cess: Money::ZERO,
+                total_tax: Money::ZERO,
+            });
+
+        entry.gross_consideration += g.gross_consideration;
+        entry.cost_of_acquisition += g.cost_of_acquisition;
+        entry.deemed_cost_of_acquisition += g.deemed_cost_of_acquisition;
+        entry.transfer_expenses += g.transfer_expenses;
+        entry.total_gain += g.gain;
+        entry.tax_before_cess += g.tax_before_cess;
+        entry.cess += g.cess;
+        entry.total_tax += g.estimated_tax;
+    }
+
+    totals
+}
+
+/// Calculates portfolio-level realized and unrealized tax across all transactions in a scheme/folio,
+/// with an explicit valuation date `as_of`.
+pub fn calculate_portfolio_tax_with_as_of(
     asset_name: &str,
     asset_type: AssetType,
     transactions: &[Transaction],
     current_nav: Nav,
     tax_slab: Decimal,
     grandfather_nav: Option<Nav>,
+    as_of: Option<NaiveDate>,
 ) -> TaxPortfolioSummary {
     let (active_lots, depletions) = process_fifo_lots(transactions);
 
@@ -216,30 +417,221 @@ pub fn calculate_portfolio_tax(
         realized_details.push(gain_record);
     }
 
+    // Set-off Logic Implementation (matching TS TaxService)
+    let stcg_realized = realized_stcg;
+    let ltcg_realized = realized_ltcg;
+
+    let stcl = if stcg_realized.is_negative() {
+        stcg_realized.abs()
+    } else {
+        Money::ZERO
+    };
+    let ltcl = if ltcg_realized.is_negative() {
+        ltcg_realized.abs()
+    } else {
+        Money::ZERO
+    };
+    let mut stcg = if stcg_realized.is_positive() {
+        stcg_realized
+    } else {
+        Money::ZERO
+    };
+    let mut ltcg = if ltcg_realized.is_positive() {
+        ltcg_realized
+    } else {
+        Money::ZERO
+    };
+
+    // 1. LTCL can ONLY set off LTCG
+    let mut remaining_ltcl = ltcl;
+    let set_off_lt = ltcg.min(remaining_ltcl);
+    ltcg -= set_off_lt;
+    remaining_ltcl -= set_off_lt;
+    let _ = remaining_ltcl;
+
+    // 2. STCL can set off both STCG and LTCG
+    let mut remaining_stcl = stcl;
+    let set_off_st = stcg.min(remaining_stcl);
+    stcg -= set_off_st;
+    remaining_stcl -= set_off_st;
+
+    let set_off_st_lt = ltcg.min(remaining_stcl);
+    ltcg -= set_off_st_lt;
+    remaining_stcl -= set_off_st_lt;
+    let _ = remaining_stcl;
+
+    let taxable_stcg = stcg;
+    let taxable_ltcg = ltcg;
+
+    let as_of_date = as_of.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let is_eq = is_equity(asset_type, asset_name);
+
+    let mut u_stcg = Money::ZERO;
+    let mut u_ltcg = Money::ZERO;
+    let mut u_slab = Money::ZERO;
     let mut unrealized_total = Money::ZERO;
-    for lot in active_lots {
+
+    for lot in &active_lots {
+        if lot.remaining_units.is_zero() || lot.remaining_units.is_negative() {
+            continue;
+        }
+
+        let (deemed_cost, _, _, _, _) = compute_deemed_cost(
+            lot.purchase_date,
+            lot.remaining_units,
+            lot.purchase_nav,
+            current_nav,
+            grandfather_nav,
+            is_eq,
+            false,
+        );
+
         let current_val = current_nav * lot.remaining_units;
-        let cost_val = lot.purchase_nav * lot.remaining_units;
-        let gain = current_val - cost_val;
+        let gain = current_val - deemed_cost;
         unrealized_total += gain;
+
+        let holding_days = (as_of_date - lot.purchase_date).num_days();
+        let is_post_budget_2024 = as_of_date >= BUDGET_2024_DATE;
+        let is_post_debt_regime = lot.purchase_date >= DEBT_NEW_REGIME_DATE;
+
+        if is_eq {
+            if holding_days >= 365 {
+                u_ltcg += gain;
+            } else {
+                u_stcg += gain;
+            }
+        } else if is_post_debt_regime {
+            u_slab += gain;
+        } else {
+            let lt_threshold = if is_post_budget_2024 { 730 } else { 1095 };
+            if holding_days >= lt_threshold {
+                u_ltcg += gain;
+            } else {
+                u_slab += gain;
+            }
+        }
     }
 
+    let has_synthetic_anchors = false;
+
+    let table_f = build_advance_tax_matrix(&realized_details);
+    let section_totals = build_section_totals(&realized_details);
+
     TaxPortfolioSummary {
-        has_synthetic_anchors: false,
+        has_synthetic_anchors,
         realized: TaxCategorySummary {
             stcg: realized_stcg,
             ltcg: realized_ltcg,
             slab: realized_slab,
             total: realized_stcg + realized_ltcg + realized_slab,
+            taxable_stcg,
+            taxable_ltcg,
             details: realized_details,
         },
         unrealized: TaxCategorySummary {
-            stcg: Money::ZERO,
-            ltcg: Money::ZERO,
-            slab: Money::ZERO,
+            stcg: u_stcg,
+            ltcg: u_ltcg,
+            slab: u_slab,
             total: unrealized_total,
+            taxable_stcg: if u_stcg.is_positive() {
+                u_stcg
+            } else {
+                Money::ZERO
+            },
+            taxable_ltcg: if u_ltcg.is_positive() {
+                u_ltcg
+            } else {
+                Money::ZERO
+            },
             details: Vec::new(),
         },
+        table_f: Some(table_f),
+        section_totals: Some(section_totals),
+    }
+}
+
+/// Calculates portfolio-level realized and unrealized tax across all transactions in a scheme/folio.
+pub fn calculate_portfolio_tax(
+    asset_name: &str,
+    asset_type: AssetType,
+    transactions: &[Transaction],
+    current_nav: Nav,
+    tax_slab: Decimal,
+    grandfather_nav: Option<Nav>,
+) -> TaxPortfolioSummary {
+    calculate_portfolio_tax_with_as_of(
+        asset_name,
+        asset_type,
+        transactions,
+        current_nav,
+        tax_slab,
+        grandfather_nav,
+        None,
+    )
+}
+
+/// Calculates unrealized capital gains tax liability across active holdings.
+pub fn calculate_unrealized_tax(
+    asset_name: &str,
+    asset_type: AssetType,
+    transactions: &[Transaction],
+    current_nav: Nav,
+    tax_slab: Decimal,
+    as_of: Option<NaiveDate>,
+    grandfather_nav: Option<Nav>,
+) -> Money {
+    let as_of_date = as_of.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let summary = calculate_portfolio_tax_with_as_of(
+        asset_name,
+        asset_type,
+        transactions,
+        current_nav,
+        tax_slab,
+        grandfather_nav,
+        Some(as_of_date),
+    );
+
+    let is_eq = is_equity(asset_type, asset_name);
+    let is_post_budget = as_of_date >= BUDGET_2024_DATE;
+
+    let stcg_rate = if is_eq {
+        if is_post_budget {
+            Decimal::from_parts(20, 0, 0, false, 2) // 0.20 (20%)
+        } else {
+            Decimal::from_parts(15, 0, 0, false, 2) // 0.15 (15%)
+        }
+    } else {
+        tax_slab
+    };
+
+    let ltcg_rate = if is_eq {
+        if is_post_budget {
+            Decimal::from_parts(125, 0, 0, false, 3) // 0.125 (12.5%)
+        } else {
+            Decimal::from_parts(10, 0, 0, false, 2) // 0.10 (10%)
+        }
+    } else if is_post_budget {
+        Decimal::from_parts(125, 0, 0, false, 3) // 0.125 (12.5%)
+    } else {
+        Decimal::from_parts(20, 0, 0, false, 2) // 0.20 (20%)
+    };
+
+    let mut estimated_tax = Money::ZERO;
+
+    if summary.unrealized.stcg.is_positive() {
+        estimated_tax += Money::new(summary.unrealized.stcg.to_decimal() * stcg_rate);
+    }
+    if summary.unrealized.ltcg.is_positive() {
+        estimated_tax += Money::new(summary.unrealized.ltcg.to_decimal() * ltcg_rate);
+    }
+    if summary.unrealized.slab.is_positive() {
+        estimated_tax += Money::new(summary.unrealized.slab.to_decimal() * tax_slab);
+    }
+
+    if estimated_tax.is_negative() {
+        Money::ZERO
+    } else {
+        estimated_tax
     }
 }
 
