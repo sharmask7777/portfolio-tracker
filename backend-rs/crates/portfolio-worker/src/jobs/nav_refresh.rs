@@ -33,6 +33,9 @@ async fn fetch_mfapi_nav(url: &str) -> Option<(chrono::NaiveDate, Decimal)> {
         .ok()?;
     let record = payload.data.first()?;
     let parsed_date = portfolio_db::market_data::parse_mfapi_date(&record.date)?;
+    if record.nav <= Decimal::ZERO {
+        return None;
+    }
     Some((parsed_date, record.nav))
 }
 

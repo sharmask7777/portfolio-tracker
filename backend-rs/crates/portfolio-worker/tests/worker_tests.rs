@@ -33,6 +33,8 @@ use serde_json::json;
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 
+static TEST_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn dec(s: &str) -> Decimal {
     Decimal::from_str(s).expect("valid decimal string")
 }
@@ -336,6 +338,7 @@ async fn test_nav_refresh_job_processing() {
 
 #[tokio::test]
 async fn test_process_nav_refresh_job_with_mfapi_payload() {
+    let _env_guard = TEST_ENV_MUTEX.lock().unwrap();
     let mock_app = Router::new().route(
         "/mf/{scheme_code}/latest",
         get(
@@ -403,6 +406,7 @@ async fn test_process_nav_refresh_job_with_mfapi_payload() {
 
 #[tokio::test]
 async fn test_process_nav_refresh_job_fallback_when_http_fails() {
+    let _env_guard = TEST_ENV_MUTEX.lock().unwrap();
     // Point to non-responsive or 404 endpoint
     let mock_app = Router::new().route(
         "/mf/{scheme_code}/latest",
