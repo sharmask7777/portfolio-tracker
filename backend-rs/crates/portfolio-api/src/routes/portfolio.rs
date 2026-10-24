@@ -27,6 +27,7 @@ use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
 
 use crate::errors::ApiError;
 use crate::middleware::AuthUser;
+use crate::services::NavSyncService;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -414,38 +415,78 @@ pub async fn fetch_transactions_for_folio(
     }
 }
 
+/// Resolves the effective NAV between a historical NAV record and a fallback transaction NAV
+/// based on date priority.
+///
+/// - If historical date is newer than or equal to fallback date: returns historical NAV.
+/// - If fallback date is strictly newer than historical date: returns fallback NAV.
+/// - If only one is present, returns that one's NAV.
+/// - If neither is present, returns `Nav::ZERO`.
+pub fn resolve_nav_with_date_priority(
+    historical: Option<(NaiveDate, Nav)>,
+    fallback: Option<(NaiveDate, Nav)>,
+) -> Nav {
+    match (historical, fallback) {
+        (Some((hist_date, hist_nav)), Some((fb_date, fb_nav))) => {
+            if hist_date >= fb_date {
+                hist_nav
+            } else {
+                fb_nav
+            }
+        }
+        (Some((_, hist_nav)), None) => hist_nav,
+        (None, Some((_, fb_nav))) => fb_nav,
+        (None, None) => Nav::ZERO,
+    }
+}
+
 pub async fn fetch_latest_nav(
     state: &AppState,
     asset: Option<&AssetEntity>,
-    fallback_nav: Nav,
+    fallback: Option<(NaiveDate, Nav)>,
 ) -> Nav {
     let Some(amfi) = asset.and_then(|a| a.amfi_code.as_deref()) else {
-        return fallback_nav;
-    };
-    let Some(pool) = state.pool() else {
-        return fallback_nav;
+        return resolve_nav_with_date_priority(None, fallback);
     };
 
-    let latest = sqlx::query_scalar::<_, Decimal>(
-        r#"
-        SELECT nav::numeric
-        FROM "HistoricalNAV"
-        WHERE "amfiCode" = $1
-        ORDER BY date DESC
-        LIMIT 1
-        "#,
-    )
-    .bind(amfi)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or(Decimal::ZERO);
+    let historical = if let Some(pool) = state.pool() {
+        sqlx::query_as::<_, (NaiveDate, Decimal)>(
+            r#"
+            SELECT date::date as date, nav::numeric as nav
+            FROM "HistoricalNAV"
+            WHERE "amfiCode" = $1
+            ORDER BY date DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(amfi)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .filter(|(_, nav)| nav.is_sign_positive())
+        .map(|(date, nav)| (date, Nav::new(nav)))
+    } else {
+        let db = state.db();
+        let navs = db.list_navs(amfi);
+        navs.last()
+            .filter(|e| e.nav.is_sign_positive())
+            .map(|e| (e.date, Nav::new(e.nav)))
+    };
 
-    if latest > Decimal::ZERO {
-        return Nav::new(latest);
+    let today = Utc::now().date_naive();
+    let needs_sync = match historical {
+        Some((hist_date, _)) => {
+            hist_date < today || fallback.is_some_and(|(tx_d, _)| hist_date < tx_d)
+        }
+        None => true,
+    };
+
+    if needs_sync {
+        NavSyncService::check_and_trigger_lazy_sync(state, amfi).await;
     }
-    fallback_nav
+
+    resolve_nav_with_date_priority(historical, fallback)
 }
 
 pub async fn fetch_historical_nav_by_date(
@@ -560,14 +601,13 @@ pub async fn get_summary(
         }
 
         let units = get_latest_units(&core_txs);
-        let fallback_nav = core_txs
+        let fallback = core_txs
             .iter()
             .rev()
             .find(|t| t.nav.is_positive())
-            .map(|t| t.nav)
-            .unwrap_or(Nav::ZERO);
+            .map(|t| (t.date, t.nav));
 
-        let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback_nav).await;
+        let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback).await;
 
         let perf_options = PerformanceOptions::new().with_as_of_date(today);
         let metrics = get_metrics(&core_txs, latest_nav, Some(perf_options));
@@ -873,14 +913,13 @@ pub async fn compute_portfolio_exposures(
             }
 
             let units = get_latest_units(&core_txs);
-            let fallback_nav = core_txs
+            let fallback = core_txs
                 .iter()
                 .rev()
                 .find(|t| t.nav.is_positive())
-                .map(|t| t.nav)
-                .unwrap_or(Nav::ZERO);
+                .map(|t| (t.date, t.nav));
 
-            let latest_nav = fetch_latest_nav(state, Some(&asset), fallback_nav).await;
+            let latest_nav = fetch_latest_nav(state, Some(&asset), fallback).await;
             let val_dec = units.to_decimal() * latest_nav.to_decimal();
             let is_active = units.to_decimal() >= Decimal::from_str("0.001").unwrap()
                 && val_dec >= Decimal::from_str("0.01").unwrap();
@@ -1230,14 +1269,13 @@ pub async fn get_portfolio_summary(
             }
 
             let units = get_latest_units(&core_txs);
-            let fallback_nav = core_txs
+            let fallback = core_txs
                 .iter()
                 .rev()
                 .find(|t| t.nav.is_positive())
-                .map(|t| t.nav)
-                .unwrap_or(Nav::ZERO);
+                .map(|t| (t.date, t.nav));
 
-            let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback_nav).await;
+            let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback).await;
 
             let core_asset_type = asset
                 .as_ref()
@@ -1402,14 +1440,13 @@ pub async fn get_xray(
             }
 
             let units = get_latest_units(&core_txs);
-            let fallback_nav = core_txs
+            let fallback = core_txs
                 .iter()
                 .rev()
                 .find(|t| t.nav.is_positive())
-                .map(|t| t.nav)
-                .unwrap_or(Nav::ZERO);
+                .map(|t| (t.date, t.nav));
 
-            let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback_nav).await;
+            let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback).await;
             let val = units.to_decimal() * latest_nav.to_decimal();
             if val < Decimal::from_str("0.01").unwrap() {
                 continue;
@@ -1616,13 +1653,12 @@ pub async fn get_tax_summary(
                 }
             }
 
-            let fallback_nav = core_txs
+            let fallback = core_txs
                 .iter()
                 .rev()
                 .find(|t| t.nav.is_positive())
-                .map(|t| t.nav)
-                .unwrap_or(Nav::ZERO);
-            let latest_nav = fetch_latest_nav(&state, Some(&asset), fallback_nav).await;
+                .map(|t| (t.date, t.nav));
+            let latest_nav = fetch_latest_nav(&state, Some(&asset), fallback).await;
             let asset_type = asset
                 .asset_type
                 .parse::<AssetType>()

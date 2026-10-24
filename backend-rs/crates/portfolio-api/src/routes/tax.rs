@@ -186,16 +186,15 @@ pub async fn simulate_sell(
                 core_txs.push(t.to_core_transaction()?);
             }
 
-            let fallback_nav = core_txs
+            let fallback = core_txs
                 .iter()
                 .rev()
                 .find(|t| t.nav.is_positive())
-                .map(|t| t.nav)
-                .unwrap_or(Nav::ZERO);
+                .map(|t| (t.date, t.nav));
 
             let current_price = match payload.current_price {
                 Some(p) => Nav::new(p),
-                None => fetch_latest_nav(&state, Some(&asset), fallback_nav).await,
+                None => fetch_latest_nav(&state, Some(&asset), fallback).await,
             };
 
             let asset_type = asset
@@ -290,14 +289,13 @@ pub async fn get_harvesting(
                 core_txs.push(t.to_core_transaction()?);
             }
 
-            let fallback_nav = core_txs
+            let fallback = core_txs
                 .iter()
                 .rev()
                 .find(|t| t.nav.is_positive())
-                .map(|t| t.nav)
-                .unwrap_or(Nav::ZERO);
+                .map(|t| (t.date, t.nav));
 
-            let current_nav = fetch_latest_nav(&state, Some(&asset), fallback_nav).await;
+            let current_nav = fetch_latest_nav(&state, Some(&asset), fallback).await;
 
             let asset_type = asset
                 .asset_type

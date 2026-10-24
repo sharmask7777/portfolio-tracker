@@ -46,6 +46,9 @@ async fn test_nav_sync_service_try_acquire_daily_sync_with_in_memory_state() {
 
 #[tokio::test]
 async fn test_check_and_trigger_lazy_sync_validation_and_throttling() {
+    unsafe {
+        std::env::set_var("MFAPI_BASE_URL", "http://127.0.0.1:1");
+    }
     let db = Arc::new(InMemoryDatabase::new());
     let state = AppState::new(db, "test-secret");
 
@@ -65,6 +68,9 @@ async fn test_check_and_trigger_lazy_sync_validation_and_throttling() {
 
 #[tokio::test]
 async fn test_spawn_lazy_nav_fetch_fails_gracefully_without_panicking() {
+    unsafe {
+        std::env::set_var("MFAPI_BASE_URL", "http://127.0.0.1:1");
+    }
     let db = Arc::new(InMemoryDatabase::new());
     let state = AppState::new(db, "test-secret");
 
