@@ -20,8 +20,10 @@ thiserror.workspace = true
 uuid.workspace = true
 jsonwebtoken.workspace = true
 bcrypt.workspace = true
+reqwest.workspace = true
 
 tower = { version = "0.5", features = ["util"] }
+
 http-body-util = "0.1"
 
 [dev-dependencies]
