@@ -12,6 +12,7 @@ use rust_decimal::Decimal;
 
 use crate::error::PortfolioError;
 use crate::holdings::{Folio, Transaction, process_fifo_lots};
+use crate::tax::constants::HOLDING_DAYS_EQUITY_LTCG;
 use crate::tax::grandfathering::calculate_gain_with_expenses;
 use crate::tax::{BuyLot, SellSimulation};
 use crate::types::{AssetType, Money, Nav, Units};
@@ -247,7 +248,7 @@ pub fn get_exit_load(
 
     // Standard Equity rule: 1% if sold within 1 year (365 days)
     if is_equity(asset_type, asset_name) {
-        if diff_days < 365 {
+        if diff_days < HOLDING_DAYS_EQUITY_LTCG {
             return Money::new(value.to_decimal() * Decimal::from_parts(1, 0, 0, false, 2));
         }
         return Money::ZERO;

@@ -578,14 +578,7 @@ pub async fn get_summary(
         total_current_value += val_dec;
 
         for tx in &core_txs {
-            let flow_amount = if tx.tx_type.is_outflow() {
-                -tx.amount.abs().to_decimal()
-            } else if tx.tx_type.is_inflow() {
-                tx.amount.abs().to_decimal()
-            } else {
-                -tx.amount.abs().to_decimal()
-            };
-            all_cash_flows.push(CashFlow::new(tx.date, flow_amount));
+            all_cash_flows.push(tx.to_cash_flow());
 
             earliest_date = match earliest_date {
                 None => Some(tx.date),
@@ -1323,14 +1316,7 @@ pub async fn get_portfolio_summary(
             };
 
             for tx in &core_txs {
-                let flow_amount = if tx.tx_type.is_outflow() {
-                    -tx.amount.abs().to_decimal()
-                } else if tx.tx_type.is_inflow() {
-                    tx.amount.abs().to_decimal()
-                } else {
-                    -tx.amount.abs().to_decimal()
-                };
-                all_cash_flows.push(CashFlow::new(tx.date, flow_amount));
+                all_cash_flows.push(tx.to_cash_flow());
             }
 
             if is_active {
@@ -1349,21 +1335,15 @@ pub async fn get_portfolio_summary(
         .sum();
     let post_tax_total_value = (total_current_value - total_estimated_tax).max(Decimal::ZERO);
 
-    let mut pre_tax_cash_flows = all_cash_flows.clone();
-    if total_current_value > Decimal::ZERO {
-        pre_tax_cash_flows.push(CashFlow::new(today, total_current_value));
-    }
-    let overall_xirr = calculate_xirr(&pre_tax_cash_flows)
-        .ok()
-        .unwrap_or(Decimal::ZERO);
-
-    let mut post_tax_cash_flows = all_cash_flows;
-    if post_tax_total_value > Decimal::ZERO {
-        post_tax_cash_flows.push(CashFlow::new(today, post_tax_total_value));
-    }
-    let overall_post_tax_xirr = calculate_xirr(&post_tax_cash_flows)
-        .ok()
-        .unwrap_or(Decimal::ZERO);
+    let solve_terminal_xirr = |val: Decimal| {
+        let mut flows = all_cash_flows.clone();
+        if val > Decimal::ZERO {
+            flows.push(CashFlow::new(today, val));
+        }
+        calculate_xirr(&flows).ok().unwrap_or(Decimal::ZERO)
+    };
+    let overall_xirr = solve_terminal_xirr(total_current_value);
+    let overall_post_tax_xirr = solve_terminal_xirr(post_tax_total_value);
 
     let total_gain = total_current_value - total_invested;
     let absolute_return = if total_invested > Decimal::ZERO {

@@ -62,6 +62,50 @@ pub struct TaxBreakdown {
     pub total_tax: Decimal,
 }
 
+impl TaxBreakdownItem {
+    pub const ZERO: Self = Self {
+        amount: Decimal::ZERO,
+        tax: Decimal::ZERO,
+        cess: Decimal::ZERO,
+    };
+
+    pub fn add(&mut self, amount: Decimal, tax: Decimal, cess: Decimal) {
+        self.amount += amount;
+        self.tax += tax;
+        self.cess += cess;
+    }
+}
+
+impl TaxBreakdown {
+    pub fn from_matched_lots(lots: &[RealizedGain]) -> Self {
+        let mut stcg = TaxBreakdownItem::ZERO;
+        let mut ltcg = TaxBreakdownItem::ZERO;
+        let mut slab = TaxBreakdownItem::ZERO;
+        let mut total_tax = Decimal::ZERO;
+
+        for lot in lots {
+            let item = match lot.tax_type {
+                TaxType::Stcg => &mut stcg,
+                TaxType::Ltcg => &mut ltcg,
+                TaxType::Slab => &mut slab,
+            };
+            item.add(
+                lot.gain.to_decimal(),
+                lot.tax_before_cess.to_decimal(),
+                lot.cess.to_decimal(),
+            );
+            total_tax += lot.estimated_tax.to_decimal();
+        }
+
+        Self {
+            stcg,
+            ltcg,
+            slab,
+            total_tax,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SimulationResponse {
@@ -83,38 +127,7 @@ pub struct SimulationResponse {
 }
 
 fn to_simulation_response(sim: SellSimulation) -> SimulationResponse {
-    let mut stcg_amt = Decimal::ZERO;
-    let mut stcg_tax = Decimal::ZERO;
-    let mut stcg_cess = Decimal::ZERO;
-    let mut ltcg_amt = Decimal::ZERO;
-    let mut ltcg_tax = Decimal::ZERO;
-    let mut ltcg_cess = Decimal::ZERO;
-    let mut slab_amt = Decimal::ZERO;
-    let mut slab_tax = Decimal::ZERO;
-    let mut slab_cess = Decimal::ZERO;
-    let mut total_tax = Decimal::ZERO;
-
-    for lot in &sim.matched_lots {
-        match lot.tax_type {
-            TaxType::Stcg => {
-                stcg_amt += lot.gain.to_decimal();
-                stcg_tax += lot.tax_before_cess.to_decimal();
-                stcg_cess += lot.cess.to_decimal();
-            }
-            TaxType::Ltcg => {
-                ltcg_amt += lot.gain.to_decimal();
-                ltcg_tax += lot.tax_before_cess.to_decimal();
-                ltcg_cess += lot.cess.to_decimal();
-            }
-            TaxType::Slab => {
-                slab_amt += lot.gain.to_decimal();
-                slab_tax += lot.tax_before_cess.to_decimal();
-                slab_cess += lot.cess.to_decimal();
-            }
-        }
-        total_tax += lot.estimated_tax.to_decimal();
-    }
-
+    let tax_breakdown = TaxBreakdown::from_matched_lots(&sim.matched_lots);
     SimulationResponse {
         asset_name: sim.asset_name,
         units_to_sell: sim.units_to_sell.to_decimal(),
@@ -123,24 +136,7 @@ fn to_simulation_response(sim: SellSimulation) -> SimulationResponse {
         taxable_gain: sim.taxable_gain.to_decimal(),
         estimated_tax: sim.estimated_tax.to_decimal(),
         exit_load: sim.exit_load.to_decimal(),
-        tax_breakdown: TaxBreakdown {
-            stcg: TaxBreakdownItem {
-                amount: stcg_amt,
-                tax: stcg_tax,
-                cess: stcg_cess,
-            },
-            ltcg: TaxBreakdownItem {
-                amount: ltcg_amt,
-                tax: ltcg_tax,
-                cess: ltcg_cess,
-            },
-            slab: TaxBreakdownItem {
-                amount: slab_amt,
-                tax: slab_tax,
-                cess: slab_cess,
-            },
-            total_tax,
-        },
+        tax_breakdown,
         matched_lots: sim.matched_lots,
     }
 }
@@ -169,98 +165,100 @@ pub async fn simulate_sell(
         .tax_slab
         .unwrap_or_else(|| Decimal::from_str("0.30").unwrap());
 
-    if let Some(folio_id) = payload.folio_id {
-        let folio = fetch_folio(&state, folio_id)
-            .await?
-            .ok_or(DbError::FolioNotFound(folio_id))?;
-        let portfolio = fetch_portfolio(&state, folio.portfolio_id)
-            .await?
-            .ok_or(DbError::PortfolioNotFound(folio.portfolio_id))?;
+    let (asset_name, asset_type, core_txs, current_price, grandfather_nav, exit_load_metadata) =
+        if let Some(folio_id) = payload.folio_id {
+            let folio = fetch_folio(&state, folio_id)
+                .await?
+                .ok_or(DbError::FolioNotFound(folio_id))?;
+            let portfolio = fetch_portfolio(&state, folio.portfolio_id)
+                .await?
+                .ok_or(DbError::PortfolioNotFound(folio.portfolio_id))?;
 
-        if portfolio.user_id != auth_user.user_id {
-            return Err(ApiError::Forbidden);
-        }
+            if portfolio.user_id != auth_user.user_id {
+                return Err(ApiError::Forbidden);
+            }
 
-        let asset = fetch_asset_for_folio(&state, folio.asset_id)
-            .await?
-            .ok_or(DbError::AssetNotFound(folio.asset_id))?;
+            let asset = fetch_asset_for_folio(&state, folio.asset_id)
+                .await?
+                .ok_or(DbError::AssetNotFound(folio.asset_id))?;
 
-        let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
-        let mut core_txs = Vec::with_capacity(tx_entities.len());
-        for t in &tx_entities {
-            core_txs.push(t.to_core_transaction()?);
-        }
+            let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
+            let mut core_txs = Vec::with_capacity(tx_entities.len());
+            for t in &tx_entities {
+                core_txs.push(t.to_core_transaction()?);
+            }
 
-        let fallback_nav = core_txs
-            .iter()
-            .rev()
-            .find(|t| t.nav.is_positive())
-            .map(|t| t.nav)
-            .unwrap_or(Nav::ZERO);
+            let fallback_nav = core_txs
+                .iter()
+                .rev()
+                .find(|t| t.nav.is_positive())
+                .map(|t| t.nav)
+                .unwrap_or(Nav::ZERO);
 
-        let current_price = match payload.current_price {
-            Some(p) => Nav::new(p),
-            None => fetch_latest_nav(&state, Some(&asset), fallback_nav).await,
-        };
+            let current_price = match payload.current_price {
+                Some(p) => Nav::new(p),
+                None => fetch_latest_nav(&state, Some(&asset), fallback_nav).await,
+            };
 
-        let asset_type = asset
-            .asset_type
-            .parse::<AssetType>()
-            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+            let asset_type = asset
+                .asset_type
+                .parse::<AssetType>()
+                .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-        let grandfather_nav = if let Some(ref amfi) = asset.amfi_code {
-            fetch_historical_nav_by_date(&state, amfi, GRANDFATHER_DATE).await
+            let grandfather_nav = if let Some(ref amfi) = asset.amfi_code {
+                fetch_historical_nav_by_date(&state, amfi, GRANDFATHER_DATE).await
+            } else {
+                None
+            };
+
+            (
+                asset.name,
+                asset_type,
+                core_txs,
+                current_price,
+                grandfather_nav,
+                asset.exit_load_metadata,
+            )
         } else {
-            None
+            let asset_name = payload.asset_name.ok_or_else(|| {
+                ApiError::BadRequest("Folio ID or asset name is required".to_string())
+            })?;
+            let asset_type = payload
+                .asset_type
+                .unwrap_or_else(|| "MUTUAL_FUND".to_string())
+                .parse::<AssetType>()
+                .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+            let current_price = Nav::new(payload.current_price.unwrap_or(Decimal::ZERO));
+
+            (
+                asset_name,
+                asset_type,
+                Vec::new(),
+                current_price,
+                None,
+                None,
+            )
         };
 
-        match simulate_sell_transactions_with_metadata(
-            &asset.name,
-            asset_type,
-            &core_txs,
-            Units::new(payload.units),
-            sell_date,
-            current_price,
-            tax_slab,
-            grandfather_nav,
-            asset.exit_load_metadata.as_deref(),
-        ) {
-            Ok(simulation) => Ok(Json(to_simulation_response(simulation))),
-            Err(PortfolioError::UnitsLocked { available, locked }) => {
-                Err(ApiError::UnitsLocked { available, locked })
-            }
-            Err(e) => Err(ApiError::from(e)),
+    let simulation = simulate_sell_transactions_with_metadata(
+        &asset_name,
+        asset_type,
+        &core_txs,
+        Units::new(payload.units),
+        sell_date,
+        current_price,
+        tax_slab,
+        grandfather_nav,
+        exit_load_metadata.as_deref(),
+    )
+    .map_err(|e| match e {
+        PortfolioError::UnitsLocked { available, locked } => {
+            ApiError::UnitsLocked { available, locked }
         }
-    } else {
-        let asset_name = payload.asset_name.ok_or_else(|| {
-            ApiError::BadRequest("Folio ID or asset name is required".to_string())
-        })?;
-        let asset_type_str = payload
-            .asset_type
-            .unwrap_or_else(|| "MUTUAL_FUND".to_string());
-        let asset_type = asset_type_str
-            .parse::<AssetType>()
-            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-        let current_price = Nav::new(payload.current_price.unwrap_or(Decimal::ZERO));
+        other => ApiError::from(other),
+    })?;
 
-        match simulate_sell_transactions_with_metadata(
-            &asset_name,
-            asset_type,
-            &[],
-            Units::new(payload.units),
-            sell_date,
-            current_price,
-            tax_slab,
-            None,
-            None,
-        ) {
-            Ok(simulation) => Ok(Json(to_simulation_response(simulation))),
-            Err(PortfolioError::UnitsLocked { available, locked }) => {
-                Err(ApiError::UnitsLocked { available, locked })
-            }
-            Err(e) => Err(ApiError::from(e)),
-        }
-    }
+    Ok(Json(to_simulation_response(simulation)))
 }
 
 pub async fn get_harvesting(

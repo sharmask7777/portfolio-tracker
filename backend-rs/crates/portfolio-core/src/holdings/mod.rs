@@ -94,6 +94,23 @@ impl Transaction {
         self.external_id = Some(ext_id.into());
         self
     }
+
+    /// Returns the signed cash flow amount from the investor's perspective.
+    /// Outflows (investments/purchases) are negative, inflows (redemptions/payouts) are positive.
+    pub fn cash_flow_amount(&self) -> Money {
+        if self.tx_type.is_outflow() {
+            -self.amount.abs()
+        } else if self.tx_type.is_inflow() {
+            self.amount.abs()
+        } else {
+            -self.amount.abs()
+        }
+    }
+
+    /// Converts this transaction into a cash flow for performance (XIRR) calculation.
+    pub fn to_cash_flow(&self) -> crate::performance::xirr::CashFlow {
+        crate::performance::xirr::CashFlow::new(self.date, self.cash_flow_amount().to_decimal())
+    }
 }
 
 /// A folio representing an account with an AMC or broker holding units of an asset.
