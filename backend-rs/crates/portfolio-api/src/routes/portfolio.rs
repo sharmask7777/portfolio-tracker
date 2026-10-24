@@ -464,13 +464,13 @@ pub async fn fetch_latest_nav(
         .await
         .ok()
         .flatten()
-        .filter(|(_, nav)| nav.is_sign_positive())
+        .filter(|(_, nav)| *nav > Decimal::ZERO)
         .map(|(date, nav)| (date, Nav::new(nav)))
     } else {
         let db = state.db();
         let navs = db.list_navs(amfi);
         navs.last()
-            .filter(|e| e.nav.is_sign_positive())
+            .filter(|e| e.nav > Decimal::ZERO)
             .map(|e| (e.date, Nav::new(e.nav)))
     };
 
@@ -511,14 +511,14 @@ pub async fn fetch_historical_nav_by_date(
         .flatten();
 
         if let Some(n) = nav
-            && n.is_sign_positive()
+            && n > Decimal::ZERO
         {
             return Some(Nav::new(n));
         }
     } else {
         let db = state.db();
         if let Some(entity) = db.get_nav(amfi_code, target_date)
-            && entity.nav.is_sign_positive()
+            && entity.nav > Decimal::ZERO
         {
             return Some(Nav::new(entity.nav));
         }
