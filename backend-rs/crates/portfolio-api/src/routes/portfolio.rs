@@ -448,6 +448,43 @@ pub async fn fetch_latest_nav(
     fallback_nav
 }
 
+pub async fn fetch_historical_nav_by_date(
+    state: &AppState,
+    amfi_code: &str,
+    target_date: NaiveDate,
+) -> Option<Nav> {
+    if let Some(pool) = state.pool() {
+        let nav = sqlx::query_scalar::<_, Decimal>(
+            r#"
+            SELECT nav::numeric
+            FROM "HistoricalNAV"
+            WHERE "amfiCode" = $1 AND date::date = $2
+            LIMIT 1
+            "#,
+        )
+        .bind(amfi_code)
+        .bind(target_date)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        if let Some(n) = nav
+            && n.is_sign_positive()
+        {
+            return Some(Nav::new(n));
+        }
+    } else {
+        let db = state.db();
+        if let Some(entity) = db.get_nav(amfi_code, target_date)
+            && entity.nav.is_sign_positive()
+        {
+            return Some(Nav::new(entity.nav));
+        }
+    }
+    None
+}
+
 pub async fn list_portfolios(
     auth_user: AuthUser,
     State(state): State<AppState>,

@@ -23,8 +23,9 @@ pub use harvesting::{
     ltcg_exemption_limit_pre_budget_2024,
 };
 pub use rules::{
-    elss_lock_in_expiry, get_locked_units, is_elss, is_elss_scheme, is_equity, is_lot_locked,
-    simulate_sell, simulate_sell_transactions,
+    elss_lock_in_expiry, get_exit_load, get_locked_units, is_elss, is_elss_scheme, is_equity,
+    is_lot_locked, parse_exit_load_from_metadata, simulate_sell, simulate_sell_transactions,
+    simulate_sell_transactions_with_metadata,
 };
 
 /// Indian Income Tax capital gains classification.

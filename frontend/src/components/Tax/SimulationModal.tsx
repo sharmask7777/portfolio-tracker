@@ -45,6 +45,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
         folioId: folio.id,
         units: units,
         taxSlab: taxSlab,
+        currentPrice: currentPrice > 0 ? currentPrice : undefined,
       });
       setResult(res.data);
     } catch (err: any) {
@@ -175,6 +176,16 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
             const totalTax = tb.totalTax ?? result.estimatedTax ?? 0;
             const exitLoad = result.exitLoad ?? 0;
             const estValue = result.estimatedValue ?? 0;
+            const totalCess = (tb.ltcg?.cess ?? 0) + (tb.stcg?.cess ?? 0) + (tb.slab?.cess ?? 0);
+
+            // Determine effective rates from matched lots, defaulting to Budget 2024 statutory rates
+            const ltcgLot = result.matchedLots?.find((l: any) => l.tax_type === 'Ltcg' || l.taxType === 'LTCG');
+            const ltcgRate = ltcgLot?.tax_rate ?? ltcgLot?.taxRate;
+            const ltcgRateLabel = ltcgRate === 0.1 || ltcgRate === '0.1' || ltcgRate === '0.10' ? '10%' : '12.5%';
+
+            const stcgLot = result.matchedLots?.find((l: any) => l.tax_type === 'Stcg' || l.taxType === 'STCG');
+            const stcgRate = stcgLot?.tax_rate ?? stcgLot?.taxRate;
+            const stcgRateLabel = stcgRate === 0.15 || stcgRate === '0.15' ? '15%' : '20%';
 
             return (
               <div className="animate-fade">
@@ -197,21 +208,27 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
                   </h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>LTCG Tax Estimate:</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>LTCG Tax Estimate ({ltcgRateLabel}):</span>
                       <strong className={(tb.ltcg?.tax ?? 0) > 0 ? 'negative' : ''}>{formatCurrency(tb.ltcg?.tax ?? 0)}</strong>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>STCG Tax Estimate:</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>STCG Tax Estimate ({stcgRateLabel}):</span>
                       <strong className={(tb.stcg?.tax ?? 0) > 0 ? 'negative' : ''}>{formatCurrency(tb.stcg?.tax ?? 0)}</strong>
                     </div>
-                    {(tb.slab?.amount ?? 0) !== 0 && (
+                    {(tb.slab?.tax ?? 0) !== 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Slab Rate Gains:</span>
-                        <strong>{formatCurrency(tb.slab?.amount ?? 0)}</strong>
+                        <span style={{ color: 'var(--text-secondary)' }}>Slab Tax Estimate:</span>
+                        <strong className="negative">{formatCurrency(tb.slab?.tax ?? 0)}</strong>
+                      </div>
+                    )}
+                    {totalCess > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Health & Education Cess (4%):</span>
+                        <strong className="negative">{formatCurrency(totalCess)}</strong>
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Exit Load (1% estimate):</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>Exit Load:</span>
                       <strong className={exitLoad > 0 ? 'negative' : ''}>{formatCurrency(exitLoad)}</strong>
                     </div>
                     <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between' }}>
@@ -225,7 +242,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
 
                 <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
                   <Info size={14} style={{ flexShrink: 0 }} />
-                  <p>Exit loads are estimated based on holding period (1% for &lt;1yr). Actual loads may vary by fund policy. Tax estimates do not include cess.</p>
+                  <p>Exit loads are estimated based on holding period and fund scheme rules. Tax estimates reflect Budget 2024 statutory rates (12.5% LTCG, 20% STCG) and 4% health &amp; education cess.</p>
                 </div>
 
                 <button 

@@ -465,7 +465,11 @@ async fn test_tax_simulate_sell_blocks_locked_elss_units_with_400() {
     assert_eq!(reg_sim_json["estimatedValue"], 7500.0); // 50 * 150 = 7500
     assert_eq!(reg_sim_json["totalGain"], 2500.0); // 7500 - 5000 = 2500
     assert!(reg_sim_json["taxBreakdown"].is_object());
-    assert!(reg_sim_json["taxBreakdown"]["totalTax"].is_number());
+    assert_eq!(reg_sim_json["taxBreakdown"]["ltcg"]["amount"], 2500.0);
+    assert_eq!(reg_sim_json["taxBreakdown"]["ltcg"]["tax"], 312.5); // 2500 * 12.5% = 312.50
+    assert_eq!(reg_sim_json["taxBreakdown"]["ltcg"]["cess"], 12.5); // 312.50 * 4% = 12.50
+    assert_eq!(reg_sim_json["taxBreakdown"]["totalTax"], 325.0); // 312.50 + 12.50 = 325.00
+    assert_eq!(reg_sim_json["exitLoad"], 0.0);
 }
 
 #[tokio::test]

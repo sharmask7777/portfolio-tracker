@@ -4,7 +4,10 @@ use std::str::FromStr;
 
 use portfolio_core::holdings::{Transaction, TransactionType};
 use portfolio_core::performance::{PerformanceOptions, get_metrics};
-use portfolio_core::tax::{AdvanceTaxQuarter, calculate_portfolio_tax, calculate_unrealized_tax};
+use portfolio_core::tax::{
+    AdvanceTaxQuarter, TaxSection, TaxType, calculate_portfolio_tax, calculate_unrealized_tax,
+    get_exit_load, simulate_sell_transactions_with_metadata,
+};
 use portfolio_core::types::{AssetType, Money, Nav, Units};
 
 fn date(year: i32, month: u32, day: u32) -> NaiveDate {
@@ -292,4 +295,197 @@ fn test_capital_loss_set_off_rules() {
     // STCL sets off against LTCG: remaining taxable LTCG = 6,000, taxable STCG = 0
     assert_eq!(summary.realized.taxable_stcg, money("0"));
     assert_eq!(summary.realized.taxable_ltcg, money("6000"));
+}
+
+#[test]
+fn test_exit_load_calculation_and_metadata_parsing() {
+    let buy = date(2024, 1, 1);
+    let val = money("100000");
+
+    // Stocks: 0% exit load
+    assert_eq!(
+        get_exit_load(
+            "Reliance Industries",
+            AssetType::Stock,
+            buy,
+            date(2024, 2, 1),
+            val,
+            None
+        ),
+        money("0")
+    );
+
+    // ELSS: 0% exit load
+    assert_eq!(
+        get_exit_load(
+            "Axis ELSS Tax Saver Fund",
+            AssetType::MutualFund,
+            buy,
+            date(2024, 6, 1),
+            val,
+            None
+        ),
+        money("0")
+    );
+
+    // Parag Parikh: 2% < 365d, 1% < 730d, 0% >= 730d
+    let pp = "Parag Parikh Flexi Cap Fund";
+    assert_eq!(
+        get_exit_load(pp, AssetType::MutualFund, buy, date(2024, 6, 1), val, None),
+        money("2000") // 2%
+    );
+    assert_eq!(
+        get_exit_load(pp, AssetType::MutualFund, buy, date(2025, 6, 1), val, None),
+        money("1000") // 1%
+    );
+    assert_eq!(
+        get_exit_load(pp, AssetType::MutualFund, buy, date(2026, 6, 1), val, None),
+        money("0")
+    );
+
+    // Standard Equity: 1% < 365d, 0% >= 365d
+    let eq = "HDFC Top 100 Fund";
+    assert_eq!(
+        get_exit_load(eq, AssetType::MutualFund, buy, date(2024, 6, 1), val, None),
+        money("1000") // 1%
+    );
+    assert_eq!(
+        get_exit_load(eq, AssetType::MutualFund, buy, date(2025, 6, 1), val, None),
+        money("0")
+    );
+
+    // Arbitrage: 0.25% < 30d, 0% >= 30d
+    let arb = "Kotak Arbitrage Fund";
+    assert_eq!(
+        get_exit_load(
+            arb,
+            AssetType::MutualFund,
+            buy,
+            date(2024, 1, 15),
+            val,
+            None
+        ),
+        money("250") // 0.25%
+    );
+    assert_eq!(
+        get_exit_load(
+            arb,
+            AssetType::MutualFund,
+            buy,
+            date(2024, 2, 15),
+            val,
+            None
+        ),
+        money("0")
+    );
+
+    // Metadata tier parsing
+    let meta = "1% if redeemed within 30 days, Nil thereafter";
+    assert_eq!(
+        get_exit_load(
+            "Custom Fund",
+            AssetType::MutualFund,
+            buy,
+            date(2024, 1, 15),
+            val,
+            Some(meta)
+        ),
+        money("1000")
+    );
+    assert_eq!(
+        get_exit_load(
+            "Custom Fund",
+            AssetType::MutualFund,
+            buy,
+            date(2024, 2, 15),
+            val,
+            Some(meta)
+        ),
+        money("0")
+    );
+}
+
+#[test]
+fn test_withdrawal_simulation_ltcg_12_5_and_exit_load() {
+    // Buy 100 units @ 100 on 2023-01-01 (Rs 10,000)
+    // Sell on 2024-08-01 (post Budget 2024) @ 200 (Market value Rs 20,000)
+    // Holding > 365 days -> LTCG @ 12.5%
+    // Exit load = 0 (held > 1 year)
+    let txs = vec![tx(
+        "t1",
+        date(2023, 1, 1),
+        TransactionType::Buy,
+        units("100"),
+        nav("100"),
+    )];
+
+    let sim = simulate_sell_transactions_with_metadata(
+        "HDFC Top 100 Fund",
+        AssetType::MutualFund,
+        &txs,
+        units("100"),
+        date(2024, 8, 1),
+        nav("200"),
+        dec("0.30"),
+        None,
+        None,
+    )
+    .expect("simulation succeeded");
+
+    assert_eq!(sim.estimated_value, money("20000"));
+    assert_eq!(sim.total_gain, money("10000"));
+    assert_eq!(sim.exit_load, money("0"));
+
+    assert_eq!(sim.matched_lots.len(), 1);
+    let lot = &sim.matched_lots[0];
+    assert_eq!(lot.tax_type, TaxType::Ltcg);
+    assert_eq!(lot.section, TaxSection::Sec112A12_5);
+    assert_eq!(lot.tax_rate, dec("0.125")); // 12.5%!
+    assert_eq!(lot.tax_before_cess, money("1250")); // 10000 * 12.5% = 1250
+    assert_eq!(lot.cess, money("50")); // 1250 * 4% = 50
+    assert_eq!(lot.estimated_tax, money("1300")); // 1250 + 50 = 1300
+}
+
+#[test]
+fn test_withdrawal_simulation_stcg_20_and_exit_load() {
+    // Buy 100 units @ 100 on 2024-05-01 (Rs 10,000)
+    // Sell on 2024-08-01 (post Budget 2024) @ 200 (Market value Rs 20,000)
+    // Holding < 365 days -> STCG @ 20%
+    // Exit load = 1% on 20,000 = Rs 200
+    // Gain net of exit load = 20,000 - 10,000 - 200 = Rs 9,800
+    // Tax before cess = 9,800 * 20% = Rs 1,960
+    // Cess = 1,960 * 4% = Rs 78.40
+    let txs = vec![tx(
+        "t1",
+        date(2024, 5, 1),
+        TransactionType::Buy,
+        units("100"),
+        nav("100"),
+    )];
+
+    let sim = simulate_sell_transactions_with_metadata(
+        "HDFC Top 100 Fund",
+        AssetType::MutualFund,
+        &txs,
+        units("100"),
+        date(2024, 8, 1),
+        nav("200"),
+        dec("0.30"),
+        None,
+        None,
+    )
+    .expect("simulation succeeded");
+
+    assert_eq!(sim.estimated_value, money("20000"));
+    assert_eq!(sim.exit_load, money("200"));
+    assert_eq!(sim.total_gain, money("9800")); // reduced by transfer expenses!
+
+    assert_eq!(sim.matched_lots.len(), 1);
+    let lot = &sim.matched_lots[0];
+    assert_eq!(lot.tax_type, TaxType::Stcg);
+    assert_eq!(lot.section, TaxSection::Sec111A20);
+    assert_eq!(lot.tax_rate, dec("0.20")); // 20%!
+    assert_eq!(lot.tax_before_cess, money("1960"));
+    assert_eq!(lot.cess, money("78.40"));
+    assert_eq!(lot.estimated_tax, money("2038.40"));
 }
