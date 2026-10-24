@@ -21,3 +21,6 @@ reqwest = { workspace = true }
 async-trait = "0.1"
 tempfile = "3.17"
 
+[dev-dependencies]
+axum = { workspace = true }
+
