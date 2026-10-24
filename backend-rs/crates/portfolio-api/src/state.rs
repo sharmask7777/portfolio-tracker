@@ -1,9 +1,11 @@
 //! Application state and router assembly.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::Router;
 use portfolio_db::InMemoryDatabase;
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
 use crate::routes::{auth, family, health, portfolio, tax};
@@ -22,6 +24,7 @@ pub struct AppState {
     pub db: Arc<InMemoryDatabase>,
     pub jwt_secret: String,
     pub redis: Option<redis::Client>,
+    pub nav_rate_limiter: Arc<RwLock<HashSet<(String, chrono::NaiveDate)>>>,
 }
 
 impl AppState {
@@ -32,6 +35,7 @@ impl AppState {
             db,
             jwt_secret: jwt_secret.into(),
             redis: None,
+            nav_rate_limiter: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -46,6 +50,7 @@ impl AppState {
             db,
             jwt_secret: jwt_secret.into(),
             redis: None,
+            nav_rate_limiter: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -60,9 +65,23 @@ impl AppState {
         self
     }
 
+    /// Attaches an explicit in-memory rate limiter set (useful for hermetic tests).
+    pub fn with_nav_rate_limiter(
+        mut self,
+        limiter: Arc<RwLock<HashSet<(String, chrono::NaiveDate)>>>,
+    ) -> Self {
+        self.nav_rate_limiter = limiter;
+        self
+    }
+
     /// Returns a reference to the in-memory database mock (or fallback instance).
     pub fn db(&self) -> Arc<InMemoryDatabase> {
         Arc::clone(&self.db)
+    }
+
+    /// Returns a clone of the in-memory NAV rate limiter shared set.
+    pub fn nav_rate_limiter(&self) -> Arc<RwLock<HashSet<(String, chrono::NaiveDate)>>> {
+        Arc::clone(&self.nav_rate_limiter)
     }
 
     /// Returns an optional reference to the live PostgreSQL connection pool if configured.
