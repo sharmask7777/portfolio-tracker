@@ -1,15 +1,15 @@
 import { Page, Locator } from '@playwright/test';
+import { BasePage, BasePageOptions } from './base.page';
 
-export class DashboardPage {
-  readonly page: Page;
+export class DashboardPage extends BasePage {
   readonly netWorth: Locator;
   readonly schemesTable: Locator;
   readonly emptyState: Locator;
   readonly loadingState: Locator;
   readonly logoutButton: Locator;
 
-  constructor(page: Page) {
-    this.page = page;
+  constructor(page: Page, options?: BasePageOptions) {
+    super(page, options);
     // Selects the div containing the value inside the card that has the text "Current Net Worth"
     this.netWorth = page.locator('.card:has-text("Current Net Worth")').locator('div').nth(1);
     this.schemesTable = page.locator('.data-table');

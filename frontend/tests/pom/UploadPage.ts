@@ -1,15 +1,15 @@
 import { Page, Locator } from '@playwright/test';
+import { BasePage, BasePageOptions } from './base.page';
 
-export class UploadPage {
-  readonly page: Page;
+export class UploadPage extends BasePage {
   readonly importCASButton: Locator;
   readonly passwordInput: Locator;
   readonly fileInput: Locator;
   readonly uploadLabel: Locator;
   readonly cancelButton: Locator;
 
-  constructor(page: Page) {
-    this.page = page;
+  constructor(page: Page, options?: BasePageOptions) {
+    super(page, options);
     this.importCASButton = page.getByRole('button', { name: /Import CAS/i });
     this.passwordInput = page.getByPlaceholder('PDF Password');
     this.fileInput = page.locator('input[type="file"]');

@@ -30,8 +30,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "⏳ Waiting for services to become ready (10s)..."
-sleep 10
+echo "⏳ Waiting for backend API to be healthy..."
+timeout=45
+while ! curl -s -f http://127.0.0.1:8082/api/health > /dev/null 2>&1; do
+  sleep 1
+  timeout=$((timeout - 1))
+  if [ $timeout -le 0 ]; then
+    echo "❌ Backend failed to become healthy within 45s"
+    docker compose -f docker-compose.yml logs backend
+    exit 1
+  fi
+done
+echo "✅ Backend API is ready."
 
 echo "⏳ Running Playwright E2E tests against Docker stack..."
 npm run test:e2e:docker --prefix frontend

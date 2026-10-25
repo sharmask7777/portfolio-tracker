@@ -16,9 +16,9 @@ export default defineConfig({
     // Base URL to use in actions like `await page.goto('/')`.
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
     
-    // Prevent the agent from getting stuck on default 30-second timeouts
-    actionTimeout: 5000, 
-    navigationTimeout: 10000,
+    // Calibrate timeouts to be resilient under CPU load while preventing hangs
+    actionTimeout: 10000, 
+    navigationTimeout: 15000,
 
     // Inject localStorage state to bypass auth globally
     storageState: {
