@@ -373,13 +373,66 @@ git commit -m "ci(e2e): eliminate test flakes with active healthcheck polling an
 
 ---
 
-### Task 6: `AGENTS.md` Codification & Tax Auditor Subagent
+### Task 6: Test Suite Restructuring, Domain Cataloging & Semantic Renaming
+
+**Files:**
+- Create: `backend-rs/crates/portfolio-core/tests/README.md`
+- Create: `frontend/tests/README.md`
+- Rename / Update: `frontend/tests/milestone-v2.spec.ts` -> `frontend/tests/analytics-reporting.spec.ts`
+- Rename / Update: `frontend/tests/milestone-v4.spec.ts` -> `frontend/tests/holdings-management.spec.ts`
+- Modify: `frontend/playwright.config.ts` (if test patterns require update)
+
+**Interfaces:**
+- Consumes: All backend and frontend test suites.
+- Produces: Transparent, well-documented test architecture with domain-aligned file names and structured test directories.
+
+- [ ] **Step 1: Create `backend-rs/crates/portfolio-core/tests/README.md` cataloging backend test suites**
+
+Document the exact purpose, inputs, and responsibilities of each test file:
+- `tax_oracle_test.rs`: Statutory tax property-based fuzzer & golden vectors (Sections 112A, 111A, 50AA, 55(2)(ac)).
+- `tax_compliance_test.rs`: Explicit statutory tax compliance scenarios and ITR report invariant gate tests.
+- `mock_portfolios.rs`: 10 comprehensive synthetic mock portfolios validating multi-folio consolidation, zero-holding isolation, partial redemptions, and lock-ins.
+- `proptests.rs`: Mathematical invariant oracles (conservation of units, overlap symmetry, XIRR monotonicity).
+- `auditor_defensive_test.rs`: Fuzzing defensive boundary conditions (extreme NAV, zero balances, negative inputs).
+- `xirr_safeguards_test.rs`: Return bounds and numerical solver convergence.
+- `types_test.rs`: Unit conversions, money scaling, and asset classification.
+
+- [ ] **Step 2: Rename ambiguous milestone Playwright specs to semantic names**
+
+1. Rename `frontend/tests/milestone-v2.spec.ts` to `frontend/tests/analytics-reporting.spec.ts`.
+2. Rename `frontend/tests/milestone-v4.spec.ts` to `frontend/tests/holdings-management.spec.ts`.
+3. Add top-level file comments explaining the user flows covered.
+
+- [ ] **Step 3: Create `frontend/tests/README.md` cataloging frontend Playwright E2E and Vitest suites**
+
+Document the 4 E2E testing domains:
+- **Core Portfolio Operations:** `cas-upload.spec.ts`, `mock-portfolios.spec.ts`, `consolidation-and-zero-holdings.spec.ts`, `stock-intersection.spec.ts`, `holdings-management.spec.ts`, `family-view.spec.ts`, `transaction-side-panel.spec.ts`.
+- **Tax & Statutory Compliance:** `itr-export.spec.ts`, `asset-allocation-and-calculator.spec.ts`.
+- **Analytics & Reporting:** `analytics-reporting.spec.ts`, `dashboard-regression-verification.spec.ts`.
+- **Platform & UX Safeguards:** `smoke.spec.ts`, `font-visibility.spec.ts`, `responsiveness.spec.ts`, `logout.spec.ts`.
+Also document unit test suites under `frontend/src/` (`consolidation.test.ts`, `itrReportGenerator.test.ts`, `SimulationModal.test.tsx`, `TaxView.test.tsx`).
+
+- [ ] **Step 4: Verify test execution with renamed test files**
+
+Run: `npx playwright test --list --config frontend/playwright.config.ts`  
+Expected: Lists all tests cleanly including `analytics-reporting.spec.ts` and `holdings-management.spec.ts`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend-rs/crates/portfolio-core/tests/README.md frontend/tests/
+git commit -m "chore(tests): restructure test files with semantic names and domain catalog documentation"
+```
+
+---
+
+### Task 7: `AGENTS.md` Codification & Tax Auditor Subagent
 
 **Files:**
 - Modify: `AGENTS.md`
 
 **Interfaces:**
-- Consumes: All architectural pillars.
+- Consumes: All architectural pillars and restructured test catalog.
 - Produces: Formalized operational instructions and invariant laws for AI coding agents.
 
 - [ ] **Step 1: Update `AGENTS.md` with Agent-Native Engineering Mandates**
@@ -426,7 +479,7 @@ git commit -m "docs(agents): codify invariant oracle law, zero-any mandate, and 
 
 ## Plan Self-Review Checklist
 
-- **Spec coverage:** All 5 pillars from the design spec have direct implementation tasks (Task 1: Contract generation, Task 2: Strict TS & no-any, Task 3: Dedicated tax oracle & golden vectors, Task 4: ITR invariant gate, Task 5: Deterministic test pipeline, Task 6: `AGENTS.md` codification).
+- **Spec coverage:** All 5 pillars from the design spec plus test suite restructuring have direct implementation tasks (Task 1: Contract generation, Task 2: Strict TS & no-any, Task 3: Dedicated tax oracle & golden vectors, Task 4: ITR invariant gate, Task 5: Deterministic test pipeline, Task 6: Test suite restructuring & cataloging, Task 7: `AGENTS.md` codification).
 - **Step scan:** Every step contains checkable commands, exact file paths, and verifiable outputs.
 - **Type consistency:** The types exported in Task 1 (`SimulationSellRequest`, `SimulationSellResponse`, etc.) match those consumed in Task 2.
 - **Review focus:** All 5 failure modes from the Review Focus section are tested directly in their respective tasks.
