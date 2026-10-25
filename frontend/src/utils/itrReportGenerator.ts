@@ -154,7 +154,8 @@ export function calculate112AExemption(
   tax12_5: number;
   totalTax: number;
 } {
-  const isFy2425OrLater = fy >= '2024-25';
+  const startYear = parseInt(String(fy).split('-')[0], 10);
+  const isFy2425OrLater = !isNaN(startYear) ? startYear >= 2024 : fy >= '2024-25';
   const limit = isFy2425OrLater ? 125000 : 100000;
 
   const pureLtcg10 = Math.max(0, ltcg10);
@@ -290,6 +291,18 @@ export function verifyItrInvariants(report: any): void {
   }
 
   const fy = report.fy || report.financialYear || '2024-25';
+  const startYear = parseInt(String(fy).split('-')[0], 10);
+  const isPostBudget = !isNaN(startYear) ? startYear >= 2024 : fy >= '2024-25';
+  const statutoryLimit = isPostBudget ? 125000 : 100000;
+
+  const netRealizedTotal =
+    report.realized?.total ??
+    report.summary?.realized?.total ??
+    report.totalGain ??
+    report.totalCapitalGain ??
+    (Array.isArray(report.details)
+      ? report.details.reduce((sum: number, g: any) => sum + (g.gain ?? 0), 0)
+      : undefined);
 
   // 1. Quarterly Accrual vs Net Realized Total Invariant
   if (report.quarterlySummary) {
@@ -302,15 +315,24 @@ export function verifyItrInvariants(report: any): void {
       (qs.q3 ?? 0) +
       (qs.q4 ?? 0) +
       (qs.q5 ?? 0);
-    const expectedTotal =
-      qs.total !== undefined
-        ? qs.total
-        : report.realized?.total ?? report.summary?.realized?.total ?? report.totalGain ?? report.totalCapitalGain;
 
-    if (expectedTotal !== undefined && Math.abs(qSum - expectedTotal) > 0.01) {
+    if (qs.total !== undefined && Math.abs(qSum - qs.total) > 0.01) {
       throw new Error(
-        `Invariant violated: quarterly accrued gains (${qSum}) do not sum to total capital gain (${expectedTotal})`
+        `Invariant violated: quarterly accrued gains (${qSum}) do not sum to quarterly total (${qs.total})`
       );
+    }
+
+    if (netRealizedTotal !== undefined) {
+      if (Math.abs(qSum - netRealizedTotal) > 0.01) {
+        throw new Error(
+          `Invariant violated: quarterly accrued gains (${qSum}) do not sum to total capital gain (${netRealizedTotal})`
+        );
+      }
+      if (qs.total !== undefined && Math.abs(qs.total - netRealizedTotal) > 0.01) {
+        throw new Error(
+          `Invariant violated: quarterly total (${qs.total}) does not match portfolio realized total (${netRealizedTotal})`
+        );
+      }
     }
   }
 
@@ -324,24 +346,15 @@ export function verifyItrInvariants(report: any): void {
         matrixSum += qData.totalGain ?? 0;
       }
     }
-    const expectedRealized =
-      report.realized?.total ??
-      report.summary?.realized?.total ??
-      (Array.isArray(report.details)
-        ? report.details.reduce((sum: number, g: any) => sum + (g.gain ?? 0), 0)
-        : undefined);
 
-    if (expectedRealized !== undefined && Math.abs(matrixSum - expectedRealized) > 0.01) {
+    if (netRealizedTotal !== undefined && Math.abs(matrixSum - netRealizedTotal) > 0.01) {
       throw new Error(
-        `Invariant violated: Table F quarterly accrued gains (${matrixSum}) do not sum to net realized gain (${expectedRealized})`
+        `Invariant violated: Table F quarterly accrued gains (${matrixSum}) do not sum to net realized gain (${netRealizedTotal})`
       );
     }
   }
 
   // 2. Section 112A Exemption Statutory Limit Invariant
-  const isPostBudget = fy >= '2024-25';
-  const statutoryLimit = isPostBudget ? 125000 : 100000;
-
   const claimedExemption =
     report.exemptLtcg ??
     report.totalExemption ??
@@ -349,10 +362,17 @@ export function verifyItrInvariants(report: any): void {
     report.exempt_ltcg_112a ??
     report.exemptionClaimed;
 
-  if (claimedExemption !== undefined && claimedExemption > statutoryLimit + 0.01) {
-    throw new Error(
-      `Invariant violated: Section 112A exemption claimed (${claimedExemption}) exceeds statutory limit (${statutoryLimit}) for FY ${fy}`
-    );
+  if (claimedExemption !== undefined) {
+    if (claimedExemption < -0.001) {
+      throw new Error(
+        `Invariant violated: Section 112A exemption claimed cannot be negative (${claimedExemption})`
+      );
+    }
+    if (claimedExemption > statutoryLimit + 0.01) {
+      throw new Error(
+        `Invariant violated: Section 112A exemption claimed (${claimedExemption}) exceeds statutory limit (${statutoryLimit}) for FY ${fy}`
+      );
+    }
   }
 
   // 3. Non-Negative Taxable Gain Invariant
