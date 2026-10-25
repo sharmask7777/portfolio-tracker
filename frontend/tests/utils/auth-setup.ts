@@ -1,10 +1,13 @@
 import { Page } from '@playwright/test';
+import { attachPageErrorListener, BasePageOptions } from '../pom/base.page';
 
 /**
  * Minimal auth setup for E2E tests.
  * localStorage injection is now handled by playwright.config.ts storageState.
  */
-export async function setupAuth(page: Page) {
+export async function setupAuth(page: Page, options: BasePageOptions = {}) {
+  // Attach unhandled page-error listener so browser runtime exceptions fail tests immediately
+  attachPageErrorListener(page, options);
   // 1. Mock the auth check endpoint to prevent any network-based session invalidation
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
@@ -86,7 +89,7 @@ export async function setupAuth(page: Page) {
 /**
  * Setup auth specifically for tests that disable global storageState (like logout).
  */
-export async function setupAuthLogout(page: Page) {
+export async function setupAuthLogout(page: Page, options: BasePageOptions = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem('bypass-auth', 'true');
     window.localStorage.setItem('token', 'mock-token');
@@ -96,5 +99,5 @@ export async function setupAuthLogout(page: Page) {
       name: 'Test User'
     }));
   });
-  await setupAuth(page);
+  await setupAuth(page, options);
 }
