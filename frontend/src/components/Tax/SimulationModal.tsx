@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
 import { X, AlertCircle, Info, TrendingDown } from 'lucide-react';
+import type { SimulationSellResponse, FolioView, RealizedGain } from '../../types/generated';
 
 interface SimulationModalProps {
-  folio: any;
+  folio: FolioView;
   onClose: () => void;
   initialUnits?: number;
   taxSlab: number;
@@ -11,17 +12,19 @@ interface SimulationModalProps {
 
 export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose, initialUnits, taxSlab }) => {
   const [amount, setAmount] = useState('');
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<SimulationSellResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const getPrice = () => {
-    if (folio.metrics?.currentPrice > 0) return folio.metrics.currentPrice;
+  const getPrice = (): number => {
+    if (folio.metrics?.currentPrice && folio.metrics.currentPrice > 0) {
+      return folio.metrics.currentPrice;
+    }
     if (folio.transactions && folio.transactions.length > 0) {
       const sorted = [...folio.transactions].sort((a, b) => 
         new Date(b.date).getTime() - new Date(a.date).getTime()
       );
-      return sorted[0].nav || 0;
+      return sorted[0]?.nav || 0;
     }
     return 0;
   };
@@ -30,7 +33,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
   const parsedAmount = parseFloat(amount.replace(/,/g, ''));
   const unitsToSell = (currentPrice > 0 && !isNaN(parsedAmount)) ? (parsedAmount / currentPrice) : 0;
 
-  const handleSimulate = async (overrideUnits?: number) => {
+  const handleSimulate = async (overrideUnits?: number): Promise<void> => {
     const units = overrideUnits !== undefined ? overrideUnits : unitsToSell;
     
     if (isNaN(units) || units <= 0) {
@@ -41,18 +44,21 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
     try {
       setLoading(true);
       setError('');
-      const res = await api.post(`${API_ENDPOINTS.TAX}/simulate-sell`, {
+      const res = await api.post<SimulationSellResponse>(`${API_ENDPOINTS.TAX}/simulate-sell`, {
         folioId: folio.id,
         units: units,
         taxSlab: taxSlab,
         currentPrice: currentPrice > 0 ? currentPrice : undefined,
       });
       setResult(res.data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Simulation API Error:', err);
-      const backendError = err.response?.data?.error;
-      const axiosError = err.message;
-      setError(backendError || axiosError || 'Simulation failed');
+      let errorMessage = 'Simulation failed';
+      if (err && typeof err === 'object') {
+        const anyErr = err as { response?: { data?: { error?: string } }; message?: string };
+        errorMessage = anyErr.response?.data?.error || anyErr.message || errorMessage;
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -65,7 +71,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
     }
   }, [initialUnits, currentPrice]);
 
-  const formatCurrency = (val: number) => {
+  const formatCurrency = (val: number): string => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -98,23 +104,27 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
           const sorted = [...(folio.transactions || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
           const lots: { type: string; units: number }[] = [];
           for (const tx of sorted) {
-            const units = Math.abs(tx.units || 0);
+            const rawUnits = tx.units;
+            if (rawUnits === undefined || rawUnits === null || isNaN(rawUnits)) continue;
+            const units = Math.abs(rawUnits);
             if (units <= 0.000001) continue;
-            if (!tx.type) continue; // skip transactions with missing type
-            const type = tx.type.toLowerCase();
+            const type = (tx.type || '').toLowerCase();
+            if (!type) continue; // skip transactions with missing type
             if (type.includes('buy') || type.includes('purchase') || type.includes('sip') || type.includes('switch_in') || type.includes('reinvestment') || type.includes('opening_balance') || type.includes('bonus')) {
-              lots.push({ type: tx.type, units });
+              lots.push({ type: tx.type || '', units });
             } else if (type.includes('sell') || type.includes('redemption') || type.includes('switch_out') || type.includes('transfer_out') || type.includes('off_market')) {
-              let unitsToSell = units;
-              while (unitsToSell > 0.000001 && lots.length > 0) {
-                const sold = Math.min(unitsToSell, lots[0].units);
-                lots[0].units -= sold;
-                unitsToSell -= sold;
-                if (lots[0].units <= 0.000001) lots.shift();
+              let remainingUnitsToSell = units;
+              while (remainingUnitsToSell > 0.000001 && lots.length > 0) {
+                const head = lots[0];
+                if (!head) break;
+                const sold = Math.min(remainingUnitsToSell, head.units);
+                head.units -= sold;
+                remainingUnitsToSell -= sold;
+                if (head.units <= 0.000001) lots.shift();
               }
             }
           }
-          return lots.some(lot => (lot.type?.toLowerCase().includes('opening_balance') || lot.type === 'OPENING_BALANCE') && lot.units > 0.000001);
+          return lots.some(lot => ((lot.type || '').toLowerCase().includes('opening_balance') || lot.type === 'OPENING_BALANCE') && lot.units > 0.000001);
         })() && (
           <div className="card" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid var(--warning-color)', marginBottom: '1rem', color: 'var(--warning-color)' }}>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -179,13 +189,29 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
             const totalCess = (tb.ltcg?.cess ?? 0) + (tb.stcg?.cess ?? 0) + (tb.slab?.cess ?? 0);
 
             // Determine effective rates from matched lots, defaulting to Budget 2024 statutory rates
-            const ltcgLot = result.matchedLots?.find((l: any) => l.tax_type === 'Ltcg' || l.taxType === 'LTCG');
-            const ltcgRate = ltcgLot?.tax_rate ?? ltcgLot?.taxRate;
-            const ltcgRateLabel = ltcgRate === 0.1 || ltcgRate === '0.1' || ltcgRate === '0.10' ? '10%' : '12.5%';
+            const isLtcg = (l: RealizedGain): boolean => {
+              const t = (l.taxType || (l as unknown as { tax_type?: string }).tax_type || '').toUpperCase();
+              return t === 'LTCG';
+            };
+            const isStcg = (l: RealizedGain): boolean => {
+              const t = (l.taxType || (l as unknown as { tax_type?: string }).tax_type || '').toUpperCase();
+              return t === 'STCG';
+            };
+            const getLotRate = (l?: RealizedGain): number | undefined => {
+              if (!l) return undefined;
+              const rate = l.taxRate ?? (l as unknown as { tax_rate?: number | string }).tax_rate;
+              if (typeof rate === 'number') return rate;
+              if (typeof rate === 'string') return parseFloat(rate);
+              return undefined;
+            };
 
-            const stcgLot = result.matchedLots?.find((l: any) => l.tax_type === 'Stcg' || l.taxType === 'STCG');
-            const stcgRate = stcgLot?.tax_rate ?? stcgLot?.taxRate;
-            const stcgRateLabel = stcgRate === 0.15 || stcgRate === '0.15' ? '15%' : '20%';
+            const ltcgLot = result.matchedLots?.find(isLtcg);
+            const ltcgRate = getLotRate(ltcgLot);
+            const ltcgRateLabel = ltcgRate === 0.1 ? '10%' : '12.5%';
+
+            const stcgLot = result.matchedLots?.find(isStcg);
+            const stcgRate = getLotRate(stcgLot);
+            const stcgRateLabel = stcgRate === 0.15 ? '15%' : '20%';
 
             return (
               <div className="animate-fade">

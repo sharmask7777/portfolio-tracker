@@ -79,6 +79,18 @@ describe('SimulationModal', () => {
     expect(screen.getByText(/Withdrawal Simulation/i)).toBeInTheDocument();
   });
 
+  it('does not throw TypeError when transactions have missing type or zero price', () => {
+    const incompleteFolio = {
+      id: 'f1',
+      name: 'Test Fund',
+      metrics: { currentPrice: 0 },
+      transactions: [{ date: '2024-01-01', nav: 50 }] // no 'type' field
+    };
+    expect(() => {
+      render(<SimulationModal folio={incompleteFolio as any} onClose={() => {}} taxSlab={0.3} />);
+    }).not.toThrow();
+  });
+
   it('renders Budget 2024 LTCG (12.5%), STCG (20%), Cess (4%), and Exit Load when simulation succeeds', async () => {
     const api = (await import('../../api')).default;
     const mockPost = vi.mocked(api.post);

@@ -235,6 +235,7 @@ pub struct RealizedGain {
     pub section: TaxSection,
     pub buy_date: NaiveDate,
     pub sell_date: NaiveDate,
+    #[ts(type = "number")]
     pub holding_period_days: i64,
     pub holding_type: HoldingType,
     pub units: Units,

@@ -296,6 +296,33 @@ describe('TaxView', () => {
     expect(screen.getAllByText(/0\.000 units/i).length).toBeGreaterThanOrEqual(1);
   });
 
+  it('does NOT crash when harvesting opportunity has undefined or non-number unitsToHarvest', () => {
+    const harvestingWithUndefined = {
+      totalPotentialHarvest: 50000,
+      estimatedTaxSavings: 6250,
+      opportunities: [
+        { folioId: 'f1', schemeName: 'Equity Fund', unitsToHarvest: undefined as any },
+      ],
+    };
+
+    const currentFYSummary = {
+      ...mockSummary,
+      details: [
+        {
+          ...mockSummary.details[0],
+          sellDate: '2026-10-10',
+          advanceTaxQuarter: 'Q3 (16/09 - 15/12)',
+        },
+      ],
+    };
+
+    expect(() =>
+      render(<TaxView summary={currentFYSummary} harvesting={harvestingWithUndefined} />)
+    ).not.toThrow();
+
+    expect(screen.getByText(/0\.000 units/i)).toBeInTheDocument();
+  });
+
   it('does NOT crash when a gain detail has an undefined taxType (regression: toLowerCase on undefined)', () => {
     const summaryWithUndefinedTaxType = {
       ...mockSummary,
