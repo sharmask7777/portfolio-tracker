@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { SimulationModal } from './SimulationModal';
 import { describe, it, expect, vi } from 'vitest';
+import type { FolioView } from '../../types/generated';
 
 vi.mock('../../api', () => ({
   default: {
@@ -80,14 +81,29 @@ describe('SimulationModal', () => {
   });
 
   it('does not throw TypeError when transactions have missing type or zero price', () => {
-    const incompleteFolio = {
+    const incompleteFolio: FolioView = {
       id: 'f1',
       name: 'Test Fund',
       metrics: { currentPrice: 0 },
-      transactions: [{ date: '2024-01-01', nav: 50 }] // no 'type' field
+      transactions: [{ date: '2024-01-01', nav: 50 }], // no 'type' field
     };
     expect(() => {
-      render(<SimulationModal folio={incompleteFolio as any} onClose={() => {}} taxSlab={0.3} />);
+      render(<SimulationModal folio={incompleteFolio} onClose={() => {}} taxSlab={0.3} />);
+    }).not.toThrow();
+  });
+
+  it('guards against NaN dates when sorting transactions in getPrice', () => {
+    const invalidDateFolio: FolioView = {
+      id: 'f1',
+      name: 'Test Fund',
+      metrics: { currentPrice: 0 },
+      transactions: [
+        { date: 'invalid-date', nav: 50 },
+        { date: '2024-01-01', nav: 60 },
+      ],
+    };
+    expect(() => {
+      render(<SimulationModal folio={invalidDateFolio} onClose={() => {}} taxSlab={0.3} />);
     }).not.toThrow();
   });
 
