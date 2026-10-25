@@ -10,6 +10,7 @@ use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use ts_rs::TS;
 use uuid::Uuid;
 
 use portfolio_core::holdings::get_latest_units;
@@ -52,28 +53,39 @@ pub struct SummaryParams {
     pub family_group_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct SummaryMetrics {
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub total_invested: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub total_value: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub post_tax_total_value: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub total_gain: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub absolute_return: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub xirr: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub post_tax_xirr: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub estimated_tax: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub day_change: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub day_change_percentage: Decimal,
 }
 
@@ -157,20 +169,29 @@ where
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct FolioSummary {
     pub folio_id: Uuid,
     pub folio_number: String,
     pub scheme_name: String,
     pub asset_type: String,
+    #[ts(type = "number")]
     pub units: Decimal,
+    #[ts(type = "number")]
     pub current_price: Decimal,
+    #[ts(type = "number")]
     pub invested_amount: Decimal,
+    #[ts(type = "number")]
     pub current_value: Decimal,
+    #[ts(type = "number")]
     pub total_gain: Decimal,
+    #[ts(type = "number")]
     pub absolute_return: Decimal,
+    #[ts(optional = nullable, type = "number")]
     pub cagr: Option<Decimal>,
+    #[ts(optional = nullable, type = "number")]
     pub xirr: Option<Decimal>,
 }
 

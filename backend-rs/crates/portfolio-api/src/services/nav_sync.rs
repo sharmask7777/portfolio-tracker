@@ -128,6 +128,7 @@ impl NavSyncService {
         let url = format!("{base}/mf/{amfi_code}/latest");
 
         let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_millis(500))
             .timeout(std::time::Duration::from_secs(3))
             .build()?;
 

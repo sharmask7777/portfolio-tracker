@@ -8,6 +8,7 @@ use axum::{Json, Router};
 use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use uuid::Uuid;
 
 use portfolio_core::error::PortfolioError;
@@ -27,36 +28,52 @@ use crate::routes::portfolio::{
 };
 use crate::state::AppState;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-pub struct SimulateSellRequest {
+#[ts(rename_all = "camelCase")]
+pub struct SimulationSellRequest {
+    #[ts(optional = nullable)]
     pub folio_id: Option<Uuid>,
+    #[ts(optional = nullable)]
     pub asset_name: Option<String>,
+    #[ts(optional = nullable)]
     pub asset_type: Option<String>,
+    #[ts(type = "number")]
     pub units: Decimal,
+    #[ts(optional = nullable, type = "number")]
     pub current_price: Option<Decimal>,
+    #[ts(optional = nullable, type = "number")]
     pub tax_slab: Option<Decimal>,
+    #[ts(optional = nullable)]
     pub sell_date: Option<NaiveDate>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+pub type SimulateSellRequest = SimulationSellRequest;
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct TaxBreakdownItem {
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub amount: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub tax: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub cess: Decimal,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct TaxBreakdown {
     pub stcg: TaxBreakdownItem,
     pub ltcg: TaxBreakdownItem,
     pub slab: TaxBreakdownItem,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub total_tax: Decimal,
 }
 
@@ -104,29 +121,63 @@ impl TaxBreakdown {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-pub struct SimulationResponse {
+#[ts(rename_all = "camelCase")]
+pub struct SimulationSellResponse {
     pub asset_name: String,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub units_to_sell: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub estimated_value: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub total_gain: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub taxable_gain: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub estimated_tax: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub exit_load: Decimal,
     pub tax_breakdown: TaxBreakdown,
     pub matched_lots: Vec<RealizedGain>,
 }
 
-fn to_simulation_response(sim: SellSimulation) -> SimulationResponse {
+pub type SimulationResponse = SimulationSellResponse;
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TaxViewResponse {
+    pub breakdown: TaxBreakdown,
+    pub matched_lots: Vec<RealizedGain>,
+}
+
+pub trait TsExportExt: TS {
+    fn export_to(path: impl AsRef<std::path::Path>) -> Result<(), Box<dyn std::error::Error>>
+    where
+        Self: 'static,
+    {
+        let content = Self::export_to_string()?;
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
+        Ok(())
+    }
+}
+
+impl<T: TS + ?Sized> TsExportExt for T {}
+
+fn to_simulation_response(sim: SellSimulation) -> SimulationSellResponse {
     let tax_breakdown = TaxBreakdown::from_matched_lots(&sim.matched_lots);
-    SimulationResponse {
+    SimulationSellResponse {
         asset_name: sim.asset_name,
         units_to_sell: sim.units_to_sell.to_decimal(),
         estimated_value: sim.estimated_value.to_decimal(),

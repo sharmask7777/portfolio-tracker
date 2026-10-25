@@ -6,6 +6,10 @@ set -e
 echo "Running Rust backend workspace tests..."
 (cd backend-rs && cargo test --workspace)
 
+echo "Verifying TypeScript contracts parity..."
+(cd backend-rs && cargo test --package portfolio-api --test export_bindings)
+git diff --exit-code frontend/src/types/generated || (echo "❌ Frontend types drift detected! Commit updated generated types." && exit 1)
+
 echo "Running Rust parity validation harness..."
 (cd backend-rs && cargo run --package portfolio-parity)
 

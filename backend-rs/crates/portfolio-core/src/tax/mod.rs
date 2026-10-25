@@ -7,6 +7,7 @@ pub mod rules;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::holdings::{Transaction, process_fifo_lots};
 use crate::types::{AssetType, FolioNumber, Isin, Money, Nav, Pan, Units};
@@ -25,7 +26,8 @@ pub use rules::{
 };
 
 /// Indian Income Tax capital gains classification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export_to = "TaxType.ts")]
 pub enum TaxType {
     Stcg,
     Ltcg,
@@ -33,7 +35,8 @@ pub enum TaxType {
 }
 
 /// Relevant IT Act sections for capital gains under Pre/Post-Budget 2024 rules.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export_to = "TaxSection.ts")]
 pub enum TaxSection {
     Sec111A15,
     Sec111A20,
@@ -61,14 +64,16 @@ impl std::fmt::Display for TaxSection {
 }
 
 /// Holding period classification (Short-Term vs Long-Term).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export_to = "HoldingType.ts")]
 pub enum HoldingType {
     ShortTerm,
     LongTerm,
 }
 
 /// Statutory advance tax quarters adjusted for Budget 2024 (23 July 2024).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export_to = "AdvanceTaxQuarter.ts")]
 pub enum AdvanceTaxQuarter {
     #[serde(rename = "Q1 (01/04 - 15/06)")]
     Q1,
@@ -218,8 +223,9 @@ impl BuyLot {
 }
 
 /// Detailed calculation for a single realized gain matching a redemption to a buy lot.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export_to = "RealizedGain.ts", rename_all = "camelCase")]
 pub struct RealizedGain {
     pub asset_name: String,
     pub folio_number: Option<FolioNumber>,
@@ -242,6 +248,7 @@ pub struct RealizedGain {
     pub transfer_expenses: Money,
     pub gain: Money,
     pub tax_type: TaxType,
+    #[ts(type = "number")]
     pub tax_rate: Decimal,
     pub tax_before_cess: Money,
     pub cess: Money,
