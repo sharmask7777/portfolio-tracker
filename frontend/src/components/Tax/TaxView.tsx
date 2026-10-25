@@ -90,8 +90,10 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
   };
 
   const dates = getFYDates(selectedFY);
-  const filteredDetails = (summary.details || []).filter((g: ITRGainDetail) => {
+  const filteredDetails: ITRGainDetail[] = (summary.details || []).filter((g: ITRGainDetail) => {
+    if (!g.sellDate) return false;
     const sellDate = new Date(g.sellDate);
+    if (isNaN(sellDate.getTime())) return false;
     return sellDate >= dates.start && sellDate <= dates.end;
   });
 
@@ -345,7 +347,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
                     }
                   >
                     <span className="btn-link">
-                      {op.schemeName}: Sell {Number.isFinite(op.unitsToHarvest) ? op.unitsToHarvest.toFixed(3) : '0.000'} units
+                      {op.schemeName}: Sell {typeof op.unitsToHarvest === 'number' && Number.isFinite(op.unitsToHarvest) ? op.unitsToHarvest.toFixed(3) : '0.000'} units
                     </span>
                   </div>
                 ))}
@@ -582,7 +584,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
                         </span>
                       </td>
                       <td style={{ fontSize: '0.75rem' }}>{g.advanceTaxQuarter || '---'}</td>
-                      <td>{g.units.toFixed(2)}</td>
+                      <td>{typeof g.units === 'number' && Number.isFinite(g.units) ? g.units.toFixed(2) : '0.00'}</td>
                       <td>
                         {new Date(g.buyDate).toLocaleDateString()}
                         {g.isAnchorDependent && (

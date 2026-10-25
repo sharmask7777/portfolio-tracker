@@ -17,3 +17,4 @@ export * from './Nav';
 export * from './Pan';
 export * from './FolioNumber';
 export * from './Isin';
+export * from './FolioView';

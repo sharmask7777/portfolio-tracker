@@ -32,6 +32,7 @@ import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView } from './components/Analytics/IntersectionView';
 import { TaxView } from './components/Tax/TaxView';
 import { SimulationModal } from './components/Tax/SimulationModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AddAssetModal } from './components/Dashboard/AddAssetModal';
 import { InsightsSidebar } from './components/Insights/InsightsSidebar';
 import { GoalTracker } from './components/Insights/GoalTracker';
@@ -854,17 +855,19 @@ export function Dashboard() {
               />
             )}
             {activeTab === 'tax' && (
-              <TaxView 
-                summary={taxSummary} 
-                harvesting={harvesting} 
-                onSimulateHarvest={(folioId, units) => {
-                  const folio = portfolio.folios.find((f: any) => f.id === folioId);
-                  if (folio) {
-                    setSimFolio(folio);
-                    setSimUnits(units);
-                  }
-                }}
-              />
+              <ErrorBoundary>
+                <TaxView 
+                  summary={taxSummary} 
+                  harvesting={harvesting} 
+                  onSimulateHarvest={(folioId, units) => {
+                    const folio = portfolio.folios.find((f: any) => f.id === folioId);
+                    if (folio) {
+                      setSimFolio(folio);
+                      setSimUnits(units);
+                    }
+                  }}
+                />
+              </ErrorBoundary>
             )}
             {activeTab === 'insights' && (
               <div className="xray-grid">
@@ -889,15 +892,17 @@ export function Dashboard() {
       </main>
 
       {simFolio && (
-        <SimulationModal
-          folio={simFolio}
-          initialUnits={simUnits || undefined}
-          taxSlab={portfolio?.taxSlab || 0.3}
-          onClose={() => {
-            setSimFolio(null);
-            setSimUnits(null);
-          }}
-        />
+        <ErrorBoundary>
+          <SimulationModal
+            folio={simFolio}
+            initialUnits={simUnits || undefined}
+            taxSlab={portfolio?.taxSlab || 0.3}
+            onClose={() => {
+              setSimFolio(null);
+              setSimUnits(null);
+            }}
+          />
+        </ErrorBoundary>
       )}
       {profileToEdit && (
         <div className="modal-overlay">
