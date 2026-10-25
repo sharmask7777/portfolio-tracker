@@ -5,8 +5,9 @@ use std::str::FromStr;
 use portfolio_core::holdings::{Transaction, TransactionType};
 use portfolio_core::performance::{PerformanceOptions, get_metrics};
 use portfolio_core::tax::{
-    AdvanceTaxQuarter, TaxSection, TaxType, calculate_portfolio_tax, calculate_unrealized_tax,
-    get_exit_load, simulate_sell_transactions_with_metadata,
+    AdvanceTaxQuarter, TaxInvariantError, TaxReport, TaxSection, TaxType, calculate_portfolio_tax,
+    calculate_unrealized_tax, get_exit_load, simulate_sell_transactions_with_metadata,
+    verify_itr_invariants,
 };
 use portfolio_core::types::{AssetType, Money, Nav, Units};
 
@@ -488,4 +489,181 @@ fn test_withdrawal_simulation_stcg_20_and_exit_load() {
     assert_eq!(lot.tax_before_cess, money("1960"));
     assert_eq!(lot.cess, money("78.40"));
     assert_eq!(lot.estimated_tax, money("2038.40"));
+}
+
+fn construct_test_tax_report(
+    fy: &str,
+    net_realized: Money,
+    quarterly_gains: &[Money],
+    exempt_112a: Money,
+    taxable_stcg: Money,
+    taxable_ltcg: Money,
+) -> TaxReport {
+    use std::collections::HashMap;
+    let mut quarters = HashMap::new();
+    let q_names = [
+        AdvanceTaxQuarter::Q1.as_str(),
+        AdvanceTaxQuarter::Q2A.as_str(),
+        AdvanceTaxQuarter::Q2B.as_str(),
+        AdvanceTaxQuarter::Q3.as_str(),
+        AdvanceTaxQuarter::Q4.as_str(),
+        AdvanceTaxQuarter::Q5.as_str(),
+    ];
+    for (i, &name) in q_names.iter().enumerate() {
+        let gain = quarterly_gains.get(i).copied().unwrap_or(Money::ZERO);
+        let q_data = portfolio_core::tax::TableFQuarterData {
+            total_gain: gain,
+            ..Default::default()
+        };
+        quarters.insert(name.to_string(), q_data);
+    }
+
+    let summary = portfolio_core::tax::TaxPortfolioSummary {
+        has_synthetic_anchors: false,
+        realized: portfolio_core::tax::TaxCategorySummary {
+            stcg: taxable_stcg,
+            ltcg: taxable_ltcg,
+            slab: Money::ZERO,
+            total: net_realized,
+            taxable_stcg,
+            taxable_ltcg,
+            taxable_slab: Money::ZERO,
+            details: Vec::new(),
+        },
+        unrealized: Default::default(),
+        table_f: Some(portfolio_core::tax::AdvanceTaxAccrualMatrix {
+            quarters,
+            quarter_totals: HashMap::new(),
+        }),
+        section_totals: None,
+    };
+
+    TaxReport::new(fy, summary, exempt_112a)
+}
+
+#[test]
+fn test_itr_invariant_gate_rejects_quarterly_mismatch() {
+    // Total net realized is 500, but quarterly gains sum to 100
+    let invalid_report = construct_test_tax_report(
+        "2024-25",
+        money("500"),
+        &[
+            money("100"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+        ],
+        money("50000"),
+        money("0"),
+        money("500"),
+    );
+    let result = verify_itr_invariants(&invalid_report);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        TaxInvariantError::QuarterlyMismatch {
+            quarterly_sum,
+            net_realized,
+        } => {
+            assert_eq!(quarterly_sum, money("100"));
+            assert_eq!(net_realized, money("500"));
+        }
+        err => panic!("Unexpected error: {:?}", err),
+    }
+}
+
+#[test]
+fn test_itr_invariant_gate_rejects_exceeding_112a_exemption() {
+    // FY 2024-25 limit is 125,000, claiming 130,000
+    let invalid_report = construct_test_tax_report(
+        "2024-25",
+        money("200000"),
+        &[
+            money("200000"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+        ],
+        money("130000"),
+        money("0"),
+        money("70000"),
+    );
+    let result = verify_itr_invariants(&invalid_report);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        TaxInvariantError::ExemptionExceedsLimit { claimed, limit } => {
+            assert_eq!(claimed, money("130000"));
+            assert_eq!(limit, money("125000"));
+        }
+        err => panic!("Unexpected error: {:?}", err),
+    }
+
+    // FY 2023-24 limit is 100,000, claiming 105,000
+    let invalid_pre_report = construct_test_tax_report(
+        "2023-24",
+        money("200000"),
+        &[
+            money("200000"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+        ],
+        money("105000"),
+        money("0"),
+        money("95000"),
+    );
+    let result_pre = verify_itr_invariants(&invalid_pre_report);
+    assert!(result_pre.is_err());
+}
+
+#[test]
+fn test_itr_invariant_gate_rejects_negative_taxable_gain() {
+    let invalid_report = construct_test_tax_report(
+        "2024-25",
+        money("100"),
+        &[
+            money("100"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+        ],
+        money("0"),
+        money("-50"),
+        money("150"),
+    );
+    let result = verify_itr_invariants(&invalid_report);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        TaxInvariantError::NegativeTaxableGain { taxable_gain } => {
+            assert_eq!(taxable_gain, money("-50"));
+        }
+        err => panic!("Unexpected error: {:?}", err),
+    }
+}
+
+#[test]
+fn test_itr_invariant_gate_accepts_valid_report() {
+    let valid_report = construct_test_tax_report(
+        "2024-25",
+        money("100000"),
+        &[
+            money("20000"),
+            money("20000"),
+            money("20000"),
+            money("20000"),
+            money("10000"),
+            money("10000"),
+        ],
+        money("80000"),
+        money("20000"),
+        money("0"),
+    );
+    assert!(verify_itr_invariants(&valid_report).is_ok());
 }

@@ -46,4 +46,7 @@ pub enum PortfolioError {
 
     #[error("Parse error: {0}")]
     ParseError(String),
+
+    #[error("Tax invariant error: {0}")]
+    TaxInvariant(#[from] crate::tax::TaxInvariantError),
 }
