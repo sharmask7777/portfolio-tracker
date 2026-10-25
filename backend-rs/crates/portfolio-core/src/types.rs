@@ -6,15 +6,17 @@ use std::str::FromStr;
 
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::PortfolioError;
 
 /// Money represents a monetary amount rounded to 2 decimal places (standard currency cents/paise).
 /// Prevents floating-point precision loss.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default, TS,
 )]
 #[serde(from = "Decimal", into = "Decimal")]
+#[ts(type = "number")]
 pub struct Money(Decimal);
 
 impl Money {
@@ -240,9 +242,10 @@ impl<'a> std::iter::Sum<&'a Money> for Money {
 
 /// Units represents mutual fund or stock share count rounded to 4 decimal places.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default, TS,
 )]
 #[serde(from = "Decimal", into = "Decimal")]
+#[ts(type = "number")]
 pub struct Units(Decimal);
 
 impl Units {
@@ -486,9 +489,10 @@ impl<'a> std::iter::Sum<&'a Units> for Units {
 
 /// Nav represents the Net Asset Value per unit rounded to 4 decimal places.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default, TS,
 )]
 #[serde(from = "Decimal", into = "Decimal")]
+#[ts(type = "number")]
 pub struct Nav(Decimal);
 
 impl Nav {
@@ -595,9 +599,10 @@ impl Mul<&Units> for &Nav {
 
 /// Percentage represents a percentage value (e.g. 15.5 for 15.5%).
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default, TS,
 )]
 #[serde(transparent)]
+#[ts(type = "number")]
 pub struct Percentage(Decimal);
 
 impl Percentage {
@@ -707,7 +712,8 @@ impl Mul<&Money> for &Percentage {
 
 /// Strongly-typed Permanent Account Number (PAN) with Indian ITD validation.
 /// Format: exactly 10 characters `^[A-Z]{5}[0-9]{4}[A-Z]$`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TS)]
+#[ts(type = "string")]
 pub struct Pan(String);
 
 impl Pan {
@@ -784,7 +790,8 @@ impl<'de> Deserialize<'de> for Pan {
 }
 
 /// Strongly-typed mutual fund or brokerage folio number.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TS)]
+#[ts(type = "string")]
 pub struct FolioNumber(String);
 
 impl FolioNumber {
@@ -851,7 +858,8 @@ impl<'de> Deserialize<'de> for FolioNumber {
 
 /// Strongly-typed International Securities Identification Number (ISIN).
 /// Format: exactly 12 characters `^[A-Z]{2}[A-Z0-9]{10}$`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TS)]
+#[ts(type = "string")]
 pub struct Isin(String);
 
 impl Isin {
@@ -927,8 +935,9 @@ impl<'de> Deserialize<'de> for Isin {
 }
 
 /// Asset types supported in portfolio tracker matching PostgreSQL enum `AssetType`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[ts(export_to = "AssetType.ts")]
 pub enum AssetType {
     MutualFund,
     Stock,

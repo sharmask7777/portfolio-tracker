@@ -99,11 +99,13 @@ async fn test_fetch_latest_nav_triggers_lazy_sync_and_enforces_transaction_prior
 
     // Verify lazy sync was triggered by checking the rate limiter
     let today = chrono::Utc::now().date_naive();
-    let limiter = state.nav_rate_limiter.read().await;
-    assert!(
-        limiter.contains(&("122639".to_string(), today)),
-        "Lazy sync rate limiter entry should be recorded for today"
-    );
+    {
+        let limiter = state.nav_rate_limiter.read().await;
+        assert!(
+            limiter.contains(&("122639".to_string(), today)),
+            "Lazy sync rate limiter entry should be recorded for today"
+        );
+    }
 
     // Storing a fresh historical NAV newer than tx_date should take precedence
     let fresh_date = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
