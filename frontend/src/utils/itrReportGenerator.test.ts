@@ -6,6 +6,7 @@ import {
   calculate112AExemption,
   AdvanceTaxQuarter,
   verifyItrInvariants,
+  type ITRVerificationTarget,
 } from './itrReportGenerator';
 
 describe('itrReportGenerator', () => {
@@ -350,7 +351,7 @@ describe('itrReportGenerator', () => {
   });
 
   describe('verifyItrInvariants', () => {
-    const mockItrData = {
+    const mockItrData: ITRVerificationTarget = {
       fy: '2024-25',
       quarterlySummary: { q1: 100, q2a: 100, q2b: 100, q3: 100, q4: 50, q5: 50, total: 500 },
       exemptLtcg: 80000,
@@ -364,45 +365,45 @@ describe('itrReportGenerator', () => {
     };
 
     it('rejects ITR generation if quarterly accrued gains do not sum to total CG', () => {
-      const badData = { ...mockItrData, quarterlySummary: { q1: 100, q2: 0, q3: 0, q4: 0, total: 500 } };
-      expect(() => verifyItrInvariants(badData as any)).toThrow(/Invariant violated/);
+      const badData: ITRVerificationTarget = { ...mockItrData, quarterlySummary: { q1: 100, q2: 0, q3: 0, q4: 0, total: 500 } };
+      expect(() => verifyItrInvariants(badData)).toThrow(/Invariant violated/);
     });
 
     it('rejects ITR generation if quarterly summary total does not match portfolio realized total', () => {
-      const badData = {
+      const badData: ITRVerificationTarget = {
         ...mockItrData,
         quarterlySummary: { q1: 100, q2a: 0, q2b: 0, q3: 0, q4: 0, q5: 0, total: 100 },
         realized: { ...mockItrData.realized, total: 500 },
       };
-      expect(() => verifyItrInvariants(badData as any)).toThrow(/Invariant violated/);
+      expect(() => verifyItrInvariants(badData)).toThrow(/Invariant violated/);
     });
 
     it('rejects ITR generation if 112A exemption exceeds statutory limit', () => {
-      const badData = { ...mockItrData, exemptLtcg: 130000 };
-      expect(() => verifyItrInvariants(badData as any)).toThrow(/Invariant violated/);
+      const badData: ITRVerificationTarget = { ...mockItrData, exemptLtcg: 130000 };
+      expect(() => verifyItrInvariants(badData)).toThrow(/Invariant violated/);
 
-      const badPreBudgetData = { ...mockItrData, fy: '2023-24', exemptLtcg: 105000 };
-      expect(() => verifyItrInvariants(badPreBudgetData as any)).toThrow(/Invariant violated/);
+      const badPreBudgetData: ITRVerificationTarget = { ...mockItrData, fy: '2023-24', exemptLtcg: 105000 };
+      expect(() => verifyItrInvariants(badPreBudgetData)).toThrow(/Invariant violated/);
 
-      const badFullYearPreBudgetData = { ...mockItrData, fy: '2023-2024', exemptLtcg: 105000 };
-      expect(() => verifyItrInvariants(badFullYearPreBudgetData as any)).toThrow(/Invariant violated/);
+      const badFullYearPreBudgetData: ITRVerificationTarget = { ...mockItrData, fy: '2023-2024', exemptLtcg: 105000 };
+      expect(() => verifyItrInvariants(badFullYearPreBudgetData)).toThrow(/Invariant violated/);
     });
 
     it('rejects ITR generation if 112A exemption claimed is negative', () => {
-      const badData = { ...mockItrData, exemptLtcg: -5000 };
-      expect(() => verifyItrInvariants(badData as any)).toThrow(/Invariant violated.*negative/);
+      const badData: ITRVerificationTarget = { ...mockItrData, exemptLtcg: -5000 };
+      expect(() => verifyItrInvariants(badData)).toThrow(/Invariant violated.*negative/);
     });
 
     it('rejects ITR generation if taxable gain is negative', () => {
-      const badData = {
+      const badData: ITRVerificationTarget = {
         ...mockItrData,
         realized: { ...mockItrData.realized, taxableStcg: -50 },
       };
-      expect(() => verifyItrInvariants(badData as any)).toThrow(/Invariant violated/);
+      expect(() => verifyItrInvariants(badData)).toThrow(/Invariant violated/);
     });
 
     it('accepts valid ITR report data', () => {
-      expect(() => verifyItrInvariants(mockItrData as any)).not.toThrow();
+      expect(() => verifyItrInvariants(mockItrData)).not.toThrow();
     });
   });
 });

@@ -85,6 +85,9 @@ export interface ITRSummary {
     ltcg?: number;
     slab?: number;
     total?: number;
+    taxableStcg?: number;
+    taxableLtcg?: number;
+    taxableSlab?: number;
     details?: ITRGainDetail[];
   };
 }
@@ -279,13 +282,57 @@ export function buildAdvanceTaxMatrix(details: Partial<ITRGainDetail>[]): Advanc
   return { quarters, quarterTotals };
 }
 
+export interface ITRQuarterlySummary {
+  q1?: number;
+  q2?: number;
+  q2a?: number;
+  q2b?: number;
+  q3?: number;
+  q4?: number;
+  q5?: number;
+  total?: number;
+}
+
+export interface ITRVerificationTarget {
+  fy?: string;
+  financialYear?: string;
+  totalGain?: number;
+  totalCapitalGain?: number;
+  exemptLtcg?: number;
+  totalExemption?: number;
+  exempt112A?: number;
+  exempt_ltcg_112a?: number;
+  exemptionClaimed?: number;
+  taxableStcg?: number;
+  taxableLtcg?: number;
+  taxableSlab?: number;
+  taxableGain?: number;
+  taxableTotal?: number;
+  quarterlySummary?: ITRQuarterlySummary;
+  details?: Array<{ gain?: number }>;
+  summary?: ITRSummary;
+  advanceTaxMatrix?: AdvanceTaxAccrualMatrix;
+  tableF?: AdvanceTaxAccrualMatrix;
+  realized?: {
+    stcg?: number;
+    ltcg?: number;
+    slab?: number;
+    total?: number;
+    taxableStcg?: number;
+    taxableLtcg?: number;
+    taxableSlab?: number;
+    details?: ITRGainDetail[];
+  };
+  [key: string]: unknown;
+}
+
 /**
  * Verifies statutory ITR capital gains invariants before report generation or export:
  * 1. Sum of quarterly accrued gains across Table F equals net realized gains.
  * 2. Exempt LTCG under Sec 112A does not exceed statutory limits (₹1,25,000 post-Budget 2024, ₹1,00,000 pre-Budget 2024).
  * 3. Taxable gain cannot be negative after set-off.
  */
-export function verifyItrInvariants(report: any): void {
+export function verifyItrInvariants(report: ITRVerificationTarget): void {
   if (!report) {
     throw new Error('Invariant violated: report data is required for invariant verification');
   }
@@ -301,7 +348,7 @@ export function verifyItrInvariants(report: any): void {
     report.totalGain ??
     report.totalCapitalGain ??
     (Array.isArray(report.details)
-      ? report.details.reduce((sum: number, g: any) => sum + (g.gain ?? 0), 0)
+      ? report.details.reduce((sum: number, g: { gain?: number }) => sum + (g.gain ?? 0), 0)
       : undefined);
 
   // 1. Quarterly Accrual vs Net Realized Total Invariant

@@ -21,9 +21,11 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
       return folio.metrics.currentPrice;
     }
     if (folio.transactions && folio.transactions.length > 0) {
-      const sorted = [...folio.transactions].sort((a, b) => 
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
+      const sorted = [...folio.transactions].sort((a, b) => {
+        const timeA = Date.parse(a.date) || 0;
+        const timeB = Date.parse(b.date) || 0;
+        return timeB - timeA;
+      });
       return sorted[0]?.nav || 0;
     }
     return 0;
@@ -101,7 +103,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
           </div>
         )}
         {(() => {
-          const sorted = [...(folio.transactions || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          const sorted = [...(folio.transactions || [])].sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
           const lots: { type: string; units: number }[] = [];
           for (const tx of sorted) {
             const rawUnits = tx.units;
