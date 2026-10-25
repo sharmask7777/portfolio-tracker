@@ -1,7 +1,22 @@
+/**
+ * E2E Suite: Holdings Management
+ * Domain: Core Portfolio Operations
+ * 
+ * User Flows & Invariants Covered:
+ * 1. Initial Holdings Bootstrapping: Mock CAS upload flow triggering portfolio data population.
+ * 2. Interactive Historical Visualization: Responsive history chart supporting multi-horizon
+ *    ranges ('1M', '3M', '6M', '1Y', '3Y', '5Y', 'ALL').
+ * 3. Historical Highlights & Insights: Computation and rendering of All-Time High (ATH) Corpus,
+ *    Maximum Invested capital, and yearly milestone breakdowns.
+ * 4. Data Quality Safeguards: Verifies yearly breakdown tables never render NaN or broken states.
+ * 
+ * Synthetic Test Data Policy: Uses synthetic mock PDF and fictitious PAN passwords (ABCDE1234F).
+ */
+
 import { test, expect } from '@playwright/test';
 import { setupAuth } from './utils/auth-setup';
 
-test.describe('Milestone v4.0: Analytics & Visualization', () => {
+test.describe('Holdings Management: Historical Visualization & Insights', () => {
   test.beforeEach(async ({ page }) => {
     await setupAuth(page);
     // Navigate to the app and trigger a mock upload to populate data

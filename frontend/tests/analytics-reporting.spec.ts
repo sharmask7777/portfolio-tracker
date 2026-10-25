@@ -1,7 +1,21 @@
+/**
+ * E2E Suite: Analytics & Reporting
+ * Domain: Analytics & Reporting
+ * 
+ * User Flows & Invariants Covered:
+ * 1. Slab Change Reactivity: Dynamic recalculation of Post-Tax XIRR when user modifies
+ *    marginal tax slab rate via profile settings modal.
+ * 2. Integrated Tax Harvesting Simulation: Opening Withdrawal Simulation modal directly
+ *    from tax harvesting opportunity cards, verifying computed tax deductions and breakdown.
+ * 3. Performance Invariants: Enforcing that Post-Tax XIRR <= Pre-Tax XIRR across all table rows.
+ * 
+ * Synthetic Test Data Policy: Uses mock synthetic portfolio and profile metrics.
+ */
+
 import { test, expect } from '@playwright/test';
 import { setupAuth } from './utils/auth-setup';
 
-test.describe('Milestone v2.0 Features', () => {
+test.describe('Analytics & Reporting: Tax Reactivity, Simulation & Performance Invariants', () => {
   let currentTaxSlab = 0.3;
 
   test.beforeEach(async ({ page }) => {
