@@ -18,6 +18,7 @@ venv/
 !tsconfig.app.json
 !tsconfig.node.json
 !tests/fixtures/**
+!backend-rs/crates/portfolio-core/tests/fixtures/**
 !*.toml
 
 appdata/
