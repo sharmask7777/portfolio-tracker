@@ -64,7 +64,7 @@ test.describe('ITR Export & Schedule CG Compliance', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          realized: { stcg: 3000, ltcg: 57500, slab: 1000, total: 61500 },
+          realized: { stcg: 1000, ltcg: 27500, slab: 0, total: 28500 },
           unrealized: { stcg: 0, ltcg: 0, slab: 0, total: 0 },
           details: [
             {
