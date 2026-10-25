@@ -302,6 +302,9 @@ pub enum TaxInvariantError {
     )]
     ExemptionExceedsLimit { claimed: Money, limit: Money },
 
+    #[error("Exempt LTCG under Section 112A cannot be negative: claimed {claimed}")]
+    NegativeExemption { claimed: Money },
+
     #[error("Taxable gain cannot be negative after set-off: {taxable_gain}")]
     NegativeTaxableGain { taxable_gain: Money },
 
@@ -385,6 +388,12 @@ pub fn verify_itr_invariants(report: &TaxReport) -> Result<(), TaxInvariantError
         return Err(TaxInvariantError::QuarterlyMismatch {
             quarterly_sum,
             net_realized,
+        });
+    }
+
+    if report.exempt_ltcg_112a.is_negative() {
+        return Err(TaxInvariantError::NegativeExemption {
+            claimed: report.exempt_ltcg_112a,
         });
     }
 

@@ -368,12 +368,29 @@ describe('itrReportGenerator', () => {
       expect(() => verifyItrInvariants(badData as any)).toThrow(/Invariant violated/);
     });
 
+    it('rejects ITR generation if quarterly summary total does not match portfolio realized total', () => {
+      const badData = {
+        ...mockItrData,
+        quarterlySummary: { q1: 100, q2a: 0, q2b: 0, q3: 0, q4: 0, q5: 0, total: 100 },
+        realized: { ...mockItrData.realized, total: 500 },
+      };
+      expect(() => verifyItrInvariants(badData as any)).toThrow(/Invariant violated/);
+    });
+
     it('rejects ITR generation if 112A exemption exceeds statutory limit', () => {
       const badData = { ...mockItrData, exemptLtcg: 130000 };
       expect(() => verifyItrInvariants(badData as any)).toThrow(/Invariant violated/);
 
       const badPreBudgetData = { ...mockItrData, fy: '2023-24', exemptLtcg: 105000 };
       expect(() => verifyItrInvariants(badPreBudgetData as any)).toThrow(/Invariant violated/);
+
+      const badFullYearPreBudgetData = { ...mockItrData, fy: '2023-2024', exemptLtcg: 105000 };
+      expect(() => verifyItrInvariants(badFullYearPreBudgetData as any)).toThrow(/Invariant violated/);
+    });
+
+    it('rejects ITR generation if 112A exemption claimed is negative', () => {
+      const badData = { ...mockItrData, exemptLtcg: -5000 };
+      expect(() => verifyItrInvariants(badData as any)).toThrow(/Invariant violated.*negative/);
     });
 
     it('rejects ITR generation if taxable gain is negative', () => {

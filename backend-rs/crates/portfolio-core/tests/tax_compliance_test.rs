@@ -622,6 +622,33 @@ fn test_itr_invariant_gate_rejects_exceeding_112a_exemption() {
 }
 
 #[test]
+fn test_itr_invariant_gate_rejects_negative_112a_exemption() {
+    let invalid_report = construct_test_tax_report(
+        "2024-25",
+        money("100000"),
+        &[
+            money("100000"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+            money("0"),
+        ],
+        money("-5000"),
+        money("0"),
+        money("100000"),
+    );
+    let result = verify_itr_invariants(&invalid_report);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        TaxInvariantError::NegativeExemption { claimed } => {
+            assert_eq!(claimed, money("-5000"));
+        }
+        err => panic!("Unexpected error: {:?}", err),
+    }
+}
+
+#[test]
 fn test_itr_invariant_gate_rejects_negative_taxable_gain() {
     let invalid_report = construct_test_tax_report(
         "2024-25",
