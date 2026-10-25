@@ -278,6 +278,119 @@ export function buildAdvanceTaxMatrix(details: Partial<ITRGainDetail>[]): Advanc
   return { quarters, quarterTotals };
 }
 
+/**
+ * Verifies statutory ITR capital gains invariants before report generation or export:
+ * 1. Sum of quarterly accrued gains across Table F equals net realized gains.
+ * 2. Exempt LTCG under Sec 112A does not exceed statutory limits (₹1,25,000 post-Budget 2024, ₹1,00,000 pre-Budget 2024).
+ * 3. Taxable gain cannot be negative after set-off.
+ */
+export function verifyItrInvariants(report: any): void {
+  if (!report) {
+    throw new Error('Invariant violated: report data is required for invariant verification');
+  }
+
+  const fy = report.fy || report.financialYear || '2024-25';
+
+  // 1. Quarterly Accrual vs Net Realized Total Invariant
+  if (report.quarterlySummary) {
+    const qs = report.quarterlySummary;
+    const qSum =
+      (qs.q1 ?? 0) +
+      (qs.q2 ?? 0) +
+      (qs.q2a ?? 0) +
+      (qs.q2b ?? 0) +
+      (qs.q3 ?? 0) +
+      (qs.q4 ?? 0) +
+      (qs.q5 ?? 0);
+    const expectedTotal =
+      qs.total !== undefined
+        ? qs.total
+        : report.realized?.total ?? report.summary?.realized?.total ?? report.totalGain ?? report.totalCapitalGain;
+
+    if (expectedTotal !== undefined && Math.abs(qSum - expectedTotal) > 0.01) {
+      throw new Error(
+        `Invariant violated: quarterly accrued gains (${qSum}) do not sum to total capital gain (${expectedTotal})`
+      );
+    }
+  }
+
+  const matrix: AdvanceTaxAccrualMatrix | undefined =
+    report.advanceTaxMatrix || report.tableF || report.summary?.tableF;
+  if (matrix && matrix.quarters) {
+    let matrixSum = 0;
+    for (const qKey of Object.keys(matrix.quarters)) {
+      const qData = matrix.quarters[qKey as AdvanceTaxQuarter];
+      if (qData) {
+        matrixSum += qData.totalGain ?? 0;
+      }
+    }
+    const expectedRealized =
+      report.realized?.total ??
+      report.summary?.realized?.total ??
+      (Array.isArray(report.details)
+        ? report.details.reduce((sum: number, g: any) => sum + (g.gain ?? 0), 0)
+        : undefined);
+
+    if (expectedRealized !== undefined && Math.abs(matrixSum - expectedRealized) > 0.01) {
+      throw new Error(
+        `Invariant violated: Table F quarterly accrued gains (${matrixSum}) do not sum to net realized gain (${expectedRealized})`
+      );
+    }
+  }
+
+  // 2. Section 112A Exemption Statutory Limit Invariant
+  const isPostBudget = fy >= '2024-25';
+  const statutoryLimit = isPostBudget ? 125000 : 100000;
+
+  const claimedExemption =
+    report.exemptLtcg ??
+    report.totalExemption ??
+    report.exempt112A ??
+    report.exempt_ltcg_112a ??
+    report.exemptionClaimed;
+
+  if (claimedExemption !== undefined && claimedExemption > statutoryLimit + 0.01) {
+    throw new Error(
+      `Invariant violated: Section 112A exemption claimed (${claimedExemption}) exceeds statutory limit (${statutoryLimit}) for FY ${fy}`
+    );
+  }
+
+  // 3. Non-Negative Taxable Gain Invariant
+  const taxableStcg =
+    report.realized?.taxableStcg ?? report.summary?.realized?.taxableStcg ?? report.taxableStcg;
+  const taxableLtcg =
+    report.realized?.taxableLtcg ?? report.summary?.realized?.taxableLtcg ?? report.taxableLtcg;
+  const taxableSlab =
+    report.realized?.taxableSlab ?? report.summary?.realized?.taxableSlab ?? report.taxableSlab;
+  const totalTaxable =
+    report.taxableGain ??
+    report.taxableTotal ??
+    (taxableStcg !== undefined || taxableLtcg !== undefined || taxableSlab !== undefined
+      ? (taxableStcg ?? 0) + (taxableLtcg ?? 0) + (taxableSlab ?? 0)
+      : undefined);
+
+  if (taxableStcg !== undefined && taxableStcg < -0.001) {
+    throw new Error(
+      `Invariant violated: taxable STCG cannot be negative after set-off (${taxableStcg})`
+    );
+  }
+  if (taxableLtcg !== undefined && taxableLtcg < -0.001) {
+    throw new Error(
+      `Invariant violated: taxable LTCG cannot be negative after set-off (${taxableLtcg})`
+    );
+  }
+  if (taxableSlab !== undefined && taxableSlab < -0.001) {
+    throw new Error(
+      `Invariant violated: taxable slab gain cannot be negative after set-off (${taxableSlab})`
+    );
+  }
+  if (totalTaxable !== undefined && totalTaxable < -0.001) {
+    throw new Error(
+      `Invariant violated: taxable gain cannot be negative after set-off (${totalTaxable})`
+    );
+  }
+}
+
 function escapeCSV(val: unknown): string {
   if (val === undefined || val === null) return '';
   const str = String(val);
@@ -384,6 +497,14 @@ export function generateITRReportCSV(params: ITRReportParams): string {
 
   // Build Advance Tax Matrix (Table F)
   const matrix = params.advanceTaxMatrix || buildAdvanceTaxMatrix(details);
+
+  // Invariant verification gate before report export
+  verifyItrInvariants({
+    ...params,
+    fy,
+    advanceTaxMatrix: matrix,
+    totalExemption: exemptionRes.totalExemption,
+  });
 
   const dueDates: Record<AdvanceTaxQuarter, string> = {
     [AdvanceTaxQuarter.Q1]: `15/06/${startYear}`,

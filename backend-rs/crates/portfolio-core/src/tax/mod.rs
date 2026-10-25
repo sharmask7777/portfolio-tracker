@@ -7,6 +7,7 @@ pub mod rules;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use ts_rs::TS;
 
 use crate::holdings::{Transaction, process_fifo_lots};
@@ -283,6 +284,143 @@ pub struct TaxPortfolioSummary {
     pub unrealized: TaxCategorySummary,
     pub table_f: Option<AdvanceTaxAccrualMatrix>,
     pub section_totals: Option<SectionTotalsMap>,
+}
+
+/// Invariant validation errors for statutory ITR capital gains reports.
+#[derive(Debug, Error, PartialEq, Eq, Clone)]
+pub enum TaxInvariantError {
+    #[error(
+        "Quarterly accrued gains mismatch: sum of Table F quarters is {quarterly_sum}, but net realized gain is {net_realized}"
+    )]
+    QuarterlyMismatch {
+        quarterly_sum: Money,
+        net_realized: Money,
+    },
+
+    #[error(
+        "Exempt LTCG under Section 112A exceeds statutory limit: claimed {claimed}, limit {limit}"
+    )]
+    ExemptionExceedsLimit { claimed: Money, limit: Money },
+
+    #[error("Taxable gain cannot be negative after set-off: {taxable_gain}")]
+    NegativeTaxableGain { taxable_gain: Money },
+
+    #[error("Missing Table F advance tax matrix")]
+    MissingTableF,
+}
+
+/// Complete capital gains tax report for statutory filing (ITR Schedule CG).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxReport {
+    pub financial_year: String,
+    pub assessment_year: Option<String>,
+    pub assessee_name: Option<String>,
+    pub pan: Option<Pan>,
+    pub summary: TaxPortfolioSummary,
+    pub exempt_ltcg_112a: Money,
+}
+
+impl TaxReport {
+    pub fn new(
+        financial_year: impl Into<String>,
+        summary: TaxPortfolioSummary,
+        exempt_ltcg_112a: Money,
+    ) -> Self {
+        Self {
+            financial_year: financial_year.into(),
+            assessment_year: None,
+            assessee_name: None,
+            pan: None,
+            summary,
+            exempt_ltcg_112a,
+        }
+    }
+
+    pub fn with_pan(mut self, pan: Pan) -> Self {
+        self.pan = Some(pan);
+        self
+    }
+
+    pub fn with_assessee_name(mut self, name: impl Into<String>) -> Self {
+        self.assessee_name = Some(name.into());
+        self
+    }
+
+    pub fn with_assessment_year(mut self, ay: impl Into<String>) -> Self {
+        self.assessment_year = Some(ay.into());
+        self
+    }
+}
+
+/// Returns the Section 112A statutory LTCG exemption limit for a given Financial Year.
+pub fn get_112a_statutory_limit(financial_year: &str) -> Money {
+    let start_year = financial_year
+        .split('-')
+        .next()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(2024);
+    if start_year >= 2024 {
+        ltcg_exemption_limit_budget_2024()
+    } else {
+        ltcg_exemption_limit_pre_budget_2024()
+    }
+}
+
+/// Verifies statutory ITR capital gains invariants before report generation/export:
+/// 1. Sum of quarterly accrued gains across Table F equals net realized gains.
+/// 2. Exempt LTCG under Sec 112A does not exceed statutory limits (₹1,25,000 post-Budget 2024, ₹1,00,000 pre-Budget 2024).
+/// 3. Taxable gain cannot be negative after set-off.
+pub fn verify_itr_invariants(report: &TaxReport) -> Result<(), TaxInvariantError> {
+    let table_f = report
+        .summary
+        .table_f
+        .as_ref()
+        .ok_or(TaxInvariantError::MissingTableF)?;
+
+    let quarterly_sum: Money = table_f.quarters.values().map(|q| q.total_gain).sum();
+    let net_realized = report.summary.realized.total;
+
+    if quarterly_sum != net_realized {
+        return Err(TaxInvariantError::QuarterlyMismatch {
+            quarterly_sum,
+            net_realized,
+        });
+    }
+
+    let limit = get_112a_statutory_limit(&report.financial_year);
+    if report.exempt_ltcg_112a > limit {
+        return Err(TaxInvariantError::ExemptionExceedsLimit {
+            claimed: report.exempt_ltcg_112a,
+            limit,
+        });
+    }
+
+    if report.summary.realized.taxable_stcg.is_negative() {
+        return Err(TaxInvariantError::NegativeTaxableGain {
+            taxable_gain: report.summary.realized.taxable_stcg,
+        });
+    }
+    if report.summary.realized.taxable_ltcg.is_negative() {
+        return Err(TaxInvariantError::NegativeTaxableGain {
+            taxable_gain: report.summary.realized.taxable_ltcg,
+        });
+    }
+    if report.summary.realized.taxable_slab.is_negative() {
+        return Err(TaxInvariantError::NegativeTaxableGain {
+            taxable_gain: report.summary.realized.taxable_slab,
+        });
+    }
+    let total_taxable = report.summary.realized.taxable_stcg
+        + report.summary.realized.taxable_ltcg
+        + report.summary.realized.taxable_slab;
+    if total_taxable.is_negative() {
+        return Err(TaxInvariantError::NegativeTaxableGain {
+            taxable_gain: total_taxable,
+        });
+    }
+
+    Ok(())
 }
 
 /// Result of simulating a unit redemption, including tax impact and lock-in verification.
