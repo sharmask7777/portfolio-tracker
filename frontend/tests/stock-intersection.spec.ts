@@ -123,6 +123,104 @@ test.describe('Stock Intersection Pane & Overlap E2E Suite', () => {
     await expect(table.getByText('HDFC Bank Ltd.')).toBeVisible();
   });
 
+  test('Exclude Arbitrage Funds toggle sends excludeArbitrage query, updates checkbox, and filters stock list', async ({ page }) => {
+    const allExposures = [
+      {
+        name: 'HDFC Bank Ltd.',
+        sector: 'Financial Services',
+        absoluteValue: 150000,
+        percentage: 0.15,
+        contributions: [
+          { schemeName: 'Parag Parikh Flexi Cap Fund', value: 82000, weight: 8.2 },
+          { schemeName: 'Arbitrage Advantage Fund', value: 68000, weight: 6.8 },
+        ],
+      },
+      {
+        name: 'Tata Motors Ltd.',
+        sector: 'Consumer Cyclical',
+        absoluteValue: 30000,
+        percentage: 0.03,
+        contributions: [
+          { schemeName: 'Arbitrage Advantage Fund', value: 30000, weight: 3.0 },
+        ],
+      },
+    ];
+
+    const filteredExposures = [
+      {
+        name: 'HDFC Bank Ltd.',
+        sector: 'Financial Services',
+        absoluteValue: 82000,
+        percentage: 0.10,
+        contributions: [
+          { schemeName: 'Parag Parikh Flexi Cap Fund', value: 82000, weight: 8.2 },
+        ],
+      },
+    ];
+
+    await page.route('**/api/portfolio/*/exposures*', async (route) => {
+      const url = route.request().url();
+      if (url.includes('excludeArbitrage=true')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(filteredExposures),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(allExposures),
+        });
+      }
+    });
+
+    await page.goto('/');
+    await expect(page.locator('.logo')).toBeVisible({ timeout: 10000 });
+
+    // Switch to Stock Intersection tab
+    const intersectionTab = page.getByRole('button', { name: /Stock Intersection/i });
+    await expect(intersectionTab).toBeVisible();
+    await intersectionTab.click();
+
+    const intersectionView = page.locator('.intersection-view');
+    await expect(intersectionView).toBeVisible();
+
+    // Table rendered and initially shows Tata Motors Ltd. from arbitrage fund
+    const table = intersectionView.locator('table.data-table');
+    await expect(table).toBeVisible();
+    await expect(table.getByText('HDFC Bank Ltd.')).toBeVisible();
+    await expect(table.getByText('Tata Motors Ltd.')).toBeVisible();
+
+    // Checkbox is initially unchecked
+    const toggle = page.getByLabel('Exclude Arbitrage Funds');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+
+    // Click toggle to exclude arbitrage funds and verify request sent with ?excludeArbitrage=true
+    const [request] = await Promise.all([
+      page.waitForRequest((req) => req.url().includes('excludeArbitrage=true')),
+      toggle.click(),
+    ]);
+    expect(request.url()).toContain('excludeArbitrage=true');
+
+    // Verify checkbox is now checked
+    await expect(toggle).toBeChecked();
+
+    // Verify stock list updated: Tata Motors Ltd. is excluded
+    await expect(table.getByText('HDFC Bank Ltd.')).toBeVisible();
+    await expect(table.getByText('Tata Motors Ltd.')).not.toBeVisible();
+
+    // Toggle back off: verify request sent with ?excludeArbitrage=false and data restored
+    const [uncheckReq] = await Promise.all([
+      page.waitForRequest((req) => req.url().includes('excludeArbitrage=false')),
+      toggle.click(),
+    ]);
+    expect(uncheckReq.url()).toContain('excludeArbitrage=false');
+    await expect(toggle).not.toBeChecked();
+    await expect(table.getByText('Tata Motors Ltd.')).toBeVisible();
+  });
+
   test('Top Stock Exposure widget on Overview card handles exposures gracefully', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('.logo')).toBeVisible({ timeout: 10000 });

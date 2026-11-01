@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use portfolio_api::{AppState, create_app, resolve_holdings};
+use portfolio_api::{AppState, create_app, get_stock_sector, resolve_holdings};
 use portfolio_db::InMemoryDatabase;
 use portfolio_db::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
 
@@ -1374,6 +1374,32 @@ async fn test_resolve_holdings_differentiated_categories() {
     if let (Some(a), Some(n)) = (arb_hdfc, nifty_hdfc) {
         assert_ne!(a.weight, n.weight);
     }
+
+    // Mirae Asset large cap vs US equity ETF discrimination
+    let (mirae_lc_name, mirae_lc_holdings) =
+        resolve_holdings("INF769K01DP4", "Mirae Asset Large Cap Fund");
+    assert_eq!(mirae_lc_name, "Mirae Asset Large Cap Fund");
+    assert!(mirae_lc_holdings.iter().any(|h| h.name == "HDFC Bank Ltd."));
+
+    let (mirae_us_name, mirae_us_holdings) =
+        resolve_holdings("MIRAE_FANG", "Mirae Asset NYSE FANG+ ETF Fund of Fund");
+    assert_ne!(mirae_us_name, "Mirae Asset Large Cap Fund");
+    assert!(mirae_us_holdings.iter().any(|h| h.name == "Apple Inc."));
+    assert!(!mirae_us_holdings.iter().any(|h| h.name == "HDFC Bank Ltd."));
+
+    // Sector mapping assertions
+    assert_eq!(
+        get_stock_sector("Tata Consultancy Services Ltd."),
+        "Technology"
+    );
+    assert_eq!(get_stock_sector("TCS Ltd."), "Technology");
+    assert_eq!(get_stock_sector("REC Ltd."), "Financial Services");
+    assert_eq!(get_stock_sector("REC Limited"), "Financial Services");
+    // Direct/recovery should NOT falsely match "rec"
+    assert_ne!(
+        get_stock_sector("Direct Marketing Ltd."),
+        "Financial Services"
+    );
 }
 
 #[tokio::test]

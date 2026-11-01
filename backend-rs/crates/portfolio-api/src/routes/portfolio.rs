@@ -750,7 +750,8 @@ pub fn get_stock_sector(name: &str) -> &'static str {
     if lower.contains("bank")
         || lower.contains("financial")
         || lower.contains("bajaj")
-        || lower.contains("rec")
+        || lower.contains("rec ltd")
+        || lower.starts_with("rec ")
         || lower.contains("pfc")
         || lower.contains("power finance")
         || lower.contains("cholamandalam")
@@ -762,6 +763,7 @@ pub fn get_stock_sector(name: &str) -> &'static str {
     } else if lower.contains("tech")
         || lower.contains("infosys")
         || lower.contains("tcs")
+        || lower.contains("tata consultancy")
         || lower.contains("wipro")
         || lower.contains("alphabet")
         || lower.contains("microsoft")
@@ -903,7 +905,14 @@ pub fn resolve_holdings(isin: &str, scheme_name: &str) -> (String, Vec<FundHoldi
                 FundHolding::new("Bharti Airtel Ltd.", dec("4.0")),
             ],
         )
-    } else if isin == "INF769K01DP4" || lower_name.contains("mirae") {
+    } else if isin == "INF769K01DP4"
+        || (lower_name.contains("mirae")
+            && !lower_name.contains("nasdaq")
+            && !lower_name.contains("s&p")
+            && !lower_name.contains("s and p")
+            && !lower_name.contains("fang")
+            && !lower_name.contains("us equity"))
+    {
         (
             "Mirae Asset Large Cap Fund".to_string(),
             vec![
@@ -917,6 +926,7 @@ pub fn resolve_holdings(isin: &str, scheme_name: &str) -> (String, Vec<FundHoldi
     } else if lower_name.contains("nasdaq")
         || lower_name.contains("s&p 500")
         || lower_name.contains("s and p 500")
+        || lower_name.contains("fang")
         || lower_name.contains("us equity")
         || lower_name.contains("total stock market")
     {
