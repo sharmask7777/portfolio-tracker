@@ -13,4 +13,116 @@ import type { Units } from "./Units";
 /**
  * Detailed calculation for a single realized gain matching a redemption to a buy lot.
  */
-export type RealizedGain = { assetName: string, folioNumber: FolioNumber | null, isin: Isin | null, pan: Pan | null, assetClass: string, section: TaxSection, buyDate: string, sellDate: string, holdingPeriodDays: number, holdingType: HoldingType, units: Units, buyNav: Nav, sellNav: Nav, grossConsideration: Money, costOfAcquisition: Money, fmvAsOfJan312018: Nav, totalFmvJan312018: Money, deemedCostOfAcquisition: Money, transferExpenses: Money, gain: Money, taxType: TaxType, taxRate: number, taxBeforeCess: Money, cess: Money, estimatedTax: Money, isGrandfathered: boolean, grandfatheredStatus: string, advanceTaxQuarter: AdvanceTaxQuarter | null, };
+export type RealizedGain = { 
+/**
+ * Asset or mutual fund scheme name.
+ */
+assetName: string, 
+/**
+ * Account folio number.
+ */
+folioNumber: FolioNumber | null, 
+/**
+ * ISIN of the underlying security.
+ */
+isin: Isin | null, 
+/**
+ * Permanent Account Number (PAN) of the folio owner.
+ */
+pan: Pan | null, 
+/**
+ * Asset class (e.g. "Equity", "Debt", "Fixed Deposit").
+ */
+assetClass: string, 
+/**
+ * Statutory section under which gain is taxed (e.g. Sec112A12_5, Sec111A20).
+ */
+section: TaxSection, 
+/**
+ * Acquisition date of the matched buy lot.
+ */
+buyDate: string, 
+/**
+ * Date when units were redeemed or sold.
+ */
+sellDate: string, 
+/**
+ * Number of calendar days held.
+ */
+holdingPeriodDays: number, 
+/**
+ * Short-Term vs Long-Term classification.
+ */
+holdingType: HoldingType, 
+/**
+ * Number of units redeemed.
+ */
+units: Units, 
+/**
+ * Original purchase NAV per unit.
+ */
+buyNav: Nav, 
+/**
+ * Redemption NAV per unit.
+ */
+sellNav: Nav, 
+/**
+ * Gross proceeds received on sale (`units * sell_nav`).
+ */
+grossConsideration: Money, 
+/**
+ * Historical cost of acquisition (`units * buy_nav`).
+ */
+costOfAcquisition: Money, 
+/**
+ * Fair Market Value per unit as of 31-Jan-2018 (Section 55(2)(ac)).
+ */
+fmvAsOfJan312018: Nav, 
+/**
+ * Total FMV as of 31-Jan-2018 (`units * fmv`).
+ */
+totalFmvJan312018: Money, 
+/**
+ * Deemed statutory cost of acquisition under Section 55(2)(ac).
+ */
+deemedCostOfAcquisition: Money, 
+/**
+ * Transfer expenses or exit load deducted from proceeds.
+ */
+transferExpenses: Money, 
+/**
+ * Realized capital gain or loss (`gross_consideration - deemed_cost - expenses`).
+ */
+gain: Money, 
+/**
+ * Tax treatment category (Ltcg, Stcg, Slab).
+ */
+taxType: TaxType, 
+/**
+ * Nominal statutory tax rate applied to positive gains.
+ */
+taxRate: number, 
+/**
+ * Tax liability prior to 4% cess.
+ */
+taxBeforeCess: Money, 
+/**
+ * 4% Health and Education Cess.
+ */
+cess: Money, 
+/**
+ * Total estimated statutory tax liability.
+ */
+estimatedTax: Money, 
+/**
+ * Whether Section 55(2)(ac) grandfathering was applied.
+ */
+isGrandfathered: boolean, 
+/**
+ * Descriptive description of grandfathering status.
+ */
+grandfatheredStatus: string, 
+/**
+ * Advance tax quarter in which the redemption occurred.
+ */
+advanceTaxQuarter: AdvanceTaxQuarter | null, };

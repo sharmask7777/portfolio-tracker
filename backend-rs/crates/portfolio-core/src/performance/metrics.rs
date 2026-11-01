@@ -1,4 +1,14 @@
 //! Performance metrics calculation (Invested, Current Value, Gains, Absolute Return, CAGR, XIRR).
+//!
+//! Provides comprehensive portfolio return analytics adhering to institutional financial standards:
+//!
+//! - **Absolute Return**: Net nominal gain as a percentage of total invested capital:
+//!   $$\text{Absolute Return} = \frac{\text{Current Value} - \text{Invested Capital}}{\text{Invested Capital}}$$
+//! - **CAGR (Compound Annual Growth Rate)**: Point-to-point geometric progression rate:
+//!   $$\text{CAGR} = \left(\frac{\text{Current Value}}{\text{Invested Capital}}\right)^{\frac{365.25}{\text{days}}} - 1$$
+//! - **XIRR (Internal Rate of Return)**: Cash-flow-weighted annualized return solving $NPV(r) = 0$.
+//! - **Post-Tax Returns**: Calculates estimated unrealized tax liability using applicable tax slabs
+//!   and derives net-of-tax portfolio value, post-tax absolute return, and post-tax XIRR.
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -14,52 +24,72 @@ use crate::types::{AssetType, Money, Nav, Units};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PerformanceMetrics {
+    /// Total capital invested across active holding units.
     pub invested_amount: Money,
+    /// Current gross market valuation (`units * current_nav`).
     pub current_value: Money,
+    /// Total nominal capital gain or loss (`current_value - invested_amount`).
     pub total_gain: Money,
+    /// Simple nominal percentage return (`total_gain / invested_amount`).
     pub absolute_return: Decimal,
+    /// Annualized compound growth rate for multi-day single-investment spans.
     pub cagr: Option<Decimal>,
+    /// Money-weighted annualized internal rate of return across all cash flows.
     pub xirr: Option<Decimal>,
+    /// Annualized internal rate of return net of estimated unrealized capital gains tax.
     pub post_tax_xirr: Option<Decimal>,
+    /// Absolute percentage return net of estimated unrealized capital gains tax.
     pub post_tax_absolute_return: Option<Decimal>,
+    /// Estimated statutory tax liability on unrealized gains.
     pub estimated_tax: Option<Money>,
 }
 
 /// Optional configuration and overrides for performance calculation.
 #[derive(Debug, Clone, Default)]
 pub struct PerformanceOptions {
+    /// Explicit unit balance override (e.g. from CAMS/KFintech CAS statement).
     pub current_units_override: Option<Units>,
+    /// Marginal tax slab applicable to the investor (e.g. `0.30` for 30%).
     pub tax_slab: Option<Decimal>,
+    /// Asset class (MutualFund, Stock, etc.).
     pub asset_type: Option<AssetType>,
+    /// Scheme or security name.
     pub asset_name: Option<String>,
+    /// As-of evaluation date for valuation and XIRR terminal cash flow.
     pub as_of_date: Option<NaiveDate>,
 }
 
 impl PerformanceOptions {
+    /// Creates a new default [`PerformanceOptions`].
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Builder method specifying an explicit active unit balance override.
     pub fn with_units_override(mut self, units: Units) -> Self {
         self.current_units_override = Some(units);
         self
     }
 
+    /// Builder method specifying the investor's tax slab.
     pub fn with_tax_slab(mut self, slab: Decimal) -> Self {
         self.tax_slab = Some(slab);
         self
     }
 
+    /// Builder method specifying the asset type.
     pub fn with_asset_type(mut self, asset_type: AssetType) -> Self {
         self.asset_type = Some(asset_type);
         self
     }
 
+    /// Builder method specifying the asset name.
     pub fn with_asset_name(mut self, asset_name: impl Into<String>) -> Self {
         self.asset_name = Some(asset_name.into());
         self
     }
 
+    /// Builder method specifying the valuation as-of date.
     pub fn with_as_of_date(mut self, date: NaiveDate) -> Self {
         self.as_of_date = Some(date);
         self
@@ -67,6 +97,8 @@ impl PerformanceOptions {
 }
 
 /// Calculates absolute return: `(current_value - invested_amount) / invested_amount`.
+///
+/// Returns `Decimal::ZERO` if invested amount is zero or negative.
 pub fn calculate_absolute_return(invested_amount: Money, current_value: Money) -> Decimal {
     if invested_amount.is_zero() || invested_amount.is_negative() {
         return Decimal::ZERO;
@@ -77,7 +109,16 @@ pub fn calculate_absolute_return(invested_amount: Money, current_value: Money) -
 
 /// Calculates Compound Annual Growth Rate (CAGR).
 ///
-/// Formula: `(current_value / invested_amount) ^ (1 / years) - 1`, where `years = diff_days / 365.25`.
+/// # Mathematical Formulation:
+///
+/// $$\text{CAGR} = \left(\frac{\text{current\_value}}{\text{invested\_amount}}\right)^{\frac{1}{\text{years}}} - 1$$
+///
+/// where $\text{years} = \frac{\text{end\_date} - \text{start\_date}}{365.25}$.
+/// The 365.25 factor accounts for leap years over multi-year holding periods.
+///
+/// # Errors
+/// - [`PortfolioError::InvalidTransaction`] if `invested_amount <= 0`, `current_value < 0`,
+///   or `end_date <= start_date`.
 pub fn calculate_cagr(
     invested_amount: Money,
     current_value: Money,
@@ -132,7 +173,18 @@ pub fn calculate_cagr(
     }
 }
 
-/// Aggregates metrics for a given set of transactions and current valuation price.
+/// Aggregates performance metrics for a given set of transactions and current valuation price.
+///
+/// # Return Computation Process:
+/// 1. Resolves active units using options override or [`crate::holdings::get_latest_units`].
+/// 2. If active units are zero or negative, computes realized XIRR across past cash flows
+///    and sets current holding values to zero.
+/// 3. Computes active invested capital via FIFO tax lot cost basis (`units * purchase_nav`).
+/// 4. Computes gross market value, nominal gain, absolute return, and CAGR.
+/// 5. Constructs dated cash flows including a terminal cash flow `+current_value` at `as_of_date`
+///    and solves for annualized XIRR.
+/// 6. If tax slab and asset details are provided, calculates estimated unrealized capital gains tax,
+///    post-tax valuation, post-tax absolute return, and post-tax XIRR.
 pub fn get_metrics(
     transactions: &[Transaction],
     current_price: Nav,

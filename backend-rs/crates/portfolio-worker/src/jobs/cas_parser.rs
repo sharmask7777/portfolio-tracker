@@ -1,4 +1,15 @@
 //! Background worker job for parsing and ingesting CAS PDF / JSON statements.
+//!
+//! ## Worker Pipeline Architecture:
+//! - **BullMQ Queue Integration**: Ingests jobs from `bull:pdfUploadQueue:*` or in-memory job queue.
+//! - **Sandboxing & Path Validation**: Enforces strict filesystem sandboxing ensuring input files reside
+//!   exclusively within `uploads/` or system temp directories, rejecting any directory traversal (`..`).
+//! - **Python Fallback Engine**: Executes Python `casparser` utility for parsing encrypted/raw CAMS & KFintech
+//!   PDF statements, converting output to structured JSON.
+//! - **Multi-PAN Isolation**: Intelligently inspects PAN tags across Scheme -> Folio -> Investor hierarchies,
+//!   automatically partitioning folios across family members and distinct managed profiles.
+//! - **Historical Timeline Recalculation**: Post ingestion, schedules `HistoryRefreshJobData` to reconstruct
+//!   point-in-time daily valuation and invested timelines.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -16,89 +27,127 @@ use crate::jobs::{HistoryRefreshJobData, ProcessPdfUploadJobData, process_histor
 /// In-memory CAS Statement models mapping casparser JSON output.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CasStatement {
+    /// Primary investor personal identifying information.
     #[serde(default)]
     pub investor_info: Option<CasInvestorInfo>,
+    /// Alternate alias for investor info emitted by some parser versions.
     #[serde(default)]
     pub investor: Option<CasInvestorInfo>,
+    /// Collection of mutual fund folios contained in the statement.
     #[serde(default)]
     pub folios: Vec<CasFolio>,
 }
 
+/// Investor demographic and tax identification details parsed from CAS statements.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CasInvestorInfo {
+    /// Investor legal name.
     #[serde(default)]
     pub name: Option<String>,
+    /// Contact email address.
     #[serde(default)]
     pub email: Option<String>,
+    /// Tax identifier (Permanent Account Number).
     #[serde(default)]
     pub pan: Option<String>,
+    /// Uppercase PAN alias.
     #[serde(default, rename = "PAN")]
     pub pan_upper: Option<String>,
+    /// Contact mobile number.
     #[serde(default)]
     pub mobile: Option<String>,
+    /// Registered correspondence address.
     #[serde(default)]
     pub address: Option<String>,
 }
 
+/// Mutual fund folio container grouping multiple schemes under an AMC.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CasFolio {
+    /// Folio account number.
     #[serde(default)]
     pub folio: String,
+    /// Asset Management Company name (e.g. "HDFC Mutual Fund").
     #[serde(default)]
     pub amc: Option<String>,
+    /// Folio-level PAN identifier.
     #[serde(default)]
     pub pan: Option<String>,
+    /// Uppercase PAN alias.
     #[serde(default, rename = "PAN")]
     pub pan_upper: Option<String>,
+    /// Schemes held within this folio account.
     #[serde(default)]
     pub schemes: Vec<CasScheme>,
 }
 
+/// Mutual fund scheme holding record containing valuation and transaction ledger.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CasScheme {
+    /// Scheme name string.
     #[serde(default)]
     pub scheme: Option<String>,
+    /// Alternate name field.
     #[serde(default)]
     pub name: Option<String>,
+    /// Scheme ISIN identifier (e.g. "INF209K01165").
     #[serde(default)]
     pub isin: Option<String>,
+    /// AMFI code identifier (e.g. "120716").
     #[serde(default)]
     pub amfi: Option<String>,
+    /// Scheme-level PAN override (used for multi-PAN folios).
     #[serde(default)]
     pub pan: Option<String>,
+    /// Uppercase PAN alias.
     #[serde(default, rename = "PAN")]
     pub pan_upper: Option<String>,
+    /// Closing unit balance as of statement date.
     #[serde(default)]
     pub close: Option<Decimal>,
+    /// Closing market valuation summary.
     #[serde(default)]
     pub valuation: Option<CasValuation>,
+    /// Chronological ledger of historical transactions.
     #[serde(default)]
     pub transactions: Vec<CasTransaction>,
 }
 
+/// Scheme market valuation snapshot as reported in CAS statement.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CasValuation {
+    /// Valuation as-of date string.
     #[serde(default)]
     pub date: Option<String>,
+    /// NAV price as of statement date.
     #[serde(default)]
     pub nav: Option<Decimal>,
+    /// Total historical acquisition cost.
     #[serde(default)]
     pub cost: Option<Decimal>,
+    /// Total current market valuation.
     #[serde(default)]
     pub value: Option<Decimal>,
 }
 
+/// Individual transaction record in CAS statement ledger.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CasTransaction {
+    /// Transaction transaction date string.
     pub date: String,
+    /// Transaction type descriptor (e.g. "PURCHASE", "REDEMPTION", "SWITCH_IN").
     #[serde(rename = "type")]
     pub tx_type: String,
+    /// Transacted units (if applicable).
     #[serde(default)]
     pub units: Option<Decimal>,
+    /// Transacted monetary amount in INR.
     #[serde(default)]
     pub amount: Option<Decimal>,
+    /// Transaction unit price / NAV.
     #[serde(default)]
     pub nav: Option<Decimal>,
+    /// Post-transaction cumulative balance.
     #[serde(default)]
     pub balance: Option<Decimal>,
 }
@@ -477,8 +526,8 @@ async fn process_cas_file_internal(
     // Step 6: Recalculate historical valuation timeline for all touched portfolios
     let mut touched_vec: Vec<uuid::Uuid> = touched_portfolios.into_iter().collect();
     touched_vec.sort();
-    for p_id in touched_vec {
-        let refresh_data = HistoryRefreshJobData::new(p_id);
+    for portfolio_id in touched_vec {
+        let refresh_data = HistoryRefreshJobData::new(portfolio_id);
         process_history_refresh_job(&refresh_data, db).await?;
     }
 

@@ -1,4 +1,16 @@
 //! Thread-safe in-memory database mock for fast hermetic testing.
+//!
+//! # Architecture & Concurrency Model
+//! `InMemoryDatabase` provides a sub-millisecond, zero-I/O in-memory simulation of the
+//! PostgreSQL database layer. It is built on `Arc<RwLock<InMemoryDatabaseState>>`:
+//! - **Concurrent Readers**: Multiple test threads or asynchronous tasks can acquire concurrent
+//!   read locks (`RwLock::read`) to inspect data without blocking each other.
+//! - **Synchronized Mutations**: State mutations acquire write locks (`RwLock::write`), ensuring
+//!   strict linearizability and race-free state transitions during test runs.
+//! - **Relational Emulation**: Replicates foreign key validation, cascading deletions (User ->
+//!   Profile -> Portfolio -> Folio -> Transaction), and unique constraint checking in pure memory.
+//! - **Deterministic Sorting**: Transaction listings and portfolio queries enforce deterministic
+//!   multi-key ordering matching PostgreSQL SQL semantics (e.g. `date ASC, createdAt ASC, id ASC`).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -18,50 +30,64 @@ use crate::repositories::{
     FamilyRepository, FundHoldingsRepository, PortfolioRepository, TransactionRepository,
 };
 
-/// In-memory storage state holding entity tables.
+/// In-memory storage state holding entity tables as hash maps.
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryDatabaseState {
+    /// Table storing user accounts keyed by user UUID.
     pub users: HashMap<Uuid, UserEntity>,
+    /// Table storing managed family profiles keyed by profile UUID.
     pub profiles: HashMap<Uuid, ManagedProfileEntity>,
+    /// Table storing investment portfolios keyed by portfolio UUID.
     pub portfolios: HashMap<Uuid, PortfolioEntity>,
+    /// Table storing security/asset catalog entries keyed by asset UUID.
     pub assets: HashMap<Uuid, AssetEntity>,
+    /// Table storing investor folios keyed by folio UUID.
     pub folios: HashMap<Uuid, FolioEntity>,
+    /// Table storing ledger transactions keyed by transaction UUID.
     pub transactions: HashMap<Uuid, TransactionEntity>,
+    /// Table storing family group containers keyed by group UUID.
     pub family_groups: HashMap<Uuid, FamilyGroupEntity>,
+    /// Table storing family membership links keyed by membership UUID.
     pub family_members: HashMap<Uuid, FamilyMemberEntity>,
+    /// Table storing asynchronous statement upload jobs keyed by job UUID.
     pub upload_jobs: HashMap<Uuid, UploadJobEntity>,
+    /// Table storing daily historical NAV time series keyed by `(amfi_code, date)`.
     pub historical_navs: HashMap<(String, NaiveDate), HistoricalNavEntity>,
+    /// Table storing historical portfolio valuation snapshots keyed by `(portfolio_id, date)`.
     pub historical_valuations: HashMap<(Uuid, NaiveDate), HistoricalValuationEntity>,
+    /// Table storing AMC fund look-through equity disclosures keyed by `(isin, as_of_date, stock_name)`.
     pub fund_holdings: HashMap<(String, NaiveDate, String), FundHoldingEntity>,
 }
 
 /// Thread-safe in-memory database mock.
-/// Supports concurrent reads and synchronized mutations for sub-millisecond tests.
+/// Supports concurrent reads and synchronized mutations for sub-millisecond hermetic tests.
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryDatabase {
     state: Arc<RwLock<InMemoryDatabaseState>>,
 }
 
 impl InMemoryDatabase {
+    /// Creates a new `InMemoryDatabase` pre-seeded with a default test user
+    /// matching the PostgreSQL schema DDL seed (`00000000-0000-0000-0000-000000000001`).
     pub fn new() -> Self {
-        let db = Self {
+        let database = Self {
             state: Arc::new(RwLock::new(InMemoryDatabaseState::default())),
         };
-        let test_user_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
-        db.create_user_with_id(test_user_id, "test@example.com", "test");
-        db
+        let default_test_user_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        database.create_user_with_id(default_test_user_id, "test@example.com", "test");
+        database
     }
 
-    /// Resets all data in the in-memory database.
+    /// Resets all data in the in-memory database and restores the default test user.
     pub fn clear(&self) {
         let mut state = self.state.write().expect("lock poisoned");
         *state = InMemoryDatabaseState::default();
-        let test_user_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let default_test_user_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
         let now = Utc::now();
         state.users.insert(
-            test_user_id,
+            default_test_user_id,
             UserEntity {
-                id: test_user_id,
+                id: default_test_user_id,
                 email: "test@example.com".to_string(),
                 password_hash: "test".to_string(),
                 created_at: now,
@@ -74,6 +100,7 @@ impl InMemoryDatabase {
     // User helpers
     // -----------------------------------------------------------------------
 
+    /// Creates and persists a user record with an explicit UUID.
     pub fn create_user_with_id(&self, id: Uuid, email: &str, password_hash: &str) -> UserEntity {
         let mut state = self.state.write().expect("lock poisoned");
         let now = Utc::now();
@@ -88,6 +115,7 @@ impl InMemoryDatabase {
         user
     }
 
+    /// Generates a random UUID and creates a new user record.
     pub fn create_user(&self, email: &str, password_hash: &str) -> UserEntity {
         let mut state = self.state.write().expect("lock poisoned");
         let id = Uuid::new_v4();
@@ -103,17 +131,19 @@ impl InMemoryDatabase {
         user
     }
 
+    /// Retrieves a user record by its UUID.
     pub fn get_user(&self, id: Uuid) -> Option<UserEntity> {
         let state = self.state.read().expect("lock poisoned");
         state.users.get(&id).cloned()
     }
 
+    /// Finds a user record by email address (case-insensitive).
     pub fn get_user_by_email(&self, email: &str) -> Option<UserEntity> {
         let state = self.state.read().expect("lock poisoned");
         state
             .users
             .values()
-            .find(|u| u.email.eq_ignore_ascii_case(email.trim()))
+            .find(|user| user.email.eq_ignore_ascii_case(email.trim()))
             .cloned()
     }
 
@@ -121,6 +151,7 @@ impl InMemoryDatabase {
     // Asset helpers
     // -----------------------------------------------------------------------
 
+    /// Creates and persists a financial asset in the asset catalog.
     pub fn create_asset(
         &self,
         asset_type: &str,
@@ -137,9 +168,9 @@ impl InMemoryDatabase {
             id,
             asset_type: asset_type.to_string(),
             name: name.to_string(),
-            isin: isin.map(|s| s.to_string()),
-            amfi_code: amfi_code.map(|s| s.to_string()),
-            symbol: symbol.map(|s| s.to_string()),
+            isin: isin.map(|isin_str| isin_str.to_string()),
+            amfi_code: amfi_code.map(|code_str| code_str.to_string()),
+            symbol: symbol.map(|sym_str| sym_str.to_string()),
             exit_load_metadata,
             created_at: now,
             updated_at: now,
@@ -148,6 +179,7 @@ impl InMemoryDatabase {
         asset
     }
 
+    /// Retrieves an asset record by its UUID.
     pub fn get_asset(&self, id: Uuid) -> Option<AssetEntity> {
         let state = self.state.read().expect("lock poisoned");
         state.assets.get(&id).cloned()
@@ -157,6 +189,10 @@ impl InMemoryDatabase {
     // Folio helpers
     // -----------------------------------------------------------------------
 
+    /// Creates and persists a new folio, validating foreign key existence of portfolio and asset.
+    ///
+    /// # Errors
+    /// Returns [`DbError::PortfolioNotFound`] or [`DbError::AssetNotFound`] if foreign keys are invalid.
     pub fn create_folio(
         &self,
         portfolio_id: Uuid,
@@ -180,8 +216,8 @@ impl InMemoryDatabase {
             portfolio_id,
             asset_id,
             number: number.to_string(),
-            amc: amc.map(|s| s.to_string()),
-            pan: pan.map(|s| s.to_string()),
+            amc: amc.map(|amc_str| amc_str.to_string()),
+            pan: pan.map(|pan_str| pan_str.to_string()),
             created_at: now,
             updated_at: now,
         };
@@ -189,68 +225,80 @@ impl InMemoryDatabase {
         Ok(folio)
     }
 
+    /// Retrieves a folio record by its UUID.
     pub fn get_folio(&self, id: Uuid) -> Option<FolioEntity> {
         let state = self.state.read().expect("lock poisoned");
         state.folios.get(&id).cloned()
     }
 
+    /// Lists all folios within a portfolio, ordered by creation date.
     pub fn list_folios_by_portfolio(&self, portfolio_id: Uuid) -> Vec<FolioEntity> {
         let state = self.state.read().expect("lock poisoned");
         let mut folios: Vec<FolioEntity> = state
             .folios
             .values()
-            .filter(|f| f.portfolio_id == portfolio_id)
+            .filter(|folio| folio.portfolio_id == portfolio_id)
             .cloned()
             .collect();
-        folios.sort_by_key(|f| f.created_at);
+        folios.sort_by_key(|folio| folio.created_at);
         folios
     }
 
+    /// Deletes a folio by UUID, cascading deletion to all its child ledger transactions.
     pub fn delete_folio(&self, id: Uuid) -> bool {
         let mut state = self.state.write().expect("lock poisoned");
         if state.folios.remove(&id).is_some() {
-            state.transactions.retain(|_, tx| tx.folio_id != id);
+            state
+                .transactions
+                .retain(|_, transaction| transaction.folio_id != id);
             true
         } else {
             false
         }
     }
 
+    /// Purges all data associated with a user account across portfolios, folios,
+    /// transactions, profiles, and upload jobs.
     pub fn purge_user_data(&self, user_id: Uuid) {
         let mut state = self.state.write().expect("lock poisoned");
         let portfolio_ids: HashSet<Uuid> = state
             .portfolios
             .values()
-            .filter(|p| p.user_id == user_id)
-            .map(|p| p.id)
+            .filter(|portfolio| portfolio.user_id == user_id)
+            .map(|portfolio| portfolio.id)
             .collect();
 
         let folio_ids: HashSet<Uuid> = state
             .folios
             .values()
-            .filter(|f| portfolio_ids.contains(&f.portfolio_id))
-            .map(|f| f.id)
+            .filter(|folio| portfolio_ids.contains(&folio.portfolio_id))
+            .map(|folio| folio.id)
             .collect();
 
         state
             .transactions
-            .retain(|_, tx| !folio_ids.contains(&tx.folio_id));
+            .retain(|_, transaction| !folio_ids.contains(&transaction.folio_id));
 
         state
             .folios
-            .retain(|_, f| !portfolio_ids.contains(&f.portfolio_id));
+            .retain(|_, folio| !portfolio_ids.contains(&folio.portfolio_id));
 
-        state.portfolios.retain(|_, p| p.user_id != user_id);
+        state
+            .portfolios
+            .retain(|_, portfolio| portfolio.user_id != user_id);
 
-        state.profiles.retain(|_, p| p.user_id != user_id);
+        state
+            .profiles
+            .retain(|_, profile| profile.user_id != user_id);
 
-        state.upload_jobs.retain(|_, j| j.user_id != user_id);
+        state.upload_jobs.retain(|_, job| job.user_id != user_id);
     }
 
     // -----------------------------------------------------------------------
     // UploadJob helpers
     // -----------------------------------------------------------------------
 
+    /// Creates and persists an asynchronous upload job in the `Pending` state.
     pub fn create_upload_job(&self, id: Uuid, user_id: Uuid, file_path: &str) -> UploadJobEntity {
         let mut state = self.state.write().expect("lock poisoned");
         let now = Utc::now();
@@ -269,16 +317,23 @@ impl InMemoryDatabase {
         job
     }
 
+    /// Directly inserts a fully constructed upload job entity.
     pub fn insert_upload_job(&self, job: UploadJobEntity) {
         let mut state = self.state.write().expect("lock poisoned");
         state.upload_jobs.insert(job.id, job);
     }
 
+    /// Retrieves an upload job by its UUID.
     pub fn get_upload_job(&self, id: Uuid) -> Option<UploadJobEntity> {
         let state = self.state.read().expect("lock poisoned");
         state.upload_jobs.get(&id).cloned()
     }
 
+    /// Updates the status and message of an upload job, maintaining lifecycle timestamps
+    /// (`started_at` when entering `Processing`, `completed_at` when entering `Completed`/`Failed`).
+    ///
+    /// # Errors
+    /// Returns [`DbError::UploadJobNotFound`] if the job does not exist.
     pub fn update_upload_job_status(
         &self,
         id: Uuid,
@@ -303,14 +358,17 @@ impl InMemoryDatabase {
         Ok(job.clone())
     }
 
+    /// Transitions an upload job status to `Processing`.
     pub fn set_upload_job_processing(&self, id: Uuid) -> Result<UploadJobEntity, DbError> {
         self.update_upload_job_status(id, UploadJobStatus::Processing, None)
     }
 
+    /// Transitions an upload job status to `Completed`.
     pub fn set_upload_job_completed(&self, id: Uuid) -> Result<UploadJobEntity, DbError> {
         self.update_upload_job_status(id, UploadJobStatus::Completed, None)
     }
 
+    /// Transitions an upload job status to `Failed` with an error message.
     pub fn set_upload_job_failed(
         &self,
         id: Uuid,
@@ -323,6 +381,7 @@ impl InMemoryDatabase {
     // NAV helpers
     // -----------------------------------------------------------------------
 
+    /// Persists a NAV entry for an AMFI code and date into historical NAV storage.
     pub fn store_nav(&self, amfi_code: &str, date: NaiveDate, nav: Decimal) -> HistoricalNavEntity {
         let mut state = self.state.write().expect("lock poisoned");
         let id = Uuid::new_v4();
@@ -340,6 +399,7 @@ impl InMemoryDatabase {
         record
     }
 
+    /// Looks up a historical NAV entry for an AMFI code and date.
     pub fn get_nav(&self, amfi_code: &str, date: NaiveDate) -> Option<HistoricalNavEntity> {
         let state = self.state.read().expect("lock poisoned");
         state
@@ -348,15 +408,16 @@ impl InMemoryDatabase {
             .cloned()
     }
 
+    /// Lists all stored NAV entries for an AMFI code, ordered chronologically by date.
     pub fn list_navs(&self, amfi_code: &str) -> Vec<HistoricalNavEntity> {
         let state = self.state.read().expect("lock poisoned");
         let mut navs: Vec<HistoricalNavEntity> = state
             .historical_navs
             .values()
-            .filter(|n| n.amfi_code == amfi_code)
+            .filter(|nav_record| nav_record.amfi_code == amfi_code)
             .cloned()
             .collect();
-        navs.sort_by_key(|n| n.date);
+        navs.sort_by_key(|nav_record| nav_record.date);
         navs
     }
 
@@ -364,6 +425,7 @@ impl InMemoryDatabase {
     // Historical Valuation helpers
     // -----------------------------------------------------------------------
 
+    /// Persists a daily portfolio valuation snapshot (value and cost basis).
     pub fn store_historical_valuation(
         &self,
         portfolio_id: Uuid,
@@ -388,15 +450,16 @@ impl InMemoryDatabase {
         record
     }
 
+    /// Lists historical valuation snapshots for a portfolio, ordered chronologically by date.
     pub fn list_historical_valuations(&self, portfolio_id: Uuid) -> Vec<HistoricalValuationEntity> {
         let state = self.state.read().expect("lock poisoned");
         let mut list: Vec<HistoricalValuationEntity> = state
             .historical_valuations
             .values()
-            .filter(|v| v.portfolio_id == portfolio_id)
+            .filter(|valuation| valuation.portfolio_id == portfolio_id)
             .cloned()
             .collect();
-        list.sort_by_key(|v| v.date);
+        list.sort_by_key(|valuation| valuation.date);
         list
     }
 
@@ -404,33 +467,37 @@ impl InMemoryDatabase {
     // Lookup helpers
     // -----------------------------------------------------------------------
 
+    /// Looks up an asset by its ISIN identifier.
     pub fn find_asset_by_isin(&self, isin: &str) -> Option<AssetEntity> {
         let state = self.state.read().expect("lock poisoned");
         state
             .assets
             .values()
-            .find(|a| a.isin.as_deref() == Some(isin))
+            .find(|asset| asset.isin.as_deref() == Some(isin))
             .cloned()
     }
 
+    /// Looks up an asset by its AMFI scheme code.
     pub fn find_asset_by_amfi_code(&self, amfi_code: &str) -> Option<AssetEntity> {
         let state = self.state.read().expect("lock poisoned");
         state
             .assets
             .values()
-            .find(|a| a.amfi_code.as_deref() == Some(amfi_code))
+            .find(|asset| asset.amfi_code.as_deref() == Some(amfi_code))
             .cloned()
     }
 
+    /// Looks up an asset by its name (case-insensitive).
     pub fn find_asset_by_name(&self, name: &str) -> Option<AssetEntity> {
         let state = self.state.read().expect("lock poisoned");
         state
             .assets
             .values()
-            .find(|a| a.name.eq_ignore_ascii_case(name.trim()))
+            .find(|asset| asset.name.eq_ignore_ascii_case(name.trim()))
             .cloned()
     }
 
+    /// Looks up a folio within a portfolio by asset ID and folio number (case-insensitive).
     pub fn find_folio(
         &self,
         portfolio_id: Uuid,
@@ -441,23 +508,27 @@ impl InMemoryDatabase {
         state
             .folios
             .values()
-            .find(|f| {
-                f.portfolio_id == portfolio_id
-                    && f.asset_id == asset_id
-                    && f.number.eq_ignore_ascii_case(number.trim())
+            .find(|folio| {
+                folio.portfolio_id == portfolio_id
+                    && folio.asset_id == asset_id
+                    && folio.number.eq_ignore_ascii_case(number.trim())
             })
             .cloned()
     }
 
+    /// Looks up a managed profile belonging to a user by PAN (case-insensitive).
     pub fn find_profile_by_pan(&self, user_id: Uuid, pan: &str) -> Option<ManagedProfileEntity> {
         let state = self.state.read().expect("lock poisoned");
         state
             .profiles
             .values()
-            .find(|p| p.user_id == user_id && p.pan.eq_ignore_ascii_case(pan.trim()))
+            .find(|profile| {
+                profile.user_id == user_id && profile.pan.eq_ignore_ascii_case(pan.trim())
+            })
             .cloned()
     }
 
+    /// Looks up a portfolio linked to a specific managed profile.
     pub fn find_portfolio_by_profile(
         &self,
         user_id: Uuid,
@@ -467,16 +538,19 @@ impl InMemoryDatabase {
         state
             .portfolios
             .values()
-            .find(|p| p.user_id == user_id && p.managed_profile_id == Some(profile_id))
+            .find(|portfolio| {
+                portfolio.user_id == user_id && portfolio.managed_profile_id == Some(profile_id)
+            })
             .cloned()
     }
 
+    /// Looks up a transaction by external transaction ID (e.g. CAS ID).
     pub fn find_transaction_by_external_id(&self, external_id: &str) -> Option<TransactionEntity> {
         let state = self.state.read().expect("lock poisoned");
         state
             .transactions
             .values()
-            .find(|t| t.external_id.as_deref() == Some(external_id))
+            .find(|transaction| transaction.external_id.as_deref() == Some(external_id))
             .cloned()
     }
 }
@@ -514,10 +588,10 @@ impl PortfolioRepository for InMemoryDatabase {
         let mut list: Vec<PortfolioEntity> = state
             .portfolios
             .values()
-            .filter(|p| p.user_id == user_id)
+            .filter(|portfolio| portfolio.user_id == user_id)
             .cloned()
             .collect();
-        list.sort_by_key(|p| p.created_at);
+        list.sort_by_key(|portfolio| portfolio.created_at);
         Ok(list)
     }
 
@@ -531,18 +605,18 @@ impl PortfolioRepository for InMemoryDatabase {
         let folio_ids: Vec<Uuid> = state
             .folios
             .values()
-            .filter(|f| f.portfolio_id == id)
-            .map(|f| f.id)
+            .filter(|folio| folio.portfolio_id == id)
+            .map(|folio| folio.id)
             .collect();
 
         // Delete transactions belonging to these folios
         let folio_set: HashSet<Uuid> = folio_ids.into_iter().collect();
         state
             .transactions
-            .retain(|_, tx| !folio_set.contains(&tx.folio_id));
+            .retain(|_, transaction| !folio_set.contains(&transaction.folio_id));
 
         // Delete folios
-        state.folios.retain(|_, f| f.portfolio_id != id);
+        state.folios.retain(|_, folio| folio.portfolio_id != id);
 
         Ok(())
     }
@@ -566,11 +640,12 @@ impl TransactionRepository for InMemoryDatabase {
             return Err(DbError::FolioNotFound(folio_id));
         }
 
+        // Enforce externalId uniqueness constraint
         if let Some(ext_id) = external_id {
             let exists = state
                 .transactions
                 .values()
-                .any(|t| t.external_id.as_deref() == Some(ext_id));
+                .any(|transaction| transaction.external_id.as_deref() == Some(ext_id));
             if exists {
                 return Err(DbError::ConstraintViolation(format!(
                     "Transaction with externalId '{ext_id}' already exists"
@@ -580,7 +655,7 @@ impl TransactionRepository for InMemoryDatabase {
 
         let id = Uuid::new_v4();
         let now = Utc::now();
-        let tx = TransactionEntity {
+        let transaction = TransactionEntity {
             id,
             folio_id,
             date,
@@ -589,29 +664,30 @@ impl TransactionRepository for InMemoryDatabase {
             units,
             nav,
             balance,
-            external_id: external_id.map(|s| s.to_string()),
+            external_id: external_id.map(|ext_str| ext_str.to_string()),
             created_at: now,
             updated_at: now,
         };
-        state.transactions.insert(id, tx.clone());
-        Ok(tx)
+        state.transactions.insert(id, transaction.clone());
+        Ok(transaction)
     }
 
     async fn list_by_folio(&self, folio_id: Uuid) -> Result<Vec<TransactionEntity>, DbError> {
         let state = self.state.read().expect("lock poisoned");
-        let mut txs: Vec<TransactionEntity> = state
+        let mut transactions: Vec<TransactionEntity> = state
             .transactions
             .values()
-            .filter(|t| t.folio_id == folio_id)
+            .filter(|transaction| transaction.folio_id == folio_id)
             .cloned()
             .collect();
-        txs.sort_by(|a, b| {
-            a.date
-                .cmp(&b.date)
-                .then_with(|| a.created_at.cmp(&b.created_at))
-                .then_with(|| a.id.cmp(&b.id))
+        // Deterministic FIFO multi-key sort
+        transactions.sort_by(|tx_a, tx_b| {
+            tx_a.date
+                .cmp(&tx_b.date)
+                .then_with(|| tx_a.created_at.cmp(&tx_b.created_at))
+                .then_with(|| tx_a.id.cmp(&tx_b.id))
         });
-        Ok(txs)
+        Ok(transactions)
     }
 
     async fn list_by_portfolio(
@@ -622,23 +698,24 @@ impl TransactionRepository for InMemoryDatabase {
         let folio_ids: HashSet<Uuid> = state
             .folios
             .values()
-            .filter(|f| f.portfolio_id == portfolio_id)
-            .map(|f| f.id)
+            .filter(|folio| folio.portfolio_id == portfolio_id)
+            .map(|folio| folio.id)
             .collect();
 
-        let mut txs: Vec<TransactionEntity> = state
+        let mut transactions: Vec<TransactionEntity> = state
             .transactions
             .values()
-            .filter(|t| folio_ids.contains(&t.folio_id))
+            .filter(|transaction| folio_ids.contains(&transaction.folio_id))
             .cloned()
             .collect();
-        txs.sort_by(|a, b| {
-            a.date
-                .cmp(&b.date)
-                .then_with(|| a.created_at.cmp(&b.created_at))
-                .then_with(|| a.id.cmp(&b.id))
+        // Deterministic FIFO multi-key sort
+        transactions.sort_by(|tx_a, tx_b| {
+            tx_a.date
+                .cmp(&tx_b.date)
+                .then_with(|| tx_a.created_at.cmp(&tx_b.created_at))
+                .then_with(|| tx_a.id.cmp(&tx_b.id))
         });
-        Ok(txs)
+        Ok(transactions)
     }
 }
 
@@ -656,7 +733,7 @@ impl FamilyRepository for InMemoryDatabase {
         let exists = state
             .profiles
             .values()
-            .any(|p| p.user_id == user_id && p.pan.eq_ignore_ascii_case(pan));
+            .any(|profile| profile.user_id == user_id && profile.pan.eq_ignore_ascii_case(pan));
         if exists {
             return Err(DbError::ConstraintViolation(format!(
                 "Profile with PAN '{pan}' already exists for user '{user_id}'"
@@ -683,10 +760,10 @@ impl FamilyRepository for InMemoryDatabase {
         let mut profiles: Vec<ManagedProfileEntity> = state
             .profiles
             .values()
-            .filter(|p| p.user_id == user_id)
+            .filter(|profile| profile.user_id == user_id)
             .cloned()
             .collect();
-        profiles.sort_by_key(|p| p.created_at);
+        profiles.sort_by_key(|profile| profile.created_at);
         Ok(profiles)
     }
 
@@ -701,7 +778,7 @@ impl FamilyRepository for InMemoryDatabase {
         let profile = state
             .profiles
             .get(&profile_id)
-            .filter(|p| p.user_id == user_id)
+            .filter(|profile| profile.user_id == user_id)
             .cloned()
             .ok_or(DbError::ProfileNotFound(profile_id))?;
 
@@ -709,8 +786,8 @@ impl FamilyRepository for InMemoryDatabase {
         let portfolio_ids: Vec<Uuid> = state
             .portfolios
             .values()
-            .filter(|p| p.managed_profile_id == Some(profile_id))
-            .map(|p| p.id)
+            .filter(|portfolio| portfolio.managed_profile_id == Some(profile_id))
+            .map(|portfolio| portfolio.id)
             .collect();
 
         let portfolio_set: HashSet<Uuid> = portfolio_ids.into_iter().collect();
@@ -719,8 +796,8 @@ impl FamilyRepository for InMemoryDatabase {
         let folio_ids: Vec<Uuid> = state
             .folios
             .values()
-            .filter(|f| portfolio_set.contains(&f.portfolio_id))
-            .map(|f| f.id)
+            .filter(|folio| portfolio_set.contains(&folio.portfolio_id))
+            .map(|folio| folio.id)
             .collect();
 
         let folio_set: HashSet<Uuid> = folio_ids.into_iter().collect();
@@ -728,17 +805,17 @@ impl FamilyRepository for InMemoryDatabase {
         // 3. Delete transactions in those folios
         state
             .transactions
-            .retain(|_, tx| !folio_set.contains(&tx.folio_id));
+            .retain(|_, transaction| !folio_set.contains(&transaction.folio_id));
 
         // 4. Delete folios
         state
             .folios
-            .retain(|_, f| !portfolio_set.contains(&f.portfolio_id));
+            .retain(|_, folio| !portfolio_set.contains(&folio.portfolio_id));
 
         // 5. Delete portfolios
         state
             .portfolios
-            .retain(|_, p| p.managed_profile_id != Some(profile_id));
+            .retain(|_, portfolio| portfolio.managed_profile_id != Some(profile_id));
 
         // 6. Delete managed profile
         state.profiles.remove(&profile_id);
@@ -751,10 +828,14 @@ impl FamilyRepository for InMemoryDatabase {
 impl FundHoldingsRepository for InMemoryDatabase {
     async fn upsert_fund_holdings(&self, holdings: &[FundHoldingEntity]) -> Result<(), DbError> {
         let mut state = self.state.write().expect("lock poisoned");
-        for h in holdings {
+        for holding in holdings {
             state.fund_holdings.insert(
-                (h.isin.clone(), h.as_of_date, h.stock_name.clone()),
-                h.clone(),
+                (
+                    holding.isin.clone(),
+                    holding.as_of_date,
+                    holding.stock_name.clone(),
+                ),
+                holding.clone(),
             );
         }
         Ok(())
@@ -768,8 +849,8 @@ impl FundHoldingsRepository for InMemoryDatabase {
         let max_date = state
             .fund_holdings
             .values()
-            .filter(|h| h.isin == isin)
-            .map(|h| h.as_of_date)
+            .filter(|holding| holding.isin == isin)
+            .map(|holding| holding.as_of_date)
             .max();
 
         let Some(date) = max_date else {
@@ -779,14 +860,15 @@ impl FundHoldingsRepository for InMemoryDatabase {
         let mut holdings: Vec<FundHoldingEntity> = state
             .fund_holdings
             .values()
-            .filter(|h| h.isin == isin && h.as_of_date == date)
+            .filter(|holding| holding.isin == isin && holding.as_of_date == date)
             .cloned()
             .collect();
 
-        holdings.sort_by(|a, b| {
-            b.weight
-                .cmp(&a.weight)
-                .then_with(|| a.stock_name.cmp(&b.stock_name))
+        holdings.sort_by(|holding_a, holding_b| {
+            holding_b
+                .weight
+                .cmp(&holding_a.weight)
+                .then_with(|| holding_a.stock_name.cmp(&holding_b.stock_name))
         });
         Ok(holdings)
     }
@@ -795,11 +877,11 @@ impl FundHoldingsRepository for InMemoryDatabase {
         &self,
         isins: &[&str],
     ) -> Result<HashMap<String, Vec<FundHoldingEntity>>, DbError> {
-        let mut result: HashMap<String, Vec<FundHoldingEntity>> = HashMap::new();
-        for &isin in isins {
-            let holdings = self.get_latest_holdings_by_isin(isin).await?;
-            result.insert(isin.to_string(), holdings);
+        let mut result_map: HashMap<String, Vec<FundHoldingEntity>> = HashMap::new();
+        for &isin_str in isins {
+            let holdings = self.get_latest_holdings_by_isin(isin_str).await?;
+            result_map.insert(isin_str.to_string(), holdings);
         }
-        Ok(result)
+        Ok(result_map)
     }
 }

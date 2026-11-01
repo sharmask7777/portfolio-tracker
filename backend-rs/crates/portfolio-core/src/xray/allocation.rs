@@ -1,4 +1,13 @@
 //! Market capitalization and asset allocation breakdown structures and calculators.
+//!
+//! Provides portfolio asset exposure and market-cap distribution modeling:
+//! - **Market Cap Breakdown**: Aggregates equity exposure across Large Cap, Mid Cap, and Small Cap.
+//! - **Asset Allocation Breakdown**: Aggregates exposure across broad asset classes: Equity, Debt, Cash, and Alternatives.
+//! - **Portfolio-Weighted Normalization**: Combines multiple funds or holdings weighted by their respective
+//!   portfolio market values:
+//!
+//!   $$\text{Weight}_i = \frac{\text{Value}_i}{\sum_{j} \text{Value}_j}$$
+//!   $$\text{Metric}_{\text{aggregated}} = \sum_{i} \text{Weight}_i \cdot \text{Metric}_i$$
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -7,12 +16,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MarketCapBreakdown {
+    /// Large-cap equity exposure percentage (top 100 market-cap companies).
     pub large_cap: Decimal,
+    /// Mid-cap equity exposure percentage (101st to 250th market-cap companies).
     pub mid_cap: Decimal,
+    /// Small-cap equity exposure percentage (251st and beyond market-cap companies).
     pub small_cap: Decimal,
 }
 
 impl MarketCapBreakdown {
+    /// Constructs a new [`MarketCapBreakdown`].
     pub fn new(large_cap: Decimal, mid_cap: Decimal, small_cap: Decimal) -> Self {
         Self {
             large_cap,
@@ -21,15 +34,19 @@ impl MarketCapBreakdown {
         }
     }
 
+    /// Constructs a zeroed [`MarketCapBreakdown`].
     pub fn zero() -> Self {
         Self::default()
     }
 
+    /// Calculates the sum of large, mid, and small cap exposure percentages.
     pub fn total(&self) -> Decimal {
         self.large_cap + self.mid_cap + self.small_cap
     }
 
-    /// Normalizes components to sum to 100% (or Decimal::ZERO if total is zero).
+    /// Normalizes components proportionally to sum exactly to 100%.
+    ///
+    /// If total exposure is zero, returns [`MarketCapBreakdown::zero`].
     pub fn normalize(&self) -> Self {
         let total = self.total();
         if total.is_zero() {
@@ -48,13 +65,18 @@ impl MarketCapBreakdown {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AssetAllocationBreakdown {
+    /// Exposure percentage in equity instruments.
     pub equity: Decimal,
+    /// Exposure percentage in fixed income and debt securities.
     pub debt: Decimal,
+    /// Exposure percentage in cash, liquid equivalents, and net current assets.
     pub cash: Decimal,
+    /// Exposure percentage in alternatives (Gold, Silver, REITs, InvITs, commodities).
     pub alternatives: Decimal,
 }
 
 impl AssetAllocationBreakdown {
+    /// Constructs a new [`AssetAllocationBreakdown`].
     pub fn new(equity: Decimal, debt: Decimal, cash: Decimal, alternatives: Decimal) -> Self {
         Self {
             equity,
@@ -64,15 +86,19 @@ impl AssetAllocationBreakdown {
         }
     }
 
+    /// Constructs a zeroed [`AssetAllocationBreakdown`].
     pub fn zero() -> Self {
         Self::default()
     }
 
+    /// Calculates the sum of all broad asset class percentage allocations.
     pub fn total(&self) -> Decimal {
         self.equity + self.debt + self.cash + self.alternatives
     }
 
-    /// Normalizes components to sum to 100% (or Decimal::ZERO if total is zero).
+    /// Normalizes components proportionally to sum exactly to 100%.
+    ///
+    /// If total exposure is zero, returns [`AssetAllocationBreakdown::zero`].
     pub fn normalize(&self) -> Self {
         let total = self.total();
         if total.is_zero() {
@@ -91,6 +117,8 @@ impl AssetAllocationBreakdown {
 /// Aggregates multiple fund market cap breakdowns weighted by portfolio value.
 ///
 /// Each tuple is `(portfolio_value, breakdown)`.
+///
+/// If total value is zero or non-positive, returns [`MarketCapBreakdown::zero`].
 pub fn aggregate_market_cap(funds: &[(Decimal, MarketCapBreakdown)]) -> MarketCapBreakdown {
     let total_value: Decimal = funds.iter().map(|(val, _)| (*val).max(Decimal::ZERO)).sum();
 
@@ -123,6 +151,8 @@ pub fn aggregate_market_cap(funds: &[(Decimal, MarketCapBreakdown)]) -> MarketCa
 /// Aggregates multiple fund asset allocation breakdowns weighted by portfolio value.
 ///
 /// Each tuple is `(portfolio_value, breakdown)`.
+///
+/// If total value is zero or non-positive, returns [`AssetAllocationBreakdown::zero`].
 pub fn aggregate_asset_allocation(
     funds: &[(Decimal, AssetAllocationBreakdown)],
 ) -> AssetAllocationBreakdown {

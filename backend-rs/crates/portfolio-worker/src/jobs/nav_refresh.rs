@@ -1,4 +1,12 @@
 //! Background worker job for refreshing Net Asset Values (NAV) for mutual funds.
+//!
+//! ## Worker Pipeline & Scheduling:
+//! - **BullMQ Queue Processing**: Consumes jobs from `bull:navRefreshQueue:*` or in-memory test queue.
+//! - **AMFI Code Validation**: Ensures codes strictly conform to standard 5 to 6 digit numeric Indian mutual fund identifiers.
+//! - **Live Market Ingestion**: Queries official `api.mfapi.in` endpoints for latest published NAV.
+//! - **Resilient Fallback**: If external HTTP fetch fails or times out, seamlessly falls back to existing
+//!   historical NAV in the database, avoiding worker failure.
+//! - **Dual Storage**: Stores updated record into PostgreSQL `HistoricalNAV` table and in-memory test database.
 
 use chrono::Utc;
 use portfolio_db::InMemoryDatabase;
@@ -8,7 +16,8 @@ use rust_decimal::Decimal;
 use crate::error::WorkerError;
 use crate::jobs::NavRefreshJobData;
 
-/// Validates AMFI mutual fund code.
+/// Validates AMFI mutual fund code format.
+///
 /// AMFI codes in India are 5 to 6 digit numeric identifiers (e.g. "120716", "122639").
 pub fn validate_amfi_code(code: &str) -> Result<&str, WorkerError> {
     let trimmed = code.trim();
@@ -18,6 +27,7 @@ pub fn validate_amfi_code(code: &str) -> Result<&str, WorkerError> {
     Ok(trimmed)
 }
 
+/// Helper function to asynchronously query MFAPI for the latest NAV price and date.
 async fn fetch_mfapi_nav(url: &str) -> Option<(chrono::NaiveDate, Decimal)> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(3))
@@ -51,28 +61,31 @@ pub async fn process_nav_refresh_job(
     job_data: &NavRefreshJobData,
     db: &InMemoryDatabase,
 ) -> Result<HistoricalNavEntity, WorkerError> {
-    let code = validate_amfi_code(&job_data.amfi_code)?;
+    let validated_amfi_code = validate_amfi_code(&job_data.amfi_code)?;
 
-    let (date, nav_value) = if let Some(n) = job_data.nav {
+    let (as_of_date, resolved_nav) = if let Some(nav_override) = job_data.nav {
         let date = job_data
             .as_of_date
             .unwrap_or_else(|| Utc::now().date_naive());
-        (date, n)
+        (date, nav_override)
     } else {
         // Attempt live fetch from MFAPI
         let base_url =
             std::env::var("MFAPI_BASE_URL").unwrap_or_else(|_| "https://api.mfapi.in".to_string());
-        let url = format!("{}/mf/{code}/latest", base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/mf/{validated_amfi_code}/latest",
+            base_url.trim_end_matches('/')
+        );
 
-        if let Some((d, n)) = fetch_mfapi_nav(&url).await {
-            let date = job_data.as_of_date.unwrap_or(d);
-            (date, n)
+        if let Some((fetched_date, fetched_nav)) = fetch_mfapi_nav(&url).await {
+            let date = job_data.as_of_date.unwrap_or(fetched_date);
+            (date, fetched_nav)
         } else {
             // Fallback gracefully to existing DB nav or default 100.00
             let date = job_data
                 .as_of_date
                 .unwrap_or_else(|| Utc::now().date_naive());
-            let nav = if let Some(existing) = db.get_nav(code, date) {
+            let nav = if let Some(existing) = db.get_nav(validated_amfi_code, date) {
                 existing.nav
             } else {
                 Decimal::new(10000, 2) // Default 100.00
@@ -81,8 +94,8 @@ pub async fn process_nav_refresh_job(
         }
     };
 
-    let record = db.store_nav(code, date, nav_value);
-    Ok(record)
+    let historical_nav_entity = db.store_nav(validated_amfi_code, as_of_date, resolved_nav);
+    Ok(historical_nav_entity)
 }
 
 /// Helper handler for processing NAV refresh jobs with optional PostgreSQL pool.
@@ -93,7 +106,7 @@ pub async fn process_nav_refresh_job_with_pool(
     db: &InMemoryDatabase,
     pool: Option<&sqlx::PgPool>,
 ) -> Result<HistoricalNavEntity, WorkerError> {
-    let record = process_nav_refresh_job(job_data, db).await?;
+    let historical_nav_entity = process_nav_refresh_job(job_data, db).await?;
 
     if let Some(pool) = pool {
         sqlx::query(
@@ -103,13 +116,13 @@ pub async fn process_nav_refresh_job_with_pool(
             ON CONFLICT ("amfiCode", date) DO UPDATE SET nav = EXCLUDED.nav;
             "#,
         )
-        .bind(&record.amfi_code)
-        .bind(record.date)
-        .bind(record.nav)
+        .bind(&historical_nav_entity.amfi_code)
+        .bind(historical_nav_entity.date)
+        .bind(historical_nav_entity.nav)
         .execute(pool)
         .await
         .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
     }
 
-    Ok(record)
+    Ok(historical_nav_entity)
 }

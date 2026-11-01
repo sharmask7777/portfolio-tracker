@@ -30,8 +30,11 @@ pub use rules::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[ts(export_to = "TaxType.ts")]
 pub enum TaxType {
+    /// Short-Term Capital Gains (Section 111A or general STCG).
     Stcg,
+    /// Long-Term Capital Gains (Section 112A or Section 112).
     Ltcg,
+    /// Gains taxed at normal marginal income tax slab rates (e.g. Section 50AA debt mutual funds).
     Slab,
 }
 
@@ -39,13 +42,21 @@ pub enum TaxType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[ts(export_to = "TaxSection.ts")]
 pub enum TaxSection {
+    /// Section 111A equity STCG at 15% (sales executed prior to 23-Jul-2024).
     Sec111A15,
+    /// Section 111A equity STCG at 20% (sales executed on or after 23-Jul-2024).
     Sec111A20,
+    /// Section 112A equity LTCG at 10% (sales executed prior to 23-Jul-2024).
     Sec112A10,
+    /// Section 112A equity LTCG at 12.5% (sales executed on or after 23-Jul-2024).
     Sec112A12_5,
+    /// Finance Act 2023 Section 50AA debt mutual funds taxed at slab rates (purchased on/after 01-Apr-2023).
     Sec50AA,
+    /// Section 112 debt LTCG at 12.5% unindexed (purchased before 01-Apr-2023, sold on/after 23-Jul-2024).
     Sec112Debt12_5,
+    /// Section 112 debt LTCG at 20% with Cost Inflation Index (CII) indexation (sold prior to 23-Jul-2024).
     Sec112Debt20,
+    /// General short-term capital gains or other income taxed at slab rates.
     Slab,
 }
 
@@ -68,11 +79,22 @@ impl std::fmt::Display for TaxSection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[ts(export_to = "HoldingType.ts")]
 pub enum HoldingType {
+    /// Asset held for less than the statutory long-term threshold.
     ShortTerm,
+    /// Asset held for at least the statutory long-term threshold.
     LongTerm,
 }
 
 /// Statutory advance tax quarters adjusted for Budget 2024 (23 July 2024).
+///
+/// In FY 2024-25, Quarter 2 was split into two sub-periods (`Q2a` and `Q2b`) because
+/// the Finance Act (No. 2) 2024 changed capital gains tax rates effective July 23, 2024:
+/// - `Q1`: April 1 to June 15
+/// - `Q2a`: June 16 to July 22 (Pre-Budget 2024 rates apply)
+/// - `Q2b`: July 23 to September 15 (Post-Budget 2024 rates apply)
+/// - `Q3`: September 16 to December 15
+/// - `Q4`: December 16 to March 15
+/// - `Q5`: March 16 to March 31
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[ts(export_to = "AdvanceTaxQuarter.ts")]
 pub enum AdvanceTaxQuarter {
@@ -141,16 +163,27 @@ impl std::fmt::Display for AdvanceTaxQuarter {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TableFQuarterData {
+    /// Section 111A STCG realized at 15%.
     pub stcg15: Money,
+    /// Section 111A STCG realized at 20%.
     pub stcg20: Money,
+    /// Section 112A LTCG realized at 10%.
     pub ltcg10: Money,
+    /// Section 112A LTCG realized at 12.5%.
     pub ltcg12_5: Money,
+    /// Section 112 debt LTCG realized at 12.5% unindexed.
     pub debt_ltcg12_5: Money,
+    /// Section 112 debt LTCG realized at 20% indexed.
     pub debt_ltcg20: Money,
+    /// Short-term debt gains taxed at slab rates (Section 50AA).
     pub slab: Money,
+    /// Total net capital gain accrued in this quarter.
     pub total_gain: Money,
+    /// Base tax liability before health and education cess.
     pub tax_before_cess: Money,
+    /// 4% Health and Education Cess.
     pub cess: Money,
+    /// Total estimated advance tax due for this quarter.
     pub estimated_tax: Money,
 }
 
@@ -158,7 +191,9 @@ pub struct TableFQuarterData {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AdvanceTaxAccrualMatrix {
+    /// Detailed quarterly accruals mapped by quarter key (e.g. "Q1 (01/04 - 15/06)").
     pub quarters: std::collections::HashMap<String, TableFQuarterData>,
+    /// Cumulative tax total per quarter for advance tax payment tracking.
     pub quarter_totals: std::collections::HashMap<String, Money>,
 }
 
@@ -166,15 +201,25 @@ pub struct AdvanceTaxAccrualMatrix {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SectionTotalData {
+    /// Statutory section label (e.g. "112A (12.5%)").
     pub section: String,
+    /// Total full value of consideration received on sale of assets.
     pub gross_consideration: Money,
+    /// Original cost of acquisition before any deemed cost adjustment.
     pub cost_of_acquisition: Money,
+    /// Statutory cost of acquisition (adjusted for Section 55(2)(ac) grandfathering).
     pub deemed_cost_of_acquisition: Money,
+    /// Allowable expenditure wholly and exclusively incurred in connection with transfer.
     pub transfer_expenses: Money,
+    /// Net capital gain or loss under this section.
     pub total_gain: Money,
+    /// Applicable nominal statutory tax rate.
     pub tax_rate: Decimal,
+    /// Base tax liability before cess.
     pub tax_before_cess: Money,
+    /// 4% Health and Education Cess.
     pub cess: Money,
+    /// Total tax liability under this section.
     pub total_tax: Money,
 }
 
@@ -183,17 +228,26 @@ pub type SectionTotalsMap = std::collections::HashMap<String, SectionTotalData>;
 /// An active or historical purchase lot tracked for FIFO matching.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuyLot {
+    /// Date when units were purchased.
     pub date: NaiveDate,
+    /// Current unsold units remaining in the lot.
     pub units: Units,
+    /// Acquisition NAV per unit.
     pub nav: Nav,
+    /// Total acquisition cost of remaining units.
     pub amount: Money,
+    /// Original units originally purchased in this lot.
     pub original_units: Units,
+    /// ISIN of the security.
     pub isin: Option<Isin>,
+    /// Whether this lot represents bonus shares (zero cost of acquisition).
     pub is_bonus: bool,
+    /// Whether this is a synthetic anchor lot (representing opening balance).
     pub is_anchor: bool,
 }
 
 impl BuyLot {
+    /// Constructs a new [`BuyLot`].
     pub fn new(date: NaiveDate, units: Units, nav: Nav, amount: Money) -> Self {
         Self {
             date,
@@ -207,16 +261,19 @@ impl BuyLot {
         }
     }
 
+    /// Builder method attaching an ISIN to the lot.
     pub fn with_isin(mut self, isin: Isin) -> Self {
         self.isin = Some(isin);
         self
     }
 
+    /// Builder method marking the lot as bonus units (zero cost basis).
     pub fn with_bonus(mut self, is_bonus: bool) -> Self {
         self.is_bonus = is_bonus;
         self
     }
 
+    /// Builder method marking the lot as an anchor lot.
     pub fn with_anchor(mut self, is_anchor: bool) -> Self {
         self.is_anchor = is_anchor;
         self
@@ -228,35 +285,63 @@ impl BuyLot {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "RealizedGain.ts", rename_all = "camelCase")]
 pub struct RealizedGain {
+    /// Asset or mutual fund scheme name.
     pub asset_name: String,
+    /// Account folio number.
     pub folio_number: Option<FolioNumber>,
+    /// ISIN of the underlying security.
     pub isin: Option<Isin>,
+    /// Permanent Account Number (PAN) of the folio owner.
     pub pan: Option<Pan>,
+    /// Asset class (e.g. "Equity", "Debt", "Fixed Deposit").
     pub asset_class: String,
+    /// Statutory section under which gain is taxed (e.g. Sec112A12_5, Sec111A20).
     pub section: TaxSection,
+    /// Acquisition date of the matched buy lot.
     pub buy_date: NaiveDate,
+    /// Date when units were redeemed or sold.
     pub sell_date: NaiveDate,
+    /// Number of calendar days held.
     #[ts(type = "number")]
     pub holding_period_days: i64,
+    /// Short-Term vs Long-Term classification.
     pub holding_type: HoldingType,
+    /// Number of units redeemed.
     pub units: Units,
+    /// Original purchase NAV per unit.
     pub buy_nav: Nav,
+    /// Redemption NAV per unit.
     pub sell_nav: Nav,
+    /// Gross proceeds received on sale (`units * sell_nav`).
     pub gross_consideration: Money,
+    /// Historical cost of acquisition (`units * buy_nav`).
     pub cost_of_acquisition: Money,
+    /// Fair Market Value per unit as of 31-Jan-2018 (Section 55(2)(ac)).
     pub fmv_as_of_jan31_2018: Nav,
+    /// Total FMV as of 31-Jan-2018 (`units * fmv`).
     pub total_fmv_jan31_2018: Money,
+    /// Deemed statutory cost of acquisition under Section 55(2)(ac).
     pub deemed_cost_of_acquisition: Money,
+    /// Transfer expenses or exit load deducted from proceeds.
     pub transfer_expenses: Money,
+    /// Realized capital gain or loss (`gross_consideration - deemed_cost - expenses`).
     pub gain: Money,
+    /// Tax treatment category (Ltcg, Stcg, Slab).
     pub tax_type: TaxType,
+    /// Nominal statutory tax rate applied to positive gains.
     #[ts(type = "number")]
     pub tax_rate: Decimal,
+    /// Tax liability prior to 4% cess.
     pub tax_before_cess: Money,
+    /// 4% Health and Education Cess.
     pub cess: Money,
+    /// Total estimated statutory tax liability.
     pub estimated_tax: Money,
+    /// Whether Section 55(2)(ac) grandfathering was applied.
     pub is_grandfathered: bool,
+    /// Descriptive description of grandfathering status.
     pub grandfathered_status: String,
+    /// Advance tax quarter in which the redemption occurred.
     pub advance_tax_quarter: Option<AdvanceTaxQuarter>,
 }
 
@@ -264,14 +349,22 @@ pub struct RealizedGain {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TaxCategorySummary {
+    /// Total short-term capital gains across lots.
     pub stcg: Money,
+    /// Total long-term capital gains across lots.
     pub ltcg: Money,
+    /// Total gains subject to slab rates (e.g. Section 50AA debt funds).
     pub slab: Money,
+    /// Total gross gain across all categories (`stcg + ltcg + slab`).
     pub total: Money,
+    /// Net taxable STCG after Section 70 loss set-offs.
     pub taxable_stcg: Money,
+    /// Net taxable LTCG after Section 70 loss set-offs.
     pub taxable_ltcg: Money,
+    /// Net taxable slab gain after Section 70 loss set-offs.
     #[serde(default)]
     pub taxable_slab: Money,
+    /// Individual lot redemption details.
     pub details: Vec<RealizedGain>,
 }
 
@@ -279,10 +372,15 @@ pub struct TaxCategorySummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TaxPortfolioSummary {
+    /// Whether any transactions depend on synthetic opening balances.
     pub has_synthetic_anchors: bool,
+    /// Summary of realized capital gains from historical sales/redemptions.
     pub realized: TaxCategorySummary,
+    /// Summary of unrealized capital gains on active unsold holdings.
     pub unrealized: TaxCategorySummary,
+    /// Advance tax accrual matrix matching Schedule CG Table F.
     pub table_f: Option<AdvanceTaxAccrualMatrix>,
+    /// Totals broken down by statutory section matching ITR-2/ITR-3.
     pub section_totals: Option<SectionTotalsMap>,
 }
 
@@ -316,15 +414,22 @@ pub enum TaxInvariantError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaxReport {
+    /// Financial Year covered by this report (e.g. "2024-25").
     pub financial_year: String,
+    /// Assessment Year corresponding to the financial year (e.g. "2025-26").
     pub assessment_year: Option<String>,
+    /// Full legal name of the taxpayer / assessee.
     pub assessee_name: Option<String>,
+    /// Permanent Account Number (PAN) of the taxpayer.
     pub pan: Option<Pan>,
+    /// Comprehensive summary of realized and unrealized tax liabilities.
     pub summary: TaxPortfolioSummary,
+    /// Total Section 112A exempt long-term capital gains claimed (capped by statutory limits).
     pub exempt_ltcg_112a: Money,
 }
 
 impl TaxReport {
+    /// Constructs a new [`TaxReport`].
     pub fn new(
         financial_year: impl Into<String>,
         summary: TaxPortfolioSummary,
@@ -340,16 +445,19 @@ impl TaxReport {
         }
     }
 
+    /// Builder method attaching a PAN to the tax report.
     pub fn with_pan(mut self, pan: Pan) -> Self {
         self.pan = Some(pan);
         self
     }
 
+    /// Builder method attaching the assessee name to the tax report.
     pub fn with_assessee_name(mut self, name: impl Into<String>) -> Self {
         self.assessee_name = Some(name.into());
         self
     }
 
+    /// Builder method attaching the assessment year to the tax report.
     pub fn with_assessment_year(mut self, ay: impl Into<String>) -> Self {
         self.assessment_year = Some(ay.into());
         self
@@ -436,13 +544,21 @@ pub fn verify_itr_invariants(report: &TaxReport) -> Result<(), TaxInvariantError
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SellSimulation {
+    /// Scheme or asset name being simulated.
     pub asset_name: String,
+    /// Number of units requested for redemption.
     pub units_to_sell: Units,
+    /// Gross market value of the units at the redemption NAV.
     pub estimated_value: Money,
+    /// Total net capital gain or loss across all matched lots (`estimated_value - cost - exit_load`).
     pub total_gain: Money,
+    /// Taxable portion of the capital gain (`max(0, total_gain)`).
     pub taxable_gain: Money,
+    /// Estimated statutory tax liability including 4% cess.
     pub estimated_tax: Money,
+    /// Total exit load deducted from proceeds.
     pub exit_load: Money,
+    /// Detailed lot-by-lot realized gain records.
     pub matched_lots: Vec<RealizedGain>,
 }
 

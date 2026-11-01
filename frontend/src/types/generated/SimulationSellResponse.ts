@@ -2,4 +2,43 @@
 import type { RealizedGain } from "./RealizedGain";
 import type { TaxBreakdown } from "./TaxBreakdown";
 
-export type SimulationSellResponse = { assetName: string, unitsToSell: number, estimatedValue: number, totalGain: number, taxableGain: number, estimatedTax: number, exitLoad: number, taxBreakdown: TaxBreakdown, matchedLots: Array<RealizedGain>, };
+/**
+ * Response object detailing the simulated tax, gains, and exit load from selling units.
+ */
+export type SimulationSellResponse = { 
+/**
+ * Name of the simulated asset.
+ */
+assetName: string, 
+/**
+ * Number of units requested to sell.
+ */
+unitsToSell: number, 
+/**
+ * Gross proceeds from selling the units.
+ */
+estimatedValue: number, 
+/**
+ * Total nominal capital gain or loss.
+ */
+totalGain: number, 
+/**
+ * Net taxable capital gain after applicable statutory exemptions.
+ */
+taxableGain: number, 
+/**
+ * Estimated tax liability including health and education cess.
+ */
+estimatedTax: number, 
+/**
+ * Exit load penalty deducted by AMC (if redemption occurs within exit load window).
+ */
+exitLoad: number, 
+/**
+ * Breakdown by capital gains tax bucket (STCG, LTCG, Slab).
+ */
+taxBreakdown: TaxBreakdown, 
+/**
+ * FIFO-matched purchase lots realized in this redemption.
+ */
+matchedLots: Array<RealizedGain>, };

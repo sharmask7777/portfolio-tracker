@@ -1,10 +1,16 @@
-//! Tax Harvesting Engine and Unrealized Gain Analytics.
+//! Tax Harvesting Engine and Unrealized Capital Gains Analytics.
 //!
-//! Identifies tax-loss and tax-gain harvesting opportunities under Section 112A:
-//! - Up to ₹1,25,000 annual LTCG exemption limit (Budget 2024).
-//! - Identifies eligible long-term equity lots (holding period >= 365 days).
-//! - Excludes debt funds, alternative assets, and locked ELSS lots (< 3 years).
-//! - Provides precision-safe unit harvesting calculations up to available exemption.
+//! Implements statutory Section 112A Long-Term Capital Gains (LTCG) tax harvesting:
+//! - **Annual Exemption Threshold**: Section 112A grants an annual tax exemption on long-term capital
+//!   gains from equity shares and equity mutual funds (₹1,25,000 post-Budget 2024; ₹1,00,000 prior).
+//! - **Harvesting Optimization**: Identifies unsold equity lots held for at least 365 days whose unrealized
+//!   gains can be realized without triggering any income tax liability.
+//! - **Statutory Exclusion Filters**:
+//!   - Debt and commodity/international funds are excluded (they do not qualify for Section 112A).
+//!   - ELSS funds within their statutory 3-year lock-in are excluded (redemptions are legally barred).
+//!   - Losses and short-term holdings are excluded from LTCG gain harvesting.
+//! - **Fractional Lot Harvesting**: When remaining exemption is smaller than a lot's full gain, computes
+//!   the exact fractional unit count to redeem (`units = exemption_portion / (current_nav - buy_nav)`).
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -20,24 +26,37 @@ use crate::types::{AssetType, Money, Nav, Units};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarvestingOpportunity {
+    /// Identifier of the folio holding the units, if available.
     pub folio_id: Option<String>,
+    /// Name of the scheme recommended for tax harvesting.
     pub scheme_name: String,
+    /// Number of units to sell to harvest the targeted capital gain.
     pub units_to_harvest: Units,
+    /// Capital gain amount that will be realized tax-free under Section 112A.
     pub unrealized_gain: Money,
+    /// Current gross market value of the units to be harvested (`units * current_nav`).
     pub current_value: Money,
 }
 
-/// An individual unrealized lot analysis.
+/// An individual unrealized holding lot analysis.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnrealizedLotGain {
+    /// Name of the mutual fund or equity scheme.
     pub scheme_name: String,
+    /// Calendar date when units were acquired.
     pub buy_date: NaiveDate,
+    /// Number of unsold units currently held in this lot.
     pub units: Units,
+    /// Original purchase NAV of the lot.
     pub purchase_nav: Nav,
+    /// Current valuation NAV as of the evaluation date.
     pub current_nav: Nav,
+    /// Elapsed calendar days since purchase.
     pub holding_days: i64,
+    /// Whether the lot qualifies as Long-Term Capital Asset under statutory rules.
     pub is_ltcg: bool,
+    /// Current unrealized gain or loss (`(current_nav - purchase_nav) * units`).
     pub unrealized_gain: Money,
 }
 
@@ -45,10 +64,15 @@ pub struct UnrealizedLotGain {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UnrealizedTaxSummary {
+    /// Total unrealized short-term capital gains across all active lots.
     pub stcg: Money,
+    /// Total unrealized long-term capital gains across all active lots.
     pub ltcg: Money,
+    /// Total unrealized capital losses across all active lots.
     pub losses: Money,
+    /// Net unrealized position across all active holdings (`stcg + ltcg - losses`).
     pub net_gain: Money,
+    /// Detailed lot-by-lot breakdown for each active position.
     pub lots: Vec<UnrealizedLotGain>,
 }
 
@@ -56,25 +80,37 @@ pub struct UnrealizedTaxSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarvestingSummary {
+    /// Long-term capital gains already realized in the current Financial Year.
     pub realized_ltcg_fy: Money,
+    /// Remaining statutory Section 112A exemption available (`exemption_limit - realized_ltcg_fy`).
     pub remaining_exemption: Money,
+    /// Total capital gains that can be harvested tax-free across all eligible positions.
     pub total_potential_harvest: Money,
+    /// Actionable list of specific scheme lots recommended for harvesting.
     pub opportunities: Vec<HarvestingOpportunity>,
+    /// Estimated statutory tax saved by harvesting before fiscal year end (`harvest * 12.5%`).
     pub estimated_tax_savings: Money,
+    /// Complete unrealized gains and losses analysis.
     pub unrealized_summary: UnrealizedTaxSummary,
 }
 
 /// Input descriptor for a folio holding with current valuation NAV.
 #[derive(Debug, Clone)]
 pub struct FolioHarvestingInput<'a> {
+    /// Identifier of the folio.
     pub folio_id: Option<&'a str>,
+    /// Scheme or security name.
     pub scheme_name: &'a str,
+    /// Asset type (Equity, Debt, etc.).
     pub asset_type: AssetType,
+    /// Historical transaction records in the folio.
     pub transactions: &'a [Transaction],
+    /// Current valuation NAV for the scheme.
     pub current_nav: Nav,
 }
 
 impl<'a> FolioHarvestingInput<'a> {
+    /// Constructs a new [`FolioHarvestingInput`].
     pub fn new(
         scheme_name: &'a str,
         asset_type: AssetType,
@@ -90,11 +126,13 @@ impl<'a> FolioHarvestingInput<'a> {
         }
     }
 
+    /// Builder method attaching a folio ID to this input.
     pub fn with_folio_id(mut self, folio_id: &'a str) -> Self {
         self.folio_id = Some(folio_id);
         self
     }
 
+    /// Convenience constructor converting a domain [`Folio`] reference into harvesting input.
     pub fn from_folio(folio: &'a Folio, current_nav: Nav) -> Self {
         Self {
             folio_id: Some(&folio.id),
@@ -169,6 +207,20 @@ pub fn compute_unrealized_gains(
 }
 
 /// Identifies LTCG harvesting opportunities up to the statutory Section 112A annual exemption limit.
+///
+/// # Optimization Algorithm:
+/// 1. Determines remaining exemption limit:
+///    `remaining_exemption = max(0, statutory_limit - realized_ltcg_fy)`.
+/// 2. Iterates over active equity lots:
+///    - Skips non-equity holdings (debt/commodity do not qualify for Section 112A exemption).
+///    - Skips ELSS lots still subject to the 3-year statutory lock-in.
+///    - Only considers long-term lots (holding >= 365 days) where `current_nav > purchase_nav`.
+/// 3. Computes the harvestable gain capped by remaining exemption:
+///    - If `lot_gain <= available_limit`: Harvest entire lot units.
+///    - If `lot_gain > available_limit`: Harvest fractional units:
+///      `units_to_harvest = available_limit / (current_nav - purchase_nav)`.
+/// 4. Discards negligible gains (< ₹1) to prevent precision dust.
+/// 5. Computes statutory tax savings: `total_potential_harvest * 12.5%`.
 pub fn get_harvesting_opportunities(
     inputs: &[FolioHarvestingInput],
     as_of: NaiveDate,

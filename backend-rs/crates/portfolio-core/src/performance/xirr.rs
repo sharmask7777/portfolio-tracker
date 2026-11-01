@@ -1,7 +1,26 @@
 //! Deterministic Extended Internal Rate of Return (XIRR) solver.
 //!
-//! Uses Brent's method with interval bracketing `[-0.9999, 10.0]` (with expanding bounds if needed)
-//! and a damped Newton-Raphson fallback. Zero I/O, deterministic, and free of NaN / indefinite loops.
+//! # Mathematical Background & Numerical Architecture:
+//! The Extended Internal Rate of Return (XIRR) is the annualized discount rate $r$ that satisfies:
+//!
+//! $$f(r) = \sum_{i=0}^{n} C_i (1 + r)^{-\frac{t_i - t_0}{365}} = 0$$
+//!
+//! where:
+//! - $C_i$ is the cash flow amount at date $t_i$ (negative for investments/outflows, positive for redemptions/inflows).
+//! - $t_0$ is the date of the initial cash flow.
+//! - $w_i = \frac{t_i - t_0}{365}$ is the year fraction elapsed between $t_0$ and $t_i$.
+//!
+//! # Numerical Stability Safeguards:
+//! 1. **Brent-Dekker Hybrid Solver**: Combines bisection, the secant method, and inverse quadratic
+//!    interpolation. Guarantees linear bisection convergence in worst cases while achieving superlinear
+//!    speed in standard scenarios.
+//! 2. **Damped Newton-Raphson Fallback**: If bracket search fails, a multi-guess Newton-Raphson solver
+//!    with derivative singularity protection and step damping toward the $r > -1.0$ singularity is employed.
+//! 3. **Cash Flow Normalization**: Amounts are normalized by $\max_i |C_i|$ to prevent floating-point
+//!    overflow when evaluating cash flows in crores / millions.
+//! 4. **Duration Guardrail**: For periods under 30 days, annualized compounding creates astronomically
+//!    distorted figures; absolute return is returned instead as an industry-standard proxy.
+//! 5. **Zero-I/O & Pure Determinism**: Free of memory allocation loops, random jitter, or non-deterministic floats.
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -14,154 +33,210 @@ use crate::types::Money;
 /// A dated cash flow record for XIRR calculation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CashFlow {
+    /// Date when the cash flow transpired.
     pub date: NaiveDate,
+    /// Signed monetary amount (negative for outflows/investments, positive for inflows/redemptions).
     pub amount: Decimal,
 }
 
 impl CashFlow {
+    /// Constructs a new [`CashFlow`].
     pub fn new(date: NaiveDate, amount: Decimal) -> Self {
         Self { date, amount }
     }
 
+    /// Alternate constructor accepting `(amount, date)`.
     pub fn from_amount(amount: Decimal, date: NaiveDate) -> Self {
         Self { date, amount }
     }
 }
 
-/// Evaluates the Net Present Value function f(r) = sum_i C_i * (1 + r)^(-(t_i - t_0)/365).
-fn evaluate_npv(pairs: &[(f64, f64)], r: f64) -> f64 {
-    if r <= -1.0 {
+/// Evaluates Net Present Value: $f(r) = \sum_i C_i (1 + r)^{-w_i}$.
+///
+/// Computed using exponents of logarithms for numerical stability:
+/// $(1 + r)^{-w_i} = \exp(-w_i \cdot \ln(1 + r))$.
+///
+/// Returns `f64::NAN` if $r \le -1.0$ (undefined logarithm).
+fn evaluate_npv(weight_amount_pairs: &[(f64, f64)], rate: f64) -> f64 {
+    if rate <= -1.0 {
         return f64::NAN;
     }
-    let one_plus_r = 1.0 + r;
+    let one_plus_r = 1.0 + rate;
     let ln_one_plus_r = one_plus_r.ln();
-    pairs
+    weight_amount_pairs
         .iter()
-        .map(|&(w, c)| c * (-w * ln_one_plus_r).exp())
+        .map(|&(year_weight, scaled_amount)| scaled_amount * (-year_weight * ln_one_plus_r).exp())
         .sum()
 }
 
-/// Evaluates the derivative f'(r) = - (1 / (1 + r)) * sum_i w_i * C_i * (1 + r)^(-w_i).
-fn evaluate_d_npv(pairs: &[(f64, f64)], r: f64) -> f64 {
-    if r <= -1.0 {
+/// Evaluates the first derivative of NPV:
+///
+/// $$f'(r) = -\frac{1}{1 + r} \sum_i w_i C_i (1 + r)^{-w_i}$$
+///
+/// Derived via chain rule: $\frac{d}{dr} \exp(-w_i \ln(1+r)) = -\frac{w_i}{1+r} \exp(-w_i \ln(1+r))$.
+fn evaluate_d_npv(weight_amount_pairs: &[(f64, f64)], rate: f64) -> f64 {
+    if rate <= -1.0 {
         return f64::NAN;
     }
-    let one_plus_r = 1.0 + r;
+    let one_plus_r = 1.0 + rate;
     let ln_one_plus_r = one_plus_r.ln();
-    let sum: f64 = pairs
+    let sum: f64 = weight_amount_pairs
         .iter()
-        .map(|&(w, c)| -w * c * (-w * ln_one_plus_r).exp())
+        .map(|&(year_weight, scaled_amount)| {
+            -year_weight * scaled_amount * (-year_weight * ln_one_plus_r).exp()
+        })
         .sum();
     sum / one_plus_r
 }
 
 /// Brent's root-finding method on bracket `[a, b]` where `f(a) * f(b) <= 0`.
-fn brent_root<F>(f: F, mut a: f64, mut b: f64, tol: f64, max_iter: usize) -> Result<f64, ()>
+///
+/// Combines inverse quadratic interpolation, secant method, and bisection safeguards.
+fn brent_root<F>(
+    objective_fn: F,
+    mut lower_bound: f64,
+    mut upper_bound: f64,
+    tolerance: f64,
+    max_iter: usize,
+) -> Result<f64, ()>
 where
     F: Fn(f64) -> f64,
 {
-    let mut fa = f(a);
-    let mut fb = f(b);
+    let mut f_lower = objective_fn(lower_bound);
+    let mut f_upper = objective_fn(upper_bound);
 
-    if fa.abs() < tol {
-        return Ok(a);
+    if f_lower.abs() < tolerance {
+        return Ok(lower_bound);
     }
-    if fb.abs() < tol {
-        return Ok(b);
+    if f_upper.abs() < tolerance {
+        return Ok(upper_bound);
     }
-    if fa * fb > 0.0 {
+    if f_lower * f_upper > 0.0 {
         return Err(());
     }
 
-    if fa.abs() < fb.abs() {
-        std::mem::swap(&mut a, &mut b);
-        std::mem::swap(&mut fa, &mut fb);
+    // Ensure |f(upper_bound)| <= |f(lower_bound)| so upper_bound is the best guess
+    if f_lower.abs() < f_upper.abs() {
+        std::mem::swap(&mut lower_bound, &mut upper_bound);
+        std::mem::swap(&mut f_lower, &mut f_upper);
     }
 
-    let mut c = a;
-    let mut fc = fa;
-    let mut mflag = true;
-    let mut d = 0.0;
+    let mut previous_bound = lower_bound;
+    let mut f_previous = f_lower;
+    let mut force_bisection = true;
+    let mut step_two_iterations_ago = 0.0;
 
     for _ in 0..max_iter {
-        if fb.abs() < tol || (b - a).abs() < tol {
-            return Ok(b);
+        if f_upper.abs() < tolerance || (upper_bound - lower_bound).abs() < tolerance {
+            return Ok(upper_bound);
         }
 
-        let mut s = if (fa - fc).abs() > 1e-15 && (fb - fc).abs() > 1e-15 {
+        // Interpolation step: inverse quadratic if 3 distinct points, otherwise secant
+        let mut candidate_root = if (f_lower - f_previous).abs() > 1e-15
+            && (f_upper - f_previous).abs() > 1e-15
+        {
             // Inverse quadratic interpolation
-            (a * fb * fc) / ((fa - fb) * (fa - fc))
-                + (b * fa * fc) / ((fb - fa) * (fb - fc))
-                + (c * fa * fb) / ((fc - fa) * (fc - fb))
-        } else if (fb - fa).abs() > 1e-15 {
+            (lower_bound * f_upper * f_previous) / ((f_lower - f_upper) * (f_lower - f_previous))
+                + (upper_bound * f_lower * f_previous)
+                    / ((f_upper - f_lower) * (f_upper - f_previous))
+                + (previous_bound * f_lower * f_upper)
+                    / ((f_previous - f_lower) * (f_previous - f_upper))
+        } else if (f_upper - f_lower).abs() > 1e-15 {
             // Secant method
-            b - fb * (b - a) / (fb - fa)
+            upper_bound - f_upper * (upper_bound - lower_bound) / (f_upper - f_lower)
         } else {
-            (a + b) / 2.0
+            (lower_bound + upper_bound) / 2.0
         };
 
-        let condition1 =
-            !(((3.0 * a + b) / 4.0 <= s && s <= b) || (b <= s && s <= (3.0 * a + b) / 4.0));
-        let condition2 = mflag && (s - b).abs() >= (b - c).abs() / 2.0;
-        let condition3 = !mflag && (s - b).abs() >= (c - d).abs() / 2.0;
-        let condition4 = mflag && (b - c).abs() < tol;
-        let condition5 = !mflag && (c - d).abs() < tol;
+        // Verification conditions deciding whether to accept interpolation or fall back to bisection
+        let condition1 = !(((3.0 * lower_bound + upper_bound) / 4.0 <= candidate_root
+            && candidate_root <= upper_bound)
+            || (upper_bound <= candidate_root
+                && candidate_root <= (3.0 * lower_bound + upper_bound) / 4.0));
+        let condition2 = force_bisection
+            && (candidate_root - upper_bound).abs() >= (upper_bound - previous_bound).abs() / 2.0;
+        let condition3 = !force_bisection
+            && (candidate_root - upper_bound).abs()
+                >= (previous_bound - step_two_iterations_ago).abs() / 2.0;
+        let condition4 = force_bisection && (upper_bound - previous_bound).abs() < tolerance;
+        let condition5 =
+            !force_bisection && (previous_bound - step_two_iterations_ago).abs() < tolerance;
 
-        if condition1 || condition2 || condition3 || condition4 || condition5 || !s.is_finite() {
-            s = (a + b) / 2.0;
-            mflag = true;
+        if condition1
+            || condition2
+            || condition3
+            || condition4
+            || condition5
+            || !candidate_root.is_finite()
+        {
+            candidate_root = (lower_bound + upper_bound) / 2.0;
+            force_bisection = true;
         } else {
-            mflag = false;
+            force_bisection = false;
         }
 
-        let fs = f(s);
-        d = c;
-        c = b;
-        fc = fb;
+        let f_candidate = objective_fn(candidate_root);
+        step_two_iterations_ago = previous_bound;
+        previous_bound = upper_bound;
+        f_previous = f_upper;
 
-        if fa * fs < 0.0 {
-            b = s;
-            fb = fs;
+        if f_lower * f_candidate < 0.0 {
+            upper_bound = candidate_root;
+            f_upper = f_candidate;
         } else {
-            a = s;
-            fa = fs;
+            lower_bound = candidate_root;
+            f_lower = f_candidate;
         }
 
-        if fa.abs() < fb.abs() {
-            std::mem::swap(&mut a, &mut b);
-            std::mem::swap(&mut fa, &mut fb);
+        if f_lower.abs() < f_upper.abs() {
+            std::mem::swap(&mut lower_bound, &mut upper_bound);
+            std::mem::swap(&mut f_lower, &mut f_upper);
         }
     }
 
-    if fb.abs() < 1e-5 { Ok(b) } else { Err(()) }
+    if f_upper.abs() < 1e-5 {
+        Ok(upper_bound)
+    } else {
+        Err(())
+    }
 }
 
-/// Fallback Newton-Raphson method with step damping.
-fn newton_raphson<F, DF>(f: F, df: DF, initial_guess: f64, max_iter: usize) -> Result<f64, ()>
+/// Fallback Newton-Raphson root-finder with step damping toward the $r = -1.0$ boundary.
+fn newton_raphson<F, DF>(
+    objective_fn: F,
+    derivative_fn: DF,
+    initial_guess: f64,
+    max_iter: usize,
+) -> Result<f64, ()>
 where
     F: Fn(f64) -> f64,
     DF: Fn(f64) -> f64,
 {
-    let mut r = initial_guess;
+    let mut rate = initial_guess;
     for _ in 0..max_iter {
-        let y = f(r);
-        if y.abs() < 1e-10 {
-            return Ok(r);
+        let value = objective_fn(rate);
+        if value.abs() < 1e-10 {
+            return Ok(rate);
         }
-        let dy = df(r);
-        if dy.abs() < 1e-14 || !dy.is_finite() {
+        let derivative = derivative_fn(rate);
+        if derivative.abs() < 1e-14 || !derivative.is_finite() {
             break;
         }
-        let mut r_next = r - y / dy;
-        if r_next <= -0.999999 {
-            r_next = (r - 0.999999) / 2.0;
+        let mut rate_next = rate - value / derivative;
+        // Damping: prevent step from crashing into or below the -100% boundary
+        if rate_next <= -0.999999 {
+            rate_next = (rate - 0.999999) / 2.0;
         }
-        if (r_next - r).abs() < 1e-11 && f(r_next).abs() < 1e-6 {
-            return Ok(r_next);
+        if (rate_next - rate).abs() < 1e-11 && objective_fn(rate_next).abs() < 1e-6 {
+            return Ok(rate_next);
         }
-        r = r_next;
+        rate = rate_next;
     }
-    if f(r).abs() < 1e-5 { Ok(r) } else { Err(()) }
+    if objective_fn(rate).abs() < 1e-5 {
+        Ok(rate)
+    } else {
+        Err(())
+    }
 }
 
 /// Calculates the Extended Internal Rate of Return (XIRR) from a series of cash flows.
@@ -169,9 +244,9 @@ where
 /// Returns `Ok(Decimal)` representing the annualized internal rate of return.
 ///
 /// # Errors
-/// - `PortfolioError::InvalidTransaction` if cash flows are empty, contain only identical dates,
+/// - [`PortfolioError::InvalidTransaction`] if cash flows are empty, contain only identical dates,
 ///   or lack at least one positive and one negative cash flow.
-/// - `PortfolioError::XirrConvergenceFailure` if root-finding fails to converge within 100 iterations.
+/// - [`PortfolioError::XirrConvergenceFailure`] if root-finding fails to converge within 100 iterations.
 pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
     if flows.is_empty() {
         return Err(PortfolioError::InvalidTransaction {
@@ -250,15 +325,15 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
         })
         .collect();
 
-    let f = |r: f64| evaluate_npv(&pairs, r);
-    let df = |r: f64| evaluate_d_npv(&pairs, r);
+    let objective_npv = |r: f64| evaluate_npv(&pairs, r);
+    let derivative_npv = |r: f64| evaluate_d_npv(&pairs, r);
 
     // 1. Initial Bracket [-0.9999, 10.0]
     let initial_a = -0.9999;
     let initial_b = 10.0;
     let mut bracket = None;
 
-    if f(initial_a) * f(initial_b) <= 0.0 {
+    if objective_npv(initial_a) * objective_npv(initial_b) <= 0.0 {
         bracket = Some((initial_a, initial_b));
     } else {
         // Grid search in [-0.9999, 10.0]
@@ -269,7 +344,7 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
         for i in 0..sample_points.len() - 1 {
             let x0 = sample_points[i];
             let x1 = sample_points[i + 1];
-            if f(x0) * f(x1) <= 0.0 {
+            if objective_npv(x0) * objective_npv(x1) <= 0.0 {
                 bracket = Some((x0, x1));
                 break;
             }
@@ -280,7 +355,7 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
             let upper_points = [20.0, 50.0, 100.0, 500.0, 1000.0, 10000.0];
             let mut prev = initial_b;
             for &next in &upper_points {
-                if f(prev) * f(next) <= 0.0 {
+                if objective_npv(prev) * objective_npv(next) <= 0.0 {
                     bracket = Some((prev, next));
                     break;
                 }
@@ -293,7 +368,7 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
             let lower_points = [-0.99999, -0.999999];
             let mut prev = initial_a;
             for &next in &lower_points {
-                if f(prev) * f(next) <= 0.0 {
+                if objective_npv(prev) * objective_npv(next) <= 0.0 {
                     bracket = Some((next, prev));
                     break;
                 }
@@ -305,14 +380,14 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
     // Solve via Brent's method if bracketed
     let mut solved_rate = None;
     if let Some((a, b)) = bracket {
-        solved_rate = brent_root(f, a, b, 1e-11, 100).ok();
+        solved_rate = brent_root(objective_npv, a, b, 1e-11, 100).ok();
     }
 
     // Fallback to Newton-Raphson if Brent failed or bracket was not found
     if solved_rate.is_none() {
         let guesses = [0.1, 0.0, -0.2, 0.5, 1.0, -0.5, 2.0];
         for &guess in &guesses {
-            if let Ok(root) = newton_raphson(f, df, guess, 100) {
+            if let Ok(root) = newton_raphson(objective_npv, derivative_npv, guess, 100) {
                 solved_rate = Some(root);
                 break;
             }

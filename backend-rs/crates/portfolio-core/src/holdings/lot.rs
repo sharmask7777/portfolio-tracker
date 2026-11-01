@@ -1,4 +1,16 @@
-//! FIFO Tax Lot tracking and depletion engine.
+//! FIFO (First-In, First-Out) Tax Lot tracking and depletion engine.
+//!
+//! This module provides pure, deterministic bookkeeping for investment unit lots and redemptions.
+//! It implements standard financial and statutory tax accounting rules:
+//!
+//! 1. **Lot Depletion Order**: Lots purchased earliest are redeemed first (FIFO).
+//! 2. **Same-Day Ordering**: On the same calendar date, purchases/inflows are processed before
+//!    redemptions/sells to ensure units are available for redemption on the same transaction day.
+//! 3. **Deterministic Tie-Breaking**: Any ties on the same date and transaction direction are broken
+//!    deterministically by transaction identifier (`id`).
+//! 4. **Cost Basis & Gain Realization**: When a lot is partially or fully depleted, the proportional
+//!    cost basis (`units * purchase_nav`) and realized gain (`proceeds - cost_basis`) are tracked
+//!    in an immutable [`LotDepletion`] record.
 
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
@@ -6,7 +18,10 @@ use serde::{Deserialize, Serialize};
 use crate::holdings::{Transaction, TransactionType};
 use crate::types::{Money, Nav, Units};
 
-/// Classification helper: transactions that add units to the folio.
+/// Classification helper: determines whether a transaction type adds units to the folio.
+///
+/// Returns `true` for inflows including purchases, Systematic Investment Plans (SIP),
+/// direct buys, switch-ins from other schemes, and dividend reinvestments.
 pub fn is_unit_addition(tx_type: TransactionType) -> bool {
     matches!(
         tx_type,
@@ -18,7 +33,10 @@ pub fn is_unit_addition(tx_type: TransactionType) -> bool {
     )
 }
 
-/// Classification helper: transactions that redeem or remove units from the folio.
+/// Classification helper: determines whether a transaction type redeems or removes units from the folio.
+///
+/// Returns `true` for outflows including redemptions, direct sells, switch-outs to other schemes,
+/// and transaction reversals.
 pub fn is_unit_redemption(tx_type: TransactionType) -> bool {
     matches!(
         tx_type,
@@ -29,10 +47,15 @@ pub fn is_unit_redemption(tx_type: TransactionType) -> bool {
     )
 }
 
-/// Sorts transactions chronologically with deterministic tie-breaking.
+/// Sorts transactions chronologically with deterministic, multi-tier tie-breaking.
 ///
-/// On the same date, unit additions (buys/inflows) precede redemptions (sells),
-/// followed by transaction ID tie-breaking.
+/// # Sorting Hierarchy:
+/// 1. **Transaction Date (`date`)**: Chronological order (earliest first).
+/// 2. **Direction (Buys before Sells)**: On the same transaction date, unit additions precede
+///    redemptions to reflect realistic broker/AMC settlement order where purchases clear before
+///    sales execute against available balances.
+/// 3. **Identifier (`id`)**: Lexicographical comparison of transaction IDs ensures identical,
+///    reproducible ordering across platforms and test harnesses.
 pub fn sort_transactions(transactions: &[Transaction]) -> Vec<Transaction> {
     let mut sorted = transactions.to_vec();
     sorted.sort_by(|a, b| {
@@ -48,17 +71,32 @@ pub fn sort_transactions(transactions: &[Transaction]) -> Vec<Transaction> {
     sorted
 }
 
-/// An individual tax lot representing a purchase of units on a specific date.
+/// An individual tax lot representing a purchase or acquisition of units on a specific date.
+///
+/// Tracks the original units acquired, units remaining after subsequent FIFO redemptions,
+/// and the acquisition NAV used to compute the original cost basis.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaxLot {
+    /// Date when the units were originally purchased or acquired.
     pub purchase_date: NaiveDate,
+    /// Total quantity of units initially acquired in this lot.
     pub original_units: Units,
+    /// Unsold quantity of units currently remaining in this lot.
     pub remaining_units: Units,
+    /// Net Asset Value per unit at the time of purchase.
     pub purchase_nav: Nav,
+    /// Total monetary amount paid for the lot (`original_units * purchase_nav`).
     pub purchase_amount: Money,
 }
 
 impl TaxLot {
+    /// Constructs a new [`TaxLot`] with full remaining units equal to the original units.
+    ///
+    /// # Arguments
+    /// * `purchase_date` - Calendar date of acquisition.
+    /// * `units` - Number of units purchased.
+    /// * `purchase_nav` - Per-unit NAV on purchase date.
+    /// * `purchase_amount` - Total invested amount.
     pub fn new(
         purchase_date: NaiveDate,
         units: Units,
@@ -74,10 +112,18 @@ impl TaxLot {
         }
     }
 
-    /// Depletes up to `units_to_consume` from this lot using FIFO.
+    /// Depletes up to `units_to_consume` from this tax lot using FIFO accounting.
     ///
-    /// Returns a tuple of `(units_consumed, cost_basis)`.
-    /// `cost_basis` is computed as `units_consumed * purchase_nav`.
+    /// # Mathematical Formulation:
+    /// - `consumed = min(units_to_consume, remaining_units)`
+    /// - `cost_basis = consumed * purchase_nav`
+    /// - `remaining_units' = remaining_units - consumed`
+    ///
+    /// If `units_to_consume <= 0` or `remaining_units <= 0`, no units are depleted
+    /// and `(Units::ZERO, Money::ZERO)` is returned.
+    ///
+    /// # Returns
+    /// A tuple of `(units_consumed, cost_basis)`.
     pub fn deplete(&mut self, units_to_consume: Units) -> (Units, Money) {
         if self.remaining_units <= Units::ZERO || units_to_consume <= Units::ZERO {
             return (Units::ZERO, Money::ZERO);
@@ -94,26 +140,49 @@ impl TaxLot {
         (consumed, cost_basis)
     }
 
-    /// Returns whether this lot is completely depleted (zero remaining units).
+    /// Returns `true` if this tax lot has zero remaining units (completely depleted).
     pub fn is_depleted(&self) -> bool {
         self.remaining_units.is_zero()
     }
 }
 
-/// Record of an individual redemption matched against a lot.
+/// Audit record of an individual redemption matched against a specific purchase tax lot.
+///
+/// Provides complete traceability linking a redemption back to the original acquisition date,
+/// holding period, purchase NAV, redemption NAV, cost basis, gross proceeds, and realized gain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LotDepletion {
+    /// Date when the matched purchase lot was originally acquired.
     pub lot_purchase_date: NaiveDate,
+    /// Date when the redemption/sale occurred.
     pub redemption_date: NaiveDate,
+    /// Number of units depleted from the lot in this redemption.
     pub units: Units,
+    /// Purchase NAV of the depleted lot.
     pub purchase_nav: Nav,
+    /// Effective redemption NAV at which units were sold.
     pub redemption_nav: Nav,
+    /// Proportional cost of acquisition for the depleted units (`units * purchase_nav`).
     pub cost_basis: Money,
+    /// Gross consideration received for the depleted units (`units * redemption_nav`).
     pub proceeds: Money,
+    /// Net realized capital gain or loss (`proceeds - cost_basis`).
     pub realized_gain: Money,
 }
 
-/// Processes a chronological slice of transactions into active lots and closed lot depletions.
+/// Processes a chronological slice of transactions into active holding lots and closed lot depletions.
+///
+/// # Mechanics:
+/// 1. Sorts all transactions using [`sort_transactions`] to ensure purchases precede sales on same-day trades.
+/// 2. Iterates sequentially through transactions:
+///    - **Unit Additions**: Instantiates a new [`TaxLot`]. If transaction NAV is missing or zero,
+///      derives `purchase_nav = amount / units`.
+///    - **Unit Redemptions**: Iterates through existing non-depleted lots in FIFO order, depleting units
+///      via [`TaxLot::deplete`] until the requested redemption quantity is fully satisfied.
+///      Records each match as a [`LotDepletion`].
+/// 3. Returns a tuple containing:
+///    - `Vec<TaxLot>`: Remaining active lots with positive unsold units.
+///    - `Vec<LotDepletion>`: Chronological history of all closed/depleted lot segments.
 pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotDepletion>) {
     let sorted = sort_transactions(transactions);
     let mut lots: Vec<TaxLot> = Vec::new();
@@ -127,6 +196,7 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
         if is_addition {
             let units = tx.units.abs();
             if units.is_positive() {
+                // Determine acquisition NAV: prefer explicit NAV; if zero, derive from amount / units
                 let nav = if tx.nav.is_positive() {
                     tx.nav
                 } else if tx.amount.abs().is_positive() {
@@ -143,6 +213,7 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
             }
         } else if is_redemption {
             let mut units_to_sell = tx.units.abs();
+            // Determine effective redemption NAV: prefer explicit NAV; if zero, derive from amount / units
             let effective_nav = if tx.nav.is_positive() {
                 tx.nav
             } else if tx.units.abs().is_positive() && tx.amount.abs().is_positive() {
@@ -151,6 +222,7 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
                 Nav::ZERO
             };
 
+            // Deplete against existing active lots in FIFO order
             for lot in &mut lots {
                 if units_to_sell.is_zero() {
                     break;
@@ -179,6 +251,7 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
         }
     }
 
+    // Retain only active lots with positive unsold units
     let active_lots = lots.into_iter().filter(|l| !l.is_depleted()).collect();
     (active_lots, depletions)
 }

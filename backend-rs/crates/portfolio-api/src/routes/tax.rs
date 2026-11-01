@@ -28,50 +28,67 @@ use crate::routes::portfolio::{
 };
 use crate::state::AppState;
 
+/// Request parameters for simulating a mutual fund or asset sale.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
 pub struct SimulationSellRequest {
+    /// Optional folio ID to simulate sale from an existing portfolio position.
     #[ts(optional = nullable)]
     pub folio_id: Option<Uuid>,
+    /// Asset name if simulating hypothetical asset or when folio ID is not provided.
     #[ts(optional = nullable)]
     pub asset_name: Option<String>,
+    /// Asset type classification (e.g. `"MUTUAL_FUND"`, `"EQUITY"`, `"GOLD"`).
     #[ts(optional = nullable)]
     pub asset_type: Option<String>,
+    /// Number of units to simulate selling.
     #[ts(type = "number")]
     pub units: Decimal,
+    /// Explicit current price / NAV override (if omitted, looks up latest database/market NAV).
     #[ts(optional = nullable, type = "number")]
     pub current_price: Option<Decimal>,
+    /// Applicable investor income tax slab rate (defaults to 30% / 0.30 if omitted).
     #[ts(optional = nullable, type = "number")]
     pub tax_slab: Option<Decimal>,
+    /// Hypothetical redemption date (defaults to current UTC date if omitted).
     #[ts(optional = nullable)]
     pub sell_date: Option<NaiveDate>,
 }
 
 pub type SimulateSellRequest = SimulationSellRequest;
 
+/// Tax and cess breakdown component for a specific capital gains classification.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
 pub struct TaxBreakdownItem {
+    /// Taxable capital gain amount.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub amount: Decimal,
+    /// Statutory base tax before health and education cess.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub tax: Decimal,
+    /// Health & Education Cess (4% of base tax).
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub cess: Decimal,
 }
 
+/// Consolidated tax breakdown across Short-Term (STCG), Long-Term (LTCG), and Slab taxation.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
 pub struct TaxBreakdown {
+    /// Section 111A Short-Term Capital Gains component (20% post-July 23, 2024).
     pub stcg: TaxBreakdownItem,
+    /// Section 112A Long-Term Capital Gains component (12.5% post-July 23, 2024).
     pub ltcg: TaxBreakdownItem,
+    /// Section 50AA or regular income tax slab component.
     pub slab: TaxBreakdownItem,
+    /// Total estimated tax liability including cess.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub total_tax: Decimal,
@@ -121,35 +138,46 @@ impl TaxBreakdown {
     }
 }
 
+/// Response object detailing the simulated tax, gains, and exit load from selling units.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
 pub struct SimulationSellResponse {
+    /// Name of the simulated asset.
     pub asset_name: String,
+    /// Number of units requested to sell.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub units_to_sell: Decimal,
+    /// Gross proceeds from selling the units.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub estimated_value: Decimal,
+    /// Total nominal capital gain or loss.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub total_gain: Decimal,
+    /// Net taxable capital gain after applicable statutory exemptions.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub taxable_gain: Decimal,
+    /// Estimated tax liability including health and education cess.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub estimated_tax: Decimal,
+    /// Exit load penalty deducted by AMC (if redemption occurs within exit load window).
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub exit_load: Decimal,
+    /// Breakdown by capital gains tax bucket (STCG, LTCG, Slab).
     pub tax_breakdown: TaxBreakdown,
+    /// FIFO-matched purchase lots realized in this redemption.
     pub matched_lots: Vec<RealizedGain>,
 }
 
 pub type SimulationResponse = SimulationSellResponse;
 
+/// Read-only tax breakdown response for portfolio-wide tax reporting.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -190,14 +218,30 @@ fn to_simulation_response(sim: SellSimulation) -> SimulationSellResponse {
     }
 }
 
+/// Query parameters for evaluating LTCG tax harvesting opportunities.
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HarvestingQuery {
+    /// Scope ID (portfolio UUID or aggregate scope like `"consolidated"`).
     pub scope_id: Option<String>,
+    /// Valuation as-of date (defaults to current date if omitted).
     pub as_of: Option<NaiveDate>,
+    /// Realized Section 112A LTCG already booked in current FY (offsets ₹1.25L annual exemption).
     pub realized_ltcg: Option<Decimal>,
 }
 
+/// Route handler for `POST /api/portfolio/:id/tax/simulate-sell` simulating asset sales and capital gains tax impact.
+///
+/// ## Simulation Lifecycle:
+/// 1. Fetches existing transactions for the target folio or builds hypothetical holdings.
+/// 2. Performs strict statutory FIFO lot matching against historical buy lots using
+///    `simulate_sell_transactions_with_metadata`.
+/// 3. Validates statutory restrictions:
+///    - **ELSS Lock-In (Section 80C)**: Equity Linked Savings Schemes have a mandatory 3-year lock-in period.
+///      If the requested units exceed available unlocked units, returns `ApiError::UnitsLocked` (HTTP 400).
+/// 4. Evaluates applicable exit loads from AMC scheme rules.
+/// 5. Classifies gains under Section 111A (STCG), Section 112A (LTCG with ₹1.25L exemption), or Section 50AA (Slab).
+/// 6. Computes Jan 31, 2018 grandfathering adjustment under Section 55(2)(ac) if acquired prior to Feb 1, 2018.
 pub async fn simulate_sell(
     auth_user: AuthUser,
     State(state): State<AppState>,
@@ -233,8 +277,8 @@ pub async fn simulate_sell(
 
             let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
             let mut core_txs = Vec::with_capacity(tx_entities.len());
-            for t in &tx_entities {
-                core_txs.push(t.to_core_transaction()?);
+            for transaction_entity in &tx_entities {
+                core_txs.push(transaction_entity.to_core_transaction()?);
             }
 
             let fallback = core_txs
@@ -309,6 +353,10 @@ pub async fn simulate_sell(
     Ok(Json(to_simulation_response(simulation)))
 }
 
+/// Route handler for `GET /api/tax/harvesting` and `/api/tax/harvesting-opportunities`.
+///
+/// Identifies mutual fund lots with unrealized LTCG that can be redeemed tax-free
+/// under the remaining Section 112A ₹1.25L annual exemption for the current financial year.
 pub async fn get_harvesting(
     auth_user: AuthUser,
     State(state): State<AppState>,
@@ -336,8 +384,8 @@ pub async fn get_harvesting(
 
             let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
             let mut core_txs = Vec::with_capacity(tx_entities.len());
-            for t in &tx_entities {
-                core_txs.push(t.to_core_transaction()?);
+            for transaction_entity in &tx_entities {
+                core_txs.push(transaction_entity.to_core_transaction()?);
             }
 
             let fallback = core_txs
@@ -365,42 +413,45 @@ pub async fn get_harvesting(
 
     let inputs: Vec<FolioHarvestingInput> = folio_data
         .iter()
-        .map(|(fid, name, atype, txs, nav)| {
-            FolioHarvestingInput::new(name, *atype, txs, *nav).with_folio_id(fid)
-        })
+        .map(
+            |(folio_id, scheme_name, asset_type, core_transactions, current_nav)| {
+                FolioHarvestingInput::new(scheme_name, *asset_type, core_transactions, *current_nav)
+                    .with_folio_id(folio_id)
+            },
+        )
         .collect();
 
     let summary = get_harvesting_opportunities(&inputs, as_of, realized_ltcg, None);
-    let to_f = |v: Decimal| v.to_f64().unwrap_or(0.0);
+    let decimal_to_f64 = |v: Decimal| v.to_f64().unwrap_or(0.0);
     let json_val = serde_json::json!({
-        "realizedLtcgFy": to_f(summary.realized_ltcg_fy.to_decimal()),
-        "remainingExemption": to_f(summary.remaining_exemption.to_decimal()),
-        "totalPotentialHarvest": to_f(summary.total_potential_harvest.to_decimal()),
-        "estimatedTaxSavings": to_f(summary.estimated_tax_savings.to_decimal()),
+        "realizedLtcgFy": decimal_to_f64(summary.realized_ltcg_fy.to_decimal()),
+        "remainingExemption": decimal_to_f64(summary.remaining_exemption.to_decimal()),
+        "totalPotentialHarvest": decimal_to_f64(summary.total_potential_harvest.to_decimal()),
+        "estimatedTaxSavings": decimal_to_f64(summary.estimated_tax_savings.to_decimal()),
         "opportunities": summary.opportunities.iter().map(|op| {
             serde_json::json!({
                 "folioId": op.folio_id,
                 "schemeName": op.scheme_name,
-                "unitsToHarvest": to_f(op.units_to_harvest.to_decimal()),
-                "unrealizedGain": to_f(op.unrealized_gain.to_decimal()),
-                "currentValue": to_f(op.current_value.to_decimal()),
+                "unitsToHarvest": decimal_to_f64(op.units_to_harvest.to_decimal()),
+                "unrealizedGain": decimal_to_f64(op.unrealized_gain.to_decimal()),
+                "currentValue": decimal_to_f64(op.current_value.to_decimal()),
             })
         }).collect::<Vec<_>>(),
         "unrealizedSummary": {
-            "stcg": to_f(summary.unrealized_summary.stcg.to_decimal()),
-            "ltcg": to_f(summary.unrealized_summary.ltcg.to_decimal()),
-            "losses": to_f(summary.unrealized_summary.losses.to_decimal()),
-            "netGain": to_f(summary.unrealized_summary.net_gain.to_decimal()),
+            "stcg": decimal_to_f64(summary.unrealized_summary.stcg.to_decimal()),
+            "ltcg": decimal_to_f64(summary.unrealized_summary.ltcg.to_decimal()),
+            "losses": decimal_to_f64(summary.unrealized_summary.losses.to_decimal()),
+            "netGain": decimal_to_f64(summary.unrealized_summary.net_gain.to_decimal()),
             "lots": summary.unrealized_summary.lots.iter().map(|lot| {
                 serde_json::json!({
                     "schemeName": lot.scheme_name,
                     "buyDate": lot.buy_date,
-                    "units": to_f(lot.units.to_decimal()),
-                    "purchaseNav": to_f(lot.purchase_nav.to_decimal()),
-                    "currentNav": to_f(lot.current_nav.to_decimal()),
+                    "units": decimal_to_f64(lot.units.to_decimal()),
+                    "purchaseNav": decimal_to_f64(lot.purchase_nav.to_decimal()),
+                    "currentNav": decimal_to_f64(lot.current_nav.to_decimal()),
                     "holdingDays": lot.holding_days,
                     "isLtcg": lot.is_ltcg,
-                    "unrealizedGain": to_f(lot.unrealized_gain.to_decimal()),
+                    "unrealizedGain": decimal_to_f64(lot.unrealized_gain.to_decimal()),
                 })
             }).collect::<Vec<_>>(),
         }
@@ -408,6 +459,7 @@ pub async fn get_harvesting(
     Ok(Json(json_val))
 }
 
+/// Constructs and returns the Axum router for tax simulation and harvesting endpoints.
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/simulate-sell", post(simulate_sell))

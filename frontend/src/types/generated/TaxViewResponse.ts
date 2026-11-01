@@ -2,4 +2,7 @@
 import type { RealizedGain } from "./RealizedGain";
 import type { TaxBreakdown } from "./TaxBreakdown";
 
+/**
+ * Read-only tax breakdown response for portfolio-wide tax reporting.
+ */
 export type TaxViewResponse = { breakdown: TaxBreakdown, matchedLots: Array<RealizedGain>, };
