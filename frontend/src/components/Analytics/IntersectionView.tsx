@@ -343,7 +343,7 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
               style={{
                 fontSize: '0.8125rem',
                 fontWeight: 500,
-                color: excludeArbitrage ? 'var(--accent-color)' : 'var(--text-primary)',
+                color: 'var(--text-primary)',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -386,8 +386,8 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
                 backgroundColor: 'rgba(37, 99, 235, 0.1)',
                 border: '1px solid rgba(37, 99, 235, 0.2)',
                 fontSize: '0.8125rem',
-                color: 'var(--accent-color)',
-                fontWeight: 500,
+                color: 'var(--text-primary)',
+                fontWeight: 600,
               }}
             >
               {summaryMetrics.multiFundCount} Common in Multiple Funds
@@ -478,7 +478,7 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
                               padding: '0.15rem 0.45rem',
                               borderRadius: '4px',
                               backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                              color: 'var(--accent-color)',
+                              color: 'var(--text-primary)',
                               fontWeight: 600,
                               whiteSpace: 'nowrap',
                             }}
