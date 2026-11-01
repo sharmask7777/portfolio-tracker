@@ -25,6 +25,7 @@ Before committing or creating a PR, you MUST run and pass the full hermetic veri
 4. `(cd backend-rs && cargo test --package portfolio-api --test export_bindings) && git diff --exit-code frontend/src/types/generated`
 5. `(cd frontend && npm run build && npm run test:unit)`
 6. `(cd backend-rs && cargo run --package portfolio-parity)`
+7. `npm run test:coverage` (Blocking coverage gates: Backend $\ge$ 80% line coverage via `cargo llvm-cov`; Frontend: Lines $\ge$ 88%, Statements $\ge$ 86%, Funcs $\ge$ 85%, Branches $\ge$ 65% via `vitest`)
 
 ### 5. Mandatory Tax Specialist Subagent (`tax-statutory-auditor`)
 - For any changes affecting tax calculation logic, statutory rates, exemptions, Schedule CG ITR reports, or files under `backend-rs/crates/portfolio-core/src/tax/`, agents MUST consult or invoke the specialized `tax-statutory-auditor` subagent role.

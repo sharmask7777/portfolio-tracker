@@ -213,4 +213,73 @@ mod tests {
         assert_eq!(aa.cash, dec("0"));
         assert_eq!(aa.alternatives, dec("0"));
     }
+
+    #[test]
+    fn test_zero_and_empty_aggregations() {
+        assert_eq!(MarketCapBreakdown::zero().total(), Decimal::ZERO);
+        assert_eq!(
+            MarketCapBreakdown::zero().normalize().total(),
+            Decimal::ZERO
+        );
+        assert_eq!(AssetAllocationBreakdown::zero().total(), Decimal::ZERO);
+        assert_eq!(
+            AssetAllocationBreakdown::zero().normalize().total(),
+            Decimal::ZERO
+        );
+
+        let empty_mc = aggregate_market_cap(&[]);
+        assert_eq!(empty_mc, MarketCapBreakdown::zero());
+
+        let zero_mc = aggregate_market_cap(&[(
+            dec("-100"),
+            MarketCapBreakdown::new(dec("50"), dec("30"), dec("20")),
+        )]);
+        assert_eq!(zero_mc, MarketCapBreakdown::zero());
+
+        let normal_mc = aggregate_market_cap(&[
+            (
+                dec("100"),
+                MarketCapBreakdown::new(dec("60"), dec("30"), dec("10")),
+            ),
+            (
+                dec("0"),
+                MarketCapBreakdown::new(dec("10"), dec("10"), dec("80")),
+            ),
+            (
+                dec("100"),
+                MarketCapBreakdown::new(dec("40"), dec("30"), dec("30")),
+            ),
+        ]);
+        assert_eq!(normal_mc.large_cap, dec("50"));
+        assert_eq!(normal_mc.mid_cap, dec("30"));
+        assert_eq!(normal_mc.small_cap, dec("20"));
+
+        let empty_aa = aggregate_asset_allocation(&[]);
+        assert_eq!(empty_aa, AssetAllocationBreakdown::zero());
+
+        let zero_aa = aggregate_asset_allocation(&[(
+            dec("0"),
+            AssetAllocationBreakdown::new(dec("50"), dec("30"), dec("10"), dec("10")),
+        )]);
+        assert_eq!(zero_aa, AssetAllocationBreakdown::zero());
+
+        let aa_with_zero_lot = aggregate_asset_allocation(&[
+            (
+                dec("100"),
+                AssetAllocationBreakdown::new(dec("80"), dec("10"), dec("5"), dec("5")),
+            ),
+            (
+                dec("0"),
+                AssetAllocationBreakdown::new(dec("10"), dec("10"), dec("10"), dec("70")),
+            ),
+            (
+                dec("100"),
+                AssetAllocationBreakdown::new(dec("60"), dec("20"), dec("15"), dec("5")),
+            ),
+        ]);
+        assert_eq!(aa_with_zero_lot.equity, dec("70"));
+        assert_eq!(aa_with_zero_lot.debt, dec("15"));
+        assert_eq!(aa_with_zero_lot.cash, dec("10"));
+        assert_eq!(aa_with_zero_lot.alternatives, dec("5"));
+    }
 }
