@@ -24,12 +24,14 @@ use portfolio_db::entities::{
     AssetEntity, FolioEntity, PortfolioEntity, TransactionEntity, UploadJobEntity, UploadJobStatus,
 };
 use portfolio_db::error::DbError;
-use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
+use portfolio_db::repositories::{
+    FundHoldingsRepository, PortfolioRepository, SqlxFundHoldingsRepo, TransactionRepository,
+};
 
 use crate::errors::ApiError;
 use crate::middleware::AuthUser;
 use crate::services::NavSyncService;
-use crate::state::AppState;
+use crate::state::{AppState, DbBackend};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1397,6 +1399,24 @@ pub async fn compute_portfolio_exposures(
         return Ok(Vec::new());
     }
 
+    let isin_list: Vec<&str> = active_equity_folios
+        .iter()
+        .filter_map(|(a, _)| a.isin.as_deref())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let db_holdings = if !isin_list.is_empty() {
+        match &state.backend {
+            DbBackend::InMemory(mem) => mem.get_latest_holdings_batch(&isin_list).await?,
+            DbBackend::Postgres(pool) => {
+                let repo = SqlxFundHoldingsRepo::new(pool.clone());
+                repo.get_latest_holdings_batch(&isin_list).await?
+            }
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
+
     let mut stock_map: std::collections::BTreeMap<
         String,
         (String, String, f64, Vec<StockContribution>),
@@ -1404,28 +1424,75 @@ pub async fn compute_portfolio_exposures(
 
     for (asset, folio_val) in active_equity_folios {
         let isin = asset.isin.as_deref().unwrap_or("");
-        let (fund_name, holdings) = resolve_holdings(isin, &asset.name);
-        let effective_name = if asset.name.is_empty() {
-            fund_name
+        let db_entries = if !isin.is_empty() {
+            db_holdings.get(isin)
         } else {
-            asset.name
+            None
         };
 
-        for h in holdings {
-            let norm_key = portfolio_core::xray::overlap::normalize_stock_name(&h.name);
-            let sector = get_stock_sector(&h.name).to_string();
-            let weight_pct = h.weight.to_f64().unwrap_or(0.0);
-            let stock_val = folio_val * (weight_pct / 100.0);
+        if let Some(entries) = db_entries.filter(|e| !e.is_empty()) {
+            let effective_name = if !asset.name.is_empty() {
+                asset.name
+            } else if let Some(first) = entries.first() {
+                if !first.scheme_name.is_empty() {
+                    first.scheme_name.clone()
+                } else {
+                    format!("Fund {}", isin)
+                }
+            } else {
+                format!("Fund {}", isin)
+            };
 
-            let entry = stock_map
-                .entry(norm_key)
-                .or_insert_with(|| (h.name.clone(), sector, 0.0, Vec::new()));
-            entry.2 += stock_val;
-            entry.3.push(StockContribution {
-                scheme_name: effective_name.clone(),
-                value: stock_val,
-                weight: weight_pct,
-            });
+            for h in entries {
+                let norm_key = portfolio_core::xray::overlap::normalize_stock_name(&h.stock_name);
+                let sector = if !h.sector.is_empty() && h.sector != "Other" {
+                    h.sector.clone()
+                } else {
+                    get_stock_sector(&h.stock_name).to_string()
+                };
+                let weight_pct = h.weight.to_f64().unwrap_or(0.0);
+                let stock_val = folio_val * (weight_pct / 100.0);
+
+                let entry = stock_map
+                    .entry(norm_key)
+                    .or_insert_with(|| (h.stock_name.clone(), sector.clone(), 0.0, Vec::new()));
+                if entry.1 == "Other" && sector != "Other" {
+                    entry.1 = sector;
+                }
+                entry.2 += stock_val;
+                entry.3.push(StockContribution {
+                    scheme_name: effective_name.clone(),
+                    value: stock_val,
+                    weight: weight_pct,
+                });
+            }
+        } else {
+            let (fund_name, holdings) = resolve_holdings(isin, &asset.name);
+            let effective_name = if asset.name.is_empty() {
+                fund_name
+            } else {
+                asset.name
+            };
+
+            for h in holdings {
+                let norm_key = portfolio_core::xray::overlap::normalize_stock_name(&h.name);
+                let sector = get_stock_sector(&h.name).to_string();
+                let weight_pct = h.weight.to_f64().unwrap_or(0.0);
+                let stock_val = folio_val * (weight_pct / 100.0);
+
+                let entry = stock_map
+                    .entry(norm_key)
+                    .or_insert_with(|| (h.name.clone(), sector.clone(), 0.0, Vec::new()));
+                if entry.1 == "Other" && sector != "Other" {
+                    entry.1 = sector;
+                }
+                entry.2 += stock_val;
+                entry.3.push(StockContribution {
+                    scheme_name: effective_name.clone(),
+                    value: stock_val,
+                    weight: weight_pct,
+                });
+            }
         }
     }
 
