@@ -507,3 +507,144 @@ proptest! {
         prop_assert_eq!(units * nav, nav * units);
     }
 }
+
+#[test]
+#[allow(clippy::op_ref)]
+fn test_all_operator_combinations_and_conversions() {
+    let m1 = Money::from_str("100.00").unwrap();
+    let m2 = Money::from_str("50.00").unwrap();
+
+    // Add combinations
+    assert_eq!(m1 + &m2, Money::from_str("150.00").unwrap());
+    assert_eq!(&m1 + m2, Money::from_str("150.00").unwrap());
+    assert_eq!(&m1 + &m2, Money::from_str("150.00").unwrap());
+    let mut m_mut = m1;
+    m_mut += m2;
+    assert_eq!(m_mut, Money::from_str("150.00").unwrap());
+
+    // Sub combinations
+    assert_eq!(m1 - &m2, Money::from_str("50.00").unwrap());
+    assert_eq!(&m1 - m2, Money::from_str("50.00").unwrap());
+    assert_eq!(&m1 - &m2, Money::from_str("50.00").unwrap());
+    let mut m_sub = m1;
+    m_sub -= m2;
+    assert_eq!(m_sub, Money::from_str("50.00").unwrap());
+
+    // Mul & Div with decimal
+    assert_eq!(
+        m1 * Decimal::from_str("2.5").unwrap(),
+        Money::from_str("250.00").unwrap()
+    );
+    assert_eq!(
+        m1 / Decimal::from_str("2.0").unwrap(),
+        Money::from_str("50.00").unwrap()
+    );
+    assert_eq!(
+        m1 / Units::from_str("2.0000").unwrap(),
+        Nav::from_str("50.0000").unwrap()
+    );
+    assert_eq!(m1 / m2, Decimal::from_str("2").unwrap());
+
+    // Decimal From/Into
+    let d_from_ref: Decimal = (&m1).into();
+    assert_eq!(d_from_ref, Decimal::from_str("100.00").unwrap());
+    let d_from_val: Decimal = m1.into();
+    assert_eq!(d_from_val, Decimal::from_str("100.00").unwrap());
+
+    // Units combinations
+    let u1 = Units::from_str("10.0000").unwrap();
+    let u2 = Units::from_str("5.0000").unwrap();
+    assert_eq!(u1 + &u2, Units::from_str("15.0000").unwrap());
+    assert_eq!(&u1 + u2, Units::from_str("15.0000").unwrap());
+    assert_eq!(&u1 + &u2, Units::from_str("15.0000").unwrap());
+    let mut u_mut = u1;
+    u_mut += u2;
+    assert_eq!(u_mut, Units::from_str("15.0000").unwrap());
+
+    assert_eq!(u1 - &u2, Units::from_str("5.0000").unwrap());
+    assert_eq!(&u1 - u2, Units::from_str("5.0000").unwrap());
+    assert_eq!(&u1 - &u2, Units::from_str("5.0000").unwrap());
+    let mut u_sub = u1;
+    u_sub -= u2;
+    assert_eq!(u_sub, Units::from_str("5.0000").unwrap());
+
+    assert_eq!(-u1, Units::from_str("-10.0000").unwrap());
+    assert_eq!(
+        u1 * Decimal::from_str("3").unwrap(),
+        Units::from_str("30.0000").unwrap()
+    );
+    assert_eq!(
+        u1 / Decimal::from_str("2").unwrap(),
+        Units::from_str("5.0000").unwrap()
+    );
+    let units_list = vec![u1, u2];
+    let u_sum: Units = units_list.into_iter().sum();
+    assert_eq!(u_sum, Units::from_str("15.0000").unwrap());
+
+    let u_d_ref: Decimal = (&u1).into();
+    assert_eq!(u_d_ref, Decimal::from_str("10.0000").unwrap());
+    let u_d_val: Decimal = u1.into();
+    assert_eq!(u_d_val, Decimal::from_str("10.0000").unwrap());
+
+    // Nav combinations
+    let n1 = Nav::from_str("10.5000").unwrap();
+    let n2 = Nav::from_str("2.0000").unwrap();
+    let u_for_nav = Units::from_str("4.0000").unwrap();
+    assert_eq!(n2 * u_for_nav, Money::from_str("8.00").unwrap());
+    assert_eq!(&n2 * u_for_nav, Money::from_str("8.00").unwrap());
+    assert_eq!(n2 * &u_for_nav, Money::from_str("8.00").unwrap());
+    assert_eq!(&n2 * &u_for_nav, Money::from_str("8.00").unwrap());
+
+    assert_eq!(u_for_nav * n2, Money::from_str("8.00").unwrap());
+    assert_eq!(&u_for_nav * n2, Money::from_str("8.00").unwrap());
+    assert_eq!(u_for_nav * &n2, Money::from_str("8.00").unwrap());
+    assert_eq!(&u_for_nav * &n2, Money::from_str("8.00").unwrap());
+
+    let n_d_ref: Decimal = (&n1).into();
+    assert_eq!(n_d_ref, Decimal::from_str("10.5000").unwrap());
+    let n_d_val: Decimal = n1.into();
+    assert_eq!(n_d_val, Decimal::from_str("10.5000").unwrap());
+
+    // Percentage combinations
+    let pct = Percentage::from_percentage(Decimal::from_str("20.0").unwrap());
+    let p_d_ref: Decimal = (&pct).into();
+    assert_eq!(p_d_ref, Decimal::from_str("20.0").unwrap());
+    let p_d_val: Decimal = pct.into();
+    assert_eq!(p_d_val, Decimal::from_str("20.0").unwrap());
+    let p_from_d = Percentage::from(Decimal::from_str("15.0").unwrap());
+    assert_eq!(p_from_d.as_percentage(), Decimal::from_str("15.0").unwrap());
+
+    // Deref & Display
+    assert_eq!(*m1, Decimal::from_str("100.00").unwrap());
+    assert_eq!(*u1, Decimal::from_str("10.0000").unwrap());
+    assert_eq!(*n1, Decimal::from_str("10.5000").unwrap());
+    assert_eq!(*pct, Decimal::from_str("20.0").unwrap());
+
+    let pan = Pan::new("ABCDE1234F").unwrap();
+    assert_eq!(&*pan, "ABCDE1234F");
+
+    let folio = FolioNumber::new("FOLIO12345").unwrap();
+    assert_eq!(&*folio, "FOLIO12345");
+
+    let isin = Isin::new("INF109K012R6").unwrap();
+    assert_eq!(&*isin, "INF109K012R6");
+
+    // AssetType FromStr and Display
+    for (s, expected) in [
+        ("MUTUAL_FUND", AssetType::MutualFund),
+        ("MUTUALFUND", AssetType::MutualFund),
+        ("STOCK", AssetType::Stock),
+        ("FIXED_DEPOSIT", AssetType::FixedDeposit),
+        ("FIXEDDEPOSIT", AssetType::FixedDeposit),
+        ("FD", AssetType::FixedDeposit),
+        ("EPF", AssetType::Epf),
+        ("PPF", AssetType::Ppf),
+        ("SGB", AssetType::Sgb),
+        ("PHYSICAL_GOLD", AssetType::PhysicalGold),
+        ("PHYSICALGOLD", AssetType::PhysicalGold),
+        ("GOLD", AssetType::PhysicalGold),
+    ] {
+        assert_eq!(AssetType::from_str(s).unwrap(), expected);
+    }
+    assert!(AssetType::from_str("UNKNOWN").is_err());
+}

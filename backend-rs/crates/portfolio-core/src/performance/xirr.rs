@@ -477,4 +477,25 @@ mod tests {
             Err(PortfolioError::InvalidTransaction { .. })
         ));
     }
+
+    #[test]
+    fn test_xirr_evaluate_npv_and_from_amount() {
+        let cf = CashFlow::from_amount(dec("500"), date(2023, 6, 1));
+        assert_eq!(cf.amount, dec("500"));
+        assert_eq!(cf.date, date(2023, 6, 1));
+
+        let pairs = vec![(0.0, -100.0), (1.0, 110.0)];
+        // At r <= -1.0, evaluate_npv returns NAN
+        assert!(evaluate_npv(&pairs, -1.5).is_nan());
+        assert!(evaluate_d_npv(&pairs, -1.5).is_nan());
+
+        // Normal evaluate_npv at r = 0.10
+        let npv = evaluate_npv(&pairs, 0.10);
+        assert!(npv.abs() < 1e-10);
+
+        // Near-zero or non-converging dy: signature is newton_raphson(f, df, initial_guess, max_iter)
+        let zero_df = |_r: f64| 0.0;
+        let dummy_f = |_r: f64| 10.0;
+        assert!(newton_raphson(dummy_f, zero_df, 0.1, 50).is_err());
+    }
 }

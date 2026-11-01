@@ -12,7 +12,10 @@
     "docker:logs": "docker compose logs -f",
     "start": "npm run docker:up && npm run docker:logs",
     "test": "(cd backend-rs && cargo test --workspace) && npm run test:unit --prefix frontend",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:coverage:backend": "(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex \"(main\\.rs|test_mocks\\.rs|repositories/)\" --fail-under-lines 80 --summary-only)",
+    "test:coverage:frontend": "npm run test:coverage --prefix frontend",
+    "test:coverage": "npm run test:coverage:backend && npm run test:coverage:frontend"
   },
   "keywords": [],
   "author": "",

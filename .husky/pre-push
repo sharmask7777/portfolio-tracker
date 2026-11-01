@@ -16,8 +16,14 @@ echo "Running Rust parity validation harness..."
 echo "Running Rust clippy and formatting checks..."
 (cd backend-rs && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check)
 
-echo "Running frontend hermetic unit tests..."
+echo "Enforcing backend test coverage threshold (fail-under-lines 80%)..."
+(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|test_mocks\.rs|repositories/)" --fail-under-lines 80 --summary-only)
+
+echo "Running frontend hermetic unit tests with coverage gate (lines 88%, statements 86%, funcs 85%, branches 65%)..."
 (cd frontend && npm run test:unit)
+
+echo "Building frontend distribution..."
+(cd frontend && npm run build)
 
 echo "🐳 Starting Docker compose stack for tests..."
 export NODE_ENV=development
