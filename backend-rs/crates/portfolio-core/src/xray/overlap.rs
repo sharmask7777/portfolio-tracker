@@ -1,4 +1,19 @@
 //! Mutual fund portfolio overlap and stock intersection engine.
+//!
+//! Provides institutional portfolio look-through analytics calculating the commonality
+//! between two mutual funds or investment portfolios:
+//!
+//! # Mathematical Formulation:
+//! For two funds $A$ and $B$ holding constituent stocks with weights $w_A(c)$ and $w_B(c)$:
+//!
+//! $$\text{Overlap}(A, B) = \sum_{c \in A \cap B} \min(w_A(c), w_B(c))$$
+//!
+//! # Invariant Properties:
+//! 1. **Symmetry**: $\text{Overlap}(A, B) = \text{Overlap}(B, A)$.
+//! 2. **Identity / Self-Overlap**: $\text{Overlap}(A, A) = \sum_{c \in A} w_A(c)$ ($100\%$ for a fully invested fund).
+//! 3. **Boundedness**: $0.0 \le \text{Overlap}(A, B) \le 100.0$ for all valid weight distributions.
+//! 4. **Deterministic Ordering**: Common stocks are sorted by $\max(w_A(c), w_B(c))$ descending,
+//!    with alphabetical tie-breaking on normalized company names.
 
 use std::collections::BTreeMap;
 
@@ -9,11 +24,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FundHolding {
+    /// Company or security name (e.g. "HDFC Bank Ltd.").
     pub name: String,
+    /// Percentage portfolio weight (e.g. `10.0` for 10.0%).
     pub weight: Decimal,
 }
 
 impl FundHolding {
+    /// Constructs a new [`FundHolding`].
     pub fn new(name: impl Into<String>, weight: Decimal) -> Self {
         Self {
             name: name.into(),
@@ -26,9 +44,12 @@ impl FundHolding {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommonStock {
+    /// Display name of the common holding.
     pub name: String,
+    /// Percentage weight of this holding in Fund A.
     #[serde(with = "rust_decimal::serde::float")]
     pub weight_a: Decimal,
+    /// Percentage weight of this holding in Fund B.
     #[serde(with = "rust_decimal::serde::float")]
     pub weight_b: Decimal,
 }
@@ -37,10 +58,14 @@ pub struct CommonStock {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FundOverlap {
+    /// Name of the first fund.
     pub fund_a: String,
+    /// Name of the second fund.
     pub fund_b: String,
+    /// Total percentage overlap: $\sum_{c} \min(w_A(c), w_B(c))$.
     #[serde(with = "rust_decimal::serde::float")]
     pub overlap_percentage: Decimal,
+    /// Common stocks held by both funds, ordered by maximum weight descending.
     pub common_stocks: Vec<CommonStock>,
 }
 

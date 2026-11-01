@@ -1,9 +1,14 @@
 //! Statutory lock-in rules, asset classification, and redemption simulation.
 //!
-//! Enforces:
-//! - ELSS (Equity Linked Savings Scheme) 3-year statutory lock-in from each SIP/purchase lot date.
-//! - Leap-year robust lock-in maturity date arithmetic.
-//! - Sell simulation verifying unlocked unit availability before calculating tax consequences.
+//! Enforces Indian mutual fund statutory requirements and operational constraints:
+//! - **ELSS 3-Year Lock-In**: Under Section 80C, each individual ELSS purchase or SIP installment
+//!   is statutorily locked for exactly 3 years from its acquisition date.
+//! - **Leap-Year Robust Arithmetic**: Handles leap-day acquisitions (Feb 29) maturing deterministically
+//!   on Feb 28 in non-leap target years.
+//! - **Exit Load Schedules**: Accurately computes exit load penalties from scheme metadata or standard
+//!   SEBI fund-category rules (e.g. liquid fund 7-day graduated exit load, equity 1% within 1 year).
+//! - **Redemption Simulation**: Validates unlocked unit availability before simulating FIFO lot depletion,
+//!   calculating realized gains, exit load expenses, and estimated tax liabilities.
 
 use std::str::FromStr;
 
@@ -17,7 +22,9 @@ use crate::tax::grandfathering::calculate_gain_with_expenses;
 use crate::tax::{BuyLot, SellSimulation};
 use crate::types::{AssetType, Money, Nav, Units};
 
-/// Checks if a mutual fund scheme is an ELSS (Equity Linked Savings Scheme) based on scheme name.
+/// Checks if a mutual fund scheme is an ELSS (Equity Linked Savings Scheme) based on its name.
+///
+/// Looks for standard indicators like "elss", "tax saver", or "tax plan".
 pub fn is_elss(asset_name: &str) -> bool {
     let lower = asset_name.to_lowercase();
     lower.contains("elss") || lower.contains("tax saver") || lower.contains("tax plan")
@@ -29,6 +36,12 @@ pub fn is_elss_scheme(asset_type: AssetType, asset_name: &str) -> bool {
 }
 
 /// Checks if an asset is classified as equity for Indian capital gains taxation.
+///
+/// # Classification Rules:
+/// - Direct stocks (`AssetType::Stock`) are unconditionally classified as equity.
+/// - Mutual funds (`AssetType::MutualFund`) are classified as equity unless their scheme name contains
+///   keywords denoting debt, money market, liquid, commodity (gold/silver), fund-of-funds (FoF),
+///   or international/overseas equities (which do not qualify for domestic equity tax treatment).
 pub fn is_equity(asset_type: AssetType, asset_name: &str) -> bool {
     if asset_type == AssetType::Stock {
         return true;
@@ -69,8 +82,9 @@ pub fn is_equity(asset_type: AssetType, asset_name: &str) -> bool {
 
 /// Computes the exact 3-year lock-in maturity date for an ELSS lot.
 ///
-/// Handles leap-year transitions deterministically:
-/// A purchase made on Feb 29 (leap year) matures on Feb 28 of the non-leap target year.
+/// # Leap-Year Transition Handling:
+/// A purchase made on February 29 during a leap year matures on February 28 of the non-leap
+/// target year (`year + 3`), matching standard Indian AMC and registrar statutory practice.
 pub fn elss_lock_in_expiry(purchase_date: NaiveDate) -> NaiveDate {
     let target_year = purchase_date.year() + 3;
     let month = purchase_date.month();
@@ -83,7 +97,7 @@ pub fn elss_lock_in_expiry(purchase_date: NaiveDate) -> NaiveDate {
     })
 }
 
-/// Returns true if an ELSS purchase lot is still within its 3-year statutory lock-in period as of `as_of`.
+/// Returns `true` if an ELSS purchase lot is still within its 3-year statutory lock-in period as of `as_of`.
 pub fn is_lot_locked(purchase_date: NaiveDate, as_of: NaiveDate) -> bool {
     as_of < elss_lock_in_expiry(purchase_date)
 }
@@ -277,6 +291,11 @@ pub fn get_exit_load(
 }
 
 /// Simulates a redemption across a raw transaction slice, enforcing lock-in, exit load, and FIFO lot depletion.
+///
+/// # Validation Checks:
+/// 1. Verifies `units_to_sell <= total_active_units`. Returns [`PortfolioError::InsufficientUnits`] otherwise.
+/// 2. For ELSS funds, checks `units_to_sell <= available_unlocked_units`. Returns [`PortfolioError::UnitsLocked`] otherwise.
+/// 3. Depletes matched lots in FIFO order, computing per-lot exit loads and realized capital gains.
 #[allow(clippy::too_many_arguments)]
 pub fn simulate_sell_transactions_with_metadata(
     asset_name: &str,
