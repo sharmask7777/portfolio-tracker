@@ -9,7 +9,7 @@
 
 use std::str::FromStr;
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -18,7 +18,9 @@ use portfolio_core::performance::xirr::{CashFlow, calculate_xirr};
 use portfolio_core::types::{Money, Nav, Units};
 use portfolio_db::entities::*;
 use portfolio_db::error::DbError;
-use portfolio_db::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
+use portfolio_db::repositories::{
+    FamilyRepository, FundHoldingsRepository, PortfolioRepository, TransactionRepository,
+};
 use portfolio_db::test_mocks::InMemoryDatabase;
 
 fn dec(s: &str) -> Decimal {
@@ -719,4 +721,191 @@ async fn test_portfolio_cascading_deletion_of_folios_and_transactions() {
     assert!(db.list_by_folio(folio1.id).await.unwrap().is_empty());
     assert!(db.list_by_folio(folio2.id).await.unwrap().is_empty());
     assert!(db.list_by_portfolio(portfolio.id).await.unwrap().is_empty());
+}
+
+#[test]
+fn test_fund_holding_entity_serde() {
+    let now = Utc::now();
+    let as_of_date = NaiveDate::from_ymd_opt(2024, 3, 31).unwrap();
+    let id = Uuid::new_v4();
+
+    let holding = FundHoldingEntity {
+        id,
+        isin: "INF879O01019".to_string(),
+        scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
+        as_of_date,
+        stock_name: "HDFC Bank Ltd".to_string(),
+        stock_isin: Some("INE040A01034".to_string()),
+        sector: "Financial Services".to_string(),
+        weight: dec("8.250"),
+        created_at: now,
+    };
+
+    // Serialize to JSON
+    let json = serde_json::to_string(&holding).expect("serialize holding");
+    assert!(json.contains("\"schemeName\""));
+    assert!(json.contains("\"asOfDate\""));
+    assert!(json.contains("\"stockName\""));
+    assert!(json.contains("\"stockIsin\""));
+    assert!(json.contains("\"sector\""));
+    assert!(json.contains("\"weight\""));
+    assert!(json.contains("\"createdAt\""));
+
+    // Deserialize roundtrip
+    let deserialized: FundHoldingEntity = serde_json::from_str(&json).expect("deserialize holding");
+    assert_eq!(deserialized, holding);
+
+    // Test deserializing with missing optional/default fields
+    let minimal_json = serde_json::json!({
+        "id": id,
+        "isin": "INF879O01019",
+        "schemeName": "Parag Parikh Flexi Cap Fund",
+        "asOfDate": "2024-03-31",
+        "stockName": "ITC Ltd",
+        "weight": "4.500",
+        "createdAt": now
+    });
+    let holding_minimal: FundHoldingEntity =
+        serde_json::from_value(minimal_json).expect("deserialize minimal");
+    assert_eq!(holding_minimal.stock_isin, None);
+    assert_eq!(holding_minimal.sector, "Other");
+    assert_eq!(holding_minimal.weight, dec("4.500"));
+}
+
+#[tokio::test]
+async fn test_fund_holdings_repository_crud() {
+    let db = InMemoryDatabase::new();
+    let now = Utc::now();
+    let d1 = NaiveDate::from_ymd_opt(2024, 1, 31).unwrap();
+    let d2 = NaiveDate::from_ymd_opt(2024, 2, 29).unwrap();
+
+    let fund_isin = "INF879O01019";
+    let other_isin = "INF200K01123";
+
+    // Older disclosure for fund_isin (2024-01-31)
+    let old_holdings = vec![
+        FundHoldingEntity {
+            id: Uuid::new_v4(),
+            isin: fund_isin.to_string(),
+            scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
+            as_of_date: d1,
+            stock_name: "HDFC Bank Ltd".to_string(),
+            stock_isin: Some("INE040A01034".to_string()),
+            sector: "Financial Services".to_string(),
+            weight: dec("7.500"),
+            created_at: now,
+        },
+        FundHoldingEntity {
+            id: Uuid::new_v4(),
+            isin: fund_isin.to_string(),
+            scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
+            as_of_date: d1,
+            stock_name: "Bajaj Holdings".to_string(),
+            stock_isin: Some("INE118A01012".to_string()),
+            sector: "Financial Services".to_string(),
+            weight: dec("6.200"),
+            created_at: now,
+        },
+    ];
+    db.upsert_fund_holdings(&old_holdings)
+        .await
+        .expect("upsert old holdings");
+
+    // Latest disclosure for fund_isin (2024-02-29)
+    let new_holdings = vec![
+        FundHoldingEntity {
+            id: Uuid::new_v4(),
+            isin: fund_isin.to_string(),
+            scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
+            as_of_date: d2,
+            stock_name: "HDFC Bank Ltd".to_string(),
+            stock_isin: Some("INE040A01034".to_string()),
+            sector: "Financial Services".to_string(),
+            weight: dec("8.100"),
+            created_at: now,
+        },
+        FundHoldingEntity {
+            id: Uuid::new_v4(),
+            isin: fund_isin.to_string(),
+            scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
+            as_of_date: d2,
+            stock_name: "ITC Ltd".to_string(),
+            stock_isin: Some("INE154A01025".to_string()),
+            sector: "Consumer Defensive".to_string(),
+            weight: dec("5.500"),
+            created_at: now,
+        },
+    ];
+    db.upsert_fund_holdings(&new_holdings)
+        .await
+        .expect("upsert new holdings");
+
+    // Holdings for another fund
+    let other_holdings = vec![FundHoldingEntity {
+        id: Uuid::new_v4(),
+        isin: other_isin.to_string(),
+        scheme_name: "SBI Bluechip Fund".to_string(),
+        as_of_date: d2,
+        stock_name: "Infosys Ltd".to_string(),
+        stock_isin: Some("INE009A01021".to_string()),
+        sector: "Technology".to_string(),
+        weight: dec("9.300"),
+        created_at: now,
+    }];
+    db.upsert_fund_holdings(&other_holdings)
+        .await
+        .expect("upsert other holdings");
+
+    // 1. Test get_latest_holdings_by_isin retrieves only the latest date (2024-02-29)
+    let latest = db
+        .get_latest_holdings_by_isin(fund_isin)
+        .await
+        .expect("get latest");
+    assert_eq!(latest.len(), 2);
+    assert_eq!(latest[0].stock_name, "HDFC Bank Ltd");
+    assert_eq!(latest[0].weight, dec("8.100"));
+    assert_eq!(latest[1].stock_name, "ITC Ltd");
+    assert_eq!(latest[1].weight, dec("5.500"));
+
+    // 2. Test get_latest_holdings_by_isin for non-existent fund returns empty
+    let empty = db
+        .get_latest_holdings_by_isin("UNKNOWN_ISIN")
+        .await
+        .expect("get empty");
+    assert!(empty.is_empty());
+
+    // 3. Test get_latest_holdings_batch
+    let batch = db
+        .get_latest_holdings_batch(&[fund_isin, other_isin, "NON_EXISTENT"])
+        .await
+        .expect("get batch");
+    assert_eq!(batch.len(), 3);
+    assert_eq!(batch.get(fund_isin).unwrap().len(), 2);
+    assert_eq!(batch.get(other_isin).unwrap().len(), 1);
+    assert_eq!(batch.get("NON_EXISTENT").unwrap().len(), 0);
+
+    // 4. Test upsert overwrite on conflict (same isin, as_of_date, stock_name)
+    let updated = vec![FundHoldingEntity {
+        id: Uuid::new_v4(),
+        isin: fund_isin.to_string(),
+        scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
+        as_of_date: d2,
+        stock_name: "HDFC Bank Ltd".to_string(),
+        stock_isin: Some("INE040A01034".to_string()),
+        sector: "Banking".to_string(), // updated sector
+        weight: dec("8.500"),          // updated weight
+        created_at: now,
+    }];
+    db.upsert_fund_holdings(&updated)
+        .await
+        .expect("upsert update");
+
+    let latest_after_update = db
+        .get_latest_holdings_by_isin(fund_isin)
+        .await
+        .expect("get after update");
+    assert_eq!(latest_after_update.len(), 2);
+    assert_eq!(latest_after_update[0].stock_name, "HDFC Bank Ltd");
+    assert_eq!(latest_after_update[0].weight, dec("8.500"));
+    assert_eq!(latest_after_update[0].sector, "Banking");
 }

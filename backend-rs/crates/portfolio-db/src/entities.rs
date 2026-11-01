@@ -272,6 +272,36 @@ pub struct HistoricalValuationEntity {
     pub created_at: DateTime<Utc>,
 }
 
+fn default_fund_holding_sector() -> String {
+    "Other".to_string()
+}
+
+/// Database entity for FundHolding table storing monthly AMC stock disclosures.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct FundHoldingEntity {
+    pub id: Uuid,
+    pub isin: String,
+    #[sqlx(rename = "schemeName")]
+    #[serde(rename = "schemeName", alias = "scheme_name")]
+    pub scheme_name: String,
+    #[sqlx(rename = "asOfDate")]
+    #[serde(rename = "asOfDate", alias = "as_of_date")]
+    pub as_of_date: NaiveDate,
+    #[sqlx(rename = "stockName")]
+    #[serde(rename = "stockName", alias = "stock_name")]
+    pub stock_name: String,
+    #[sqlx(rename = "stockIsin")]
+    #[serde(default, rename = "stockIsin", alias = "stock_isin")]
+    pub stock_isin: Option<String>,
+    #[serde(default = "default_fund_holding_sector")]
+    pub sector: String,
+    pub weight: Decimal,
+    #[sqlx(rename = "createdAt")]
+    #[serde(rename = "createdAt", alias = "created_at")]
+    pub created_at: DateTime<Utc>,
+}
+
 // ---------------------------------------------------------------------------
 // Conversion to / from portfolio-core domain models
 // ---------------------------------------------------------------------------
