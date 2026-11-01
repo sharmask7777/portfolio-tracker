@@ -1,5 +1,7 @@
 //! Production entrypoint binary for the background queue worker (`portfolio-worker`).
 
+#![forbid(unsafe_code)]
+
 use std::sync::Arc;
 use std::time::Duration;
 

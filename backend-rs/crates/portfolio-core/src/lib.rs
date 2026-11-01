@@ -1,5 +1,7 @@
 //! Zero-I/O deterministic financial calculations for Portfolio Tracker.
 
+#![forbid(unsafe_code)]
+
 pub mod error;
 pub mod holdings;
 pub mod parser;

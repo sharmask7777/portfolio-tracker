@@ -3,6 +3,8 @@
 //! Provides camelCase JSON endpoints with JWT authentication,
 //! hermetic contract parity, and integration with `portfolio-core` and `portfolio-db`.
 
+#![forbid(unsafe_code)]
+
 pub mod errors;
 pub mod middleware;
 pub mod routes;

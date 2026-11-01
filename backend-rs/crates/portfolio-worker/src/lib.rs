@@ -6,6 +6,8 @@
 //! - Portfolio historical valuation timeline calculation
 //! - Pluggable queue abstractions (`JobQueue`, `InMemoryJobQueue`, `RedisBullQueue`)
 
+#![forbid(unsafe_code)]
+
 pub mod error;
 pub mod jobs;
 pub mod queue;

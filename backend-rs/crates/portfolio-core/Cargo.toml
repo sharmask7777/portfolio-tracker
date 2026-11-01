@@ -3,6 +3,9 @@ name = "portfolio-core"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 rust_decimal.workspace = true
 chrono.workspace = true

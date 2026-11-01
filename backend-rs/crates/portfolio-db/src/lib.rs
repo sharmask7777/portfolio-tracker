@@ -3,6 +3,8 @@
 //! Provides SQLx database models, repository traits, PostgreSQL implementations,
 //! and an in-memory test database mock for fast hermetic unit and integration testing.
 
+#![forbid(unsafe_code)]
+
 pub mod entities;
 pub mod error;
 pub mod market_data;
