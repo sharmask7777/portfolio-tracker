@@ -41,6 +41,12 @@ Comprehensive documentation of all backend and frontend test suites, financial i
 - **Frontend Test Catalog:** [`frontend/tests/README.md`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/frontend/tests/README.md)
   - Documents the 4-domain E2E taxonomy across 16 Playwright spec suites (Core Portfolio Operations, Tax & Statutory Compliance, Analytics & Reporting, Platform & UX Safeguards), all 12 Vitest unit test suites (`frontend/src/`), Page Object Models (`frontend/tests/pom/`), and privacy rules.
 
+### 7. Universal Generality Mandate (No Portfolio-Specific Hacks)
+- **Zero Portfolio-Specific Hacks**: Agents must NEVER introduce fixes, heuristics, conditional branches, or hardcoded overrides tailored to a single specific portfolio, account, user, or single statement instance.
+- **Generic Across All Portfolios**: All fixes, parsers, calculations, classification algorithms, and data representations MUST be inherently generic and apply uniformly across all portfolios.
+- **Permissible Broad Overrides**: Non-standard representations, parser quirks, or data anomalies that are generic across all portfolios encountering that provider/format (e.g., CAMS vs. KFintech statement quirks, AMC disclosure formats, statutory scheme naming anomalies) are acceptable overrides, provided they are structured generically rather than keyed to specific users or portfolios.
+- **Mandatory Validation Gate**: All review and validation agents (`review`, `research` auditors, task reviewers) MUST critically evaluate any proposed change for portfolio-specific logic and block any non-generic workarounds.
+
 ## Mandatory Testing Requirement
 
 For any new functionalities or bug fixes, you MUST mandatorily update and run both hermetic tests (backend/frontend unit tests) and Playwright E2E tests to cover the new code paths. These test updates must be committed as part of the primary change itself.
