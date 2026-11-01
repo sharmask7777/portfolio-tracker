@@ -168,6 +168,21 @@ pub fn generate_ddl() -> &'static str {
     );
     CREATE INDEX IF NOT EXISTS "_GoalAssets_B_index" ON "_GoalAssets"("B");
 
+    CREATE TABLE IF NOT EXISTS "FundHolding" (
+        "id" TEXT PRIMARY KEY,
+        "isin" TEXT NOT NULL,
+        "schemeName" TEXT NOT NULL,
+        "asOfDate" DATE NOT NULL,
+        "stockName" TEXT NOT NULL,
+        "stockIsin" TEXT,
+        "sector" TEXT NOT NULL DEFAULT 'Other',
+        "weight" NUMERIC(6, 3) NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "FundHolding_isin_asOfDate_stockName_key" UNIQUE ("isin", "asOfDate", "stockName")
+    );
+    CREATE INDEX IF NOT EXISTS "FundHolding_isin_idx" ON "FundHolding"("isin");
+    CREATE INDEX IF NOT EXISTS "FundHolding_asOfDate_idx" ON "FundHolding"("asOfDate");
+
     INSERT INTO "User" ("id", "email", "password", "createdAt", "updatedAt")
     VALUES ('00000000-0000-0000-0000-000000000001', 'test@example.com', '$2b$12$dummyhashforplaywrighttestuser', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT ("id") DO NOTHING;

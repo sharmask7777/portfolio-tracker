@@ -9,12 +9,14 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::entities::{
-    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, HistoricalNavEntity,
-    HistoricalValuationEntity, ManagedProfileEntity, PortfolioEntity, TransactionEntity,
-    UploadJobEntity, UploadJobStatus, UserEntity,
+    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, FundHoldingEntity,
+    HistoricalNavEntity, HistoricalValuationEntity, ManagedProfileEntity, PortfolioEntity,
+    TransactionEntity, UploadJobEntity, UploadJobStatus, UserEntity,
 };
 use crate::error::DbError;
-use crate::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
+use crate::repositories::{
+    FamilyRepository, FundHoldingsRepository, PortfolioRepository, TransactionRepository,
+};
 
 /// In-memory storage state holding entity tables.
 #[derive(Debug, Default, Clone)]
@@ -30,6 +32,7 @@ pub struct InMemoryDatabaseState {
     pub upload_jobs: HashMap<Uuid, UploadJobEntity>,
     pub historical_navs: HashMap<(String, NaiveDate), HistoricalNavEntity>,
     pub historical_valuations: HashMap<(Uuid, NaiveDate), HistoricalValuationEntity>,
+    pub fund_holdings: HashMap<(String, NaiveDate, String), FundHoldingEntity>,
 }
 
 /// Thread-safe in-memory database mock.
@@ -741,5 +744,62 @@ impl FamilyRepository for InMemoryDatabase {
         state.profiles.remove(&profile_id);
 
         Ok(profile)
+    }
+}
+
+#[async_trait]
+impl FundHoldingsRepository for InMemoryDatabase {
+    async fn upsert_fund_holdings(&self, holdings: &[FundHoldingEntity]) -> Result<(), DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        for h in holdings {
+            state.fund_holdings.insert(
+                (h.isin.clone(), h.as_of_date, h.stock_name.clone()),
+                h.clone(),
+            );
+        }
+        Ok(())
+    }
+
+    async fn get_latest_holdings_by_isin(
+        &self,
+        isin: &str,
+    ) -> Result<Vec<FundHoldingEntity>, DbError> {
+        let state = self.state.read().expect("lock poisoned");
+        let max_date = state
+            .fund_holdings
+            .values()
+            .filter(|h| h.isin == isin)
+            .map(|h| h.as_of_date)
+            .max();
+
+        let Some(date) = max_date else {
+            return Ok(Vec::new());
+        };
+
+        let mut holdings: Vec<FundHoldingEntity> = state
+            .fund_holdings
+            .values()
+            .filter(|h| h.isin == isin && h.as_of_date == date)
+            .cloned()
+            .collect();
+
+        holdings.sort_by(|a, b| {
+            b.weight
+                .cmp(&a.weight)
+                .then_with(|| a.stock_name.cmp(&b.stock_name))
+        });
+        Ok(holdings)
+    }
+
+    async fn get_latest_holdings_batch(
+        &self,
+        isins: &[&str],
+    ) -> Result<HashMap<String, Vec<FundHoldingEntity>>, DbError> {
+        let mut result: HashMap<String, Vec<FundHoldingEntity>> = HashMap::new();
+        for &isin in isins {
+            let holdings = self.get_latest_holdings_by_isin(isin).await?;
+            result.insert(isin.to_string(), holdings);
+        }
+        Ok(result)
     }
 }

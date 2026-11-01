@@ -8,7 +8,7 @@ use portfolio_db::InMemoryDatabase;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
-use crate::routes::{auth, family, health, portfolio, tax};
+use crate::routes::{auth, family, fund_holdings, health, portfolio, tax};
 
 /// Database backend variant powering the API service (in-memory or live PostgreSQL).
 #[derive(Clone, Debug)]
@@ -102,6 +102,7 @@ pub fn create_app(state: AppState) -> Router {
         .nest("/api/portfolio", portfolio::routes())
         .nest("/api/tax", tax::routes())
         .nest("/api/family", family::routes())
+        .nest("/api/fund-holdings", fund_holdings::routes())
         .layer(CorsLayer::permissive())
         .with_state(state)
 }

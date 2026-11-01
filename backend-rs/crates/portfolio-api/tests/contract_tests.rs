@@ -1694,3 +1694,392 @@ async fn test_exposures_exclude_arbitrage_query_param() {
         "Exposures with exclude_arbitrage=true must NOT include stocks solely from Arbitrage fund"
     );
 }
+
+#[tokio::test]
+async fn test_ingest_fund_holdings_success() {
+    let (app, _, _) = setup_test_app();
+
+    let payload = json!({
+        "isin": "INF209K01157",
+        "schemeName": "Aditya Birla Sun Life Frontline Equity Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": [
+            {
+                "stockName": "HDFC Bank Ltd",
+                "stockIsin": "INE040A01034",
+                "sector": "Financial Services",
+                "weight": "0.0925"
+            },
+            {
+                "stockName": "Reliance Industries Ltd",
+                "stockIsin": "INE002A01018",
+                "sector": "Energy",
+                "weight": "0.0810"
+            }
+        ]
+    });
+
+    let req = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let json = parse_json(res.into_body()).await;
+    assert_eq!(json["isin"], "INF209K01157");
+    assert_eq!(json["count"], 2);
+    assert_eq!(json["asOfDate"], "2024-03-31");
+    assert_eq!(json["status"], "success");
+}
+
+#[tokio::test]
+async fn test_ingest_fund_holdings_validation_failure() {
+    let (app, _, _) = setup_test_app();
+
+    // Empty ISIN
+    let empty_isin_payload = json!({
+        "isin": "",
+        "schemeName": "Test Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": [
+            {
+                "stockName": "HDFC Bank Ltd",
+                "weight": "0.05"
+            }
+        ]
+    });
+
+    let req1 = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(empty_isin_payload.to_string()))
+        .unwrap();
+
+    let res1 = app.clone().oneshot(req1).await.unwrap();
+    assert_eq!(res1.status(), StatusCode::BAD_REQUEST);
+
+    // Empty holdings array
+    let empty_holdings_payload = json!({
+        "isin": "INF209K01157",
+        "schemeName": "Test Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": []
+    });
+
+    let req2 = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(empty_holdings_payload.to_string()))
+        .unwrap();
+
+    let res2 = app.clone().oneshot(req2).await.unwrap();
+    assert_eq!(res2.status(), StatusCode::BAD_REQUEST);
+
+    // Zero weight
+    let zero_weight_payload = json!({
+        "isin": "INF209K01157",
+        "schemeName": "Test Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": [
+            {
+                "stockName": "HDFC Bank Ltd",
+                "weight": "0.0"
+            }
+        ]
+    });
+
+    let req3 = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(zero_weight_payload.to_string()))
+        .unwrap();
+
+    let res3 = app.clone().oneshot(req3).await.unwrap();
+    assert_eq!(res3.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_get_fund_holdings_by_isin() {
+    let (app, _, _) = setup_test_app();
+
+    let payload = json!({
+        "isin": "INF209K01157",
+        "schemeName": "Aditya Birla Sun Life Frontline Equity Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": [
+            {
+                "stockName": "HDFC Bank Ltd",
+                "stockIsin": "INE040A01034",
+                "sector": "Financial Services",
+                "weight": "0.0925"
+            },
+            {
+                "stockName": "Reliance Industries Ltd",
+                "stockIsin": "INE002A01018",
+                "sector": "Energy",
+                "weight": "0.0810"
+            }
+        ]
+    });
+
+    let ingest_req = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+
+    let ingest_res = app.clone().oneshot(ingest_req).await.unwrap();
+    assert_eq!(ingest_res.status(), StatusCode::OK);
+
+    let get_req = Request::builder()
+        .uri("/api/fund-holdings/INF209K01157")
+        .method("GET")
+        .body(Body::empty())
+        .unwrap();
+
+    let get_res = app.oneshot(get_req).await.unwrap();
+    assert_eq!(get_res.status(), StatusCode::OK);
+
+    let holdings = parse_json(get_res.into_body()).await;
+    let list = holdings.as_array().expect("expected array of holdings");
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0]["stockName"], "HDFC Bank Ltd");
+    assert_eq!(list[0]["stockIsin"], "INE040A01034");
+    assert_eq!(list[0]["sector"], "Financial Services");
+    assert!((list[0]["weight"].as_f64().unwrap() - 0.0925).abs() < 1e-6);
+
+    assert_eq!(list[1]["stockName"], "Reliance Industries Ltd");
+    assert_eq!(list[1]["stockIsin"], "INE002A01018");
+    assert_eq!(list[1]["sector"], "Energy");
+    assert!((list[1]["weight"].as_f64().unwrap() - 0.0810).abs() < 1e-6);
+}
+
+#[tokio::test]
+async fn test_get_fund_holdings_empty_when_not_found() {
+    let (app, _, _) = setup_test_app();
+
+    let req = Request::builder()
+        .uri("/api/fund-holdings/INF999999999")
+        .method("GET")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let json = parse_json(res.into_body()).await;
+    let list = json.as_array().expect("expected array");
+    assert!(list.is_empty());
+}
+
+#[tokio::test]
+async fn test_dynamic_exposure_uses_db_holdings_when_available() {
+    let (app, db, _) = setup_test_app();
+
+    // Register user
+    let reg_payload = serde_json::json!({
+        "email": "dynamic_exposure_test@example.com",
+        "name": "Dynamic Exposure Tester",
+        "password": "SecurePassword123!"
+    });
+    let reg_req = Request::builder()
+        .uri("/api/auth/register")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(reg_payload.to_string()))
+        .unwrap();
+
+    let reg_res = app.clone().oneshot(reg_req).await.unwrap();
+    assert_eq!(reg_res.status(), StatusCode::CREATED);
+    let reg_json = parse_json(reg_res.into_body()).await;
+    let token = reg_json["token"].as_str().unwrap().to_string();
+    let user_id = Uuid::parse_str(reg_json["id"].as_str().unwrap()).unwrap();
+
+    // Create user portfolio
+    let portfolio = db
+        .create_portfolio(user_id, "Dynamic Exposure Portfolio", None)
+        .await
+        .unwrap();
+    let port_id = portfolio.id.to_string();
+
+    // 1. Folio with ISIN INF209K01157 (100,000 INR)
+    let asset_sbi = db.create_asset(
+        "MUTUAL_FUND",
+        "SBI Large Cap Fund",
+        Some("INF209K01157"),
+        Some("119598"),
+        Some("SBI_LC"),
+        None,
+    );
+    let folio_sbi = db
+        .create_folio(
+            portfolio.id,
+            asset_sbi.id,
+            "10001000",
+            Some("SBI_MF"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+    db.create_transaction(
+        folio_sbi.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap(),
+        "PURCHASE",
+        Decimal::from(100000),
+        Decimal::from(1000),
+        Decimal::from(100),
+        Decimal::from(1000),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // 2. Un-ingested fund folio: UTI Nifty 50 Index Fund (50,000 INR)
+    let asset_uti = db.create_asset(
+        "MUTUAL_FUND",
+        "UTI Nifty 50 Index Fund",
+        Some("INF789F01058"),
+        Some("120716"),
+        Some("UTI_NIFTY50"),
+        None,
+    );
+    let folio_uti = db
+        .create_folio(
+            portfolio.id,
+            asset_uti.id,
+            "20002000",
+            Some("UTI_MF"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+    db.create_transaction(
+        folio_uti.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap(),
+        "PURCHASE",
+        Decimal::from(50000),
+        Decimal::from(500),
+        Decimal::from(100),
+        Decimal::from(500),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Step A: Prior to disclosure ingestion, GET /api/portfolio/{id}/exposures resolves via resolve_holdings heuristic.
+    let get_exp_req_before = Request::builder()
+        .uri(format!("/api/portfolio/{port_id}/exposures"))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let get_exp_res_before = app.clone().oneshot(get_exp_req_before).await.unwrap();
+    assert_eq!(get_exp_res_before.status(), StatusCode::OK);
+    let exp_before = parse_json(get_exp_res_before.into_body()).await;
+    let list_before = exp_before.as_array().expect("expected array");
+
+    // "Synthetic Cloud Technologies Ltd." must NOT be present before ingestion
+    assert!(
+        !list_before.iter().any(|e| e["name"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Synthetic Cloud Technologies")),
+        "Synthetic stock should not exist prior to ingestion"
+    );
+    // UTI Nifty 50 resolved via heuristic should contain common large cap stocks (e.g. Reliance or HDFC)
+    assert!(
+        list_before.iter().any(|e| e["name"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Reliance Industries")),
+        "Heuristic exposures must contain fallback holdings"
+    );
+
+    // Step B: Ingest disclosure for INF209K01157 with custom synthetic stock
+    let ingest_payload = json!({
+        "isin": "INF209K01157",
+        "schemeName": "SBI Large Cap Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": [
+            {
+                "stockName": "Synthetic Cloud Technologies Ltd.",
+                "stockIsin": "INE999X01099",
+                "sector": "Technology",
+                "weight": "15.0"
+            },
+            {
+                "stockName": "Synthetic Green Power Ltd.",
+                "stockIsin": "INE888Y01088",
+                "sector": "Energy",
+                "weight": "10.0"
+            }
+        ]
+    });
+    let ingest_req = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(ingest_payload.to_string()))
+        .unwrap();
+    let ingest_res = app.clone().oneshot(ingest_req).await.unwrap();
+    assert_eq!(ingest_res.status(), StatusCode::OK);
+
+    // Step C: After ingestion, GET /api/portfolio/{id}/exposures dynamically resolves "Synthetic Cloud Technologies Ltd."
+    let get_exp_req_after = Request::builder()
+        .uri(format!("/api/portfolio/{port_id}/exposures"))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let get_exp_res_after = app.clone().oneshot(get_exp_req_after).await.unwrap();
+    assert_eq!(get_exp_res_after.status(), StatusCode::OK);
+    let exp_after = parse_json(get_exp_res_after.into_body()).await;
+    let list_after = exp_after.as_array().expect("expected array");
+
+    let cloud_tech = list_after
+        .iter()
+        .find(|e| {
+            e["name"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Synthetic Cloud Technologies")
+        })
+        .expect("Synthetic Cloud Technologies Ltd. must be present in dynamic exposures");
+
+    assert_eq!(cloud_tech["name"], "Synthetic Cloud Technologies Ltd.");
+    assert_eq!(cloud_tech["sector"], "Technology");
+    // Folio val = 100,000 INR; weight = 15.0% -> absolute_value = 15,000.0
+    let abs_val = cloud_tech["absoluteValue"].as_f64().unwrap();
+    assert!(
+        (abs_val - 15000.0).abs() < 1e-2,
+        "Expected absoluteValue ~15000.0, got {abs_val}"
+    );
+
+    // Check contributions
+    let contribs = cloud_tech["contributions"].as_array().unwrap();
+    assert_eq!(contribs.len(), 1);
+    assert_eq!(contribs[0]["schemeName"], "SBI Large Cap Fund");
+    assert!((contribs[0]["weight"].as_f64().unwrap() - 15.0).abs() < 1e-4);
+    assert!((contribs[0]["value"].as_f64().unwrap() - 15000.0).abs() < 1e-2);
+
+    // Step D: Un-ingested fund (UTI Nifty 50) continues to resolve seamlessly via resolve_holdings heuristic!
+    let uti_stock = list_after.iter().find(|e| {
+        e["contributions"]
+            .as_array()
+            .map(|c| {
+                c.iter()
+                    .any(|item| item["schemeName"].as_str().unwrap_or("").contains("UTI"))
+            })
+            .unwrap_or(false)
+    });
+    assert!(
+        uti_stock.is_some(),
+        "Un-ingested fund (UTI Nifty 50) must continue resolving via resolve_holdings fallback"
+    );
+}
