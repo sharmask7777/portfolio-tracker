@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use portfolio_api::{AppState, create_app};
+use portfolio_api::{AppState, create_app, resolve_holdings};
 use portfolio_db::InMemoryDatabase;
 use portfolio_db::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
 
@@ -1346,4 +1346,32 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
 
     let goal_del_res = app.oneshot(goal_del_req).await.unwrap();
     assert_eq!(goal_del_res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_resolve_holdings_differentiated_categories() {
+    let (_, us_holdings) = resolve_holdings("US001", "ICICI Prudential NASDAQ 100 Index Fund");
+    assert!(
+        us_holdings
+            .iter()
+            .any(|h| h.name == "Apple Inc." || h.name == "Microsoft Corp.")
+    );
+    assert!(!us_holdings.iter().any(|h| h.name == "HDFC Bank Ltd."));
+
+    let (_, next50_holdings) = resolve_holdings("NEXT50", "UTI Nifty Next 50 Index Fund");
+    assert!(
+        next50_holdings
+            .iter()
+            .any(|h| h.name == "Bharat Electronics Ltd." || h.name == "Trent Ltd.")
+    );
+    assert!(!next50_holdings.iter().any(|h| h.name == "HDFC Bank Ltd."));
+
+    let (_, arb_holdings) = resolve_holdings("ARB01", "Edelweiss Arbitrage Fund");
+    let (_, nifty_holdings) = resolve_holdings("NIFTY01", "UTI Nifty 50 Index Fund");
+    // Weights must not be identical 9.0% across all funds
+    let arb_hdfc = arb_holdings.iter().find(|h| h.name.contains("HDFC Bank"));
+    let nifty_hdfc = nifty_holdings.iter().find(|h| h.name.contains("HDFC Bank"));
+    if let (Some(a), Some(n)) = (arb_hdfc, nifty_hdfc) {
+        assert_ne!(a.weight, n.weight);
+    }
 }
