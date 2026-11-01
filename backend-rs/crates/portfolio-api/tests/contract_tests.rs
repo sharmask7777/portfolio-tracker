@@ -1400,6 +1400,124 @@ async fn test_resolve_holdings_differentiated_categories() {
         get_stock_sector("Direct Marketing Ltd."),
         "Financial Services"
     );
+
+    // Distinct US index funds test: NASDAQ 100 vs S&P 500 vs Total Stock Market
+    let (_, nasdaq_holdings) = resolve_holdings(
+        "US_NAS",
+        "ICICI Prudential NASDAQ 100 Index Fund - Direct Plan - Growth",
+    );
+    let (_, sp500_holdings) = resolve_holdings(
+        "US_SP500",
+        "Motilal Oswal S and P 500 Index Fund - Direct Plan Growth (Non Demat)",
+    );
+    let (_, tsm_holdings) = resolve_holdings(
+        "US_TSM",
+        "Navi Total Stock Market US Specific Equity Passive Fund of Fund - Direct Plan - Growth",
+    );
+
+    // Berkshire Hathaway must NOT be in NASDAQ 100, but present in S&P 500 and Total Stock Market
+    assert!(!nasdaq_holdings.iter().any(|h| h.name.contains("Berkshire")));
+    assert!(sp500_holdings.iter().any(|h| h.name.contains("Berkshire")));
+    assert!(tsm_holdings.iter().any(|h| h.name.contains("Berkshire")));
+
+    // Tesla must have distinct percentages across all three
+    let nasdaq_tsla = nasdaq_holdings
+        .iter()
+        .find(|h| h.name == "Tesla Inc.")
+        .map(|h| h.weight)
+        .unwrap();
+    let sp500_tsla = sp500_holdings
+        .iter()
+        .find(|h| h.name == "Tesla Inc.")
+        .map(|h| h.weight)
+        .unwrap();
+    let tsm_tsla = tsm_holdings
+        .iter()
+        .find(|h| h.name == "Tesla Inc.")
+        .map(|h| h.weight)
+        .unwrap();
+    assert_ne!(
+        nasdaq_tsla, sp500_tsla,
+        "Tesla weight must differ between NASDAQ 100 and S&P 500"
+    );
+    assert_ne!(
+        sp500_tsla, tsm_tsla,
+        "Tesla weight must differ between S&P 500 and Total Stock Market"
+    );
+    assert_ne!(
+        nasdaq_tsla, tsm_tsla,
+        "Tesla weight must differ between NASDAQ 100 and Total Stock Market"
+    );
+
+    // Berkshire Hathaway must have distinct percentages between S&P 500 and Total Stock Market
+    let sp500_brk = sp500_holdings
+        .iter()
+        .find(|h| h.name.contains("Berkshire"))
+        .map(|h| h.weight)
+        .unwrap();
+    let tsm_brk = tsm_holdings
+        .iter()
+        .find(|h| h.name.contains("Berkshire"))
+        .map(|h| h.weight)
+        .unwrap();
+    assert_ne!(
+        sp500_brk, tsm_brk,
+        "Berkshire Hathaway weight must differ between S&P 500 and Total Stock Market"
+    );
+
+    // Distinct Arbitrage Funds: Edelweiss vs Invesco vs Parag Parikh
+    let (_, edel_holdings) = resolve_holdings(
+        "ARB_EDEL",
+        "Edelweiss Arbitrage Fund - Direct Plan Growth (Non Demat)",
+    );
+    let (_, inv_holdings) = resolve_holdings(
+        "ARB_INV",
+        "Invesco India Arbitrage Fund - Direct Plan Growth (Non Demat)",
+    );
+    let (_, pp_arb_holdings) =
+        resolve_holdings("ARB_PP", "Parag Parikh Arbitrage Fund - Direct Plan Growth");
+    let (_, pp_flexi_holdings) = resolve_holdings(
+        "INF879O01018",
+        "Parag Parikh Flexi Cap Fund - Direct Plan Growth",
+    );
+
+    let edel_hdfc = edel_holdings
+        .iter()
+        .find(|h| h.name.contains("HDFC Bank"))
+        .map(|h| h.weight)
+        .unwrap();
+    let inv_hdfc = inv_holdings
+        .iter()
+        .find(|h| h.name.contains("HDFC Bank"))
+        .map(|h| h.weight)
+        .unwrap();
+    let pp_arb_hdfc = pp_arb_holdings
+        .iter()
+        .find(|h| h.name.contains("HDFC Bank"))
+        .map(|h| h.weight)
+        .unwrap();
+    let pp_flexi_hdfc = pp_flexi_holdings
+        .iter()
+        .find(|h| h.name.contains("HDFC Bank"))
+        .map(|h| h.weight)
+        .unwrap();
+
+    assert_ne!(
+        edel_hdfc, inv_hdfc,
+        "HDFC Bank weight must differ between Edelweiss and Invesco Arbitrage"
+    );
+    assert_ne!(
+        edel_hdfc, pp_arb_hdfc,
+        "HDFC Bank weight must differ between Edelweiss and Parag Parikh Arbitrage"
+    );
+    assert_ne!(
+        inv_hdfc, pp_arb_hdfc,
+        "HDFC Bank weight must differ between Invesco and Parag Parikh Arbitrage"
+    );
+    assert_ne!(
+        pp_arb_hdfc, pp_flexi_hdfc,
+        "HDFC Bank weight must differ between Parag Parikh Arbitrage and Flexi Cap"
+    );
 }
 
 #[tokio::test]
