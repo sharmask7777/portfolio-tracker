@@ -102,6 +102,7 @@ pub async fn get_insights(
         &state,
         auth_user.user_id,
         &portfolio_id,
+        false,
     )
     .await
     .unwrap_or_default();

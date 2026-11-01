@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use portfolio_api::{AppState, create_app};
+use portfolio_api::{AppState, create_app, get_stock_sector, resolve_holdings};
 use portfolio_db::InMemoryDatabase;
 use portfolio_db::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
 
@@ -1346,4 +1346,351 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
 
     let goal_del_res = app.oneshot(goal_del_req).await.unwrap();
     assert_eq!(goal_del_res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_resolve_holdings_differentiated_categories() {
+    let (_, us_holdings) = resolve_holdings("US001", "ICICI Prudential NASDAQ 100 Index Fund");
+    assert!(
+        us_holdings
+            .iter()
+            .any(|h| h.name == "Apple Inc." || h.name == "Microsoft Corp.")
+    );
+    assert!(!us_holdings.iter().any(|h| h.name == "HDFC Bank Ltd."));
+
+    let (_, next50_holdings) = resolve_holdings("NEXT50", "UTI Nifty Next 50 Index Fund");
+    assert!(
+        next50_holdings
+            .iter()
+            .any(|h| h.name == "Bharat Electronics Ltd." || h.name == "Trent Ltd.")
+    );
+    assert!(!next50_holdings.iter().any(|h| h.name == "HDFC Bank Ltd."));
+
+    let (_, arb_holdings) = resolve_holdings("ARB01", "Edelweiss Arbitrage Fund");
+    let (_, nifty_holdings) = resolve_holdings("NIFTY01", "UTI Nifty 50 Index Fund");
+    // Weights must not be identical 9.0% across all funds
+    let arb_hdfc = arb_holdings.iter().find(|h| h.name.contains("HDFC Bank"));
+    let nifty_hdfc = nifty_holdings.iter().find(|h| h.name.contains("HDFC Bank"));
+    if let (Some(a), Some(n)) = (arb_hdfc, nifty_hdfc) {
+        assert_ne!(a.weight, n.weight);
+    }
+
+    // Mirae Asset large cap vs US equity ETF discrimination
+    let (mirae_lc_name, mirae_lc_holdings) =
+        resolve_holdings("INF769K01DP4", "Mirae Asset Large Cap Fund");
+    assert_eq!(mirae_lc_name, "Mirae Asset Large Cap Fund");
+    assert!(mirae_lc_holdings.iter().any(|h| h.name == "HDFC Bank Ltd."));
+
+    let (mirae_us_name, mirae_us_holdings) =
+        resolve_holdings("MIRAE_FANG", "Mirae Asset NYSE FANG+ ETF Fund of Fund");
+    assert_ne!(mirae_us_name, "Mirae Asset Large Cap Fund");
+    assert!(mirae_us_holdings.iter().any(|h| h.name == "Apple Inc."));
+    assert!(!mirae_us_holdings.iter().any(|h| h.name == "HDFC Bank Ltd."));
+
+    // Sector mapping assertions
+    assert_eq!(
+        get_stock_sector("Tata Consultancy Services Ltd."),
+        "Technology"
+    );
+    assert_eq!(get_stock_sector("TCS Ltd."), "Technology");
+    assert_eq!(get_stock_sector("REC Ltd."), "Financial Services");
+    assert_eq!(get_stock_sector("REC Limited"), "Financial Services");
+    // Direct/recovery should NOT falsely match "rec"
+    assert_ne!(
+        get_stock_sector("Direct Marketing Ltd."),
+        "Financial Services"
+    );
+
+    // Distinct US index funds test: NASDAQ 100 vs S&P 500 vs Total Stock Market
+    let (_, nasdaq_holdings) = resolve_holdings(
+        "US_NAS",
+        "ICICI Prudential NASDAQ 100 Index Fund - Direct Plan - Growth",
+    );
+    let (_, sp500_holdings) = resolve_holdings(
+        "US_SP500",
+        "Motilal Oswal S and P 500 Index Fund - Direct Plan Growth (Non Demat)",
+    );
+    let (_, tsm_holdings) = resolve_holdings(
+        "US_TSM",
+        "Navi Total Stock Market US Specific Equity Passive Fund of Fund - Direct Plan - Growth",
+    );
+
+    // Berkshire Hathaway must NOT be in NASDAQ 100, but present in S&P 500 and Total Stock Market
+    assert!(!nasdaq_holdings.iter().any(|h| h.name.contains("Berkshire")));
+    assert!(sp500_holdings.iter().any(|h| h.name.contains("Berkshire")));
+    assert!(tsm_holdings.iter().any(|h| h.name.contains("Berkshire")));
+
+    // Tesla must have distinct percentages across all three
+    let nasdaq_tsla = nasdaq_holdings
+        .iter()
+        .find(|h| h.name == "Tesla Inc.")
+        .map(|h| h.weight)
+        .unwrap();
+    let sp500_tsla = sp500_holdings
+        .iter()
+        .find(|h| h.name == "Tesla Inc.")
+        .map(|h| h.weight)
+        .unwrap();
+    let tsm_tsla = tsm_holdings
+        .iter()
+        .find(|h| h.name == "Tesla Inc.")
+        .map(|h| h.weight)
+        .unwrap();
+    assert_ne!(
+        nasdaq_tsla, sp500_tsla,
+        "Tesla weight must differ between NASDAQ 100 and S&P 500"
+    );
+    assert_ne!(
+        sp500_tsla, tsm_tsla,
+        "Tesla weight must differ between S&P 500 and Total Stock Market"
+    );
+    assert_ne!(
+        nasdaq_tsla, tsm_tsla,
+        "Tesla weight must differ between NASDAQ 100 and Total Stock Market"
+    );
+
+    // Berkshire Hathaway must have distinct percentages between S&P 500 and Total Stock Market
+    let sp500_brk = sp500_holdings
+        .iter()
+        .find(|h| h.name.contains("Berkshire"))
+        .map(|h| h.weight)
+        .unwrap();
+    let tsm_brk = tsm_holdings
+        .iter()
+        .find(|h| h.name.contains("Berkshire"))
+        .map(|h| h.weight)
+        .unwrap();
+    assert_ne!(
+        sp500_brk, tsm_brk,
+        "Berkshire Hathaway weight must differ between S&P 500 and Total Stock Market"
+    );
+
+    // Distinct Arbitrage Funds: Edelweiss vs Invesco vs Parag Parikh
+    let (_, edel_holdings) = resolve_holdings(
+        "ARB_EDEL",
+        "Edelweiss Arbitrage Fund - Direct Plan Growth (Non Demat)",
+    );
+    let (_, inv_holdings) = resolve_holdings(
+        "ARB_INV",
+        "Invesco India Arbitrage Fund - Direct Plan Growth (Non Demat)",
+    );
+    let (_, pp_arb_holdings) =
+        resolve_holdings("ARB_PP", "Parag Parikh Arbitrage Fund - Direct Plan Growth");
+    let (_, pp_flexi_holdings) = resolve_holdings(
+        "INF879O01018",
+        "Parag Parikh Flexi Cap Fund - Direct Plan Growth",
+    );
+
+    let edel_hdfc = edel_holdings
+        .iter()
+        .find(|h| h.name.contains("HDFC Bank"))
+        .map(|h| h.weight)
+        .unwrap();
+    let inv_hdfc = inv_holdings
+        .iter()
+        .find(|h| h.name.contains("HDFC Bank"))
+        .map(|h| h.weight)
+        .unwrap();
+    let pp_arb_hdfc = pp_arb_holdings
+        .iter()
+        .find(|h| h.name.contains("HDFC Bank"))
+        .map(|h| h.weight)
+        .unwrap();
+    let pp_flexi_hdfc = pp_flexi_holdings
+        .iter()
+        .find(|h| h.name.contains("HDFC Bank"))
+        .map(|h| h.weight)
+        .unwrap();
+
+    assert_ne!(
+        edel_hdfc, inv_hdfc,
+        "HDFC Bank weight must differ between Edelweiss and Invesco Arbitrage"
+    );
+    assert_ne!(
+        edel_hdfc, pp_arb_hdfc,
+        "HDFC Bank weight must differ between Edelweiss and Parag Parikh Arbitrage"
+    );
+    assert_ne!(
+        inv_hdfc, pp_arb_hdfc,
+        "HDFC Bank weight must differ between Invesco and Parag Parikh Arbitrage"
+    );
+    assert_ne!(
+        pp_arb_hdfc, pp_flexi_hdfc,
+        "HDFC Bank weight must differ between Parag Parikh Arbitrage and Flexi Cap"
+    );
+}
+
+#[tokio::test]
+async fn test_exposures_exclude_arbitrage_query_param() {
+    let db = std::sync::Arc::new(portfolio_db::InMemoryDatabase::new());
+    let state = AppState::new(db.clone(), "test-jwt-secret");
+    let app = create_app(state);
+
+    // Register user
+    let reg_payload = serde_json::json!({
+        "email": "arbitrage_test@example.com",
+        "name": "Arbitrage Tester",
+        "password": "SecurePassword123!"
+    });
+    let reg_req = Request::builder()
+        .uri("/api/auth/register")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(reg_payload.to_string()))
+        .unwrap();
+
+    let reg_res = app.clone().oneshot(reg_req).await.unwrap();
+    assert_eq!(reg_res.status(), StatusCode::CREATED);
+    let reg_json = parse_json(reg_res.into_body()).await;
+    let token = reg_json["token"].as_str().unwrap().to_string();
+    let user_id = Uuid::parse_str(reg_json["id"].as_str().unwrap()).unwrap();
+
+    // Create user portfolio
+    let portfolio = db
+        .create_portfolio(user_id, "Arbitrage Test Portfolio", None)
+        .await
+        .unwrap();
+    let port_id = portfolio.id.to_string();
+
+    // 1. Active equity fund: Parag Parikh Flexi Cap Fund
+    let asset_eq = db.create_asset(
+        "MUTUAL_FUND",
+        "Parag Parikh Flexi Cap Fund",
+        Some("INF879O01019"),
+        Some("122639"),
+        Some("PPFAS_EQUITY"),
+        None,
+    );
+    let folio_eq = db
+        .create_folio(
+            portfolio.id,
+            asset_eq.id,
+            "11112222",
+            Some("PPFAS"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+    db.create_transaction(
+        folio_eq.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap(),
+        "PURCHASE",
+        Decimal::from(10000),
+        Decimal::from(100),
+        Decimal::from(100),
+        Decimal::from(100),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // 2. Active arbitrage fund: Edelweiss Arbitrage Fund
+    let asset_arb = db.create_asset(
+        "MUTUAL_FUND",
+        "Edelweiss Arbitrage Fund",
+        Some("INF843K01017"),
+        Some("131800"),
+        Some("EDELWEISS_ARB"),
+        None,
+    );
+    let folio_arb = db
+        .create_folio(
+            portfolio.id,
+            asset_arb.id,
+            "33334444",
+            Some("EDELWEISS"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+    db.create_transaction(
+        folio_arb.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap(),
+        "PURCHASE",
+        Decimal::from(10000),
+        Decimal::from(100),
+        Decimal::from(100),
+        Decimal::from(100),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Case 1: excludeArbitrage=false (or omitted)
+    let req_all = Request::builder()
+        .uri(format!(
+            "/api/portfolio/{port_id}/exposures?excludeArbitrage=false"
+        ))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res_all = app.clone().oneshot(req_all).await.unwrap();
+    assert_eq!(res_all.status(), StatusCode::OK);
+    let json_all = parse_json(res_all.into_body()).await;
+    let exposures_all = json_all.as_array().unwrap();
+
+    let has_tata_motors_all = exposures_all
+        .iter()
+        .any(|e| e["name"].as_str().unwrap_or("").contains("Tata Motors"));
+    assert!(
+        has_tata_motors_all,
+        "Exposures without exclusion must include stocks from Arbitrage fund (e.g. Tata Motors Ltd.)"
+    );
+
+    // Case 2: excludeArbitrage=true
+    let req_excluded = Request::builder()
+        .uri(format!(
+            "/api/portfolio/{port_id}/exposures?excludeArbitrage=true"
+        ))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res_excluded = app.clone().oneshot(req_excluded).await.unwrap();
+    assert_eq!(res_excluded.status(), StatusCode::OK);
+    let json_excluded = parse_json(res_excluded.into_body()).await;
+    let exposures_excluded = json_excluded.as_array().unwrap();
+
+    let has_tata_motors_excluded = exposures_excluded
+        .iter()
+        .any(|e| e["name"].as_str().unwrap_or("").contains("Tata Motors"));
+    assert!(
+        !has_tata_motors_excluded,
+        "Exposures with excludeArbitrage=true must NOT include stocks solely from Arbitrage fund"
+    );
+
+    // Also check HDFC Bank contributions do not contain the Arbitrage fund
+    let hdfc_excluded = exposures_excluded
+        .iter()
+        .find(|e| e["name"].as_str().unwrap_or("").contains("HDFC Bank"))
+        .expect("HDFC Bank must be present from Parag Parikh");
+    let contributions = hdfc_excluded["contributions"].as_array().unwrap();
+    assert!(
+        !contributions.iter().any(|c| c["schemeName"]
+            .as_str()
+            .unwrap_or("")
+            .to_lowercase()
+            .contains("arbitrage")),
+        "Contributions must not contain Arbitrage fund when excluded"
+    );
+
+    // Case 3: snake_case exclude_arbitrage=true should also work
+    let req_snake = Request::builder()
+        .uri(format!(
+            "/api/portfolio/{port_id}/exposures?exclude_arbitrage=true"
+        ))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res_snake = app.clone().oneshot(req_snake).await.unwrap();
+    assert_eq!(res_snake.status(), StatusCode::OK);
+    let json_snake = parse_json(res_snake.into_body()).await;
+    let exposures_snake = json_snake.as_array().unwrap();
+    let has_tata_motors_snake = exposures_snake
+        .iter()
+        .any(|e| e["name"].as_str().unwrap_or("").contains("Tata Motors"));
+    assert!(
+        !has_tata_motors_snake,
+        "Exposures with exclude_arbitrage=true must NOT include stocks solely from Arbitrage fund"
+    );
 }

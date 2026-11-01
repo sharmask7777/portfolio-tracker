@@ -747,14 +747,42 @@ pub async fn get_overlap(
 
 pub fn get_stock_sector(name: &str) -> &'static str {
     let lower = name.to_lowercase();
-    if lower.contains("bank") || lower.contains("financial") || lower.contains("bajaj") {
+    if lower.contains("bank")
+        || lower.contains("financial")
+        || lower.contains("bajaj")
+        || lower.contains("rec ltd")
+        || lower.starts_with("rec ")
+        || lower.contains("pfc")
+        || lower.contains("power finance")
+        || lower.contains("cholamandalam")
+        || lower.contains("jpmorgan")
+        || lower.contains("berkshire")
+        || lower.contains("visa")
+        || lower.contains("mastercard")
+    {
         "Financial Services"
     } else if lower.contains("tech")
         || lower.contains("infosys")
         || lower.contains("tcs")
+        || lower.contains("tata consultancy")
         || lower.contains("wipro")
         || lower.contains("alphabet")
         || lower.contains("microsoft")
+        || lower.contains("apple")
+        || lower.contains("nvidia")
+        || lower.contains("broadcom")
+        || lower.contains("netflix")
+        || lower.contains("amd")
+        || lower.contains("advanced micro")
+        || lower.contains("qualcomm")
+        || lower.contains("asml")
+        || lower.contains("adobe")
+        || lower.contains("cisco")
+        || lower.contains("applied materials")
+        || lower.contains("texas instruments")
+        || lower.contains("intuit")
+        || lower.contains("snowflake")
+        || lower.contains("crowdstrike")
     {
         "Technology"
     } else if lower.contains("reliance")
@@ -762,14 +790,33 @@ pub fn get_stock_sector(name: &str) -> &'static str {
         || lower.contains("oil")
         || lower.contains("petro")
         || lower.contains("energy")
+        || lower.contains("natural gas")
+        || lower.contains("ongc")
+        || lower.contains("gail")
+        || lower.contains("exxon")
+        || lower.contains("chevron")
+        || lower.contains("bpcl")
+        || lower.contains("bharat petroleum")
     {
         "Energy"
     } else if lower.contains("airtel")
         || lower.contains("telecom")
         || lower.contains("communication")
+        || lower.contains("meta")
+        || lower.contains("google")
     {
         "Communication Services"
-    } else if lower.contains("pharma") || lower.contains("health") || lower.contains("sun") {
+    } else if lower.contains("pharma")
+        || lower.contains("health")
+        || lower.contains("sun")
+        || lower.contains("lilly")
+        || lower.contains("dr. reddy")
+        || lower.contains("cipla")
+        || lower.contains("unitedhealth")
+        || lower.contains("johnson")
+        || lower.contains("abbvie")
+        || lower.contains("merck")
+    {
         "Healthcare"
     } else if lower.contains("power")
         || lower.contains("ntpc")
@@ -781,14 +828,28 @@ pub fn get_stock_sector(name: &str) -> &'static str {
         || lower.contains("unilever")
         || lower.contains("nestle")
         || lower.contains("defensive")
+        || lower.contains("hindustan unilever")
+        || lower.contains("britannia")
+        || lower.contains("consumer")
+        || lower.contains("costco")
+        || lower.contains("procter")
+        || lower.contains("walmart")
     {
         "Consumer Defensive"
     } else if lower.contains("motor")
         || lower.contains("maruti")
         || lower.contains("tata motor")
+        || lower.contains("mahindra")
         || lower.contains("titan")
         || lower.contains("paint")
         || lower.contains("cyclical")
+        || lower.contains("amazon")
+        || lower.contains("tesla")
+        || lower.contains("trent")
+        || lower.contains("zomato")
+        || lower.contains("hotel")
+        || lower.contains("home depot")
+        || lower.contains("booking")
     {
         "Consumer Cyclical"
     } else if lower.contains("larsen")
@@ -796,10 +857,24 @@ pub fn get_stock_sector(name: &str) -> &'static str {
         || lower.contains("cummins")
         || lower.contains("apar")
         || lower.contains("industrials")
+        || lower.contains("electronics")
+        || lower.contains("aeronautics")
+        || lower.contains("siemens")
+        || lower.contains("bharat electronics")
+        || lower.contains("hindustan aeronautics")
+        || lower.contains("tube investments")
     {
         "Industrials"
-    } else if lower.contains("steel") || lower.contains("cement") || lower.contains("materials") {
+    } else if lower.contains("steel")
+        || lower.contains("cement")
+        || lower.contains("materials")
+        || lower.contains("vedanta")
+        || lower.contains("hindalco")
+        || lower.contains("jsw")
+    {
         "Basic Materials"
+    } else if lower.contains("dlf") || lower.contains("realty") || lower.contains("estate") {
+        "Real Estate"
     } else {
         "Other"
     }
@@ -815,8 +890,8 @@ pub fn resolve_holdings(isin: &str, scheme_name: &str) -> (String, Vec<FundHoldi
         || isin == "INF879O01027"
         || isin == "INF879O01034"
         || isin == "INF879O01042"
-        || lower_name.contains("parag parikh")
-        || lower_name.contains("ppfas")
+        || ((lower_name.contains("parag parikh") || lower_name.contains("ppfas"))
+            && !lower_name.contains("arbitrage"))
     {
         (
             "Parag Parikh Flexi Cap Fund".to_string(),
@@ -831,6 +906,241 @@ pub fn resolve_holdings(isin: &str, scheme_name: &str) -> (String, Vec<FundHoldi
                 FundHolding::new("Alphabet Inc.", dec("4.2")),
                 FundHolding::new("Microsoft Corp.", dec("4.1")),
                 FundHolding::new("Maruti Suzuki India Ltd.", dec("3.8")),
+            ],
+        )
+    } else if (lower_name.contains("parag parikh") || lower_name.contains("ppfas"))
+        && lower_name.contains("arbitrage")
+    {
+        (
+            if scheme_name.is_empty() {
+                format!("Parag Parikh Arbitrage Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("HDFC Bank Ltd.", dec("6.4")),
+                FundHolding::new("ITC Ltd.", dec("5.2")),
+                FundHolding::new("Coal India Ltd.", dec("4.6")),
+                FundHolding::new("Power Grid Corporation of India Ltd.", dec("4.1")),
+                FundHolding::new("Reliance Industries Ltd.", dec("3.9")),
+                FundHolding::new("ICICI Bank Ltd.", dec("3.8")),
+                FundHolding::new("Bajaj Holdings & Investment Ltd.", dec("3.5")),
+                FundHolding::new("Infosys Ltd.", dec("3.1")),
+                FundHolding::new("State Bank of India", dec("2.8")),
+                FundHolding::new("HCL Technologies Ltd.", dec("2.5")),
+                FundHolding::new("Tata Motors Ltd.", dec("2.2")),
+                FundHolding::new("Maruti Suzuki India Ltd.", dec("2.0")),
+                FundHolding::new("NTPC Ltd.", dec("1.8")),
+                FundHolding::new("Bharat Petroleum Corporation Ltd.", dec("1.6")),
+                FundHolding::new("Sun Pharmaceutical Industries Ltd.", dec("1.5")),
+            ],
+        )
+    } else if lower_name.contains("edelweiss") && lower_name.contains("arbitrage") {
+        (
+            if scheme_name.is_empty() {
+                format!("Edelweiss Arbitrage Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("HDFC Bank Ltd.", dec("7.2")),
+                FundHolding::new("Reliance Industries Ltd.", dec("6.1")),
+                FundHolding::new("Tata Motors Ltd.", dec("4.8")),
+                FundHolding::new("ICICI Bank Ltd.", dec("4.5")),
+                FundHolding::new("Axis Bank Ltd.", dec("3.8")),
+                FundHolding::new("State Bank of India", dec("3.4")),
+                FundHolding::new("Infosys Ltd.", dec("3.1")),
+                FundHolding::new("Larsen & Toubro Ltd.", dec("2.8")),
+                FundHolding::new("ITC Ltd.", dec("2.5")),
+                FundHolding::new("Tata Steel Ltd.", dec("2.4")),
+                FundHolding::new("Bharti Airtel Ltd.", dec("2.1")),
+                FundHolding::new("Hindalco Industries Ltd.", dec("1.8")),
+                FundHolding::new("Maruti Suzuki India Ltd.", dec("1.6")),
+                FundHolding::new("Bajaj Finance Ltd.", dec("1.5")),
+                FundHolding::new("NTPC Ltd.", dec("1.4")),
+            ],
+        )
+    } else if lower_name.contains("invesco") && lower_name.contains("arbitrage") {
+        (
+            if scheme_name.is_empty() {
+                format!("Invesco India Arbitrage Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("Reliance Industries Ltd.", dec("6.8")),
+                FundHolding::new("HDFC Bank Ltd.", dec("5.9")),
+                FundHolding::new("ICICI Bank Ltd.", dec("5.1")),
+                FundHolding::new("State Bank of India", dec("4.2")),
+                FundHolding::new("Tata Steel Ltd.", dec("3.7")),
+                FundHolding::new("Axis Bank Ltd.", dec("3.3")),
+                FundHolding::new("Larsen & Toubro Ltd.", dec("3.1")),
+                FundHolding::new("ITC Ltd.", dec("2.9")),
+                FundHolding::new("Infosys Ltd.", dec("2.6")),
+                FundHolding::new("Tata Motors Ltd.", dec("2.3")),
+                FundHolding::new("Sun Pharmaceutical Industries Ltd.", dec("2.0")),
+                FundHolding::new("Coal India Ltd.", dec("1.9")),
+                FundHolding::new("Hindalco Industries Ltd.", dec("1.7")),
+                FundHolding::new("JSW Steel Ltd.", dec("1.5")),
+                FundHolding::new("Bharat Electronics Ltd.", dec("1.5")),
+            ],
+        )
+    } else if lower_name.contains("arbitrage") {
+        (
+            if scheme_name.is_empty() {
+                format!("Arbitrage Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("HDFC Bank Ltd.", dec("6.7")),
+                FundHolding::new("Reliance Industries Ltd.", dec("6.0")),
+                FundHolding::new("ICICI Bank Ltd.", dec("4.6")),
+                FundHolding::new("ITC Ltd.", dec("3.6")),
+                FundHolding::new("State Bank of India", dec("3.3")),
+                FundHolding::new("Tata Motors Ltd.", dec("2.8")),
+                FundHolding::new("Larsen & Toubro Ltd.", dec("2.7")),
+                FundHolding::new("Axis Bank Ltd.", dec("2.4")),
+                FundHolding::new("Infosys Ltd.", dec("2.3")),
+                FundHolding::new("Tata Steel Ltd.", dec("2.0")),
+            ],
+        )
+    } else if lower_name.contains("nasdaq") || lower_name.contains("qqq") {
+        (
+            if scheme_name.is_empty() {
+                format!("NASDAQ 100 Index Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("Apple Inc.", dec("8.9")),
+                FundHolding::new("Microsoft Corp.", dec("8.5")),
+                FundHolding::new("NVIDIA Corp.", dec("7.8")),
+                FundHolding::new("Broadcom Inc.", dec("5.2")),
+                FundHolding::new("Amazon.com Inc.", dec("5.1")),
+                FundHolding::new("Meta Platforms Inc.", dec("4.7")),
+                FundHolding::new("Tesla Inc.", dec("3.1")),
+                FundHolding::new("Alphabet Inc.", dec("2.6")),
+                FundHolding::new("Costco Wholesale Corp.", dec("2.4")),
+                FundHolding::new("Netflix Inc.", dec("2.0")),
+                FundHolding::new("Advanced Micro Devices Inc.", dec("1.9")),
+                FundHolding::new("Qualcomm Inc.", dec("1.7")),
+                FundHolding::new("ASML Holding NV", dec("1.6")),
+                FundHolding::new("Adobe Inc.", dec("1.4")),
+                FundHolding::new("Cisco Systems Inc.", dec("1.3")),
+                FundHolding::new("Applied Materials Inc.", dec("1.2")),
+                FundHolding::new("Texas Instruments Inc.", dec("1.1")),
+                FundHolding::new("Intuit Inc.", dec("1.0")),
+                FundHolding::new("Booking Holdings Inc.", dec("0.9")),
+            ],
+        )
+    } else if lower_name.contains("s&p 500")
+        || lower_name.contains("s and p 500")
+        || lower_name.contains("sp500")
+    {
+        (
+            if scheme_name.is_empty() {
+                format!("S&P 500 Index Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("Microsoft Corp.", dec("6.8")),
+                FundHolding::new("Apple Inc.", dec("6.4")),
+                FundHolding::new("NVIDIA Corp.", dec("6.1")),
+                FundHolding::new("Amazon.com Inc.", dec("3.7")),
+                FundHolding::new("Alphabet Inc.", dec("3.6")),
+                FundHolding::new("Meta Platforms Inc.", dec("2.5")),
+                FundHolding::new("Berkshire Hathaway Inc.", dec("1.7")),
+                FundHolding::new("Broadcom Inc.", dec("1.6")),
+                FundHolding::new("Eli Lilly and Co.", dec("1.5")),
+                FundHolding::new("Tesla Inc.", dec("1.4")),
+                FundHolding::new("JPMorgan Chase & Co.", dec("1.3")),
+                FundHolding::new("Visa Inc.", dec("1.0")),
+                FundHolding::new("UnitedHealth Group Inc.", dec("0.9")),
+                FundHolding::new("Exxon Mobil Corp.", dec("0.9")),
+                FundHolding::new("Mastercard Inc.", dec("0.8")),
+                FundHolding::new("Home Depot Inc.", dec("0.8")),
+                FundHolding::new("Procter & Gamble Co.", dec("0.8")),
+                FundHolding::new("Johnson & Johnson", dec("0.7")),
+                FundHolding::new("AbbVie Inc.", dec("0.7")),
+                FundHolding::new("Merck & Co. Inc.", dec("0.6")),
+            ],
+        )
+    } else if lower_name.contains("total stock market")
+        || lower_name.contains("vti")
+        || lower_name.contains("us specific")
+    {
+        (
+            if scheme_name.is_empty() {
+                format!("US Total Stock Market Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("Microsoft Corp.", dec("5.6")),
+                FundHolding::new("Apple Inc.", dec("5.3")),
+                FundHolding::new("NVIDIA Corp.", dec("5.0")),
+                FundHolding::new("Amazon.com Inc.", dec("3.0")),
+                FundHolding::new("Alphabet Inc.", dec("2.9")),
+                FundHolding::new("Meta Platforms Inc.", dec("2.0")),
+                FundHolding::new("Berkshire Hathaway Inc.", dec("1.4")),
+                FundHolding::new("Broadcom Inc.", dec("1.3")),
+                FundHolding::new("Eli Lilly and Co.", dec("1.2")),
+                FundHolding::new("Tesla Inc.", dec("1.1")),
+                FundHolding::new("JPMorgan Chase & Co.", dec("1.0")),
+                FundHolding::new("Visa Inc.", dec("0.8")),
+                FundHolding::new("Exxon Mobil Corp.", dec("0.7")),
+                FundHolding::new("UnitedHealth Group Inc.", dec("0.7")),
+                FundHolding::new("Mastercard Inc.", dec("0.6")),
+                FundHolding::new("Home Depot Inc.", dec("0.6")),
+                FundHolding::new("Procter & Gamble Co.", dec("0.6")),
+                FundHolding::new("Costco Wholesale Corp.", dec("0.6")),
+                FundHolding::new("Johnson & Johnson", dec("0.5")),
+                FundHolding::new("AbbVie Inc.", dec("0.5")),
+            ],
+        )
+    } else if lower_name.contains("fang") {
+        (
+            if scheme_name.is_empty() {
+                format!("NYSE FANG+ Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("NVIDIA Corp.", dec("10.5")),
+                FundHolding::new("Meta Platforms Inc.", dec("10.2")),
+                FundHolding::new("Alphabet Inc.", dec("10.1")),
+                FundHolding::new("Amazon.com Inc.", dec("10.0")),
+                FundHolding::new("Apple Inc.", dec("9.8")),
+                FundHolding::new("Microsoft Corp.", dec("9.8")),
+                FundHolding::new("Broadcom Inc.", dec("9.6")),
+                FundHolding::new("Netflix Inc.", dec("9.5")),
+                FundHolding::new("Tesla Inc.", dec("9.0")),
+                FundHolding::new("Snowflake Inc.", dec("6.5")),
+                FundHolding::new("CrowdStrike Holdings Inc.", dec("5.0")),
+            ],
+        )
+    } else if lower_name.contains("us equity") {
+        (
+            if scheme_name.is_empty() {
+                format!("US Equity Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("Apple Inc.", dec("9.5")),
+                FundHolding::new("Microsoft Corp.", dec("9.0")),
+                FundHolding::new("NVIDIA Corp.", dec("8.2")),
+                FundHolding::new("Amazon.com Inc.", dec("5.5")),
+                FundHolding::new("Alphabet Inc.", dec("4.8")),
+                FundHolding::new("Meta Platforms Inc.", dec("4.2")),
+                FundHolding::new("Tesla Inc.", dec("2.5")),
+                FundHolding::new("Broadcom Inc.", dec("2.4")),
+                FundHolding::new("Berkshire Hathaway Inc.", dec("2.0")),
+                FundHolding::new("JPMorgan Chase & Co.", dec("1.8")),
+                FundHolding::new("Eli Lilly and Co.", dec("1.6")),
+                FundHolding::new("Visa Inc.", dec("1.4")),
             ],
         )
     } else if isin == "INF179K01BE2"
@@ -858,7 +1168,14 @@ pub fn resolve_holdings(isin: &str, scheme_name: &str) -> (String, Vec<FundHoldi
                 FundHolding::new("Bharti Airtel Ltd.", dec("4.0")),
             ],
         )
-    } else if isin == "INF769K01DP4" || lower_name.contains("mirae") {
+    } else if isin == "INF769K01DP4"
+        || (lower_name.contains("mirae")
+            && !lower_name.contains("nasdaq")
+            && !lower_name.contains("s&p")
+            && !lower_name.contains("s and p")
+            && !lower_name.contains("fang")
+            && !lower_name.contains("us equity"))
+    {
         (
             "Mirae Asset Large Cap Fund".to_string(),
             vec![
@@ -867,6 +1184,67 @@ pub fn resolve_holdings(isin: &str, scheme_name: &str) -> (String, Vec<FundHoldi
                 FundHolding::new("Reliance Industries Ltd.", dec("8.0")),
                 FundHolding::new("Infosys Ltd.", dec("6.5")),
                 FundHolding::new("Larsen & Toubro Ltd.", dec("4.0")),
+            ],
+        )
+    } else if lower_name.contains("next 50") || lower_name.contains("next50") {
+        (
+            if scheme_name.is_empty() {
+                format!("Nifty Next 50 Index Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("Trent Ltd.", dec("4.8")),
+                FundHolding::new("Bharat Electronics Ltd.", dec("4.5")),
+                FundHolding::new("Hindustan Aeronautics Ltd.", dec("4.2")),
+                FundHolding::new("Tata Power Co. Ltd.", dec("3.8")),
+                FundHolding::new("REC Ltd.", dec("3.6")),
+                FundHolding::new("Power Finance Corporation Ltd.", dec("3.5")),
+                FundHolding::new("Cholamandalam Investment and Finance Co. Ltd.", dec("3.4")),
+                FundHolding::new("Siemens Ltd.", dec("3.2")),
+                FundHolding::new("DLF Ltd.", dec("3.0")),
+                FundHolding::new("Vedanta Ltd.", dec("2.8")),
+                FundHolding::new("Indian Oil Corporation Ltd.", dec("2.6")),
+                FundHolding::new("GAIL (India) Ltd.", dec("2.5")),
+                FundHolding::new("Bank of Baroda", dec("2.4")),
+                FundHolding::new("Punjab National Bank", dec("2.2")),
+                FundHolding::new("Zomato Ltd.", dec("2.1")),
+            ],
+        )
+    } else if lower_name.contains("nifty 50") || lower_name.contains("nifty50") {
+        (
+            if scheme_name.is_empty() {
+                format!("Nifty 50 Index Fund {}", isin)
+            } else {
+                scheme_name.to_string()
+            },
+            vec![
+                FundHolding::new("HDFC Bank Ltd.", dec("11.2")),
+                FundHolding::new("Reliance Industries Ltd.", dec("9.1")),
+                FundHolding::new("ICICI Bank Ltd.", dec("7.9")),
+                FundHolding::new("Infosys Ltd.", dec("5.8")),
+                FundHolding::new("Tata Consultancy Services Ltd.", dec("4.2")),
+                FundHolding::new("Bharti Airtel Ltd.", dec("4.1")),
+                FundHolding::new("ITC Ltd.", dec("3.8")),
+                FundHolding::new("Larsen & Toubro Ltd.", dec("3.7")),
+                FundHolding::new("Axis Bank Ltd.", dec("3.3")),
+                FundHolding::new("State Bank of India", dec("3.0")),
+                FundHolding::new("Kotak Mahindra Bank Ltd.", dec("2.8")),
+                FundHolding::new("Hindustan Unilever Ltd.", dec("2.4")),
+                FundHolding::new("Mahindra & Mahindra Ltd.", dec("2.2")),
+                FundHolding::new("Bajaj Finance Ltd.", dec("2.1")),
+                FundHolding::new("Sun Pharmaceutical Industries Ltd.", dec("1.9")),
+                FundHolding::new("Tata Motors Ltd.", dec("1.8")),
+                FundHolding::new("HCL Technologies Ltd.", dec("1.7")),
+                FundHolding::new("Maruti Suzuki India Ltd.", dec("1.6")),
+                FundHolding::new("NTPC Ltd.", dec("1.5")),
+                FundHolding::new("Titan Co. Ltd.", dec("1.4")),
+                FundHolding::new("Power Grid Corporation of India Ltd.", dec("1.3")),
+                FundHolding::new("Tata Steel Ltd.", dec("1.2")),
+                FundHolding::new("UltraTech Cement Ltd.", dec("1.1")),
+                FundHolding::new("Coal India Ltd.", dec("1.0")),
+                FundHolding::new("Oil & Natural Gas Corporation Ltd.", dec("1.0")),
+                FundHolding::new("Asian Paints Ltd.", dec("0.9")),
             ],
         )
     } else if lower_name.contains("small") {
@@ -899,14 +1277,21 @@ pub fn resolve_holdings(isin: &str, scheme_name: &str) -> (String, Vec<FundHoldi
                 scheme_name.to_string()
             },
             vec![
-                FundHolding::new("HDFC Bank Ltd.", dec("9.0")),
-                FundHolding::new("Reliance Industries Ltd.", dec("8.5")),
-                FundHolding::new("ICICI Bank Ltd.", dec("7.0")),
-                FundHolding::new("Infosys Ltd.", dec("6.5")),
-                FundHolding::new("Tata Consultancy Services Ltd.", dec("5.0")),
-                FundHolding::new("Larsen & Toubro Ltd.", dec("4.0")),
-                FundHolding::new("Bharti Airtel Ltd.", dec("3.5")),
-                FundHolding::new("ITC Ltd.", dec("3.0")),
+                FundHolding::new("HDFC Bank Ltd.", dec("8.8")),
+                FundHolding::new("Reliance Industries Ltd.", dec("8.2")),
+                FundHolding::new("ICICI Bank Ltd.", dec("6.9")),
+                FundHolding::new("Infosys Ltd.", dec("6.1")),
+                FundHolding::new("Tata Consultancy Services Ltd.", dec("4.7")),
+                FundHolding::new("Bharti Airtel Ltd.", dec("4.0")),
+                FundHolding::new("Larsen & Toubro Ltd.", dec("3.8")),
+                FundHolding::new("ITC Ltd.", dec("3.3")),
+                FundHolding::new("State Bank of India", dec("2.9")),
+                FundHolding::new("Axis Bank Ltd.", dec("2.6")),
+                FundHolding::new("Kotak Mahindra Bank Ltd.", dec("2.4")),
+                FundHolding::new("Hindustan Unilever Ltd.", dec("2.2")),
+                FundHolding::new("Mahindra & Mahindra Ltd.", dec("2.0")),
+                FundHolding::new("Bajaj Finance Ltd.", dec("1.9")),
+                FundHolding::new("Sun Pharmaceutical Industries Ltd.", dec("1.7")),
             ],
         )
     }
@@ -938,6 +1323,7 @@ pub async fn compute_portfolio_exposures(
     state: &AppState,
     user_id: Uuid,
     target_id: &str,
+    exclude_arbitrage: bool,
 ) -> Result<Vec<StockExposure>, ApiError> {
     let portfolios = resolve_target_portfolios(state, user_id, target_id).await?;
     if portfolios.is_empty() {
@@ -992,6 +1378,10 @@ pub async fn compute_portfolio_exposures(
             let is_cash = lower.contains("cash") || asset.asset_type == "CASH";
 
             if is_debt || is_gold || is_cash {
+                continue;
+            }
+
+            if exclude_arbitrage && lower.contains("arbitrage") {
                 continue;
             }
 
@@ -1685,9 +2075,16 @@ pub async fn get_xray(
 pub async fn get_exposures(
     auth_user: AuthUser,
     Path(id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<StockExposure>>, ApiError> {
-    let exposures = compute_portfolio_exposures(&state, auth_user.user_id, &id).await?;
+    let exclude_arbitrage = params
+        .get("excludeArbitrage")
+        .or_else(|| params.get("exclude_arbitrage"))
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let exposures =
+        compute_portfolio_exposures(&state, auth_user.user_id, &id, exclude_arbitrage).await?;
     Ok(Json(exposures))
 }
 

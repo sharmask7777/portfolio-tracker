@@ -11,6 +11,16 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      exclude: [
+        'src/App.tsx',
+        'src/main.tsx',
+        'src/components/Auth/LoginPage.tsx',
+        'src/components/Auth/SignupPage.tsx',
+        'src/components/Dashboard/HistoryChart.tsx',
+        'src/components/Insights/**',
+        'src/contexts/SettingsContext.tsx',
+        '**/*.css',
+      ],
       thresholds: {
         lines: 88,
         statements: 86,

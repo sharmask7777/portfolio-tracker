@@ -128,4 +128,66 @@ describe('IntersectionView Component', () => {
     expect(rowsSortedName[1]).toHaveTextContent('Infosys Ltd.');
     expect(rowsSortedName[2]).toHaveTextContent('Reliance Industries Ltd.');
   });
+
+  it('renders the Exclude Arbitrage Funds toggle defaulting to unchecked', () => {
+    render(<IntersectionView exposures={mockExposures} excludeArbitrage={false} />);
+    const toggle = screen.getByRole('checkbox', { name: /exclude arbitrage/i });
+    expect(toggle).not.toBeChecked();
+  });
+
+  it('renders the toggle as unchecked when excludeArbitrage is omitted', () => {
+    render(<IntersectionView exposures={mockExposures} />);
+    const toggle = screen.getByRole('checkbox', { name: /exclude arbitrage/i });
+    expect(toggle).not.toBeChecked();
+  });
+
+  it('renders the toggle as checked when excludeArbitrage is true', () => {
+    render(<IntersectionView exposures={mockExposures} excludeArbitrage={true} />);
+    const toggle = screen.getByRole('checkbox', { name: /exclude arbitrage/i });
+    expect(toggle).toBeChecked();
+  });
+
+  it('calls onToggleExcludeArbitrage when toggle switch is clicked', () => {
+    const onToggle = vi.fn();
+    render(
+      <IntersectionView
+        exposures={mockExposures}
+        excludeArbitrage={false}
+        onToggleExcludeArbitrage={onToggle}
+      />
+    );
+    const toggle = screen.getByRole('checkbox', { name: /exclude arbitrage/i });
+    fireEvent.click(toggle);
+    expect(onToggle).toHaveBeenCalledWith(true);
+  });
+
+  it('calls onToggleExcludeArbitrage with false when clicked while active', () => {
+    const onToggle = vi.fn();
+    render(
+      <IntersectionView
+        exposures={mockExposures}
+        excludeArbitrage={true}
+        onToggleExcludeArbitrage={onToggle}
+      />
+    );
+    const toggle = screen.getByRole('checkbox', { name: /exclude arbitrage/i });
+    fireEvent.click(toggle);
+    expect(onToggle).toHaveBeenCalledWith(false);
+  });
+
+  it('renders the complete list of exposures without any artificial cutoff', () => {
+    const manyExposures: StockExposure[] = Array.from({ length: 30 }, (_, i) => ({
+      name: `Stock ${i + 1}`,
+      sector: 'Diversified',
+      absoluteValue: 1000 * (i + 1),
+      percentage: 0.01,
+      contributions: [{ schemeName: 'Fund A', value: 1000 * (i + 1), weight: 1.0 }],
+    }));
+
+    render(<IntersectionView exposures={manyExposures} />);
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(rows.length).toBe(30);
+    expect(screen.getByText('Stock 1')).toBeInTheDocument();
+    expect(screen.getByText('Stock 30')).toBeInTheDocument();
+  });
 });
