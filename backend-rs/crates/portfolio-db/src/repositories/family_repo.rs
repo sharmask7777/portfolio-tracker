@@ -1,4 +1,7 @@
-//! Family profile repository trait and SQLx implementation.
+//! Family profile repository trait and SQLx PostgreSQL implementation.
+//!
+//! Provides data access and lifecycle management for multi-member family profiles,
+//! investor PAN registrations, and cascading profile deletion.
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -8,9 +11,20 @@ use uuid::Uuid;
 use crate::entities::ManagedProfileEntity;
 use crate::error::DbError;
 
+/// Repository interface for managing family member profiles, PAN mappings, and tax slabs.
 #[async_trait]
 pub trait FamilyRepository: Send + Sync {
-    /// Creates a new managed family profile for a user with PAN and tax slab.
+    /// Creates a new managed family profile for a user with their statutory PAN and marginal tax slab.
+    ///
+    /// # Arguments
+    /// * `user_id` - UUID of the managing parent user account.
+    /// * `name` - Descriptive name of the family member (e.g. "Spouse", "HUF", "Child").
+    /// * `pan` - Indian Permanent Account Number (PAN).
+    /// * `tax_slab` - Marginal statutory tax rate (e.g. 0.30 for 30%).
+    ///
+    /// # Errors
+    /// Returns [`DbError`] if a profile with the same PAN already exists for this user,
+    /// or if the database query fails.
     async fn create_managed_profile(
         &self,
         user_id: Uuid,
@@ -19,10 +33,27 @@ pub trait FamilyRepository: Send + Sync {
         tax_slab: Decimal,
     ) -> Result<ManagedProfileEntity, DbError>;
 
-    /// Lists all managed profiles owned by a user.
+    /// Lists all managed profiles owned by a specific user, ordered chronologically by creation date.
+    ///
+    /// # Arguments
+    /// * `user_id` - UUID of the managing user account.
+    ///
+    /// # Errors
+    /// Returns [`DbError`] if query execution fails.
     async fn list_profiles(&self, user_id: Uuid) -> Result<Vec<ManagedProfileEntity>, DbError>;
 
-    /// Deletes a managed profile and cascades to all associated portfolios, folios, and transactions.
+    /// Deletes a managed profile and performs an atomic cascading deletion across all
+    /// associated portfolios, folios, and ledger transactions.
+    ///
+    /// Returns the deleted profile entity upon successful deletion.
+    ///
+    /// # Arguments
+    /// * `user_id` - UUID of the managing user account verifying ownership.
+    /// * `profile_id` - UUID of the profile to permanently remove.
+    ///
+    /// # Errors
+    /// Returns [`DbError::ProfileNotFound`] if the profile does not exist or does not belong
+    /// to the specified user, or [`DbError`] on query failure.
     async fn delete_managed_profile(
         &self,
         user_id: Uuid,
@@ -30,13 +61,14 @@ pub trait FamilyRepository: Send + Sync {
     ) -> Result<ManagedProfileEntity, DbError>;
 }
 
-/// Production PostgreSQL repository for Family Profiles using SQLx.
+/// Production PostgreSQL implementation of [`FamilyRepository`] using SQLx.
 #[derive(Clone, Debug)]
 pub struct SqlxFamilyRepo {
     pool: sqlx::PgPool,
 }
 
 impl SqlxFamilyRepo {
+    /// Creates a new repository instance backed by the given PostgreSQL connection pool.
     pub fn new(pool: sqlx::PgPool) -> Self {
         Self { pool }
     }
@@ -51,9 +83,11 @@ impl FamilyRepository for SqlxFamilyRepo {
         pan: &str,
         tax_slab: Decimal,
     ) -> Result<ManagedProfileEntity, DbError> {
-        let id = Uuid::new_v4();
+        let profile_id = Uuid::new_v4();
         let now = Utc::now();
 
+        // Inserts new profile, casting taxSlab through float8 to preserve decimal compatibility
+        // with the PostgreSQL DOUBLE PRECISION column definition while returning a Decimal.
         let record = sqlx::query_as::<_, ManagedProfileEntity>(
             r#"
             INSERT INTO "ManagedProfile" (
@@ -65,7 +99,7 @@ impl FamilyRepository for SqlxFamilyRepo {
                       "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             "#,
         )
-        .bind(id.to_string())
+        .bind(profile_id.to_string())
         .bind(user_id.to_string())
         .bind(name)
         .bind(pan)
@@ -100,9 +134,10 @@ impl FamilyRepository for SqlxFamilyRepo {
         user_id: Uuid,
         profile_id: Uuid,
     ) -> Result<ManagedProfileEntity, DbError> {
-        let mut tx = self.pool.begin().await?;
+        // Atomic transaction guarantees that cascading profile deletion is all-or-nothing.
+        let mut transaction = self.pool.begin().await?;
 
-        // 1. Get profile to delete
+        // 1. Fetch the target profile while verifying ownership by the caller user_id.
         let profile = sqlx::query_as::<_, ManagedProfileEntity>(
             r#"
             SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
@@ -114,26 +149,27 @@ impl FamilyRepository for SqlxFamilyRepo {
         )
         .bind(profile_id.to_string())
         .bind(user_id.to_string())
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut *transaction)
         .await?
         .ok_or(DbError::ProfileNotFound(profile_id))?;
 
-        // 2. Cascade delete: transactions under folios belonging to portfolios under this profile
+        // 2. Cascade delete: delete all transactions under folios belonging to portfolios
+        //    associated with this profile.
         sqlx::query(
             r#"
             DELETE FROM "Transaction"
             WHERE "folioId" IN (
-                SELECT f.id FROM "Folio" f
-                JOIN "Portfolio" p ON f."portfolioId" = p.id
-                WHERE p."managedProfileId" = $1
+                SELECT folio.id FROM "Folio" folio
+                JOIN "Portfolio" portfolio ON folio."portfolioId" = portfolio.id
+                WHERE portfolio."managedProfileId" = $1
             )
             "#,
         )
         .bind(profile_id.to_string())
-        .execute(&mut *tx)
+        .execute(&mut *transaction)
         .await?;
 
-        // 3. Delete folios under portfolios belonging to this profile
+        // 3. Delete all folios under portfolios belonging to this profile.
         sqlx::query(
             r#"
             DELETE FROM "Folio"
@@ -144,10 +180,10 @@ impl FamilyRepository for SqlxFamilyRepo {
             "#,
         )
         .bind(profile_id.to_string())
-        .execute(&mut *tx)
+        .execute(&mut *transaction)
         .await?;
 
-        // 4. Delete portfolios linked to this profile
+        // 4. Delete all portfolios linked to this profile.
         sqlx::query(
             r#"
             DELETE FROM "Portfolio"
@@ -155,10 +191,10 @@ impl FamilyRepository for SqlxFamilyRepo {
             "#,
         )
         .bind(profile_id.to_string())
-        .execute(&mut *tx)
+        .execute(&mut *transaction)
         .await?;
 
-        // 5. Delete the profile itself
+        // 5. Delete the managed profile itself.
         sqlx::query(
             r#"
             DELETE FROM "ManagedProfile"
@@ -167,10 +203,10 @@ impl FamilyRepository for SqlxFamilyRepo {
         )
         .bind(profile_id.to_string())
         .bind(user_id.to_string())
-        .execute(&mut *tx)
+        .execute(&mut *transaction)
         .await?;
 
-        tx.commit().await?;
+        transaction.commit().await?;
 
         Ok(profile)
     }

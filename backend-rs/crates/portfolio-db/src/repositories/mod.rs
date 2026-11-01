@@ -1,4 +1,10 @@
 //! Repository traits and SQLx database implementations.
+//!
+//! Provides abstract interfaces and production PostgreSQL implementations for:
+//! - Portfolios ([`PortfolioRepository`], [`SqlxPortfolioRepo`])
+//! - Transactions ([`TransactionRepository`], [`SqlxTransactionRepo`])
+//! - Family profiles ([`FamilyRepository`], [`SqlxFamilyRepo`])
+//! - Disclosed fund holdings ([`FundHoldingsRepository`], [`SqlxFundHoldingsRepo`])
 
 pub mod family_repo;
 pub mod fund_holdings_repo;

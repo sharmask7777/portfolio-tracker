@@ -1,4 +1,7 @@
-//! Portfolio repository trait and SQLx implementation.
+//! Portfolio repository trait and SQLx PostgreSQL implementation.
+//!
+//! Provides data access and lifecycle management for user investment portfolios,
+//! including creation, retrieval, listing, and atomic cascading deletion.
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -7,9 +10,18 @@ use uuid::Uuid;
 use crate::entities::PortfolioEntity;
 use crate::error::DbError;
 
+/// Repository interface for managing portfolio containers and their lifecycles.
 #[async_trait]
 pub trait PortfolioRepository: Send + Sync {
-    /// Creates a new portfolio for a user, optionally linked to a managed profile.
+    /// Creates a new portfolio for a user, optionally linked to a specific managed family profile.
+    ///
+    /// # Arguments
+    /// * `user_id` - UUID of the owner user account.
+    /// * `name` - Descriptive label for the portfolio (e.g. "Primary Growth", "Retirement").
+    /// * `managed_profile_id` - Optional UUID of the associated family profile.
+    ///
+    /// # Errors
+    /// Returns [`DbError`] if foreign key constraints are violated or database write fails.
     async fn create_portfolio(
         &self,
         user_id: Uuid,
@@ -17,23 +29,42 @@ pub trait PortfolioRepository: Send + Sync {
         managed_profile_id: Option<Uuid>,
     ) -> Result<PortfolioEntity, DbError>;
 
-    /// Gets a portfolio by its ID.
+    /// Gets a single portfolio by its unique identifier.
+    ///
+    /// Returns `Ok(None)` if no portfolio exists with the specified ID.
+    ///
+    /// # Errors
+    /// Returns [`DbError`] if the query execution fails.
     async fn get_portfolio(&self, id: Uuid) -> Result<Option<PortfolioEntity>, DbError>;
 
-    /// Lists all portfolios owned by a user.
+    /// Lists all portfolios owned by a specific user, ordered chronologically by creation date.
+    ///
+    /// # Arguments
+    /// * `user_id` - UUID of the owner user account.
+    ///
+    /// # Errors
+    /// Returns [`DbError`] if query execution fails.
     async fn list_user_portfolios(&self, user_id: Uuid) -> Result<Vec<PortfolioEntity>, DbError>;
 
-    /// Deletes a portfolio by ID.
+    /// Deletes a portfolio by ID, performing an atomic cascade across all child folios
+    /// and transactions within a database transaction.
+    ///
+    /// # Arguments
+    /// * `id` - UUID of the portfolio to permanently delete.
+    ///
+    /// # Errors
+    /// Returns [`DbError`] if transaction execution or commit fails.
     async fn delete_portfolio(&self, id: Uuid) -> Result<(), DbError>;
 }
 
-/// Production PostgreSQL repository for Portfolios using SQLx.
+/// Production PostgreSQL implementation of [`PortfolioRepository`] using SQLx.
 #[derive(Clone, Debug)]
 pub struct SqlxPortfolioRepo {
     pool: sqlx::PgPool,
 }
 
 impl SqlxPortfolioRepo {
+    /// Creates a new repository instance backed by the given PostgreSQL connection pool.
     pub fn new(pool: sqlx::PgPool) -> Self {
         Self { pool }
     }
@@ -47,8 +78,10 @@ impl PortfolioRepository for SqlxPortfolioRepo {
         name: &str,
         managed_profile_id: Option<Uuid>,
     ) -> Result<PortfolioEntity, DbError> {
-        let id = Uuid::new_v4();
+        let portfolio_id = Uuid::new_v4();
         let now = Utc::now();
+
+        // Inserts the portfolio and returns the persisted record with normalized UTC timestamps.
         let record = sqlx::query_as::<_, PortfolioEntity>(
             r#"
             INSERT INTO "Portfolio" (id, "userId", name, "managedProfileId", "createdAt", "updatedAt")
@@ -58,10 +91,10 @@ impl PortfolioRepository for SqlxPortfolioRepo {
                       "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
             "#,
         )
-        .bind(id.to_string())
+        .bind(portfolio_id.to_string())
         .bind(user_id.to_string())
         .bind(name)
-        .bind(managed_profile_id.map(|u| u.to_string()))
+        .bind(managed_profile_id.map(|profile_id| profile_id.to_string()))
         .bind(now)
         .fetch_one(&self.pool)
         .await?;
@@ -87,6 +120,7 @@ impl PortfolioRepository for SqlxPortfolioRepo {
     }
 
     async fn list_user_portfolios(&self, user_id: Uuid) -> Result<Vec<PortfolioEntity>, DbError> {
+        // Returns all user portfolios sorted oldest to newest for stable dashboard presentation.
         let records = sqlx::query_as::<_, PortfolioEntity>(
             r#"
             SELECT id::uuid, "userId"::uuid, "managedProfileId"::uuid, name,
@@ -105,9 +139,12 @@ impl PortfolioRepository for SqlxPortfolioRepo {
     }
 
     async fn delete_portfolio(&self, id: Uuid) -> Result<(), DbError> {
-        let mut tx = self.pool.begin().await?;
+        // An explicit database transaction guarantees that deletion of all downstream financial
+        // records is completely atomic. If any step fails, the entire deletion rolls back.
+        let mut transaction = self.pool.begin().await?;
 
-        // 1. Delete all transactions belonging to folios of this portfolio
+        // 1. Delete all transactions belonging to any folio located within this portfolio.
+        //    Uses a subquery matching on the portfolio foreign key.
         sqlx::query(
             r#"
             DELETE FROM "Transaction"
@@ -118,10 +155,10 @@ impl PortfolioRepository for SqlxPortfolioRepo {
             "#,
         )
         .bind(id.to_string())
-        .execute(&mut *tx)
+        .execute(&mut *transaction)
         .await?;
 
-        // 2. Delete all folios of this portfolio
+        // 2. Delete all folios linked to this portfolio.
         sqlx::query(
             r#"
             DELETE FROM "Folio"
@@ -129,10 +166,10 @@ impl PortfolioRepository for SqlxPortfolioRepo {
             "#,
         )
         .bind(id.to_string())
-        .execute(&mut *tx)
+        .execute(&mut *transaction)
         .await?;
 
-        // 3. Delete the portfolio itself
+        // 3. Delete the parent portfolio record itself.
         sqlx::query(
             r#"
             DELETE FROM "Portfolio"
@@ -140,10 +177,11 @@ impl PortfolioRepository for SqlxPortfolioRepo {
             "#,
         )
         .bind(id.to_string())
-        .execute(&mut *tx)
+        .execute(&mut *transaction)
         .await?;
 
-        tx.commit().await?;
+        // Commit all deletions atomically.
+        transaction.commit().await?;
 
         Ok(())
     }
