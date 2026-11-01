@@ -19,6 +19,8 @@ export interface IntersectionViewProps {
   exposures: StockExposure[];
   isLoading?: boolean;
   onUploadClick?: () => void;
+  excludeArbitrage?: boolean;
+  onToggleExcludeArbitrage?: (val: boolean) => void;
 }
 
 type SortField = 'percentage' | 'absoluteValue' | 'name' | 'sector';
@@ -28,6 +30,8 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
   exposures,
   isLoading = false,
   onUploadClick,
+  excludeArbitrage = false,
+  onToggleExcludeArbitrage,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSector, setSelectedSector] = useState('All Sectors');
@@ -308,6 +312,44 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
               </option>
             ))}
           </select>
+
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              cursor: 'pointer',
+              userSelect: 'none',
+              padding: '0.45rem 0.75rem',
+              borderRadius: '8px',
+              border: `1px solid ${excludeArbitrage ? 'var(--accent-color)' : 'var(--border-color)'}`,
+              backgroundColor: excludeArbitrage ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-primary)',
+              transition: 'all 0.15s ease-in-out',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={excludeArbitrage}
+              onChange={() => onToggleExcludeArbitrage?.(!excludeArbitrage)}
+              aria-label="Exclude Arbitrage Funds"
+              style={{
+                cursor: 'pointer',
+                accentColor: 'var(--accent-color)',
+                width: '16px',
+                height: '16px',
+              }}
+            />
+            <span
+              style={{
+                fontSize: '0.8125rem',
+                fontWeight: 500,
+                color: excludeArbitrage ? 'var(--accent-color)' : 'var(--text-primary)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Exclude Arbitrage Funds
+            </span>
+          </label>
         </div>
 
         {/* Aggregate Summary Badges */}
