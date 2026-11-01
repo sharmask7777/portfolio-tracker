@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod family;
+pub mod fund_holdings;
 pub mod health;
 pub mod holdings;
 pub mod portfolio;

@@ -1694,3 +1694,188 @@ async fn test_exposures_exclude_arbitrage_query_param() {
         "Exposures with exclude_arbitrage=true must NOT include stocks solely from Arbitrage fund"
     );
 }
+
+#[tokio::test]
+async fn test_ingest_fund_holdings_success() {
+    let (app, _, _) = setup_test_app();
+
+    let payload = json!({
+        "isin": "INF209K01157",
+        "schemeName": "Aditya Birla Sun Life Frontline Equity Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": [
+            {
+                "stockName": "HDFC Bank Ltd",
+                "stockIsin": "INE040A01034",
+                "sector": "Financial Services",
+                "weight": "0.0925"
+            },
+            {
+                "stockName": "Reliance Industries Ltd",
+                "stockIsin": "INE002A01018",
+                "sector": "Energy",
+                "weight": "0.0810"
+            }
+        ]
+    });
+
+    let req = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let json = parse_json(res.into_body()).await;
+    assert_eq!(json["isin"], "INF209K01157");
+    assert_eq!(json["count"], 2);
+    assert_eq!(json["asOfDate"], "2024-03-31");
+    assert_eq!(json["status"], "success");
+}
+
+#[tokio::test]
+async fn test_ingest_fund_holdings_validation_failure() {
+    let (app, _, _) = setup_test_app();
+
+    // Empty ISIN
+    let empty_isin_payload = json!({
+        "isin": "",
+        "schemeName": "Test Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": [
+            {
+                "stockName": "HDFC Bank Ltd",
+                "weight": "0.05"
+            }
+        ]
+    });
+
+    let req1 = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(empty_isin_payload.to_string()))
+        .unwrap();
+
+    let res1 = app.clone().oneshot(req1).await.unwrap();
+    assert_eq!(res1.status(), StatusCode::BAD_REQUEST);
+
+    // Empty holdings array
+    let empty_holdings_payload = json!({
+        "isin": "INF209K01157",
+        "schemeName": "Test Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": []
+    });
+
+    let req2 = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(empty_holdings_payload.to_string()))
+        .unwrap();
+
+    let res2 = app.clone().oneshot(req2).await.unwrap();
+    assert_eq!(res2.status(), StatusCode::BAD_REQUEST);
+
+    // Zero weight
+    let zero_weight_payload = json!({
+        "isin": "INF209K01157",
+        "schemeName": "Test Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": [
+            {
+                "stockName": "HDFC Bank Ltd",
+                "weight": "0.0"
+            }
+        ]
+    });
+
+    let req3 = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(zero_weight_payload.to_string()))
+        .unwrap();
+
+    let res3 = app.clone().oneshot(req3).await.unwrap();
+    assert_eq!(res3.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_get_fund_holdings_by_isin() {
+    let (app, _, _) = setup_test_app();
+
+    let payload = json!({
+        "isin": "INF209K01157",
+        "schemeName": "Aditya Birla Sun Life Frontline Equity Fund",
+        "asOfDate": "2024-03-31",
+        "holdings": [
+            {
+                "stockName": "HDFC Bank Ltd",
+                "stockIsin": "INE040A01034",
+                "sector": "Financial Services",
+                "weight": "0.0925"
+            },
+            {
+                "stockName": "Reliance Industries Ltd",
+                "stockIsin": "INE002A01018",
+                "sector": "Energy",
+                "weight": "0.0810"
+            }
+        ]
+    });
+
+    let ingest_req = Request::builder()
+        .uri("/api/fund-holdings/ingest")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+
+    let ingest_res = app.clone().oneshot(ingest_req).await.unwrap();
+    assert_eq!(ingest_res.status(), StatusCode::OK);
+
+    let get_req = Request::builder()
+        .uri("/api/fund-holdings/INF209K01157")
+        .method("GET")
+        .body(Body::empty())
+        .unwrap();
+
+    let get_res = app.oneshot(get_req).await.unwrap();
+    assert_eq!(get_res.status(), StatusCode::OK);
+
+    let holdings = parse_json(get_res.into_body()).await;
+    let list = holdings.as_array().expect("expected array of holdings");
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0]["stockName"], "HDFC Bank Ltd");
+    assert_eq!(list[0]["stockIsin"], "INE040A01034");
+    assert_eq!(list[0]["sector"], "Financial Services");
+    assert!((list[0]["weight"].as_f64().unwrap() - 0.0925).abs() < 1e-6);
+
+    assert_eq!(list[1]["stockName"], "Reliance Industries Ltd");
+    assert_eq!(list[1]["stockIsin"], "INE002A01018");
+    assert_eq!(list[1]["sector"], "Energy");
+    assert!((list[1]["weight"].as_f64().unwrap() - 0.0810).abs() < 1e-6);
+}
+
+#[tokio::test]
+async fn test_get_fund_holdings_empty_when_not_found() {
+    let (app, _, _) = setup_test_app();
+
+    let req = Request::builder()
+        .uri("/api/fund-holdings/INF999999999")
+        .method("GET")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let json = parse_json(res.into_body()).await;
+    let list = json.as_array().expect("expected array");
+    assert!(list.is_empty());
+}
