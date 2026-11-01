@@ -47,6 +47,11 @@ Comprehensive documentation of all backend and frontend test suites, financial i
 - **Permissible Broad Overrides**: Non-standard representations, parser quirks, or data anomalies that are generic across all portfolios encountering that provider/format (e.g., CAMS vs. KFintech statement quirks, AMC disclosure formats, statutory scheme naming anomalies) are acceptable overrides, provided they are structured generically rather than keyed to specific users or portfolios.
 - **Mandatory Validation Gate**: All review and validation agents (`review`, `research` auditors, task reviewers) MUST critically evaluate any proposed change for portfolio-specific logic and block any non-generic workarounds.
 
+### 8. Self-Documenting Code & Comprehensive Documentation Mandate
+- **Self-Documenting Names**: All function names, method names, variables, and type names must be clear, descriptive, and self-documenting. Cryptic abbreviations or ambiguous single-letter variables that obscure financial, mathematical, or domain meaning must be avoided or refactored.
+- **Comprehensive Rust Docs (`///`) & TypeScript JSDoc (`/** */`)**: All structs, enums, traits, methods, and functions across the codebase must have helpful doc comments explaining their purpose, arguments, invariants, and return values to provide instant context for human reviewers.
+- **Explanatory Comments on Complex Logic**: Any non-trivial, domain-dense, or mathematically complex logic (such as FIFO lot allocation, Section 55(2)(ac) grandfathering adjustments, Section 112A/111A/50AA tax computations, XIRR root-finding fallbacks, portfolio look-through normalization, and SQL CTE batch queries) MUST include clear explanatory comments detailing the statutory intent, mathematical formulation, or algorithm rationale.
+
 ## Mandatory Testing Requirement
 
 For any new functionalities or bug fixes, you MUST mandatorily update and run both hermetic tests (backend/frontend unit tests) and Playwright E2E tests to cover the new code paths. These test updates must be committed as part of the primary change itself.
