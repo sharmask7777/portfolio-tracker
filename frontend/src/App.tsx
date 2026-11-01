@@ -29,7 +29,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { XRayView } from './components/Analytics/XRayView';
-import { IntersectionView } from './components/Analytics/IntersectionView';
+import { IntersectionView, type StockExposure } from './components/Analytics/IntersectionView';
 import { TaxView } from './components/Tax/TaxView';
 import { SimulationModal } from './components/Tax/SimulationModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -71,7 +71,8 @@ export function Dashboard() {
   };
   const [portfolio, setPortfolio] = useState<any>(null);
   const [xrayData, setXRayData] = useState<any>(null);
-  const [exposures, setExposures] = useState<any[]>([]);
+  const [exposures, setExposures] = useState<StockExposure[]>([]);
+  const [excludeArbitrage, setExcludeArbitrage] = useState<boolean>(false);
   const [taxSummary, setTaxSummary] = useState<any>(null);
   const [harvesting, setHarvesting] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -175,7 +176,7 @@ export function Dashboard() {
       if (summaryRes?.data?.id) {
         const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.allSettled([
           api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/xray`),
-          api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/exposures`),
+          api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/exposures?excludeArbitrage=${excludeArbitrage}`),
           api.get(`${API_ENDPOINTS.PORTFOLIO}/${summaryRes.data.id}/tax-summary`),
           api.get(`${API_ENDPOINTS.TAX}/harvesting-opportunities`, {
             params: { scopeId: summaryRes.data.id }
@@ -191,6 +192,20 @@ export function Dashboard() {
     } finally {
       setLoading(false);
       setIsRefetching(false);
+    }
+  };
+
+  const handleToggleExcludeArbitrage = async (val: boolean) => {
+    setExcludeArbitrage(val);
+    if (portfolio?.id) {
+      try {
+        const res = await api.get<StockExposure[]>(
+          `${API_ENDPOINTS.PORTFOLIO}/${portfolio.id}/exposures?excludeArbitrage=${val}`
+        );
+        setExposures(res.data || []);
+      } catch (err) {
+        console.error('Failed to fetch exposures:', err);
+      }
     }
   };
 
@@ -852,6 +867,8 @@ export function Dashboard() {
                 exposures={exposures}
                 isLoading={loading}
                 onUploadClick={() => setShowUpload(true)}
+                excludeArbitrage={excludeArbitrage}
+                onToggleExcludeArbitrage={handleToggleExcludeArbitrage}
               />
             )}
             {activeTab === 'tax' && (
