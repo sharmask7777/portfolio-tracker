@@ -2,5 +2,14 @@
 
 /**
  * Statutory advance tax quarters adjusted for Budget 2024 (23 July 2024).
+ *
+ * In FY 2024-25, Quarter 2 was split into two sub-periods (`Q2a` and `Q2b`) because
+ * the Finance Act (No. 2) 2024 changed capital gains tax rates effective July 23, 2024:
+ * - `Q1`: April 1 to June 15
+ * - `Q2a`: June 16 to July 22 (Pre-Budget 2024 rates apply)
+ * - `Q2b`: July 23 to September 15 (Post-Budget 2024 rates apply)
+ * - `Q3`: September 16 to December 15
+ * - `Q4`: December 16 to March 15
+ * - `Q5`: March 16 to March 31
  */
 export type AdvanceTaxQuarter = "Q1 (01/04 - 15/06)" | "Q2a (16/06 - 22/07)" | "Q2b (23/07 - 15/09)" | "Q3 (16/09 - 15/12)" | "Q4 (16/12 - 15/03)" | "Q5 (16/03 - 31/03)";

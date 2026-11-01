@@ -1,31 +1,93 @@
+/**
+ * @file IntersectionView.tsx
+ * @module components/Analytics/IntersectionView
+ * @description Provides portfolio look-through stock exposure analysis and cross-fund overlap tracking.
+ *
+ * Deconstructs active mutual fund scheme holdings to reveal aggregated look-through equity exposures
+ * across the entire portfolio, surfacing company-level concentration, multi-fund overlaps, sector
+ * weightings, and arbitrage hedging exclusions.
+ */
+
 import React, { useState, useMemo } from 'react';
 import { Search, Layers, ArrowUpDown, ArrowUp, ArrowDown, Upload, X } from 'lucide-react';
 
+/**
+ * Contribution of an individual mutual fund scheme to an underlying company's portfolio exposure.
+ */
 export interface StockContribution {
+  /** Name of the mutual fund scheme holding the underlying company. */
   schemeName: string;
+  /** Look-through rupee valuation of the stock held via this specific scheme. */
   value: number;
+  /** Percentage portfolio weight of this stock within the specific scheme's asset portfolio. */
   weight: number;
 }
 
+/**
+ * Aggregated look-through exposure in a single underlying publicly traded company.
+ */
 export interface StockExposure {
+  /** Canonical name of the underlying company (e.g., 'HDFC Bank Ltd.'). */
   name: string;
+  /** Macro industrial sector classification (e.g., 'Financial Services', 'Technology'). */
   sector: string;
+  /** Aggregated monetary value held across all portfolio mutual funds and direct equities. */
   absoluteValue: number;
+  /** Effective portfolio-level percentage weight (0.0 to 1.0). */
   percentage: number;
+  /** Breakdown of individual mutual fund schemes contributing to this stock position. */
   contributions: StockContribution[];
 }
 
+/**
+ * Properties for the {@link IntersectionView} component.
+ */
 export interface IntersectionViewProps {
+  /** Array of aggregated look-through stock exposure objects. */
   exposures: StockExposure[];
+  /** Whether portfolio look-through exposures are currently loading or recalculating. */
   isLoading?: boolean;
+  /** Callback triggered when user clicks the upload CTA in an empty portfolio state. */
   onUploadClick?: () => void;
+  /**
+   * Whether arbitrage mutual funds are excluded from look-through exposure calculations.
+   *
+   * Arbitrage funds hold equity shares hedged with equal short futures positions (cash-futures
+   * spread) to deliver risk-free debt-like yields while retaining equity tax treatment.
+   * Excluding them prevents distortion of directional equity allocation percentages.
+   */
   excludeArbitrage?: boolean;
-  onToggleExcludeArbitrage?: (val: boolean) => void;
+  /** Callback triggered when user toggles the arbitrage exclusion switch. */
+  onToggleExcludeArbitrage?: (exclude: boolean) => void;
 }
 
+/** Sortable column field names for the stock exposure table. */
 type SortField = 'percentage' | 'absoluteValue' | 'name' | 'sector';
+
+/** Sorting order direction. */
 type SortDirection = 'asc' | 'desc';
 
+/**
+ * Renders the Portfolio Look-Through Stock Intersection & Overlap Analysis view.
+ *
+ * ### Look-Through Stock Exposure Formulation
+ * Mutual fund schemes publish monthly portfolio disclosures detailing individual company holdings.
+ * By multiplying an investor's scheme valuation by each fund's published company weight, the portfolio
+ * engine derives true effective exposure to individual companies:
+ *
+ * $$ \text{Effective Stock Value} = \sum_{f \in \text{Funds}} \Big( \text{Valuation}_f \times \text{Weight}_{f,\text{Stock}} \Big) $$
+ *
+ * ### Multi-Fund Overlap Detection
+ * When an underlying stock is held across two or more schemes, a prominent badge is rendered
+ * (e.g., `"2 Funds Overlap"`). This alerts the investor to unintended concentration risk where
+ * multiple funds simultaneously bet on identical corporate names.
+ *
+ * ### Arbitrage Exclusion Denominator Adjustment
+ * Arbitrage funds maintain ~65-70% gross equity exposure solely to qualify for Section 112A equity
+ * capital gains taxation, but hedge 100% of directional market risk with stock futures.
+ * When `excludeArbitrage` is enabled, the backend eliminates hedged arbitrage holdings from both
+ * company contributions and the total portfolio denominator, reflecting pure directional equity risk.
+ */
 export const IntersectionView: React.FC<IntersectionViewProps> = ({
   exposures,
   isLoading = false,
@@ -38,81 +100,95 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
   const [sortField, setSortField] = useState<SortField>('percentage');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
-  const formatCurrency = (val: unknown) => {
-    const num = typeof val === 'number' && Number.isFinite(val) ? val : 0;
+  /**
+   * Formats a monetary value to Indian Rupee currency format (e.g. ₹1,50,000).
+   */
+  const formatCurrency = (amount: unknown): string => {
+    const numericAmount = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
       maximumFractionDigits: 0,
-    }).format(num);
+    }).format(numericAmount);
   };
 
-  const formatPercent = (val: unknown) => {
-    if (typeof val !== 'number' || !Number.isFinite(val)) return '0.00%';
-    return `${(val * 100).toFixed(2)}%`;
+  /**
+   * Formats a decimal ratio into a percentage display string (e.g. 0.1523 -> "15.23%").
+   */
+  const formatPercent = (ratio: unknown): string => {
+    if (typeof ratio !== 'number' || !Number.isFinite(ratio)) return '0.00%';
+    return `${(ratio * 100).toFixed(2)}%`;
   };
 
-  const formatWeight = (val: unknown) => {
-    if (typeof val !== 'number' || !Number.isFinite(val)) return '0.0%';
-    return `${val.toFixed(1)}%`;
+  /**
+   * Formats a fund-level percentage weight (e.g. 8.2 -> "8.2%").
+   */
+  const formatWeight = (percentageValue: unknown): string => {
+    if (typeof percentageValue !== 'number' || !Number.isFinite(percentageValue)) return '0.0%';
+    return `${percentageValue.toFixed(1)}%`;
   };
 
-  // Extract unique sectors for dropdown filter
+  // Extract unique industrial sectors for the filter dropdown
   const sectorList = useMemo(() => {
     if (!exposures || !Array.isArray(exposures)) return ['All Sectors'];
-    const sectors = new Set<string>();
-    exposures.forEach((e) => {
-      if (e.sector) sectors.add(e.sector);
+    const uniqueSectors = new Set<string>();
+    exposures.forEach((exposure) => {
+      if (exposure.sector) uniqueSectors.add(exposure.sector);
     });
-    return ['All Sectors', ...Array.from(sectors).sort()];
+    return ['All Sectors', ...Array.from(uniqueSectors).sort()];
   }, [exposures]);
 
-  // Filter and sort exposures
+  // Filter and sort exposures based on user selection, search query, and sorting column
   const filteredExposures = useMemo(() => {
     if (!exposures || !Array.isArray(exposures)) return [];
 
     return exposures
       .filter((item) => {
-        // Sector filter
+        // Industrial Sector filter
         if (selectedSector !== 'All Sectors' && item.sector !== selectedSector) {
           return false;
         }
 
-        // Search query filter (matches stock name, sector, or contributing fund schemeName)
+        // Full-text search matching stock name, sector, or constituent contributing fund scheme name
         if (searchQuery.trim()) {
           const query = searchQuery.toLowerCase().trim();
           const matchesName = (item.name || '').toLowerCase().includes(query);
           const matchesSector = (item.sector || '').toLowerCase().includes(query);
-          const matchesContribution = item.contributions?.some((c) =>
-            (c.schemeName || '').toLowerCase().includes(query)
+          const matchesContribution = item.contributions?.some((contribution) =>
+            (contribution.schemeName || '').toLowerCase().includes(query)
           );
           return matchesName || matchesSector || matchesContribution;
         }
 
         return true;
       })
-      .sort((a, b) => {
-        let diff = 0;
+      .sort((first, second) => {
+        let difference = 0;
         if (sortField === 'name') {
-          diff = (a.name || '').localeCompare(b.name || '');
+          difference = (first.name || '').localeCompare(second.name || '');
         } else if (sortField === 'sector') {
-          diff = (a.sector || '').localeCompare(b.sector || '');
+          difference = (first.sector || '').localeCompare(second.sector || '');
         } else if (sortField === 'percentage') {
-          diff = (a.percentage || 0) - (b.percentage || 0);
+          difference = (first.percentage || 0) - (second.percentage || 0);
         } else if (sortField === 'absoluteValue') {
-          diff = (a.absoluteValue || 0) - (b.absoluteValue || 0);
+          difference = (first.absoluteValue || 0) - (second.absoluteValue || 0);
         }
-        return sortDirection === 'asc' ? diff : -diff;
+        return sortDirection === 'asc' ? difference : -difference;
       });
   }, [exposures, searchQuery, selectedSector, sortField, sortDirection]);
 
-  // Aggregate metrics for summary bar
+  // Aggregate summary metrics across currently filtered exposures
   const summaryMetrics = useMemo(() => {
     if (!filteredExposures || filteredExposures.length === 0) {
       return { totalValue: 0, multiFundCount: 0, count: 0 };
     }
-    const totalValue = filteredExposures.reduce((acc, e) => acc + (e.absoluteValue || 0), 0);
-    const multiFundCount = filteredExposures.filter((e) => (e.contributions?.length || 0) > 1).length;
+    const totalValue = filteredExposures.reduce(
+      (accumulated, exposure) => accumulated + (exposure.absoluteValue || 0),
+      0
+    );
+    const multiFundCount = filteredExposures.filter(
+      (exposure) => (exposure.contributions?.length || 0) > 1
+    ).length;
     return {
       totalValue,
       multiFundCount,
@@ -120,15 +196,22 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
     };
   }, [filteredExposures]);
 
+  /**
+   * Toggles column sorting direction or changes the active sorting column.
+   */
   const handleSort = (field: SortField) => {
     if (sortField === field) {
-      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      setSortDirection((prevDirection) => (prevDirection === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortField(field);
+      // Alphabetical columns default to ascending; numerical values default to descending
       setSortDirection(field === 'name' || field === 'sector' ? 'asc' : 'desc');
     }
   };
 
+  /**
+   * Renders sort direction arrows for the table header cells.
+   */
   const renderSortIndicator = (field: SortField) => {
     if (sortField !== field) {
       return <ArrowUpDown size={14} style={{ opacity: 0.4, marginLeft: '4px' }} />;
@@ -160,8 +243,8 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
               </tr>
             </thead>
             <tbody>
-              {[1, 2, 3, 4, 5].map((i) => (
-                <tr key={i}>
+              {[1, 2, 3, 4, 5].map((index) => (
+                <tr key={index}>
                   <td><div style={{ height: '16px', width: '140px', backgroundColor: 'var(--border-color)', borderRadius: '4px', opacity: 0.5 }} /></td>
                   <td><div style={{ height: '16px', width: '100px', backgroundColor: 'var(--border-color)', borderRadius: '4px', opacity: 0.5 }} /></td>
                   <td><div style={{ height: '16px', width: '60px', backgroundColor: 'var(--border-color)', borderRadius: '4px', opacity: 0.5 }} /></td>
@@ -244,7 +327,7 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
           marginBottom: '1.25rem',
         }}
       >
-        {/* Search & Sector Filters */}
+        {/* Search, Sector, and Arbitrage Exclusion Filters */}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', flex: 1, minWidth: '280px' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
             <Search
@@ -306,13 +389,14 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
               cursor: 'pointer',
             }}
           >
-            {sectorList.map((sec) => (
-              <option key={sec} value={sec}>
-                {sec}
+            {sectorList.map((sector) => (
+              <option key={sector} value={sector}>
+                {sector}
               </option>
             ))}
           </select>
 
+          {/* Arbitrage Fund Exclusion Toggle */}
           <label
             style={{
               display: 'inline-flex',
@@ -463,11 +547,11 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
               </tr>
             </thead>
             <tbody>
-              {filteredExposures.map((item, idx) => {
+              {filteredExposures.map((item, index) => {
                 const isMultiFund = (item.contributions?.length || 0) > 1;
 
                 return (
-                  <tr key={`${item.name}-${idx}`}>
+                  <tr key={`${item.name}-${index}`}>
                     <td style={{ fontWeight: 600 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span>{item.name}</span>
@@ -509,15 +593,15 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
                     <td style={{ fontWeight: 500 }}>{formatCurrency(item.absoluteValue)}</td>
                     <td>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                        {(item.contributions || []).map((c, cIdx) => (
+                        {(item.contributions || []).map((contribution, contributionIndex) => (
                           <span
-                            key={cIdx}
+                            key={contributionIndex}
                             className="contribution-tag"
-                            title={`${formatCurrency(c.value)} (${formatWeight(c.weight)} allocation in ${c.schemeName})`}
+                            title={`${formatCurrency(contribution.value)} (${formatWeight(contribution.weight)} allocation in ${contribution.schemeName})`}
                           >
-                            {c.schemeName}{' '}
+                            {contribution.schemeName}{' '}
                             <strong style={{ color: 'var(--text-primary)', marginLeft: '2px' }}>
-                              ({formatWeight(c.weight)})
+                              ({formatWeight(contribution.weight)})
                             </strong>
                           </span>
                         ))}
