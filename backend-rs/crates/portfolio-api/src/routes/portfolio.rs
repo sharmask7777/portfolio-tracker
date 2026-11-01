@@ -447,58 +447,82 @@ pub fn resolve_nav_with_date_priority(
     historical: Option<(NaiveDate, Nav)>,
     fallback: Option<(NaiveDate, Nav)>,
 ) -> Nav {
-    match (historical, fallback) {
+    resolve_nav_and_previous_with_date_priority(historical.as_slice(), fallback).0
+}
+
+/// Resolves the latest effective NAV and previous available market NAV based on date priority.
+///
+/// `historical_records` must be sorted descending by date (newest first).
+/// - If fallback is strictly newer than the newest historical date:
+///   fallback is latest, newest historical is previous.
+/// - Otherwise:
+///   newest historical is latest, next historical (if any) is previous.
+/// - If no historical records exist:
+///   fallback is latest, previous is None.
+pub fn resolve_nav_and_previous_with_date_priority(
+    historical_records: &[(NaiveDate, Nav)],
+    fallback: Option<(NaiveDate, Nav)>,
+) -> (Nav, Option<Nav>) {
+    let latest_hist = historical_records.first().copied();
+    let prev_hist = historical_records.get(1).map(|(_, nav)| *nav);
+
+    match (latest_hist, fallback) {
         (Some((hist_date, hist_nav)), Some((fb_date, fb_nav))) => {
-            if hist_date >= fb_date {
-                hist_nav
+            if fb_date > hist_date {
+                (fb_nav, Some(hist_nav))
             } else {
-                fb_nav
+                (hist_nav, prev_hist)
             }
         }
-        (Some((_, hist_nav)), None) => hist_nav,
-        (None, Some((_, fb_nav))) => fb_nav,
-        (None, None) => Nav::ZERO,
+        (Some((_, hist_nav)), None) => (hist_nav, prev_hist),
+        (None, Some((_, fb_nav))) => (fb_nav, None),
+        (None, None) => (Nav::ZERO, None),
     }
 }
 
-pub async fn fetch_latest_nav(
+pub async fn fetch_latest_and_previous_nav(
     state: &AppState,
     asset: Option<&AssetEntity>,
     fallback: Option<(NaiveDate, Nav)>,
-) -> Nav {
+) -> (Nav, Option<Nav>) {
     let Some(amfi) = asset.and_then(|a| a.amfi_code.as_deref()) else {
-        return resolve_nav_with_date_priority(None, fallback);
+        return resolve_nav_and_previous_with_date_priority(&[], fallback);
     };
 
-    let historical = if let Some(pool) = state.pool() {
+    let historical_records: Vec<(NaiveDate, Nav)> = if let Some(pool) = state.pool() {
         sqlx::query_as::<_, (NaiveDate, Decimal)>(
             r#"
             SELECT date::date as date, nav::numeric as nav
             FROM "HistoricalNAV"
-            WHERE "amfiCode" = $1
+            WHERE "amfiCode" = $1 AND nav > 0
             ORDER BY date DESC
-            LIMIT 1
+            LIMIT 2
             "#,
         )
         .bind(amfi)
-        .fetch_optional(pool)
+        .fetch_all(pool)
         .await
-        .ok()
-        .flatten()
-        .filter(|(_, nav)| *nav > Decimal::ZERO)
+        .unwrap_or_default()
+        .into_iter()
         .map(|(date, nav)| (date, Nav::new(nav)))
+        .collect()
     } else {
         let db = state.db();
         let navs = db.list_navs(amfi);
-        navs.last()
+        navs.into_iter()
             .filter(|e| e.nav > Decimal::ZERO)
+            .rev()
+            .take(2)
             .map(|e| (e.date, Nav::new(e.nav)))
+            .collect()
     };
 
     let today = Utc::now().date_naive();
-    let needs_sync = match historical {
+    let needs_sync = match historical_records.first() {
         Some((hist_date, _)) => {
-            hist_date < today || fallback.is_some_and(|(tx_d, _)| hist_date < tx_d)
+            *hist_date < today
+                || fallback.is_some_and(|(tx_d, _)| *hist_date < tx_d)
+                || historical_records.len() < 2
         }
         None => true,
     };
@@ -507,7 +531,17 @@ pub async fn fetch_latest_nav(
         NavSyncService::check_and_trigger_lazy_sync(state, amfi).await;
     }
 
-    resolve_nav_with_date_priority(historical, fallback)
+    resolve_nav_and_previous_with_date_priority(&historical_records, fallback)
+}
+
+pub async fn fetch_latest_nav(
+    state: &AppState,
+    asset: Option<&AssetEntity>,
+    fallback: Option<(NaiveDate, Nav)>,
+) -> Nav {
+    fetch_latest_and_previous_nav(state, asset, fallback)
+        .await
+        .0
 }
 
 pub async fn fetch_historical_nav_by_date(
@@ -1296,7 +1330,8 @@ pub async fn get_portfolio_summary(
                 .find(|t| t.nav.is_positive())
                 .map(|t| (t.date, t.nav));
 
-            let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback).await;
+            let (latest_nav, previous_nav) =
+                fetch_latest_and_previous_nav(&state, asset.as_ref(), fallback).await;
 
             let core_asset_type = asset
                 .as_ref()
@@ -1315,6 +1350,26 @@ pub async fn get_portfolio_summary(
             let metrics = get_metrics(&core_txs, latest_nav, Some(perf_options));
             let inv_dec = metrics.invested_amount.to_decimal();
             let val_dec = metrics.current_value.to_decimal();
+            let units_dec = units.to_decimal();
+
+            let is_active = units_dec >= Decimal::from_str("0.001").unwrap_or(Decimal::ZERO)
+                && val_dec >= Decimal::from_str("0.01").unwrap_or(Decimal::ZERO);
+
+            let (day_change, day_change_percentage) = if is_active {
+                if let Some(prev) = previous_nav
+                    && prev > Nav::ZERO
+                    && latest_nav > Nav::ZERO
+                {
+                    let diff = latest_nav.to_decimal() - prev.to_decimal();
+                    let dc = units_dec * diff;
+                    let dcp = (diff / prev.to_decimal()) * Decimal::from(100);
+                    (dc, dcp)
+                } else {
+                    (Decimal::ZERO, Decimal::ZERO)
+                }
+            } else {
+                (Decimal::ZERO, Decimal::ZERO)
+            };
 
             let folio_metrics = FolioMetrics {
                 invested_amount: inv_dec,
@@ -1328,16 +1383,12 @@ pub async fn get_portfolio_summary(
                     .or(Some(metrics.absolute_return)),
                 estimated_tax: metrics.estimated_tax.map(|t| t.to_decimal()),
                 current_price: latest_nav.to_decimal(),
-                day_change: Decimal::ZERO,
-                day_change_percentage: Decimal::ZERO,
+                day_change,
+                day_change_percentage,
             };
 
-            let is_active = units.to_decimal()
-                >= Decimal::from_str("0.001").unwrap_or(Decimal::ZERO)
-                && val_dec >= Decimal::from_str("0.01").unwrap_or(Decimal::ZERO);
-
             let (enriched_units, final_metrics) = if is_active {
-                (units.to_decimal(), folio_metrics)
+                (units_dec, folio_metrics)
             } else {
                 (
                     Decimal::ZERO,
@@ -1407,6 +1458,14 @@ pub async fn get_portfolio_summary(
         Decimal::ZERO
     };
 
+    let total_day_change: Decimal = active_folios.iter().map(|f| f.metrics.day_change).sum();
+    let total_prev_value = total_current_value - total_day_change;
+    let total_day_change_percentage = if total_prev_value > Decimal::ZERO {
+        (total_day_change / total_prev_value) * Decimal::from(100)
+    } else {
+        Decimal::ZERO
+    };
+
     Ok(Json(ConsolidatedSummaryResponse {
         id: res_id,
         name: res_name,
@@ -1422,8 +1481,8 @@ pub async fn get_portfolio_summary(
             xirr: overall_xirr,
             post_tax_xirr: overall_post_tax_xirr,
             estimated_tax: total_estimated_tax,
-            day_change: Decimal::ZERO,
-            day_change_percentage: Decimal::ZERO,
+            day_change: total_day_change,
+            day_change_percentage: total_day_change_percentage,
         },
     }))
 }

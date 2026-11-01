@@ -118,53 +118,67 @@ impl NavSyncService {
         Ok(res.is_some())
     }
 
-    /// Fetches latest NAV from MFAPI and upserts into `HistoricalNAV` and `state.db`.
+    /// Fetches latest and recent historical NAVs from MFAPI and upserts into `HistoricalNAV` and `state.db`.
     pub async fn fetch_and_upsert_latest_nav(
         state: &AppState,
         amfi_code: &str,
         base_url: Option<&str>,
     ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let base = base_url.unwrap_or("https://api.mfapi.in");
-        let url = format!("{base}/mf/{amfi_code}/latest");
 
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_millis(500))
-            .timeout(std::time::Duration::from_secs(3))
+            .timeout(std::time::Duration::from_secs(4))
             .build()?;
 
-        let resp = client.get(&url).send().await?;
+        // First attempt full history endpoint (`/mf/{amfi_code}`) which returns latest and preceding trading dates.
+        // Fall back to `/mf/{amfi_code}/latest` if `/mf/{amfi_code}` is not found or fails.
+        let full_url = format!("{base}/mf/{amfi_code}");
+        let resp = match client.get(&full_url).send().await {
+            Ok(r) if r.status().is_success() => Ok(r),
+            _ => {
+                let latest_url = format!("{base}/mf/{amfi_code}/latest");
+                client.get(&latest_url).send().await
+            }
+        }?;
+
         if !resp.status().is_success() {
             return Err(format!("MFAPI returned HTTP {}", resp.status()).into());
         }
 
         let payload: portfolio_db::market_data::MfApiLatestResponse = resp.json().await?;
-        let Some(record) = payload.data.first() else {
+        if payload.data.is_empty() {
             return Err("MFAPI returned empty NAV data array".into());
-        };
-
-        let Some(nav_date) = portfolio_db::market_data::parse_mfapi_date(&record.date) else {
-            return Err(
-                format!("Failed to parse date '{}' from MFAPI response", record.date).into(),
-            );
-        };
-
-        if let Some(pool) = state.pool() {
-            sqlx::query(
-                r#"
-                INSERT INTO "HistoricalNAV" (id, "amfiCode", date, nav, "createdAt")
-                VALUES (gen_random_uuid()::text, $1, $2, $3, NOW())
-                ON CONFLICT ("amfiCode", date) DO UPDATE SET nav = EXCLUDED.nav;
-                "#,
-            )
-            .bind(amfi_code)
-            .bind(nav_date)
-            .bind(record.nav)
-            .execute(pool)
-            .await?;
         }
 
-        // Always store into in-memory database mock for hermetic testing and offline mode
-        state.db.store_nav(amfi_code, nav_date, record.nav);
+        // Upsert top 5 recent records (at least latest and preceding trading day)
+        for record in payload.data.iter().take(5) {
+            let Some(nav_date) = portfolio_db::market_data::parse_mfapi_date(&record.date) else {
+                continue;
+            };
+
+            if record.nav <= rust_decimal::Decimal::ZERO {
+                continue;
+            }
+
+            if let Some(pool) = state.pool() {
+                sqlx::query(
+                    r#"
+                    INSERT INTO "HistoricalNAV" (id, "amfiCode", date, nav, "createdAt")
+                    VALUES (gen_random_uuid()::text, $1, $2, $3, NOW())
+                    ON CONFLICT ("amfiCode", date) DO UPDATE SET nav = EXCLUDED.nav;
+                    "#,
+                )
+                .bind(amfi_code)
+                .bind(nav_date)
+                .bind(record.nav)
+                .execute(pool)
+                .await?;
+            }
+
+            // Always store into in-memory database mock for hermetic testing and offline mode
+            state.db.store_nav(amfi_code, nav_date, record.nav);
+        }
 
         Ok(true)
     }
