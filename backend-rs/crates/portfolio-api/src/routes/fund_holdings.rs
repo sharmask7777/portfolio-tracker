@@ -20,40 +20,60 @@ fn default_sector() -> String {
     "Other".to_string()
 }
 
+/// Represents an individual stock holding entry in a fund holdings ingestion payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IngestHoldingItem {
+    /// Name of the disclosed portfolio company (e.g. "HDFC Bank Ltd.").
     pub stock_name: String,
+    /// Optional International Securities Identification Number (ISIN) for the stock.
     pub stock_isin: Option<String>,
+    /// Economic sector classification (defaults to `"Other"` if omitted or empty).
     #[serde(default = "default_sector")]
     pub sector: String,
+    /// Percentage weight of the holding within the mutual fund scheme (must be > 0).
     pub weight: Decimal,
 }
 
+/// Request payload for ingesting monthly disclosed stock holdings for a mutual fund scheme.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IngestFundHoldingsRequest {
+    /// Scheme ISIN (e.g. "INF879O01018").
     pub isin: String,
+    /// Official scheme name (e.g. "Parag Parikh Flexi Cap Fund").
     pub scheme_name: String,
+    /// Month-end reporting date as of which holdings are disclosed.
     pub as_of_date: NaiveDate,
+    /// List of individual company stock holdings and their portfolio weights.
     pub holdings: Vec<IngestHoldingItem>,
 }
 
+/// Response returned after successfully ingesting disclosed fund holdings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IngestFundHoldingsResponse {
+    /// Scheme ISIN that was updated.
     pub isin: String,
+    /// Total number of stock holding entities ingested.
     pub count: usize,
+    /// Reporting date for the ingested holdings.
     pub as_of_date: NaiveDate,
+    /// Processing status string (e.g. `"success"`).
     pub status: String,
 }
 
+/// Data Transfer Object representing a disclosed stock holding for client-facing API responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FundHoldingDto {
+    /// Name of the underlying company.
     pub stock_name: String,
+    /// Stock ISIN identifier if available.
     pub stock_isin: Option<String>,
+    /// Sector classification for the company.
     pub sector: String,
+    /// Percentage weight in the mutual fund portfolio.
     pub weight: f64,
 }
 
@@ -82,7 +102,14 @@ async fn get_latest_holdings(
     }
 }
 
-/// Ingests a batch of disclosed fund holdings for a mutual fund scheme.
+/// Route handler for `POST /api/fund-holdings/ingest` ingesting monthly disclosed fund holdings.
+///
+/// Validates that:
+/// - ISIN is non-empty.
+/// - Holdings list is non-empty.
+/// - All constituent stock weights are strictly greater than zero.
+///
+/// Upserts records into PostgreSQL `FundHolding` or in-memory mock store.
 pub async fn ingest_fund_holdings(
     State(state): State<AppState>,
     Json(payload): Json<IngestFundHoldingsRequest>,
@@ -132,7 +159,7 @@ pub async fn ingest_fund_holdings(
     }))
 }
 
-/// Retrieves latest disclosed holdings for a mutual fund scheme by its ISIN.
+/// Route handler for `GET /api/fund-holdings/:isin` retrieving latest disclosed holdings for a mutual fund scheme.
 pub async fn get_fund_holdings(
     State(state): State<AppState>,
     Path(isin): Path<String>,
@@ -151,6 +178,7 @@ pub async fn get_fund_holdings(
     Ok(Json(dtos))
 }
 
+/// Constructs and returns the Axum router for fund holdings ingestion and lookup.
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/ingest", post(ingest_fund_holdings))

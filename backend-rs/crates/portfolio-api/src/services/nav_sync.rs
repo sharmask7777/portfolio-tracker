@@ -2,6 +2,18 @@
 //!
 //! Provides atomic 24-hour rate limiting (via Redis mutex `SET nav_sync:{amfiCode}:{date} 1 NX EX 86400`
 //! with an in-memory `RwLock<HashSet>` fallback) and asynchronous background fetching from `api.mfapi.in`.
+//!
+//! ## Synchronization Lifecycle & Mechanics:
+//! 1. **Atomic Daily Rate Limiting**: Ensures external NAV API (`api.mfapi.in`) is queried at most once
+//!    per AMFI code per calendar date. If Redis is configured, executes an atomic `SET key 1 NX EX 86400` command.
+//!    If Redis is unreachable or absent, falls back to `InMemoryRateLimiter`.
+//! 2. **Hermetic Test Fallback**: In offline, CI, or test environments without network access,
+//!    in-memory stores absorb NAV updates without panicking or failing queries.
+//! 3. **Dual Endpoint Resiliency**: First requests full historical time series (`/mf/{amfi_code}`) to capture
+//!    both latest and preceding trading sessions for daily gain calculation; falls back to `/mf/{amfi_code}/latest`
+//!    if full history is unavailable.
+//! 4. **Multi-Record Upsert**: Ingests top 5 recent trading days into `HistoricalNAV` (PostgreSQL) and
+//!    in-memory cache to guarantee contiguous day-over-day return metrics.
 
 use std::collections::HashSet;
 use std::sync::Arc;
