@@ -1375,3 +1375,178 @@ async fn test_resolve_holdings_differentiated_categories() {
         assert_ne!(a.weight, n.weight);
     }
 }
+
+#[tokio::test]
+async fn test_exposures_exclude_arbitrage_query_param() {
+    let db = std::sync::Arc::new(portfolio_db::InMemoryDatabase::new());
+    let state = AppState::new(db.clone(), "test-jwt-secret");
+    let app = create_app(state);
+
+    // Register user
+    let reg_payload = serde_json::json!({
+        "email": "arbitrage_test@example.com",
+        "name": "Arbitrage Tester",
+        "password": "SecurePassword123!"
+    });
+    let reg_req = Request::builder()
+        .uri("/api/auth/register")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(reg_payload.to_string()))
+        .unwrap();
+
+    let reg_res = app.clone().oneshot(reg_req).await.unwrap();
+    assert_eq!(reg_res.status(), StatusCode::CREATED);
+    let reg_json = parse_json(reg_res.into_body()).await;
+    let token = reg_json["token"].as_str().unwrap().to_string();
+    let user_id = Uuid::parse_str(reg_json["id"].as_str().unwrap()).unwrap();
+
+    // Create user portfolio
+    let portfolio = db
+        .create_portfolio(user_id, "Arbitrage Test Portfolio", None)
+        .await
+        .unwrap();
+    let port_id = portfolio.id.to_string();
+
+    // 1. Active equity fund: Parag Parikh Flexi Cap Fund
+    let asset_eq = db.create_asset(
+        "MUTUAL_FUND",
+        "Parag Parikh Flexi Cap Fund",
+        Some("INF879O01019"),
+        Some("122639"),
+        Some("PPFAS_EQUITY"),
+        None,
+    );
+    let folio_eq = db
+        .create_folio(
+            portfolio.id,
+            asset_eq.id,
+            "11112222",
+            Some("PPFAS"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+    db.create_transaction(
+        folio_eq.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap(),
+        "PURCHASE",
+        Decimal::from(10000),
+        Decimal::from(100),
+        Decimal::from(100),
+        Decimal::from(100),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // 2. Active arbitrage fund: Edelweiss Arbitrage Fund
+    let asset_arb = db.create_asset(
+        "MUTUAL_FUND",
+        "Edelweiss Arbitrage Fund",
+        Some("INF843K01017"),
+        Some("131800"),
+        Some("EDELWEISS_ARB"),
+        None,
+    );
+    let folio_arb = db
+        .create_folio(
+            portfolio.id,
+            asset_arb.id,
+            "33334444",
+            Some("EDELWEISS"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+    db.create_transaction(
+        folio_arb.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap(),
+        "PURCHASE",
+        Decimal::from(10000),
+        Decimal::from(100),
+        Decimal::from(100),
+        Decimal::from(100),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Case 1: excludeArbitrage=false (or omitted)
+    let req_all = Request::builder()
+        .uri(format!(
+            "/api/portfolio/{port_id}/exposures?excludeArbitrage=false"
+        ))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res_all = app.clone().oneshot(req_all).await.unwrap();
+    assert_eq!(res_all.status(), StatusCode::OK);
+    let json_all = parse_json(res_all.into_body()).await;
+    let exposures_all = json_all.as_array().unwrap();
+
+    let has_tata_motors_all = exposures_all
+        .iter()
+        .any(|e| e["name"].as_str().unwrap_or("").contains("Tata Motors"));
+    assert!(
+        has_tata_motors_all,
+        "Exposures without exclusion must include stocks from Arbitrage fund (e.g. Tata Motors Ltd.)"
+    );
+
+    // Case 2: excludeArbitrage=true
+    let req_excluded = Request::builder()
+        .uri(format!(
+            "/api/portfolio/{port_id}/exposures?excludeArbitrage=true"
+        ))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res_excluded = app.clone().oneshot(req_excluded).await.unwrap();
+    assert_eq!(res_excluded.status(), StatusCode::OK);
+    let json_excluded = parse_json(res_excluded.into_body()).await;
+    let exposures_excluded = json_excluded.as_array().unwrap();
+
+    let has_tata_motors_excluded = exposures_excluded
+        .iter()
+        .any(|e| e["name"].as_str().unwrap_or("").contains("Tata Motors"));
+    assert!(
+        !has_tata_motors_excluded,
+        "Exposures with excludeArbitrage=true must NOT include stocks solely from Arbitrage fund"
+    );
+
+    // Also check HDFC Bank contributions do not contain the Arbitrage fund
+    let hdfc_excluded = exposures_excluded
+        .iter()
+        .find(|e| e["name"].as_str().unwrap_or("").contains("HDFC Bank"))
+        .expect("HDFC Bank must be present from Parag Parikh");
+    let contributions = hdfc_excluded["contributions"].as_array().unwrap();
+    assert!(
+        !contributions.iter().any(|c| c["schemeName"]
+            .as_str()
+            .unwrap_or("")
+            .to_lowercase()
+            .contains("arbitrage")),
+        "Contributions must not contain Arbitrage fund when excluded"
+    );
+
+    // Case 3: snake_case exclude_arbitrage=true should also work
+    let req_snake = Request::builder()
+        .uri(format!(
+            "/api/portfolio/{port_id}/exposures?exclude_arbitrage=true"
+        ))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res_snake = app.clone().oneshot(req_snake).await.unwrap();
+    assert_eq!(res_snake.status(), StatusCode::OK);
+    let json_snake = parse_json(res_snake.into_body()).await;
+    let exposures_snake = json_snake.as_array().unwrap();
+    let has_tata_motors_snake = exposures_snake
+        .iter()
+        .any(|e| e["name"].as_str().unwrap_or("").contains("Tata Motors"));
+    assert!(
+        !has_tata_motors_snake,
+        "Exposures with exclude_arbitrage=true must NOT include stocks solely from Arbitrage fund"
+    );
+}

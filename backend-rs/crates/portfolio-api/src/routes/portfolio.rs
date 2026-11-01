@@ -1098,6 +1098,7 @@ pub async fn compute_portfolio_exposures(
     state: &AppState,
     user_id: Uuid,
     target_id: &str,
+    exclude_arbitrage: bool,
 ) -> Result<Vec<StockExposure>, ApiError> {
     let portfolios = resolve_target_portfolios(state, user_id, target_id).await?;
     if portfolios.is_empty() {
@@ -1152,6 +1153,10 @@ pub async fn compute_portfolio_exposures(
             let is_cash = lower.contains("cash") || asset.asset_type == "CASH";
 
             if is_debt || is_gold || is_cash {
+                continue;
+            }
+
+            if exclude_arbitrage && lower.contains("arbitrage") {
                 continue;
             }
 
@@ -1845,9 +1850,16 @@ pub async fn get_xray(
 pub async fn get_exposures(
     auth_user: AuthUser,
     Path(id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<StockExposure>>, ApiError> {
-    let exposures = compute_portfolio_exposures(&state, auth_user.user_id, &id).await?;
+    let exclude_arbitrage = params
+        .get("excludeArbitrage")
+        .or_else(|| params.get("exclude_arbitrage"))
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let exposures =
+        compute_portfolio_exposures(&state, auth_user.user_id, &id, exclude_arbitrage).await?;
     Ok(Json(exposures))
 }
 
