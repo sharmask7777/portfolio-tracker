@@ -92,42 +92,42 @@ Located under `frontend/src/`:
 From the `frontend/` directory:
 ```bash
 # List all discovered tests across suites
-npx playwright test --list
+pnpm exec playwright test --list
 
 # Run all E2E tests
-npm run test:e2e
+pnpm test:e2e
 
 # Run a specific domain suite
-npx playwright test tests/holdings-management.spec.ts
-npx playwright test tests/analytics-reporting.spec.ts
-npx playwright test tests/itr-export.spec.ts
+pnpm exec playwright test tests/holdings-management.spec.ts
+pnpm exec playwright test tests/analytics-reporting.spec.ts
+pnpm exec playwright test tests/itr-export.spec.ts
 
 # Run in headed mode for visual inspection
-npx playwright test tests/smoke.spec.ts --headed
+pnpm exec playwright test tests/smoke.spec.ts --headed
 ```
 
 From repository root:
 ```bash
-npm run test:e2e --prefix frontend
+pnpm --filter frontend test:e2e
 ```
 
 ### 4.2 Running Vitest Unit Tests
 From the `frontend/` directory:
 ```bash
 # Run all unit tests once
-npm run test:unit
+pnpm test:unit
 
 # Run a specific unit test
-npx vitest run src/utils/consolidation.test.ts
-npx vitest run src/components/Tax/TaxView.test.tsx
+pnpm exec vitest run src/utils/consolidation.test.ts
+pnpm exec vitest run src/components/Tax/TaxView.test.tsx
 
 # Run with interactive watch mode
-npx vitest
+pnpm exec vitest
 ```
 
 From repository root:
 ```bash
-npm run test:unit --prefix frontend
+pnpm --filter frontend test:unit
 ```
 
 ---

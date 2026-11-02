@@ -7,11 +7,15 @@
 - If an invariant test fails, the algorithm is defective. You are strictly forbidden from relaxing numerical bounds (Units $\Delta \le 0.0001$, Money $\Delta \le ₹0.01$, Returns & XIRR $\Delta \le 10^{-6}$).
 - Tests are ground-truth oracles mathematically codifying financial and statutory correctness. Fix the implementation, never the oracle.
 
-### 2. The Zero-Any Mandate
-- No `any` types allowed in TypeScript code (`frontend/src/`).
-- All API communication and shared data contracts must strictly use generated TypeScript types from `backend-rs` (`frontend/src/types/generated/`).
-- Contract drift check: Any modification to backend API request/response structures must be re-exported via `cargo test --package portfolio-api --test export_bindings` and checked with `git diff --exit-code frontend/src/types/generated`.
-- `npm run build` (`tsc -b && vite build`) must pass cleanly with zero type errors and zero warnings.
+### 2. The Zero-Any & Static Build-Time Guardrails Mandate
+- **The Zero-Any Rule**: No `any` types allowed in TypeScript code (`frontend/src/`).
+- **Contract Parity & Drift Check**: All API communication and shared data contracts must strictly use generated TypeScript types from `backend-rs` (`frontend/src/types/generated/`). Any modification to backend API request/response structures must be re-exported via `cargo test --package portfolio-api --test export_bindings` and checked with `git diff --exit-code frontend/src/types/generated`.
+- **TypeScript Compiler Strictness**: `tsconfig.app.json` enforces maximum compiler rigor (`strict: true`, `noImplicitAny: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`, `isolatedModules: true`, `noEmit: true`). Array and record index lookups evaluate to `T | undefined`, mandating safe narrowing or optional chaining.
+- **Architectural Boundaries**: Layer isolation is strictly validated via `eslint-plugin-boundaries`. Utility modules cannot import UI components; UI domains (`Analytics`, `Tax`, `Dashboard`, `Family`, `Auth`, `Insights`) cannot import private internals of sibling domains; circular dependencies are disallowed.
+- **File Naming Conventions**: Standardized casing is enforced via `eslint-plugin-check-file` (PascalCase for React components under `src/components/`, kebab-case for utilities under `src/utils/`).
+- **Schema-Validated Environment Variables**: All environment variable access is centralized in `frontend/src/env.ts` validated via `@t3-oss/env-core` and `zod`. Direct unvalidated access to `import.meta.env` is prohibited; invalid or missing variables fail loudly at build time.
+- **Dead-Code & Dependency Auditing**: `knip` runs via `knip --production` during builds. Zero unused files, exports, or dependencies permitted. Code-generated Rust bindings (`src/types/generated/**`) are explicitly preserved.
+- **Build Verification Gate**: `pnpm --filter frontend build` (`pnpm build:verify && vite build`) and `pnpm --filter frontend build:verify` (`pnpm lint && pnpm typecheck && pnpm knip`) must pass cleanly with zero type errors, zero lint warnings, and zero dead code.
 
 ### 3. ITR Report Invariant Gate
 - All changes to ITR or capital gains tax reporting must pass `verify_itr_invariants` (enforced in both backend domain engine and frontend validation).
@@ -27,8 +31,8 @@ Before committing or creating a PR, you MUST run and pass the full hermetic veri
 6. `(cd backend-rs && cargo deny check)`
 7. `(cd backend-rs && cargo test --package portfolio-api --test export_bindings) && git diff --exit-code frontend/src/types/generated`
 8. `(cd backend-rs && cargo run --package portfolio-parity)`
-9. `(cd frontend && npm run build && npm run test:unit)`
-10. `npm run test:coverage` (Blocking coverage gates: Backend $\ge$ 80% line coverage via `cargo llvm-cov`; Frontend: Lines $\ge$ 88%, Statements $\ge$ 86%, Funcs $\ge$ 85%, Branches $\ge$ 65% via `vitest`)
+9. `pnpm --filter frontend build && pnpm --filter frontend test:unit`
+10. `pnpm test:coverage` (Blocking coverage gates: Backend $\ge$ 80% line coverage via `cargo llvm-cov`; Frontend: Lines $\ge$ 88%, Statements $\ge$ 86%, Funcs $\ge$ 85%, Branches $\ge$ 65% via `vitest`)
 
 ### 5. Mandatory Tax Specialist Subagent (`tax-statutory-auditor`)
 - For any changes affecting tax calculation logic, statutory rates, exemptions, Schedule CG ITR reports, or files under `backend-rs/crates/portfolio-core/src/tax/`, agents MUST consult or invoke the specialized `tax-statutory-auditor` subagent role.
@@ -81,7 +85,7 @@ For any new functionalities or bug fixes, you MUST mandatorily update and run bo
   9. **Lock-In Restrictions**: ELSS 3-year lock-in and statutory withdrawal constraints.
   10. **Folio Lifecycle**: Manual closing and deletion of folios and managed profiles.
 - **Continuous Evolution**: All future use cases, edge cases, and bug fixes MUST be baked into these mock portfolios so regressions are caught permanently.
-- **Hook & CI Enforcement**: Mock portfolio tests MUST run as part of hermetic unit tests (`npm test`), the pre-push hook (`.husky/pre-push`), and GitHub Actions workflows (`.github/workflows/e2e.yml`).
+- **Hook & CI Enforcement**: Mock portfolio tests MUST run as part of hermetic unit tests (`pnpm test` or `pnpm --filter frontend test:unit`), the pre-push hook (`.husky/pre-push`), and GitHub Actions workflows (`.github/workflows/e2e.yml`).
 
 ## Backend Testing
 
