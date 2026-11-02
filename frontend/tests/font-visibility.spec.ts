@@ -460,6 +460,9 @@ test.describe('Font Visibility and WCAG Contrast Analysis', () => {
         const durations = style.transitionDuration.split(',').map(d => d.trim());
         const easings = style.transitionTimingFunction.split(',').map(e => e.trim());
         const delays = (style.transitionDelay || '0s').split(',').map(d => d.trim());
+
+        // Per W3C CSS Transitions spec, transition property lists repeat cyclically
+        const getVal = (arr, idx) => (arr.length > 0 ? arr[idx % arr.length] : '');
         
         const colorIdx = props.indexOf('color');
         const bgProps = ['background-color', 'background-image', 'background', 'opacity'];
@@ -468,14 +471,17 @@ test.describe('Font Visibility and WCAG Contrast Analysis', () => {
         if (allIdx !== -1) return;
         
         if (colorIdx !== -1) {
-           const colorDuration = durations[colorIdx];
-           const colorEasing = easings[colorIdx];
-           const colorDelay = delays[colorIdx] || '0s';
+           const colorDuration = getVal(durations, colorIdx);
+           const colorEasing = getVal(easings, colorIdx);
+           const colorDelay = getVal(delays, colorIdx) || '0s';
            
            bgProps.forEach(bgProp => {
              const bgIdx = props.indexOf(bgProp);
              if (bgIdx !== -1) {
-               if (durations[bgIdx] !== colorDuration || easings[bgIdx] !== colorEasing || (delays[bgIdx] || '0s') !== colorDelay) {
+               const bgDuration = getVal(durations, bgIdx);
+               const bgEasing = getVal(easings, bgIdx);
+               const bgDelay = getVal(delays, bgIdx) || '0s';
+               if (bgDuration !== colorDuration || bgEasing !== colorEasing || bgDelay !== colorDelay) {
                  errs.push(`Mismatched transition on ${el.tagName}: ${bgProp} vs color`);
                }
              }
@@ -483,7 +489,7 @@ test.describe('Font Visibility and WCAG Contrast Analysis', () => {
         } else {
            bgProps.forEach(bgProp => {
              const bgIdx = props.indexOf(bgProp);
-             if (bgIdx !== -1 && durations[bgIdx] !== '0s') {
+             if (bgIdx !== -1 && getVal(durations, bgIdx) !== '0s') {
                errs.push(`Asynchronous transition on ${el.tagName}: ${bgProp} transitions but color does not.`);
              }
            });
