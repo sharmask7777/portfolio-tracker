@@ -1,7 +1,9 @@
+import { env } from './env';
+
 export const API_CONFIG = {
   // In production, we use the relative path so the Nginx proxy handles it.
   // This ensures cross-device connectivity (phone, laptop) works without hardcoding IPs.
-  BASE_URL: import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001'),
+  BASE_URL: env.VITE_API_URL || (env.PROD ? '' : 'http://localhost:3001'),
 };
 
 export const API_ENDPOINTS = {
