@@ -238,7 +238,8 @@ pub async fn fetch_user_portfolios(
         .map_err(DbError::from)?;
 
         if portfolios.is_empty()
-            && user_id == Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap()
+            && user_id
+                == Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap_or_default()
         {
             let maybe_first_user = sqlx::query_scalar::<_, String>(
                 r#"
@@ -940,7 +941,7 @@ pub fn get_stock_sector(name: &str) -> &'static str {
 ///    synthetic, or hermetic test environments without requiring external live database queries.
 pub fn resolve_holdings(isin: &str, scheme_name: &str) -> (String, Vec<FundHolding>) {
     use std::str::FromStr;
-    let dec = |s: &str| Decimal::from_str(s).unwrap();
+    let dec = |s: &str| Decimal::from_str(s).unwrap_or(Decimal::ZERO);
 
     let lower_name = scheme_name.to_lowercase();
     if isin == "INF879O01018"
@@ -1445,8 +1446,8 @@ pub async fn compute_portfolio_exposures(
 
             let latest_nav = fetch_latest_nav(state, Some(&asset), fallback).await;
             let current_holding_value = units.to_decimal() * latest_nav.to_decimal();
-            let is_active = units.to_decimal() >= Decimal::from_str("0.001").unwrap()
-                && current_holding_value >= Decimal::from_str("0.01").unwrap();
+            let is_active = units.to_decimal() >= Decimal::new(1, 3)
+                && current_holding_value >= Decimal::new(1, 2);
 
             if !is_active {
                 continue;
@@ -2097,7 +2098,7 @@ pub async fn get_xray(
 
             let latest_nav = fetch_latest_nav(&state, asset.as_ref(), fallback).await;
             let holding_market_value = units.to_decimal() * latest_nav.to_decimal();
-            if holding_market_value < Decimal::from_str("0.01").unwrap() {
+            if holding_market_value < Decimal::new(1, 2) {
                 continue;
             }
 
@@ -2725,7 +2726,7 @@ pub async fn close_folio(
         if let Some(pool) = state.pool() {
             let tx_id = Uuid::new_v4();
             let now = Utc::now();
-            let date_timestamp = today.and_hms_opt(0, 0, 0).unwrap();
+            let date_timestamp = today.and_hms_opt(0, 0, 0).unwrap_or_default();
             let _ = sqlx::query(
                 r#"
                 INSERT INTO "Transaction" (

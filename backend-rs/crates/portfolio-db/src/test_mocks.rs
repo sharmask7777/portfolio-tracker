@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::panic)]
+
 //! Thread-safe in-memory database mock for fast hermetic testing.
 //!
 //! # Architecture & Concurrency Model
@@ -73,7 +75,7 @@ impl InMemoryDatabase {
         let database = Self {
             state: Arc::new(RwLock::new(InMemoryDatabaseState::default())),
         };
-        let default_test_user_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let default_test_user_id = Uuid::from_u128(1);
         database.create_user_with_id(default_test_user_id, "test@example.com", "test");
         database
     }
@@ -82,7 +84,7 @@ impl InMemoryDatabase {
     pub fn clear(&self) {
         let mut state = self.state.write().expect("lock poisoned");
         *state = InMemoryDatabaseState::default();
-        let default_test_user_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let default_test_user_id = Uuid::from_u128(1);
         let now = Utc::now();
         state.users.insert(
             default_test_user_id,

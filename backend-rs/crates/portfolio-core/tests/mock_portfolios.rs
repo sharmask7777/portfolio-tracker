@@ -1,3 +1,5 @@
+#![allow(missing_docs, clippy::unwrap_used, clippy::panic)]
+
 //! Canonical 10 Mock Portfolios Test Specification (RED Phase).
 //!
 //! Strongly-typed, human-readable BDD test suite transcribed directly from
@@ -727,7 +729,7 @@ fn test_portfolio_10_folio_lifecycle_manual_close() {
     )
     .with_external_id("MANUAL_CLOSE-folio-10-12345");
 
-    let mut updated_txs = active_transactions.clone();
+    let mut updated_txs = active_transactions;
     updated_txs.push(close_tx);
 
     let new_units = get_latest_units(&updated_txs);

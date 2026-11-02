@@ -1,7 +1,5 @@
 //! Family profile management and cascading deletion routes.
 
-use std::str::FromStr;
-
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
@@ -54,7 +52,8 @@ pub async fn list_profiles(
 
         // If mock user has no profiles in Postgres, fallback to primary user's profiles
         if profiles.is_empty()
-            && auth_user.user_id == Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap()
+            && auth_user.user_id
+                == Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap_or_default()
         {
             let maybe_first_user = sqlx::query_scalar::<_, String>(
                 r#"
@@ -102,9 +101,7 @@ pub async fn create_profile(
         ));
     }
 
-    let tax_slab = payload
-        .tax_slab
-        .unwrap_or_else(|| Decimal::from_str("0.30").unwrap());
+    let tax_slab = payload.tax_slab.unwrap_or_else(|| Decimal::new(30, 2));
 
     if let Some(pool) = state.pool() {
         let repo = portfolio_db::repositories::SqlxFamilyRepo::new(pool.clone());

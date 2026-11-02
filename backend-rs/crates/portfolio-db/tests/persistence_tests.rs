@@ -1,3 +1,10 @@
+#![allow(
+    missing_docs,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::assert_is_empty
+)]
+
 //! Hermetic integration tests for portfolio-db persistence layer.
 //!
 //! Validates:
@@ -480,7 +487,7 @@ async fn test_entity_conversion_to_portfolio_core_and_financial_parity() {
         .expect("folio conversion failed");
     let core_portfolio = portfolio.to_core_portfolio(vec![core_folio.clone()]);
     let core_profile = profile
-        .to_core_profile(vec![core_portfolio.clone()])
+        .to_core_profile(vec![core_portfolio])
         .expect("profile conversion failed");
 
     // Verify profile PAN and fields

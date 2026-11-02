@@ -98,21 +98,28 @@ pub enum HoldingType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[ts(export_to = "AdvanceTaxQuarter.ts")]
 pub enum AdvanceTaxQuarter {
+    /// First statutory installment: April 1 to June 15.
     #[serde(rename = "Q1 (01/04 - 15/06)")]
     Q1,
+    /// Second installment pre-Budget 2024: June 16 to July 22.
     #[serde(rename = "Q2a (16/06 - 22/07)")]
     Q2A,
+    /// Second installment post-Budget 2024: July 23 to September 15.
     #[serde(rename = "Q2b (23/07 - 15/09)")]
     Q2B,
+    /// Third statutory installment: September 16 to December 15.
     #[serde(rename = "Q3 (16/09 - 15/12)")]
     Q3,
+    /// Fourth statutory installment: December 16 to March 15.
     #[serde(rename = "Q4 (16/12 - 15/03)")]
     Q4,
+    /// Fifth statutory installment (year-end true-up): March 16 to March 31.
     #[serde(rename = "Q5 (16/03 - 31/03)")]
     Q5,
 }
 
 impl AdvanceTaxQuarter {
+    /// Returns the human-readable string representation of the advance tax quarter.
     pub fn as_str(&self) -> &'static str {
         match self {
             AdvanceTaxQuarter::Q1 => "Q1 (01/04 - 15/06)",
@@ -124,6 +131,7 @@ impl AdvanceTaxQuarter {
         }
     }
 
+    /// Resolves an advance tax quarter from a transaction date.
     pub fn from_date(date: NaiveDate) -> Self {
         use chrono::Datelike;
         let month = date.month();
@@ -223,6 +231,7 @@ pub struct SectionTotalData {
     pub total_tax: Money,
 }
 
+/// Mapping of statutory section keys (e.g. "112A_LTCG") to their aggregated tax computation totals.
 pub type SectionTotalsMap = std::collections::HashMap<String, SectionTotalData>;
 
 /// An active or historical purchase lot tracked for FIFO matching.
@@ -387,25 +396,43 @@ pub struct TaxPortfolioSummary {
 /// Invariant validation errors for statutory ITR capital gains reports.
 #[derive(Debug, Error, PartialEq, Eq, Clone)]
 pub enum TaxInvariantError {
+    /// Quarterly sum in Table F does not match total net realized capital gains.
     #[error(
         "Quarterly accrued gains mismatch: sum of Table F quarters is {quarterly_sum}, but net realized gain is {net_realized}"
     )]
     QuarterlyMismatch {
+        /// Sum of gains across all 5 quarters in Table F.
         quarterly_sum: Money,
+        /// Actual net realized capital gains across the fiscal year.
         net_realized: Money,
     },
 
+    /// Claimed LTCG exemption under Section 112A exceeds statutory ceiling.
     #[error(
         "Exempt LTCG under Section 112A exceeds statutory limit: claimed {claimed}, limit {limit}"
     )]
-    ExemptionExceedsLimit { claimed: Money, limit: Money },
+    ExemptionExceedsLimit {
+        /// Claimed exempt capital gains amount.
+        claimed: Money,
+        /// Maximum statutory exemption limit (e.g., ₹1,25,000 for FY24-25).
+        limit: Money,
+    },
 
+    /// Claimed exemption amount is negative.
     #[error("Exempt LTCG under Section 112A cannot be negative: claimed {claimed}")]
-    NegativeExemption { claimed: Money },
+    NegativeExemption {
+        /// Invalid negative exemption value.
+        claimed: Money,
+    },
 
+    /// Taxable capital gain is negative after loss set-offs (must be non-negative).
     #[error("Taxable gain cannot be negative after set-off: {taxable_gain}")]
-    NegativeTaxableGain { taxable_gain: Money },
+    NegativeTaxableGain {
+        /// Invalid negative taxable gain.
+        taxable_gain: Money,
+    },
 
+    /// Schedule CG report is missing Table F quarterly breakdown matrix.
     #[error("Missing Table F advance tax matrix")]
     MissingTableF,
 }
@@ -925,6 +952,7 @@ pub fn calculate_unrealized_tax(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::str::FromStr;

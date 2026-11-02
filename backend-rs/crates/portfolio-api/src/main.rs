@@ -1,5 +1,7 @@
 //! Production entrypoint binary for the Axum REST API server (`portfolio-api`).
 
+#![forbid(unsafe_code)]
+
 use std::sync::Arc;
 
 use portfolio_api::{AppState, create_app};

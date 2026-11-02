@@ -81,6 +81,9 @@ where
 {
     type Rejection = ApiError;
 
+    // Axum's `FromRequestParts` trait defines an async interface. This extractor performs
+    // synchronous JWT verification without `.await`, but must satisfy the trait signature.
+    #[allow(clippy::unused_async_trait_impl)]
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let auth_header = parts
             .headers

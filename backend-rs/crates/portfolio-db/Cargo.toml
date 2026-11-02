@@ -3,6 +3,9 @@ name = "portfolio-db"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 portfolio-core = { path = "../portfolio-core" }
 sqlx = { workspace = true }

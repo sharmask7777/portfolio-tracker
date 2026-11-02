@@ -3,6 +3,9 @@
 //! Executes all synthetic scenarios through `portfolio-core`, validates precision bounds
 //! against TypeScript benchmark outputs, and prints a formatted certification report.
 
+#![forbid(unsafe_code)]
+#![allow(clippy::unwrap_used, clippy::panic)]
+
 use std::process::ExitCode;
 
 use portfolio_parity::run_differential_tests;

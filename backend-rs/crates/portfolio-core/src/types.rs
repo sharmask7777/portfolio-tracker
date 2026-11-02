@@ -20,7 +20,9 @@ use crate::error::PortfolioError;
 pub struct Money(Decimal);
 
 impl Money {
+    /// Number of decimal places for financial amounts (2 decimal places).
     pub const PRECISION: u32 = 2;
+    /// Constant zero money instance.
     pub const ZERO: Money = Money(Decimal::ZERO);
 
     /// Creates a new `Money` instance rounded to 2 decimal places using Banker's rounding (`MidpointNearestEven`).
@@ -28,30 +30,37 @@ impl Money {
         Self(amount.round_dp_with_strategy(Self::PRECISION, RoundingStrategy::MidpointNearestEven))
     }
 
+    /// Returns a zero-value `Money` instance.
     pub fn zero() -> Self {
         Self::ZERO
     }
 
+    /// Borrows the underlying `Decimal` value.
     pub fn as_decimal(&self) -> &Decimal {
         &self.0
     }
 
+    /// Consumes and converts into the underlying `Decimal` value.
     pub fn to_decimal(self) -> Decimal {
         self.0
     }
 
+    /// Returns `true` if the monetary amount is zero.
     pub fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
 
+    /// Returns `true` if the monetary amount is strictly positive (> 0).
     pub fn is_positive(&self) -> bool {
         self.0.is_sign_positive() && !self.0.is_zero()
     }
 
+    /// Returns `true` if the monetary amount is strictly negative (< 0).
     pub fn is_negative(&self) -> bool {
         self.0.is_sign_negative()
     }
 
+    /// Returns the absolute value of the monetary amount.
     pub fn abs(&self) -> Self {
         Self(self.0.abs())
     }
@@ -249,7 +258,9 @@ impl<'a> std::iter::Sum<&'a Money> for Money {
 pub struct Units(Decimal);
 
 impl Units {
+    /// Number of decimal places for holding units (4 decimal places).
     pub const PRECISION: u32 = 4;
+    /// Constant zero units instance.
     pub const ZERO: Units = Units(Decimal::ZERO);
 
     /// Creates a new `Units` instance rounded to 4 decimal places using Banker's rounding (`MidpointNearestEven`).
@@ -257,30 +268,37 @@ impl Units {
         Self(amount.round_dp_with_strategy(Self::PRECISION, RoundingStrategy::MidpointNearestEven))
     }
 
+    /// Returns a zero-value `Units` instance.
     pub fn zero() -> Self {
         Self::ZERO
     }
 
+    /// Borrows the underlying `Decimal` value.
     pub fn as_decimal(&self) -> &Decimal {
         &self.0
     }
 
+    /// Consumes and converts into the underlying `Decimal` value.
     pub fn to_decimal(self) -> Decimal {
         self.0
     }
 
+    /// Returns `true` if the unit count is zero.
     pub fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
 
+    /// Returns `true` if the unit count is strictly positive (> 0).
     pub fn is_positive(&self) -> bool {
         self.0.is_sign_positive() && !self.0.is_zero()
     }
 
+    /// Returns `true` if the unit count is strictly negative (< 0).
     pub fn is_negative(&self) -> bool {
         self.0.is_sign_negative()
     }
 
+    /// Returns the absolute value of the units.
     pub fn abs(&self) -> Self {
         Self(self.0.abs())
     }
@@ -496,7 +514,9 @@ impl<'a> std::iter::Sum<&'a Units> for Units {
 pub struct Nav(Decimal);
 
 impl Nav {
+    /// Number of decimal places for NAV values (4 decimal places).
     pub const PRECISION: u32 = 4;
+    /// Constant zero NAV instance.
     pub const ZERO: Nav = Nav(Decimal::ZERO);
 
     /// Creates a new `Nav` instance rounded to 4 decimal places using Banker's rounding (`MidpointNearestEven`).
@@ -504,26 +524,32 @@ impl Nav {
         Self(val.round_dp_with_strategy(Self::PRECISION, RoundingStrategy::MidpointNearestEven))
     }
 
+    /// Returns a zero-value `Nav` instance.
     pub fn zero() -> Self {
         Self::ZERO
     }
 
+    /// Borrows the underlying `Decimal` value.
     pub fn as_decimal(&self) -> &Decimal {
         &self.0
     }
 
+    /// Consumes and converts into the underlying `Decimal` value.
     pub fn to_decimal(self) -> Decimal {
         self.0
     }
 
+    /// Returns `true` if the NAV is zero.
     pub fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
 
+    /// Returns `true` if the NAV is strictly positive (> 0).
     pub fn is_positive(&self) -> bool {
         self.0.is_sign_positive() && !self.0.is_zero()
     }
 
+    /// Returns `true` if the NAV is strictly negative (< 0).
     pub fn is_negative(&self) -> bool {
         self.0.is_sign_negative()
     }
@@ -606,16 +632,21 @@ impl Mul<&Units> for &Nav {
 pub struct Percentage(Decimal);
 
 impl Percentage {
+    /// Constant zero percentage instance.
     pub const ZERO: Percentage = Percentage(Decimal::ZERO);
 
+    /// Constructs a `Percentage` directly from a percentage value (e.g. 15.5 for 15.5%).
     pub fn from_percentage(pct: Decimal) -> Self {
         Self(pct)
     }
 
+    /// Constructs a `Percentage` from a fraction (e.g. 0.155 becomes 15.5%).
     pub fn from_fraction(fraction: Decimal) -> Self {
         Self(fraction * Decimal::from(100))
     }
 
+    /// Computes percentage from a ratio (`numerator / denominator * 100`).
+    /// Returns `Err(PortfolioError::DivisionByZero)` if denominator is zero.
     pub fn from_ratio(numerator: Decimal, denominator: Decimal) -> Result<Self, PortfolioError> {
         if denominator.is_zero() {
             return Err(PortfolioError::DivisionByZero);
@@ -623,18 +654,22 @@ impl Percentage {
         Ok(Self((numerator / denominator) * Decimal::from(100)))
     }
 
+    /// Returns the percentage as a decimal value (e.g. 15.5).
     pub fn as_percentage(&self) -> Decimal {
         self.0
     }
 
+    /// Borrows the internal decimal representation.
     pub fn as_decimal(&self) -> &Decimal {
         &self.0
     }
 
+    /// Consumes and returns the internal decimal representation.
     pub fn to_decimal(self) -> Decimal {
         self.0
     }
 
+    /// Converts the percentage into its fractional decimal value (e.g. 15.5% becomes 0.155).
     pub fn as_fraction(&self) -> Decimal {
         self.0 / Decimal::from(100)
     }
@@ -717,6 +752,9 @@ impl Mul<&Money> for &Percentage {
 pub struct Pan(String);
 
 impl Pan {
+    /// Validates and constructs a strongly-typed `Pan`.
+    ///
+    /// Must be exactly 10 characters conforming to statutory format `[A-Z]{5}[0-9]{4}[A-Z]`.
     pub fn new(s: impl AsRef<str>) -> Result<Self, PortfolioError> {
         let input = s.as_ref();
         let raw = input.trim();
@@ -745,6 +783,7 @@ impl Pan {
         Ok(Self(raw.to_string()))
     }
 
+    /// Returns the underlying PAN string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -795,6 +834,9 @@ impl<'de> Deserialize<'de> for Pan {
 pub struct FolioNumber(String);
 
 impl FolioNumber {
+    /// Validates and constructs a strongly-typed `FolioNumber`.
+    ///
+    /// Must be non-empty ASCII printable text without control characters or angle brackets.
     pub fn new(s: impl AsRef<str>) -> Result<Self, PortfolioError> {
         let input = s.as_ref();
         let raw = input.trim();
@@ -812,6 +854,7 @@ impl FolioNumber {
         Ok(Self(raw.to_string()))
     }
 
+    /// Returns the underlying folio number string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -863,6 +906,9 @@ impl<'de> Deserialize<'de> for FolioNumber {
 pub struct Isin(String);
 
 impl Isin {
+    /// Validates and constructs a strongly-typed `Isin`.
+    ///
+    /// Must be exactly 12 uppercase ASCII alphanumeric characters starting with 2-letter country code.
     pub fn new(s: impl AsRef<str>) -> Result<Self, PortfolioError> {
         let input = s.as_ref();
         let raw = input.trim();
@@ -886,10 +932,12 @@ impl Isin {
         Ok(Self(raw.to_string()))
     }
 
+    /// Returns the underlying ISIN string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    /// Returns the 2-letter ISO country code prefix of the ISIN (e.g. "IN" or "US").
     pub fn country_code(&self) -> &str {
         &self.0[0..2]
     }
@@ -939,20 +987,29 @@ impl<'de> Deserialize<'de> for Isin {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[ts(export_to = "AssetType.ts")]
 pub enum AssetType {
+    /// Mutual fund units tracked by folio.
     MutualFund,
+    /// Direct listed stock equity shares.
     Stock,
+    /// Fixed deposits with banking or corporate institutions.
     FixedDeposit,
+    /// Employees' Provident Fund (EPF).
     Epf,
+    /// Public Provident Fund (PPF).
     Ppf,
+    /// Sovereign Gold Bonds (SGB) issued by RBI.
     Sgb,
+    /// Physical gold or digital vaulted gold holdings.
     PhysicalGold,
 }
 
 impl AssetType {
+    /// Returns `true` if this asset class is classified as pure equity shares.
     pub fn is_equity(&self) -> bool {
         matches!(self, AssetType::Stock)
     }
 
+    /// Returns `true` if this asset class represents alternative investments (debt, provident fund, gold).
     pub fn is_alternative(&self) -> bool {
         matches!(
             self,
@@ -960,10 +1017,12 @@ impl AssetType {
         )
     }
 
+    /// Returns `true` if this asset class is precious metal gold (SGB or Physical Gold).
     pub fn is_gold(&self) -> bool {
         matches!(self, AssetType::Sgb | AssetType::PhysicalGold)
     }
 
+    /// Returns the canonical uppercase string representation matching backend/database enums.
     pub fn as_str(&self) -> &'static str {
         match self {
             AssetType::MutualFund => "MUTUAL_FUND",

@@ -3,6 +3,7 @@
 //! Loads `tests/fixtures/synthetic/portfolio_scenarios.json` and asserts zero regressions
 //! or numerical discrepancies across all financial scenarios and precision invariants.
 
+#![allow(missing_docs)]
 use portfolio_parity::run_differential_tests;
 
 #[test]

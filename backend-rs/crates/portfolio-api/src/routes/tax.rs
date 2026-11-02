@@ -1,7 +1,5 @@
 //! Tax simulation and tax harvesting routes.
 
-use std::str::FromStr;
-
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -254,9 +252,7 @@ pub async fn simulate_sell(
     }
 
     let sell_date = payload.sell_date.unwrap_or_else(|| Utc::now().date_naive());
-    let tax_slab = payload
-        .tax_slab
-        .unwrap_or_else(|| Decimal::from_str("0.30").unwrap());
+    let tax_slab = payload.tax_slab.unwrap_or_else(|| Decimal::new(30, 2));
 
     let (asset_name, asset_type, core_txs, current_price, grandfather_nav, exit_load_metadata) =
         if let Some(folio_id) = payload.folio_id {
@@ -411,7 +407,7 @@ pub async fn get_harvesting(
         }
     }
 
-    let inputs: Vec<FolioHarvestingInput> = folio_data
+    let inputs: Vec<FolioHarvestingInput<'_>> = folio_data
         .iter()
         .map(
             |(folio_id, scheme_name, asset_type, core_transactions, current_nav)| {

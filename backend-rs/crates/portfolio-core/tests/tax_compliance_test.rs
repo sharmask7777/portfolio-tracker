@@ -1,3 +1,5 @@
+#![allow(missing_docs, clippy::unwrap_used, clippy::panic)]
+
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use std::str::FromStr;

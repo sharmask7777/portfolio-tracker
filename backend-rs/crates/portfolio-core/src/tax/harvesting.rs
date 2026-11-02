@@ -146,7 +146,7 @@ impl<'a> FolioHarvestingInput<'a> {
 
 /// Computes detailed unrealized capital gains, losses, and holding classifications across active FIFO lots.
 pub fn compute_unrealized_gains(
-    inputs: &[FolioHarvestingInput],
+    inputs: &[FolioHarvestingInput<'_>],
     as_of: NaiveDate,
 ) -> UnrealizedTaxSummary {
     let mut stcg = Money::ZERO;
@@ -222,7 +222,7 @@ pub fn compute_unrealized_gains(
 /// 4. Discards negligible gains (< ₹1) to prevent precision dust.
 /// 5. Computes statutory tax savings: `total_potential_harvest * 12.5%`.
 pub fn get_harvesting_opportunities(
-    inputs: &[FolioHarvestingInput],
+    inputs: &[FolioHarvestingInput<'_>],
     as_of: NaiveDate,
     realized_ltcg_fy: Money,
     custom_exemption_limit: Option<Money>,
@@ -309,6 +309,7 @@ pub fn get_harvesting_opportunities(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::holdings::TransactionType;

@@ -1,3 +1,5 @@
+#![allow(missing_docs, clippy::unwrap_used, clippy::panic)]
+
 //! Dedicated Statutory Tax Invariant Oracle and Golden Vectors Suite.
 //!
 //! Enforces:

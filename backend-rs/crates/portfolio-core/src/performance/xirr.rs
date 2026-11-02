@@ -278,7 +278,12 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
 
     sorted_flows.sort_by_key(|f| f.date);
     let first_date = sorted_flows[0].date;
-    let last_date = sorted_flows.last().unwrap().date;
+    let last_date = sorted_flows
+        .last()
+        .ok_or_else(|| PortfolioError::InvalidTransaction {
+            reason: "No cash flows provided".to_string(),
+        })?
+        .date;
     if sorted_flows.iter().all(|f| f.date == first_date) {
         return Err(PortfolioError::InvalidTransaction {
             reason: "All cash flow dates are identical".to_string(),
@@ -438,6 +443,7 @@ pub fn calculate_xirr_with_terminal_value(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::str::FromStr;
