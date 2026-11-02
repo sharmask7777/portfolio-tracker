@@ -14,19 +14,19 @@ echo "Enforcing backend test coverage threshold (fail-under-lines 80%)..."
 (cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|test_mocks\.rs|repositories/)" --fail-under-lines 80 --summary-only)
 
 echo "Running frontend hermetic unit tests with coverage gate (lines 88%, statements 86%, funcs 85%, branches 65%)..."
-(cd frontend && npm run test:unit)
+pnpm --filter frontend test:unit
 
 echo "Building frontend distribution..."
-(cd frontend && npm run build)
+pnpm --filter frontend build
 
 echo "🐳 Starting Docker compose stack for tests..."
 export NODE_ENV=development
-npm run docker:up
+pnpm run docker:up
 
 # Ensure we always tear down the stack, even if the tests fail
 cleanup() {
   echo "🧹 Tearing down Docker stack..."
-  npm run docker:down
+  pnpm run docker:down
 }
 trap cleanup EXIT
 
@@ -44,4 +44,4 @@ done
 echo "✅ Backend API is ready."
 
 echo "⏳ Running Playwright E2E tests against Docker stack..."
-npm run test:e2e:docker --prefix frontend
+pnpm --filter frontend test:e2e:docker

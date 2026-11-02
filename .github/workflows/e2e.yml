@@ -11,19 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 12
     - uses: actions/setup-node@v4
       with:
         node-version: lts/*
-        cache: 'npm'
-    
+        cache: 'pnpm'
+
     - name: Install dependencies
-      run: |
-        npm ci --legacy-peer-deps
-        cd frontend && npm ci --legacy-peer-deps
+      run: pnpm install --frozen-lockfile
 
     - name: Run Hermetic Unit Tests (Frontend)
-      run: |
-        (cd frontend && npm run test:unit)
+      run: pnpm --filter frontend test:unit
 
     - name: Setup Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -48,7 +48,7 @@ jobs:
         cargo run --package portfolio-parity
 
     - name: Install Playwright Browsers
-      run: cd frontend && npx playwright install --with-deps chromium
+      run: pnpm --filter frontend exec playwright install --with-deps chromium
 
     - name: Start Docker compose stack
       run: |
@@ -65,7 +65,7 @@ jobs:
         EOF
 
         export NODE_ENV=development
-        npm run docker:up
+        pnpm run docker:up
 
         echo "Waiting for postgres to become healthy..."
         until docker exec portfolio_tracker_db pg_isready -U postgres -d portfolio_tracker; do
@@ -81,15 +81,15 @@ jobs:
       run: |
         if [ "${{ github.event_name }}" == "pull_request" ]; then
           echo "Running smoke, responsiveness, mock portfolio, and regression tests..."
-          (cd frontend && npm run test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts tests/dashboard-regression-verification.spec.ts)
+          pnpm --filter frontend test:e2e:docker -- tests/smoke.spec.ts tests/responsiveness.spec.ts tests/mock-portfolios.spec.ts tests/dashboard-regression-verification.spec.ts
         else
           echo "Running full E2E suite..."
-          (cd frontend && npm run test:e2e:docker)
+          pnpm --filter frontend test:e2e:docker
         fi
 
     - name: Tear down Docker stack
       if: always()
-      run: npm run docker:down
+      run: pnpm run docker:down
 
     - uses: actions/upload-artifact@v4
       if: always()
