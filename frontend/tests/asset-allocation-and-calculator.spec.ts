@@ -156,6 +156,7 @@ test.describe('Asset Allocation and Tax Calculator Tests', () => {
 
   test('Net Worth card and Holdings Table display Day Change accurately without anomalous inflation', async ({ page }) => {
     await page.goto('/');
+    await page.waitForSelector('.app');
 
     // Check Net Worth card displays day change: +₹250 (0.33%) Today
     const netWorthCard = page.locator('.stats-grid .card').first();
