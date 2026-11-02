@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::panic, clippy::undocumented_unsafe_blocks)]
+
 //! Hermetic REST API Gateway Contract Parity Tests.
 //!
 //! Validates:

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::panic, clippy::undocumented_unsafe_blocks)]
+
 //! Test suite for Net Asset Value (NAV) resolution, date precedence,
 //! previous trading day discovery, and day change calculations.
 //!

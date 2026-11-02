@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::panic, clippy::undocumented_unsafe_blocks)]
+
 use std::sync::Arc;
 
 use axum::response::IntoResponse;

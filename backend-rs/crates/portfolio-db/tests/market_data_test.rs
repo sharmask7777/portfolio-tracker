@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::panic)]
+
 use portfolio_db::market_data::{MfApiLatestResponse, MfApiMeta, MfApiNavRecord, parse_mfapi_date};
 use rust_decimal::Decimal;
 

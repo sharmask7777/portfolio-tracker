@@ -108,6 +108,7 @@ pub fn create_app(state: AppState) -> Router {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

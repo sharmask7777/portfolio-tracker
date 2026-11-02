@@ -202,6 +202,7 @@ pub fn calculate_fund_overlap(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::str::FromStr;

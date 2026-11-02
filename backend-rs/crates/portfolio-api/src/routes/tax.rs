@@ -254,9 +254,7 @@ pub async fn simulate_sell(
     }
 
     let sell_date = payload.sell_date.unwrap_or_else(|| Utc::now().date_naive());
-    let tax_slab = payload
-        .tax_slab
-        .unwrap_or_else(|| Decimal::from_str("0.30").unwrap());
+    let tax_slab = payload.tax_slab.unwrap_or_else(|| Decimal::new(30, 2));
 
     let (asset_name, asset_type, core_txs, current_price, grandfather_nav, exit_load_metadata) =
         if let Some(folio_id) = payload.folio_id {

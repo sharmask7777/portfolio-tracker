@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::panic, clippy::undocumented_unsafe_blocks)]
+
 //! Hermetic integration tests for portfolio-worker.
 //!
 //! Validates:

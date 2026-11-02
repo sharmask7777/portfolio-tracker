@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::panic)]
+
 //! Comprehensive Property-Based Testing (PBT) suite for portfolio-core.
 //!
 //! Validates fundamental financial invariants ported from TypeScript fast-check suites:

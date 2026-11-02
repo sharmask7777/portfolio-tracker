@@ -213,6 +213,7 @@ pub fn consolidate_by_scheme(folios: &[Folio], current_nav: Nav) -> Vec<Consolid
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::holdings::TransactionType;

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::panic)]
+
 use portfolio_db::schema::generate_ddl;
 
 #[test]
