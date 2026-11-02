@@ -18,14 +18,17 @@
 - Reports that violate quarterly symmetry (Table F sum $\ne$ FY net capital gain), grandfathering loss limits (Section 55(2)(ac) deemed cost bounding), statutory tax rates (12.5% LTCG / 20% STCG post-July 23, 2024), or negative exemption amounts must fail loudly.
 
 ### 4. Mandatory Hermetic Verification Sequence
-Before committing or creating a PR, you MUST run and pass the full hermetic verification sequence:
-1. `(cd backend-rs && cargo test --workspace)`
-2. `(cd backend-rs && cargo clippy --workspace --all-targets -- -D warnings)`
-3. `(cd backend-rs && cargo fmt --check)`
-4. `(cd backend-rs && cargo test --package portfolio-api --test export_bindings) && git diff --exit-code frontend/src/types/generated`
-5. `(cd frontend && npm run build && npm run test:unit)`
-6. `(cd backend-rs && cargo run --package portfolio-parity)`
-7. `npm run test:coverage` (Blocking coverage gates: Backend $\ge$ 80% line coverage via `cargo llvm-cov`; Frontend: Lines $\ge$ 88%, Statements $\ge$ 86%, Funcs $\ge$ 85%, Branches $\ge$ 65% via `vitest`)
+Before committing or creating a PR, you MUST run and pass the full hermetic verification sequence (or run `(cd backend-rs && ./scripts/verify.sh)` for backend stages):
+1. `(cd backend-rs && cargo fmt --check)`
+2. `(cd backend-rs && cargo check --workspace --all-targets)`
+3. `(cd backend-rs && cargo clippy --workspace --all-targets -- -D warnings)`
+4. `(cd backend-rs && RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps)`
+5. `(cd backend-rs && cargo test --workspace)`
+6. `(cd backend-rs && cargo deny check)`
+7. `(cd backend-rs && cargo test --package portfolio-api --test export_bindings) && git diff --exit-code frontend/src/types/generated`
+8. `(cd backend-rs && cargo run --package portfolio-parity)`
+9. `(cd frontend && npm run build && npm run test:unit)`
+10. `npm run test:coverage` (Blocking coverage gates: Backend $\ge$ 80% line coverage via `cargo llvm-cov`; Frontend: Lines $\ge$ 88%, Statements $\ge$ 86%, Funcs $\ge$ 85%, Branches $\ge$ 65% via `vitest`)
 
 ### 5. Mandatory Tax Specialist Subagent (`tax-statutory-auditor`)
 - For any changes affecting tax calculation logic, statutory rates, exemptions, Schedule CG ITR reports, or files under `backend-rs/crates/portfolio-core/src/tax/`, agents MUST consult or invoke the specialized `tax-statutory-auditor` subagent role.
@@ -104,12 +107,14 @@ The Rust backend (`backend-rs`) follows hexagonal architecture across 5 speciali
    - Enforces precision bounds: Units $\Delta \le 0.0001$, Financial Amounts $\Delta \le ₹0.01$, Returns & XIRR $\Delta \le 10^{-6}$.
 
 ### Rust Testing & Quality Mandates
-For any changes to the backend or calculation logic, run and pass:
-- `cargo check --workspace`
-- `cargo test --workspace`
-- `cargo run --package portfolio-parity`
-- `cargo clippy --workspace --all-targets -- -D warnings`
+For any changes to the backend or calculation logic, run and pass `backend-rs/scripts/verify.sh` or:
 - `cargo fmt --check`
+- `cargo check --workspace --all-targets`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
+- `cargo test --workspace`
+- `cargo deny check`
+- `cargo run --package portfolio-parity`
 
 ### Docker Compose 100% Rust Architecture
 The production and local `docker-compose.yml` runs 100% on the Rust backend (`backend-rs`) as the native `backend` and `worker` services. Database initialization is completely self-healing on container boot via `portfolio_db::init_schema(&pool)` executing DDL idempotent migrations.
