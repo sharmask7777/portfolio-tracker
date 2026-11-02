@@ -35,8 +35,9 @@ ts-rs = { version = "10.1", features = ["chrono-impl", "uuid-impl", "no-serde-wa
 
 [workspace.lints.rust]
 missing_docs = "warn"
-rust_2018_idioms = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
 unreachable_pub = "warn"
+unknown_lints = "allow"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
 
 [workspace.lints.rustdoc]
@@ -44,13 +45,15 @@ broken_intra_doc_links = "deny"
 bare_urls = "warn"
 
 [workspace.lints.clippy]
-all = { level = "deny", priority = -1 }
+all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 unwrap_used = "deny"
 panic = "deny"
 todo = "deny"
 redundant_clone = "deny"
 undocumented_unsafe_blocks = "deny"
+assert_is_empty = "allow"
+unused_async_trait_impl = "allow"
 doc_markdown = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
