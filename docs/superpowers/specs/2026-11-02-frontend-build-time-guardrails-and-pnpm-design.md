@@ -50,12 +50,18 @@ Along with these guardrails, the workspace is migrating from `npm` to `pnpm` for
 ## 4. Architectural & Implementation Decisions
 
 ### 4.1 Package Manager Migration (`pnpm`)
-- Install `pnpm` dependencies for root and `frontend/`.
-- Create `pnpm-workspace.yaml` specifying `frontend` workspace package.
-- Remove legacy `package-lock.json` files and generate clean `pnpm-lock.yaml`.
-- Update CI workflow `.github/workflows/e2e.yml` to use `pnpm/action-setup@v4`.
-- Update `.husky/pre-push` to run commands with `pnpm`.
-- Update `Dockerfile` in `frontend/` to use `pnpm` for building the production artifacts if applicable.
+- Configure root as a unified pnpm workspace:
+  - Create `pnpm-workspace.yaml` specifying `packages: ['frontend']`.
+  - Migrate dependencies to generate a single root `pnpm-lock.yaml`.
+  - Remove legacy `package-lock.json` and `frontend/package-lock.json`.
+- Update Docker setup for unified workspace root context:
+  - In `docker-compose.yml`, update frontend service to `context: .` and `dockerfile: frontend/Dockerfile`.
+  - In `frontend/Dockerfile`, copy `pnpm-lock.yaml`, `pnpm-workspace.yaml`, and `frontend/package.json` to run `pnpm install --frozen-lockfile`.
+  - Ensure root `.dockerignore` excludes `backend-rs/target`, `.git`, `node_modules`, etc.
+- Update CI & Hooks:
+  - Update `.github/workflows/e2e.yml` to set up pnpm via `pnpm/action-setup@v4`.
+  - Update `.husky/pre-push` to run commands with `pnpm`.
+  - Update root `package.json` scripts to run commands via `pnpm`.
 
 ### 4.2 TypeScript Strictness (`frontend/tsconfig.app.json`)
 Add the following strict flags to `compilerOptions`:
