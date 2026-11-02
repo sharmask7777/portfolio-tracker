@@ -30,7 +30,10 @@ describe('FamilySelector', () => {
     
     // Find edit button (assuming it's near the profile name)
     const editButtons = screen.getAllByTitle('Rename Profile');
-    fireEvent.click(editButtons[0]);
+    const firstEdit = editButtons[0];
+    expect(firstEdit).toBeDefined();
+    if (!firstEdit) throw new Error('No edit button');
+    fireEvent.click(firstEdit);
     expect(onRename).toHaveBeenCalledWith(profiles[0]);
   });
 
@@ -39,7 +42,10 @@ describe('FamilySelector', () => {
     render(<FamilySelector profiles={profiles} selectedProfileId={null} onSelect={() => {}} onRename={() => {}} onDelete={onDelete} />);
     
     const deleteButtons = screen.getAllByTitle('Delete Profile');
-    fireEvent.click(deleteButtons[1]);
+    const secondDelete = deleteButtons[1];
+    expect(secondDelete).toBeDefined();
+    if (!secondDelete) throw new Error('No delete button');
+    fireEvent.click(secondDelete);
     expect(onDelete).toHaveBeenCalledWith(profiles[1]);
   });
 });

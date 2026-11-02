@@ -6,7 +6,7 @@ import type { SimulationSellResponse, FolioView, RealizedGain } from '../../type
 interface SimulationModalProps {
   folio: FolioView;
   onClose: () => void;
-  initialUnits?: number;
+  initialUnits?: number | undefined;
   taxSlab: number;
 }
 

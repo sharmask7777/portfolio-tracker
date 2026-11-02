@@ -237,7 +237,7 @@ export interface ITRReportParams {
  * @returns Assessment year string in YYYY-YY format.
  */
 export function computeAY(fy: string): string {
-  const startYear = parseInt(fy.split('-')[0], 10);
+  const startYear = parseInt(fy.split('-')[0] ?? '', 10);
   const ayStartYear = startYear + 1;
   const ayEndYear = (startYear + 2).toString().slice(-2);
   return `${ayStartYear}-${ayEndYear}`;
@@ -326,7 +326,7 @@ export function calculate112AExemption(
   tax12_5: number;
   totalTax: number;
 } {
-  const startYear = parseInt(String(fy).split('-')[0], 10);
+  const startYear = parseInt(String(fy).split('-')[0] ?? '', 10);
   const isFy2425OrLater = !isNaN(startYear) ? startYear >= 2024 : fy >= '2024-25';
   const statutoryLimit = isFy2425OrLater ? 125000 : 100000;
 
@@ -548,7 +548,7 @@ export function verifyItrInvariants(report: ITRVerificationTarget): void {
   }
 
   const fy = report.fy || report.financialYear || '2024-25';
-  const startYear = parseInt(String(fy).split('-')[0], 10);
+  const startYear = parseInt(String(fy).split('-')[0] ?? '', 10);
   const isPostBudget = !isNaN(startYear) ? startYear >= 2024 : fy >= '2024-25';
   const statutoryLimit = isPostBudget ? 125000 : 100000;
 
@@ -739,7 +739,7 @@ export function generateITRReportCSV(params: ITRReportParams): string {
     details = [],
   } = params;
 
-  const startYear = parseInt(fy.split('-')[0], 10);
+  const startYear = parseInt(fy.split('-')[0] ?? '', 10);
   const endYear = startYear + 1;
 
   // Aggregate totals across all constituent lots

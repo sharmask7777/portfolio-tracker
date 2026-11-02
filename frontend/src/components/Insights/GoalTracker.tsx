@@ -80,7 +80,7 @@ export const GoalTracker: React.FC<GoalTrackerProps> = ({ portfolioId, activeAss
     setEditingGoalId(goal.id);
     setEditName(goal.name);
     setEditAmount(goal.targetAmount.toString());
-    setEditDate(new Date(goal.targetDate).toISOString().split('T')[0]);
+    setEditDate(new Date(goal.targetDate).toISOString().split('T')[0] ?? '');
     setEditSelectedAssetIds((goal.assets || []).map(a => a.id));
   };
 

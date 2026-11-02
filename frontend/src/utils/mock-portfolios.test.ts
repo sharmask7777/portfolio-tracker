@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { consolidateFoliosIntoSchemes } from './consolidation';
+import { consolidateFoliosIntoSchemes, type FolioInput } from './consolidation';
 import { sortSchemeGroups } from './sorting';
 
 /**
@@ -61,6 +61,8 @@ describe('Frontend Mock Portfolios Unit Test Suite (10 Use Cases)', () => {
       const groups = consolidateFoliosIntoSchemes(folios);
       expect(groups).toHaveLength(1);
       const g = groups[0];
+      expect(g).toBeDefined();
+      if (!g) throw new Error('g missing');
       expect(g.schemeName).toBe('Apex Large & Mid Cap Fund - Direct Growth');
       expect(g.folioCount).toBe(2);
       expect(g.pans).toEqual(['ALPAC1001A', 'BETAB2002B']);
@@ -75,7 +77,7 @@ describe('Frontend Mock Portfolios Unit Test Suite (10 Use Cases)', () => {
   // PORTFOLIO 2: Zephyr Exited Fund (Fully Redeemed / Zero Holdings)
   describe('Portfolio 2: Fully Redeemed / Zero Holdings (Zephyr Exited)', () => {
     it('is omitted when folios list is empty or zero-value folios are not active', () => {
-      const activeFolios: any[] = [];
+      const activeFolios: FolioInput[] = [];
       const groups = consolidateFoliosIntoSchemes(activeFolios);
       expect(groups).toHaveLength(0);
     });
@@ -107,9 +109,12 @@ describe('Frontend Mock Portfolios Unit Test Suite (10 Use Cases)', () => {
     it('renders single folio group with correct invested and active value', () => {
       const groups = consolidateFoliosIntoSchemes(folios);
       expect(groups).toHaveLength(1);
-      expect(groups[0].folioCount).toBe(1);
-      expect(groups[0].pans).toEqual(['DELTD4004D']);
-      expect(groups[0].metrics.currentValue).toBe(180000);
+      const g = groups[0];
+      expect(g).toBeDefined();
+      if (!g) throw new Error('g missing');
+      expect(g.folioCount).toBe(1);
+      expect(g.pans).toEqual(['DELTD4004D']);
+      expect(g.metrics.currentValue).toBe(180000);
     });
   });
 
@@ -167,8 +172,11 @@ describe('Frontend Mock Portfolios Unit Test Suite (10 Use Cases)', () => {
     it('renders liquid scheme group accurately', () => {
       const groups = consolidateFoliosIntoSchemes(folios);
       expect(groups).toHaveLength(1);
-      expect(groups[0].schemeName).toBe('Alpha Liquid Cash Fund');
-      expect(groups[0].pans).toEqual(['ZETAZ6006F']);
+      const g = groups[0];
+      expect(g).toBeDefined();
+      if (!g) throw new Error('g missing');
+      expect(g.schemeName).toBe('Alpha Liquid Cash Fund');
+      expect(g.pans).toEqual(['ZETAZ6006F']);
     });
   });
 
@@ -191,7 +199,10 @@ describe('Frontend Mock Portfolios Unit Test Suite (10 Use Cases)', () => {
     it('identifies alternative asset with manual identifier', () => {
       const groups = consolidateFoliosIntoSchemes(folios);
       expect(groups).toHaveLength(1);
-      expect(groups[0].folios[0].number).toContain('MANUAL_');
+      const g = groups[0];
+      expect(g).toBeDefined();
+      if (!g) throw new Error('g missing');
+      expect(g.folios[0]?.number).toContain('MANUAL_');
     });
   });
 

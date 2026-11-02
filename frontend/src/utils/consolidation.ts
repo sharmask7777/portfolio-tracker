@@ -13,15 +13,15 @@
  */
 export interface FolioAssetInfo {
   /** Unique asset database identifier if assigned. */
-  id?: string;
+  id?: string | undefined;
   /** Official or reported scheme/stock name. */
-  name?: string;
+  name?: string | undefined;
   /** Asset classification (e.g., 'MUTUAL_FUND', 'EQUITY', 'DEBT'). */
-  type?: string;
+  type?: string | undefined;
   /** International Securities Identification Number (12-character alphanumeric code). */
-  isin?: string;
+  isin?: string | undefined;
   /** Association of Mutual Funds in India (AMFI) numeric scheme code. */
-  amfiCode?: string;
+  amfiCode?: string | undefined;
 }
 
 /**
@@ -29,29 +29,29 @@ export interface FolioAssetInfo {
  */
 export interface FolioMetricsInput {
   /** Cumulative cost basis of units currently held. */
-  investedAmount?: number;
+  investedAmount?: number | undefined;
   /** Latest market valuation (units * current NAV). */
-  currentValue?: number;
+  currentValue?: number | undefined;
   /** Absolute net gain/loss relative to previous trading session NAV. */
-  dayChange?: number;
+  dayChange?: number | undefined;
   /** Percentage change relative to prior-day closing valuation. */
-  dayChangePercentage?: number;
+  dayChangePercentage?: number | undefined;
   /** Annualised Internal Rate of Return (money-weighted return). */
-  xirr?: number;
+  xirr?: number | undefined;
   /** Net annualised XIRR after accounting for accrued statutory capital gains tax liability. */
-  postTaxXirr?: number;
+  postTaxXirr?: number | undefined;
   /** Simple holding period return: (currentValue - investedAmount) / investedAmount. */
-  absoluteReturn?: number;
+  absoluteReturn?: number | undefined;
   /** Simple holding period return net of estimated tax obligations. */
-  postTaxAbsoluteReturn?: number;
+  postTaxAbsoluteReturn?: number | undefined;
   /** Total estimated accrued capital gains tax liability (STCG + LTCG). */
-  estimatedTax?: number;
+  estimatedTax?: number | undefined;
   /** Total unrealized gain/loss: currentValue - investedAmount. */
-  totalGain?: number;
+  totalGain?: number | undefined;
   /** Latest published Net Asset Value per unit or stock share price. */
-  currentPrice?: number;
+  currentPrice?: number | undefined;
   /** Compound Annual Growth Rate where applicable. */
-  cagr?: number;
+  cagr?: number | undefined;
 }
 
 /**
@@ -61,17 +61,17 @@ export interface FolioInput {
   /** Unique folio identifier in the portfolio database. */
   id: string;
   /** Folio account number as reported by the AMC or registrar (CAMS/KFintech). */
-  number?: string;
+  number?: string | undefined;
   /** Alternative alias for folio account number. */
-  folioNumber?: string;
+  folioNumber?: string | undefined;
   /** Permanent Account Number (PAN) of the investor holding this folio. */
-  pan?: string;
+  pan?: string | undefined;
   /** Underlying security or mutual fund scheme attributes. */
-  asset?: FolioAssetInfo;
+  asset?: FolioAssetInfo | undefined;
   /** Computed financial performance and valuation metrics. */
-  metrics?: FolioMetricsInput;
+  metrics?: FolioMetricsInput | undefined;
   /** Historical transaction ledger for this folio. */
-  transactions?: unknown[];
+  transactions?: unknown[] | undefined;
 }
 
 /**
@@ -106,9 +106,9 @@ export interface ConsolidatedSchemeGroup {
   /** Canonical name of the scheme or equity asset. */
   schemeName: string;
   /** ISIN code shared by constituent folios (empty or undefined if not available). */
-  isin?: string;
+  isin?: string | undefined;
   /** AMFI code shared by constituent folios. */
-  amfiCode?: string;
+  amfiCode?: string | undefined;
   /** Asset category classification (e.g., 'MUTUAL_FUND', 'EQUITY'). */
   type: string;
   /** List of distinct PANs holding folios within this consolidated scheme. */
@@ -208,6 +208,8 @@ export function consolidateFoliosIntoSchemes(
 
   for (const [groupKey, groupFolios] of groupsMap.entries()) {
     const firstFolio = groupFolios[0];
+    if (!firstFolio) continue;
+
     const schemeName = firstFolio.asset?.name || 'Unknown Scheme';
     const type = firstFolio.asset?.type || 'MUTUAL_FUND';
     const isin = firstFolio.asset?.isin;
@@ -215,7 +217,7 @@ export function consolidateFoliosIntoSchemes(
 
     // Single-folio fast path: preserve existing metrics without unnecessary aggregation
     if (groupFolios.length === 1) {
-      const singleFolio = groupFolios[0];
+      const singleFolio = firstFolio;
       const absoluteReturn = singleFolio.metrics?.absoluteReturn ?? 0;
       const postTaxAbsoluteReturn = singleFolio.metrics?.postTaxAbsoluteReturn ?? 0;
 

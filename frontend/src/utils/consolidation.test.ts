@@ -36,13 +36,16 @@ describe('consolidateFoliosIntoSchemes', () => {
 
     const result = consolidateFoliosIntoSchemes(folios);
     expect(result).toHaveLength(1);
-    expect(result[0].schemeName).toBe('HDFC Top 100 Fund - Direct Growth');
-    expect(result[0].folioCount).toBe(1);
-    expect(result[0].pans).toEqual(['ABCDE1234F']);
-    expect(result[0].metrics.investedAmount).toBe(100000);
-    expect(result[0].metrics.currentValue).toBe(150000);
-    expect(result[0].metrics.dayChange).toBe(500);
-    expect(result[0].metrics.xirr).toBe(0.15);
+    const first = result[0];
+    expect(first).toBeDefined();
+    if (!first) throw new Error('Result item missing');
+    expect(first.schemeName).toBe('HDFC Top 100 Fund - Direct Growth');
+    expect(first.folioCount).toBe(1);
+    expect(first.pans).toEqual(['ABCDE1234F']);
+    expect(first.metrics.investedAmount).toBe(100000);
+    expect(first.metrics.currentValue).toBe(150000);
+    expect(first.metrics.dayChange).toBe(500);
+    expect(first.metrics.xirr).toBe(0.15);
   });
 
   it('consolidates multiple folios of Parag Parikh Flexi Cap Fund into a single master scheme group with unique PANs', () => {
@@ -100,6 +103,8 @@ describe('consolidateFoliosIntoSchemes', () => {
     const result = consolidateFoliosIntoSchemes(folios);
     expect(result).toHaveLength(1);
     const ppfc = result[0];
+    expect(ppfc).toBeDefined();
+    if (!ppfc) throw new Error('ppfc missing');
     expect(ppfc.schemeName).toBe('Parag Parikh Flexi Cap Fund - Direct Plan Growth');
     expect(ppfc.folioCount).toBe(2);
     expect(ppfc.folios).toHaveLength(2);
@@ -119,8 +124,8 @@ describe('consolidateFoliosIntoSchemes', () => {
     expect(ppfc.metrics.xirr).toBeCloseTo(0.17, 3);
 
     // Child folios sorted descending by current value
-    expect(ppfc.folios[0].id).toBe('folio-pp-1');
-    expect(ppfc.folios[1].id).toBe('folio-pp-2');
+    expect(ppfc.folios[0]?.id).toBe('folio-pp-1');
+    expect(ppfc.folios[1]?.id).toBe('folio-pp-2');
   });
 
   it('keeps Direct and Regular plans as distinct scheme groups due to distinct ISINs', () => {
@@ -194,6 +199,8 @@ describe('consolidateFoliosIntoSchemes', () => {
     const result = consolidateFoliosIntoSchemes(folios);
     expect(result).toHaveLength(1);
     const invesco = result[0];
+    expect(invesco).toBeDefined();
+    if (!invesco) throw new Error('invesco missing');
     // Must be clamped to <= 10.0 (1000%), and definitely NOT 1685111%
     expect(invesco.metrics.xirr).toBeLessThanOrEqual(10.0);
     expect(invesco.metrics.postTaxXirr).toBeLessThanOrEqual(10.0);
@@ -212,8 +219,8 @@ describe('consolidateFoliosIntoSchemes', () => {
         metrics: {
           investedAmount: 50000,
           currentValue: 55000,
-          xirr: null as any,
-          postTaxXirr: undefined as any,
+          xirr: null as unknown as number,
+          postTaxXirr: undefined,
           absoluteReturn: 0.10,
           postTaxAbsoluteReturn: 0.09,
         },
@@ -222,7 +229,10 @@ describe('consolidateFoliosIntoSchemes', () => {
 
     const result = consolidateFoliosIntoSchemes(folios);
     expect(result).toHaveLength(1);
-    expect(result[0].metrics.xirr).toBe(0.10);
-    expect(result[0].metrics.postTaxXirr).toBe(0.09);
+    const first = result[0];
+    expect(first).toBeDefined();
+    if (!first) throw new Error('Result item missing');
+    expect(first.metrics.xirr).toBe(0.10);
+    expect(first.metrics.postTaxXirr).toBe(0.09);
   });
 });

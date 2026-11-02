@@ -556,6 +556,7 @@ export function Dashboard() {
                           return bVal - aVal;
                         });
                         const top = sorted[0];
+                        if (!top) return null;
                         const value = performanceMode === 'XIRR' ? top.metrics.xirr : top.metrics.absoluteReturn;
                         return (
                           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
