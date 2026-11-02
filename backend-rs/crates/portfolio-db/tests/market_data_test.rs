@@ -1,4 +1,9 @@
-#![allow(missing_docs, clippy::unwrap_used, clippy::panic)]
+#![allow(
+    missing_docs,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::assert_is_empty
+)]
 
 use portfolio_db::market_data::{MfApiLatestResponse, MfApiMeta, MfApiNavRecord, parse_mfapi_date};
 use rust_decimal::Decimal;

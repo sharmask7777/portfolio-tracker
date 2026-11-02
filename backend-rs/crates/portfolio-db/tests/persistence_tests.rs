@@ -1,4 +1,9 @@
-#![allow(missing_docs, clippy::unwrap_used, clippy::panic)]
+#![allow(
+    missing_docs,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::assert_is_empty
+)]
 
 //! Hermetic integration tests for portfolio-db persistence layer.
 //!
