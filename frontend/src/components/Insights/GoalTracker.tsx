@@ -43,18 +43,18 @@ export const GoalTracker: React.FC<GoalTrackerProps> = ({ portfolioId, activeAss
   const [editDate, setEditDate] = useState('');
   const [editSelectedAssetIds, setEditSelectedAssetIds] = useState<string[]>([]);
 
-  const fetchGoals = async () => {
+  const fetchGoals = React.useCallback(async () => {
     try {
       const res = await api.get(`${API_ENDPOINTS.HEALTH}/${portfolioId}/goals`);
       setGoals(res.data);
     } catch (e) {
       console.error('Failed to fetch goals', e);
     }
-  };
+  }, [portfolioId]);
 
   useEffect(() => {
     if (portfolioId) fetchGoals();
-  }, [portfolioId]);
+  }, [portfolioId, fetchGoals]);
 
   const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();

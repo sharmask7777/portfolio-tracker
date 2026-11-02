@@ -270,8 +270,8 @@ export function consolidateFoliosIntoSchemes(
       (accumulated, folio) => accumulated + Math.max(0, folio.metrics?.currentValue ?? 0),
       0
     );
-    let weightedXirr = 0;
-    let weightedPostTaxXirr = 0;
+    let weightedXirr: number;
+    let weightedPostTaxXirr: number;
 
     if (totalValuationWeight > 0) {
       weightedXirr = groupFolios.reduce((accumulated, folio) => {

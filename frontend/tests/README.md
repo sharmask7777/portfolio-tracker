@@ -73,7 +73,7 @@ Located under `frontend/src/`:
 | :--- | :--- | :--- |
 | [`src/utils/consolidation.test.ts`](../src/utils/consolidation.test.ts) | Scheme Consolidation Engine | Aggregating multiple folios by ISIN/name, summing invested amounts and current values, filtering zero-balance positions, and closed position extraction. |
 | [`src/utils/mock-portfolios.test.ts`](../src/utils/mock-portfolios.test.ts) | Synthetic Mock Portfolios | Integrity verification of the 10 reference synthetic portfolios (units conservation, non-negative values, valid mock PANs). |
-| [`src/utils/itrReportGenerator.test.ts`](../src/utils/itrReportGenerator.test.ts) | ITR Schedule CG Generator | CSV row generation matching official Income Tax Department Schedule CG format, Table F quarterly columns, and statutory rate columns. |
+| [`src/utils/itr-report-generator.test.ts`](../src/utils/itr-report-generator.test.ts) | ITR Schedule CG Generator | CSV row generation matching official Income Tax Department Schedule CG format, Table F quarterly columns, and statutory rate columns. |
 | [`src/utils/sorting.test.ts`](../src/utils/sorting.test.ts) | Table Sorting Utilities | Multi-column ascending/descending sorting for numbers, currencies, dates, and scheme strings. |
 | [`src/components/Tax/TaxView.test.tsx`](../src/components/Tax/TaxView.test.tsx) | `TaxView` Component | Rendering tax overview cards, Advance Tax quarterly matrix, CSV export button, and empty gains alert state. |
 | [`src/components/Tax/SimulationModal.test.tsx`](../src/components/Tax/SimulationModal.test.tsx) | `SimulationModal` Component | Real-time withdrawal calculations, LTCG 12.5% and STCG 20% breakdown, exit load deductions, and net proceeds calculation. |

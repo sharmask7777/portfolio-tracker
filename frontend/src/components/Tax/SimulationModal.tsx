@@ -35,7 +35,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
   const parsedAmount = parseFloat(amount.replace(/,/g, ''));
   const unitsToSell = (currentPrice > 0 && !isNaN(parsedAmount)) ? (parsedAmount / currentPrice) : 0;
 
-  const handleSimulate = async (overrideUnits?: number): Promise<void> => {
+  const handleSimulate = React.useCallback(async (overrideUnits?: number): Promise<void> => {
     const units = overrideUnits !== undefined ? overrideUnits : unitsToSell;
     
     if (isNaN(units) || units <= 0) {
@@ -64,14 +64,14 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
     } finally {
       setLoading(false);
     }
-  };
+  }, [unitsToSell, folio.id, taxSlab, currentPrice]);
 
   useEffect(() => {
     if (initialUnits && currentPrice > 0) {
       setAmount((initialUnits * currentPrice).toFixed(2));
       handleSimulate(initialUnits);
     }
-  }, [initialUnits, currentPrice]);
+  }, [initialUnits, currentPrice, handleSimulate]);
 
   const formatCurrency = (val: number): string => {
     return new Intl.NumberFormat('en-IN', {

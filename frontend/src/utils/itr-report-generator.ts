@@ -1,6 +1,6 @@
 /**
- * @file itrReportGenerator.ts
- * @module utils/itrReportGenerator
+ * @file itr-report-generator.ts
+ * @module utils/itr-report-generator
  * @description Generates audit-ready, statutory Capital Gains Tax reports for Indian Income Tax
  * filings (ITR-2 and ITR-3 Schedule CG) and Advance Tax liability computation (Section 234C Table F).
  *

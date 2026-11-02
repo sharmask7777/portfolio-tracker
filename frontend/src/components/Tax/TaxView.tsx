@@ -8,8 +8,8 @@ import {
   classifySection,
   AdvanceTaxQuarter,
   TaxSectionName,
-} from '../../utils/itrReportGenerator';
-import type { ITRGainDetail, ITRSummary } from '../../utils/itrReportGenerator';
+} from '../../utils/itr-report-generator';
+import type { ITRGainDetail, ITRSummary } from '../../utils/itr-report-generator';
 
 export interface HarvestingOpportunity {
   folioId: string;
