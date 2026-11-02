@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(missing_docs, clippy::unwrap_used, clippy::panic)]
 
 //! Comprehensive Property-Based Testing (PBT) suite for portfolio-core.
 //!

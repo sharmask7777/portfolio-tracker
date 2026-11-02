@@ -1,4 +1,9 @@
-#![allow(clippy::unwrap_used, clippy::panic, clippy::undocumented_unsafe_blocks)]
+#![allow(
+    missing_docs,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::undocumented_unsafe_blocks
+)]
 
 use portfolio_api::routes::holdings::HoldingsSummaryResponse;
 use portfolio_api::routes::tax::{

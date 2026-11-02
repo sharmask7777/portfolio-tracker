@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(missing_docs, clippy::unwrap_used, clippy::panic)]
 
 use portfolio_db::schema::generate_ddl;
 

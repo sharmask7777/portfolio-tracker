@@ -1,7 +1,5 @@
 //! Tax simulation and tax harvesting routes.
 
-use std::str::FromStr;
-
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -409,7 +407,7 @@ pub async fn get_harvesting(
         }
     }
 
-    let inputs: Vec<FolioHarvestingInput> = folio_data
+    let inputs: Vec<FolioHarvestingInput<'_>> = folio_data
         .iter()
         .map(
             |(folio_id, scheme_name, asset_type, core_transactions, current_nav)| {

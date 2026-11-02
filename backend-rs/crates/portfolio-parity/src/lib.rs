@@ -9,6 +9,7 @@
 //! - Returns and XIRR within <= 10^-6
 
 #![forbid(unsafe_code)]
+#![allow(missing_docs)]
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::fs;

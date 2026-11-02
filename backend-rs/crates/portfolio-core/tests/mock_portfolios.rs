@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(missing_docs, clippy::unwrap_used, clippy::panic)]
 
 //! Canonical 10 Mock Portfolios Test Specification (RED Phase).
 //!

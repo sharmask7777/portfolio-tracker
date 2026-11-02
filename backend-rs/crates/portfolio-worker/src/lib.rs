@@ -7,6 +7,7 @@
 //! - Pluggable queue abstractions (`JobQueue`, `InMemoryJobQueue`, `RedisBullQueue`)
 
 #![forbid(unsafe_code)]
+#![allow(missing_docs)]
 
 pub mod error;
 pub mod jobs;
