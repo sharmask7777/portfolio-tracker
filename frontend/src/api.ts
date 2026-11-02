@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { env } from './env';
 
-export const API_CONFIG = {
+const API_CONFIG = {
   BASE_URL: env.VITE_API_URL || (env.PROD ? '' : 'http://localhost:3001'),
 };
 

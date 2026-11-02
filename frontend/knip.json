@@ -1,0 +1,23 @@
+{
+  "$schema": "https://unpkg.com/knip@5/overview/configuration-schema.json",
+  "entry": [
+    "src/main.tsx!",
+    "src/test/setup.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}!"
+  ],
+  "ignore": [
+    "src/types/generated/**",
+    "src/components/Family/FamilyManager.tsx"
+  ],
+  "ignoreDependencies": [
+    "@vitest/ui",
+    "@testing-library/jest-dom",
+    "@axe-core/playwright"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "ignoreIssues": {
+    "src/utils/sorting.ts": ["exports"]
+  }
+}

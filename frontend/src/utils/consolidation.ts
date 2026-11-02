@@ -131,7 +131,7 @@ export interface ConsolidatedSchemeGroup {
  * @param fallback - Default fallback value if the rate is non-finite or null/undefined (default: 0).
  * @returns A safe, finite return rate bounded within statutory and rendering limits.
  */
-export function sanitizeReturnRate(rate: number | null | undefined, fallback: number = 0): number {
+function sanitizeReturnRate(rate: number | null | undefined, fallback: number = 0): number {
   if (rate == null || isNaN(rate) || !isFinite(rate)) {
     return fallback;
   }
