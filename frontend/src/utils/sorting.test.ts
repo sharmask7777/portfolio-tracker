@@ -23,33 +23,33 @@ describe('sortFolios', () => {
 
   it('sorts by scheme name', () => {
     const sortedDesc = sortFolios(mockFolios, 'name', 'desc', 'XIRR');
-    expect(sortedDesc[0].asset.name).toBe('HDFC Equity');
+    expect(sortedDesc[0]?.asset.name).toBe('HDFC Equity');
 
     const sortedAsc = sortFolios(mockFolios, 'name', 'asc', 'XIRR');
-    expect(sortedAsc[0].asset.name).toBe('Axis Bluechip');
+    expect(sortedAsc[0]?.asset.name).toBe('Axis Bluechip');
   });
 
   it('sorts by invested amount', () => {
     const sortedDesc = sortFolios(mockFolios, 'invested', 'desc', 'XIRR');
-    expect(sortedDesc[0].metrics.investedAmount).toBe(10000);
+    expect(sortedDesc[0]?.metrics.investedAmount).toBe(10000);
 
     const sortedAsc = sortFolios(mockFolios, 'invested', 'asc', 'XIRR');
-    expect(sortedAsc[0].metrics.investedAmount).toBe(5000);
+    expect(sortedAsc[0]?.metrics.investedAmount).toBe(5000);
   });
 
   it('sorts by current value', () => {
     const sortedDesc = sortFolios(mockFolios, 'value', 'desc', 'XIRR');
-    expect(sortedDesc[0].metrics.currentValue).toBe(12000);
+    expect(sortedDesc[0]?.metrics.currentValue).toBe(12000);
   });
 
   it('sorts by performance (XIRR mode)', () => {
     const sortedDesc = sortFolios(mockFolios, 'performance', 'desc', 'XIRR');
-    expect(sortedDesc[0].metrics.xirr).toBe(0.25);
+    expect(sortedDesc[0]?.metrics.xirr).toBe(0.25);
   });
 
   it('sorts by performance (ABS mode)', () => {
     const sortedDesc = sortFolios(mockFolios, 'performance', 'desc', 'ABS');
-    expect(sortedDesc[0].metrics.absoluteReturn).toBe(0.6);
+    expect(sortedDesc[0]?.metrics.absoluteReturn).toBe(0.6);
   });
 });
 
@@ -84,16 +84,16 @@ describe('sortSchemeGroups & extra sorting coverage', () => {
   });
 
   it('sorts scheme groups by various fields and directions', () => {
-    expect(sortSchemeGroups(mockGroups, 'name', 'asc', 'XIRR')[0].schemeName).toBe('Axis Bluechip');
-    expect(sortSchemeGroups(mockGroups, 'name', 'desc', 'XIRR')[0].schemeName).toBe('HDFC Equity');
-    expect(sortSchemeGroups(mockGroups, 'type', 'asc', 'XIRR')[0].type).toBe('ETF');
-    expect(sortSchemeGroups(mockGroups, 'invested', 'asc', 'XIRR')[0].schemeName).toBe('HDFC Equity');
-    expect(sortSchemeGroups(mockGroups, 'value', 'desc', 'XIRR')[0].schemeName).toBe('Axis Bluechip');
-    expect(sortSchemeGroups(mockGroups, 'dayChange', 'desc', 'XIRR')[0].schemeName).toBe('Axis Bluechip');
-    expect(sortSchemeGroups(mockGroups, 'performance', 'desc', 'XIRR')[0].schemeName).toBe('HDFC Equity');
-    expect(sortSchemeGroups(mockGroups, 'performance', 'desc', 'ABS')[0].schemeName).toBe('HDFC Equity');
-    expect(sortSchemeGroups(mockGroups, 'postTaxPerformance', 'desc', 'XIRR')[0].schemeName).toBe('HDFC Equity');
-    expect(sortSchemeGroups(mockGroups, 'postTaxPerformance', 'desc', 'ABS')[0].schemeName).toBe('HDFC Equity');
+    expect(sortSchemeGroups(mockGroups, 'name', 'asc', 'XIRR')[0]?.schemeName).toBe('Axis Bluechip');
+    expect(sortSchemeGroups(mockGroups, 'name', 'desc', 'XIRR')[0]?.schemeName).toBe('HDFC Equity');
+    expect(sortSchemeGroups(mockGroups, 'type', 'asc', 'XIRR')[0]?.type).toBe('ETF');
+    expect(sortSchemeGroups(mockGroups, 'invested', 'asc', 'XIRR')[0]?.schemeName).toBe('HDFC Equity');
+    expect(sortSchemeGroups(mockGroups, 'value', 'desc', 'XIRR')[0]?.schemeName).toBe('Axis Bluechip');
+    expect(sortSchemeGroups(mockGroups, 'dayChange', 'desc', 'XIRR')[0]?.schemeName).toBe('Axis Bluechip');
+    expect(sortSchemeGroups(mockGroups, 'performance', 'desc', 'XIRR')[0]?.schemeName).toBe('HDFC Equity');
+    expect(sortSchemeGroups(mockGroups, 'performance', 'desc', 'ABS')[0]?.schemeName).toBe('HDFC Equity');
+    expect(sortSchemeGroups(mockGroups, 'postTaxPerformance', 'desc', 'XIRR')[0]?.schemeName).toBe('HDFC Equity');
+    expect(sortSchemeGroups(mockGroups, 'postTaxPerformance', 'desc', 'ABS')[0]?.schemeName).toBe('HDFC Equity');
   });
 
   it('covers sortFolios with type, dayChange, postTaxPerformance and equal values', () => {
@@ -105,8 +105,8 @@ describe('sortSchemeGroups & extra sorting coverage', () => {
     ];
     expect(sortFolios(equalFolios, 'name', 'asc', 'XIRR')).toHaveLength(2);
     expect(sortFolios(equalFolios, 'type', 'desc', 'XIRR')).toHaveLength(2);
-    expect(sortFolios(equalFolios, 'dayChange', 'asc', 'XIRR')[0].metrics.dayChange).toBe(10);
-    expect(sortFolios(equalFolios, 'postTaxPerformance', 'asc', 'XIRR')[0].metrics.postTaxXirr).toBe(0.1);
-    expect(sortFolios(equalFolios, 'postTaxPerformance', 'asc', 'ABS')[0].metrics.postTaxAbsoluteReturn).toBe(0.1);
+    expect(sortFolios(equalFolios, 'dayChange', 'asc', 'XIRR')[0]?.metrics.dayChange).toBe(10);
+    expect(sortFolios(equalFolios, 'postTaxPerformance', 'asc', 'XIRR')[0]?.metrics.postTaxXirr).toBe(0.1);
+    expect(sortFolios(equalFolios, 'postTaxPerformance', 'asc', 'ABS')[0]?.metrics.postTaxAbsoluteReturn).toBe(0.1);
   });
 });

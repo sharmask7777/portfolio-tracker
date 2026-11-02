@@ -95,8 +95,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
     image: ${DOCKER_REGISTRY_USER}/portfolio-frontend:latest
     container_name: portfolio_tracker_frontend
     restart: always

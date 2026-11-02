@@ -149,9 +149,11 @@ export function Dashboard() {
     );
   };
 
-  const fetchSummary = async () => {
+  const hasLoadedOnceRef = React.useRef(false);
+
+  const fetchSummary = React.useCallback(async () => {
     try {
-      if (!portfolio) {
+      if (!hasLoadedOnceRef.current) {
         setLoading(true);
       } else {
         setIsRefetching(true);
@@ -166,6 +168,7 @@ export function Dashboard() {
         api.get(`${API_ENDPOINTS.FAMILY}/profiles`)
       ]);
       
+      hasLoadedOnceRef.current = true;
       setPortfolio(summaryRes.data);
       setProfiles(profilesRes.data);
 
@@ -193,7 +196,7 @@ export function Dashboard() {
       setLoading(false);
       setIsRefetching(false);
     }
-  };
+  }, [selectedFamilyId, selectedProfileId, excludeArbitrage]);
 
   const handleToggleExcludeArbitrage = async (val: boolean) => {
     setExcludeArbitrage(val);
@@ -211,7 +214,7 @@ export function Dashboard() {
 
   useEffect(() => {
     fetchSummary();
-  }, [selectedFamilyId, selectedProfileId]);
+  }, [fetchSummary]);
 
   const pollJobStatus = async (jobId: string) => {
     setUploadStatusMsg('Processing portfolio... This may take a few minutes.');
@@ -556,6 +559,7 @@ export function Dashboard() {
                           return bVal - aVal;
                         });
                         const top = sorted[0];
+                        if (!top) return null;
                         const value = performanceMode === 'XIRR' ? top.metrics.xirr : top.metrics.absoluteReturn;
                         return (
                           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>

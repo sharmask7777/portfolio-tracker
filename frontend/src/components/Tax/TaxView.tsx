@@ -8,8 +8,8 @@ import {
   classifySection,
   AdvanceTaxQuarter,
   TaxSectionName,
-} from '../../utils/itrReportGenerator';
-import type { ITRGainDetail, ITRSummary } from '../../utils/itrReportGenerator';
+} from '../../utils/itr-report-generator';
+import type { ITRGainDetail, ITRSummary } from '../../utils/itr-report-generator';
 
 export interface HarvestingOpportunity {
   folioId: string;
@@ -82,7 +82,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
   if (!summary) return <div>Loading tax data...</div>;
 
   const getFYDates = (fy: string) => {
-    const startYear = parseInt(fy.split('-')[0], 10);
+    const startYear = parseInt(fy.split('-')[0] ?? '', 10);
     return {
       start: new Date(startYear, 3, 1),
       end: new Date(startYear + 1, 2, 31, 23, 59, 59),
@@ -211,7 +211,7 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
   const ltcgUsed = Math.max(0, totalEquityLTCG);
   const ltcgPercent = Math.min(100, (ltcgUsed / ltcgLimit) * 100);
 
-  const startYear = parseInt(selectedFY.split('-')[0], 10);
+  const startYear = parseInt(selectedFY.split('-')[0] ?? '', 10);
   const endYear = startYear + 1;
 
   const dueDates: Record<AdvanceTaxQuarter, string> = {

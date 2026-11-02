@@ -7,7 +7,7 @@ import {
   AdvanceTaxQuarter,
   verifyItrInvariants,
   type ITRVerificationTarget,
-} from './itrReportGenerator';
+} from './itr-report-generator';
 
 describe('itrReportGenerator', () => {
   describe('computeAY', () => {

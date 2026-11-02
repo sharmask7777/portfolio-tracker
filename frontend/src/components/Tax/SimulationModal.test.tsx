@@ -63,10 +63,10 @@ describe('SimulationModal', () => {
 
   it('does NOT crash when a transaction has an undefined type (regression: TypeError toLowerCase)', () => {
     // Simulates a manual asset or edge-case folio whose transaction lacks a `type` field
-    const folio = {
+    const folio: FolioView = {
       ...baseFolio,
       transactions: [
-        { type: undefined, units: 50, nav: 80, date: '2023-01-01', amount: 4000 },
+        { type: undefined as unknown as string, units: 50, nav: 80, date: '2023-01-01', amount: 4000 },
         { type: 'BUY', units: 50, nav: 90, date: '2023-02-01', amount: 4500 },
       ],
     };

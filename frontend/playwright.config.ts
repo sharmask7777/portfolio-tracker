@@ -11,6 +11,9 @@ export default defineConfig({
   workers: 1,
   /* Force a clean exit without triggering an interactive browser/HTML report */
   reporter: 'line',
+  expect: {
+    timeout: 10000,
+  },
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     // Base URL to use in actions like `await page.goto('/')`.

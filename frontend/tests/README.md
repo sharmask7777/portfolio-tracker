@@ -73,7 +73,7 @@ Located under `frontend/src/`:
 | :--- | :--- | :--- |
 | [`src/utils/consolidation.test.ts`](../src/utils/consolidation.test.ts) | Scheme Consolidation Engine | Aggregating multiple folios by ISIN/name, summing invested amounts and current values, filtering zero-balance positions, and closed position extraction. |
 | [`src/utils/mock-portfolios.test.ts`](../src/utils/mock-portfolios.test.ts) | Synthetic Mock Portfolios | Integrity verification of the 10 reference synthetic portfolios (units conservation, non-negative values, valid mock PANs). |
-| [`src/utils/itrReportGenerator.test.ts`](../src/utils/itrReportGenerator.test.ts) | ITR Schedule CG Generator | CSV row generation matching official Income Tax Department Schedule CG format, Table F quarterly columns, and statutory rate columns. |
+| [`src/utils/itr-report-generator.test.ts`](../src/utils/itr-report-generator.test.ts) | ITR Schedule CG Generator | CSV row generation matching official Income Tax Department Schedule CG format, Table F quarterly columns, and statutory rate columns. |
 | [`src/utils/sorting.test.ts`](../src/utils/sorting.test.ts) | Table Sorting Utilities | Multi-column ascending/descending sorting for numbers, currencies, dates, and scheme strings. |
 | [`src/components/Tax/TaxView.test.tsx`](../src/components/Tax/TaxView.test.tsx) | `TaxView` Component | Rendering tax overview cards, Advance Tax quarterly matrix, CSV export button, and empty gains alert state. |
 | [`src/components/Tax/SimulationModal.test.tsx`](../src/components/Tax/SimulationModal.test.tsx) | `SimulationModal` Component | Real-time withdrawal calculations, LTCG 12.5% and STCG 20% breakdown, exit load deductions, and net proceeds calculation. |
@@ -92,42 +92,42 @@ Located under `frontend/src/`:
 From the `frontend/` directory:
 ```bash
 # List all discovered tests across suites
-npx playwright test --list
+pnpm exec playwright test --list
 
 # Run all E2E tests
-npm run test:e2e
+pnpm test:e2e
 
 # Run a specific domain suite
-npx playwright test tests/holdings-management.spec.ts
-npx playwright test tests/analytics-reporting.spec.ts
-npx playwright test tests/itr-export.spec.ts
+pnpm exec playwright test tests/holdings-management.spec.ts
+pnpm exec playwright test tests/analytics-reporting.spec.ts
+pnpm exec playwright test tests/itr-export.spec.ts
 
 # Run in headed mode for visual inspection
-npx playwright test tests/smoke.spec.ts --headed
+pnpm exec playwright test tests/smoke.spec.ts --headed
 ```
 
 From repository root:
 ```bash
-npm run test:e2e --prefix frontend
+pnpm --filter frontend test:e2e
 ```
 
 ### 4.2 Running Vitest Unit Tests
 From the `frontend/` directory:
 ```bash
 # Run all unit tests once
-npm run test:unit
+pnpm test:unit
 
 # Run a specific unit test
-npx vitest run src/utils/consolidation.test.ts
-npx vitest run src/components/Tax/TaxView.test.tsx
+pnpm exec vitest run src/utils/consolidation.test.ts
+pnpm exec vitest run src/components/Tax/TaxView.test.tsx
 
 # Run with interactive watch mode
-npx vitest
+pnpm exec vitest
 ```
 
 From repository root:
 ```bash
-npm run test:unit --prefix frontend
+pnpm --filter frontend test:unit
 ```
 
 ---

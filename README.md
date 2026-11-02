@@ -152,9 +152,8 @@ That's it! You can now access your application:
 
 ## 🛠️ Tech Stack
 
-- **Frontend:** React, TypeScript, Vite, Recharts, Lucide Icons, Nginx (Production).
+- **Frontend:** React, TypeScript, Vite, Recharts, Lucide Icons, Nginx (Production), pnpm workspace.
 - **Backend (Rust):** High-performance backend workspace (`backend-rs`) using Tokio, Axum, SQLx, Rust Decimal, and a zero-I/O deterministic engine (`portfolio-core`).
-- **Backend (Node.js):** Node.js, Express, TypeScript, Prisma 7 (PostgreSQL).
 - **Caching:** Redis.
 - **Infrastructure:** Docker, Multi-stage Builds, Persistent Volumes.
 - **Parsing:** Python 3 + `casparser` library.
@@ -165,7 +164,7 @@ That's it! You can now access your application:
 
 ### Prerequisites
 - Docker & Docker Compose
-- Node.js (v20+)
+- Node.js (v20+) & pnpm (v9+)
 - Python 3.10+
 - Rust (1.85+ / edition 2024) & Cargo
 
@@ -177,36 +176,34 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
+Or using root workspace pnpm commands:
+```bash
+# Install dependencies across workspace
+pnpm install
+
+# Run backend and frontend concurrently in development mode
+pnpm dev
+
+# Build both backend (release) and frontend (verified production bundle)
+pnpm build
+
+# Run full test suite (backend workspace + frontend unit tests)
+pnpm test
+```
+
 ### 2. Manual Development Setup
 If you prefer running services individually:
 
 #### Infrastructure
 ```bash
-docker-compose up -d db redis
+docker compose up -d postgres redis
 ```
-
-#### Backend (Node.js)
-1. **Install System Dependencies (Linux only):**
-   ```bash
-   sudo apt-get install -y python3-pip python3-venv python3-dev build-essential libffi-dev libssl-dev
-   ```
-2. **Setup Node & Python:**
-   ```bash
-   cd backend
-   npm install
-   # Create venv and install parsing libraries
-   python3 -m venv venv
-   ./venv/bin/pip install casparser pycryptodome
-   # Sync database
-   npx prisma migrate dev
-   npm run dev
-   ```
 
 #### Backend (Rust - `backend-rs`)
 The high-performance Rust backend is organized as a Cargo workspace in `backend-rs/` following hexagonal architecture:
 - **`portfolio-core`**: Pure domain financial calculation engine (Zero-I/O, synchronous, deterministic). Handles holdings aggregation, FIFO lot depletion, Section 112A grandfathering, LTCG/STCG capital gains, slab taxation, Brent's method XIRR, CAGR, absolute returns, and Jaccard portfolio overlap.
 - **`portfolio-db`**: PostgreSQL persistence layer using SQLx, with repository traits and an `InMemoryDatabase` for fast zero-Docker hermetic testing.
-- **`portfolio-api`**: High-throughput Axum REST API gateway with camelCase contract parity matching the Express API, JWT authentication middleware, and CORS.
+- **`portfolio-api`**: High-throughput Axum REST API gateway with camelCase contract parity matching frontend contracts, JWT authentication middleware, and CORS.
 - **`portfolio-worker`**: Asynchronous background job worker supporting BullMQ-compatible Redis queueing (`bull:pdfUploadQueue:*`) and in-memory fallback, processing CAS statement parsing and NAV refreshes.
 - **`portfolio-parity`**: Differential parity validation harness certifying exact numerical equivalence between TypeScript and Rust calculation engines down to strict tolerances ($\Delta \le ₹0.01$, $\Delta \le 0.0001$ units, $\Delta \le 10^{-6}$ for XIRR).
 
@@ -228,6 +225,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 # Verify code formatting
 cargo fmt --check
+
+# Execute full hermetic verification sequence
+./scripts/verify.sh
 ```
 
 **Running Rust Services with Docker Compose:**
@@ -238,9 +238,14 @@ docker compose up -d
 
 #### Frontend
 ```bash
+# From workspace root
+pnpm install
+pnpm --filter frontend dev
+
+# Or directly from frontend directory:
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 ### 3. Building & Pushing Images
@@ -253,8 +258,8 @@ Ensure `DOCKER_REGISTRY_USER` is set in your `.env` file (e.g., `DOCKER_REGISTRY
 #### Single-Platform Build (Current Machine)
 ```bash
 # Build & Push
-docker-compose build
-docker-compose push
+docker compose build
+docker compose push
 ```
 
 #### Multi-Architecture Build (Recommended for Deployment)
@@ -277,29 +282,70 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 #### Verification
 Check your Docker Hub repository. It should show "OS/ARCH" as `linux/amd64` and `linux/arm64` for the latest tags.
 
+---
+
+## 🛡️ Static Build-Time Guardrails Paradigm
+
+Portfolio Tracker enforces a comprehensive, agent-native static verification paradigm across both the backend and frontend stacks. Broken imports, type inaccuracies, architectural violations, dead code, and unvalidated environment variables fail loudly at build time before reaching runtime or production.
+
+### Rust Backend Guardrails (`backend-rs`)
+1. **Zero-I/O Domain Engine (`portfolio-core`)**: Domain calculation engine remains strictly zero-I/O (no network, async runtime, database, or disk operations). Financial logic is purely functional, deterministic, and verified by property tests (`proptests.rs`, `tax_oracle_test.rs`).
+2. **Hermetic Verification Gate (`./scripts/verify.sh`)**: All commits and pull requests must pass the 6-stage script:
+   - `cargo fmt --check` (Zero formatting variance)
+   - `cargo check --workspace --all-targets` (Clean compilation)
+   - `cargo clippy --workspace --all-targets -- -D warnings` (Zero linter warnings)
+   - `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` (Zero undocumented APIs)
+   - `cargo test --workspace` (100% test pass rate across unit, mock portfolio, and property tests)
+   - `cargo deny check` (Automated audit of crate licenses, security advisories, and banned dependencies)
+3. **Cross-Stack Type Contract Parity**: API request/response structures are code-generated to TypeScript via `cargo test --package portfolio-api --test export_bindings` and enforced with `git diff --exit-code frontend/src/types/generated`.
+4. **Differential Parity Engine (`portfolio-parity`)**: Continuously asserts mathematical parity against precision bounds: Units $\Delta \le 0.0001$, Financial Amounts $\Delta \le ₹0.01$, Returns & XIRR $\Delta \le 10^{-6}$.
+5. **Coverage Gates**: Backend line coverage $\ge 80\%$ via `cargo llvm-cov`.
+
+### Frontend React Guardrails (`frontend/`)
+1. **Strict TypeScript Compiler Configuration (`tsconfig.app.json`)**:
+   - `strict: true` and `noImplicitAny: true` enforcing zero untyped code (Zero-Any Mandate).
+   - `noUncheckedIndexedAccess: true`: Array and record index lookups evaluate to `T | undefined`, mandating safe narrowing, null-coalescing (`??`), or optional chaining (`?.`).
+   - `exactOptionalPropertyTypes: true`: Distinguishes undefined property values from omitted optional properties.
+   - `isolatedModules: true` and `noEmit: true`: Fast, type-safe compilation matching Vite bundling behavior.
+2. **Architectural Boundary Enforcement (`eslint-plugin-boundaries`)**:
+   - Strict layer hierarchy: UI components can consume utilities and types; utilities cannot import UI components.
+   - Subdomain isolation: UI feature domains (`Analytics`, `Tax`, `Dashboard`, `Family`, `Auth`, `Insights`) cannot import private internals of sibling domains.
+   - Circular dependency rejection: Enforces acyclic dependency trees across the frontend codebase.
+3. **Standardized Naming Conventions (`eslint-plugin-check-file`)**:
+   - React component files under `src/components/` must strictly use `PascalCase.tsx`.
+   - Utility modules under `src/utils/` must strictly use `kebab-case.ts`.
+4. **Schema-Validated Environment Variables (`@t3-oss/env-core` + `zod`)**:
+   - Centralized in `frontend/src/env.ts` with strict Zod schema validation for all client-side variables (`VITE_API_URL`, `MODE`, `PROD`, `DEV`).
+   - Direct, unvalidated access to `import.meta.env` is prohibited; missing or invalid variables trigger immediate build-time failure.
+5. **Dead-Code & Dependency Auditing (`knip`)**:
+   - Automatically detects unused files, unused exports, and unreferenced dependencies via `knip --production`.
+   - Generated Rust contract bindings (`src/types/generated/**`) are explicitly configured for preservation.
+6. **Frontend Verification Gate (`build:verify`)**:
+   - `pnpm --filter frontend build` runs `pnpm build:verify && vite build`.
+   - `pnpm build:verify` executes `pnpm lint && pnpm typecheck && pnpm knip` as a single blocking gate.
+7. **Coverage Gates**: Vitest coverage thresholds enforced via `pnpm test:coverage` (Lines $\ge 88\%$, Statements $\ge 86\%$, Functions $\ge 85\%$, Branches $\ge 65\%$).
 
 ---
 
 ## 🧪 Testing & Quality
 
-- **Rust Workspace Unit & PBT:** `cd backend-rs && cargo test --workspace`
-- **Rust Differential Parity Harness:** `cd backend-rs && cargo run --package portfolio-parity`
-- **TypeScript Backend Unit & PBT:** `npm test --prefix backend`
-- **E2E Testing (Local Server):** `npx playwright test --prefix frontend`
+- **Rust Workspace Unit & PBT:** `(cd backend-rs && cargo test --workspace)`
+- **Rust Differential Parity Harness:** `(cd backend-rs && cargo run --package portfolio-parity)`
+- **Frontend Verification Gate:** `pnpm --filter frontend build:verify`
+- **Frontend Unit Tests & Coverage:** `pnpm --filter frontend test:unit`
+- **Full Workspace Test Suite:** `pnpm test`
+- **Full Coverage Suite:** `pnpm test:coverage`
+- **E2E Testing (Local Server):** `pnpm --filter frontend test:e2e`
 - **E2E Testing (Docker Deployment):** You can verify a full Docker deployment (Frontend + Rust Backend + Database) using Playwright. Make sure your docker containers are running, then execute:
   ```bash
-  cd frontend
-  npm run test:e2e:docker
+  pnpm --filter frontend test:e2e:docker
   ```
-- **Backend Testing Strategy:**
-  - **Unit Tests:** Utilize `jest-mock-extended` by manually mocking Prisma (e.g. `jest.mock('@src/services/db.service', () => require('@src/test/db.mock'))`) to isolate tests from the database.
-  - **Integration Tests:** Do not mock the database. Integration tests require a running PostgreSQL instance (local or via Docker) to successfully test end-to-end service logic and data persistence.
 - **Quality Mandates:** Zero-tolerance for `NaN` displays in the UI.
 
 ## 📖 Maintenance
 
 - **Database Migrations:** The Rust backend features self-healing database initialization (`portfolio_db::init_schema`) executing automatically on startup—no manual `prisma migrate deploy` is needed.
-- **Updating Tax Rules:** Modify logic in `TaxService.ts` (Budget 2024 ready).
+- **Updating Tax Rules:** Modify logic in `TaxService.ts` or `backend-rs/crates/portfolio-core/src/tax/` (Budget 2024 ready).
 
 
 ---

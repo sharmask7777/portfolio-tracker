@@ -117,7 +117,7 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
                   dataKey="value"
                 >
                   {assetData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length] ?? '#3b82f6'} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(val: any) => `${(Number(val) * 100).toFixed(2)}%`} />

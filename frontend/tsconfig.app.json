@@ -21,6 +21,10 @@
     "strictNullChecks": true,
     "noImplicitThis": true,
     "alwaysStrict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "isolatedModules": true,
 
     /* Linting */
     "noUnusedLocals": true,

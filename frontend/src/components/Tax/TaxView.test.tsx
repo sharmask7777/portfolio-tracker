@@ -275,11 +275,15 @@ describe('TaxView', () => {
     };
 
     // Use a sell date in the CURRENT FY (2026-27) so the harvesting card renders
+    const firstDetail = mockSummary.details[0];
+    expect(firstDetail).toBeDefined();
+    if (!firstDetail) throw new Error('mockSummary.details[0] is missing');
+
     const currentFYSummary = {
       ...mockSummary,
       details: [
         {
-          ...mockSummary.details[0],
+          ...firstDetail,
           sellDate: '2026-10-10', // current FY 2026-27
           advanceTaxQuarter: 'Q3 (16/09 - 15/12)',
         },
@@ -301,15 +305,19 @@ describe('TaxView', () => {
       totalPotentialHarvest: 50000,
       estimatedTaxSavings: 6250,
       opportunities: [
-        { folioId: 'f1', schemeName: 'Equity Fund', unitsToHarvest: undefined as any },
+        { folioId: 'f1', schemeName: 'Equity Fund', unitsToHarvest: undefined as unknown as number },
       ],
     };
+
+    const firstDetail = mockSummary.details[0];
+    expect(firstDetail).toBeDefined();
+    if (!firstDetail) throw new Error('mockSummary.details[0] is missing');
 
     const currentFYSummary = {
       ...mockSummary,
       details: [
         {
-          ...mockSummary.details[0],
+          ...firstDetail,
           sellDate: '2026-10-10',
           advanceTaxQuarter: 'Q3 (16/09 - 15/12)',
         },

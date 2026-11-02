@@ -17,6 +17,8 @@ venv/
 !playwright.config.ts
 !tsconfig.app.json
 !tsconfig.node.json
+!knip.json
+!frontend/knip.json
 !tests/fixtures/**
 !backend-rs/crates/portfolio-core/tests/fixtures/**
 !*.toml

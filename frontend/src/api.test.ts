@@ -11,27 +11,39 @@ describe('API client and interceptors', () => {
     localStorage.setItem('token', 'my-test-jwt');
     const reqConfig = { headers: {} } as unknown as InternalAxiosRequestConfig;
     const interceptor = api.interceptors.request as unknown as { handlers: Array<{ fulfilled: (cfg: InternalAxiosRequestConfig) => InternalAxiosRequestConfig }> };
-    const result = interceptor.handlers[0].fulfilled(reqConfig);
+    const handler = interceptor.handlers[0];
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('Handler not found');
+    const result = handler.fulfilled(reqConfig);
     expect(result.headers.Authorization).toBe('Bearer my-test-jwt');
   });
 
   it('leaves authorization header empty if token is missing', async () => {
     const reqConfig = { headers: {} } as unknown as InternalAxiosRequestConfig;
     const interceptor = api.interceptors.request as unknown as { handlers: Array<{ fulfilled: (cfg: InternalAxiosRequestConfig) => InternalAxiosRequestConfig }> };
-    const result = interceptor.handlers[0].fulfilled(reqConfig);
+    const handler = interceptor.handlers[0];
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('Handler not found');
+    const result = handler.fulfilled(reqConfig);
     expect(result.headers.Authorization).toBeUndefined();
   });
 
   it('rejects request error correctly', async () => {
     const testError = new Error('Request error');
     const interceptor = api.interceptors.request as unknown as { handlers: Array<{ rejected: (err: unknown) => Promise<never> }> };
-    await expect(interceptor.handlers[0].rejected(testError)).rejects.toThrow('Request error');
+    const handler = interceptor.handlers[0];
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('Handler not found');
+    await expect(handler.rejected(testError)).rejects.toThrow('Request error');
   });
 
   it('handles response and passes through', async () => {
     const res = { status: 200, data: { ok: true } } as unknown as AxiosResponse;
     const interceptor = api.interceptors.response as unknown as { handlers: Array<{ fulfilled: (res: AxiosResponse) => AxiosResponse }> };
-    expect(interceptor.handlers[0].fulfilled(res)).toBe(res);
+    const handler = interceptor.handlers[0];
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('Handler not found');
+    expect(handler.fulfilled(res)).toBe(res);
   });
 
   it('handles 401 error and clears token when not bypassing and not auth route', async () => {
@@ -41,7 +53,10 @@ describe('API client and interceptors', () => {
       config: { url: '/api/portfolio/summary' },
     };
     const interceptor = api.interceptors.response as unknown as { handlers: Array<{ rejected: (err: unknown) => Promise<never> }> };
-    await expect(interceptor.handlers[0].rejected(error)).rejects.toEqual(error);
+    const handler = interceptor.handlers[0];
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('Handler not found');
+    await expect(handler.rejected(error)).rejects.toEqual(error);
     expect(localStorage.getItem('token')).toBeNull();
   });
 
@@ -53,7 +68,10 @@ describe('API client and interceptors', () => {
       config: { url: '/api/portfolio/summary' },
     };
     const interceptor = api.interceptors.response as unknown as { handlers: Array<{ rejected: (err: unknown) => Promise<never> }> };
-    await expect(interceptor.handlers[0].rejected(error)).rejects.toEqual(error);
+    const handler = interceptor.handlers[0];
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('Handler not found');
+    await expect(handler.rejected(error)).rejects.toEqual(error);
     expect(localStorage.getItem('token')).toBe('test-token');
   });
 });
