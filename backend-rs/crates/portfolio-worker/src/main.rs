@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use portfolio_db::InMemoryDatabase;
 use portfolio_worker::jobs::{
-    NavRefreshJobData, ProcessPdfUploadJobData, process_nav_refresh_job_with_pool, process_pdf_job,
+    NavRefreshJobData, ProcessPdfUploadJobData, process_nav_refresh_job_with_pool,
+    process_pdf_job_with_pool,
 };
 use portfolio_worker::queue::{JobQueue, RedisBullQueue};
 
@@ -122,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .await;
                             }
 
-                            match process_pdf_job(&job, &db).await {
+                            match process_pdf_job_with_pool(&job, &db, pg_pool.as_ref()).await {
                                 Ok(()) => {
                                     println!("[Worker] Successfully processed job {}", job.job_id);
                                     if let Some(ref pool) = pg_pool {
