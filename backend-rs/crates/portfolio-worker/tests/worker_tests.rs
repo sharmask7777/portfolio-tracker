@@ -34,7 +34,7 @@ use portfolio_worker::jobs::{
     HistoryRefreshJobData, NavRefreshJobData, ProcessPdfUploadJobData, normalize_tx_type,
     parse_cas_date, process_history_refresh_job, process_history_refresh_job_with_pool,
     process_nav_refresh_job, process_nav_refresh_job_with_pool, process_pdf_job,
-    validate_file_path,
+    process_pdf_job_with_pool, validate_file_path,
 };
 use portfolio_worker::queue::{InMemoryJobQueue, JobQueue, RedisBullQueue};
 use rust_decimal::Decimal;
@@ -834,4 +834,59 @@ async fn test_history_refresh_with_pool_fallback_none() {
         .expect("history refresh with pool=None should succeed");
 
     assert!(!records.is_empty());
+}
+
+#[tokio::test]
+async fn test_cas_upload_job_with_pool_fallback_none() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("cas_pool@example.com", "secret");
+    let job_id = Uuid::new_v4();
+
+    let cas_json = json!({
+        "investor_info": {
+            "name": "Arjun Mehta",
+            "pan": "ABCDE1234F"
+        },
+        "folios": [
+            {
+                "folio": "FOLIO-POOL-1",
+                "amc": "HDFC Mutual Fund",
+                "pan": "ABCDE1234F",
+                "schemes": [
+                    {
+                        "scheme": "HDFC Mid-Cap Opportunities Fund",
+                        "isin": "INF179K01123",
+                        "amfi": "100123",
+                        "transactions": [
+                            {
+                                "date": "15-Jan-2024",
+                                "description": "Purchase",
+                                "amount": 10000.0,
+                                "units": 100.0,
+                                "nav": 100.0,
+                                "balance": 100.0,
+                                "type": "PURCHASE"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    });
+
+    let mut temp_file = NamedTempFile::new().expect("create temp file");
+    temp_file
+        .write_all(cas_json.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path = temp_file.path().to_path_buf();
+
+    db.create_upload_job(job_id, user.id, &temp_path.to_string_lossy());
+    let job_data =
+        ProcessPdfUploadJobData::new(user.id, temp_path.to_string_lossy().to_string(), job_id);
+
+    let result = process_pdf_job_with_pool(&job_data, &db, None).await;
+    assert!(result.is_ok());
+
+    let job = db.get_upload_job(job_id).expect("job exists");
+    assert_eq!(job.status, UploadJobStatus::Completed);
 }
