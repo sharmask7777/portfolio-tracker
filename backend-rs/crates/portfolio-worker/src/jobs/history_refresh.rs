@@ -54,6 +54,17 @@ pub async fn process_history_refresh_job(
     job_data: &HistoryRefreshJobData,
     db: &InMemoryDatabase,
 ) -> Result<Vec<HistoricalValuationEntity>, WorkerError> {
+    process_history_refresh_job_with_pool(job_data, db, None).await
+}
+
+/// Helper handler for recalculating historical valuation timeline with optional PostgreSQL pool.
+///
+/// When `pool` is provided, upserts the resulting valuation records into PostgreSQL `PortfolioHistory` table.
+pub async fn process_history_refresh_job_with_pool(
+    job_data: &HistoryRefreshJobData,
+    db: &InMemoryDatabase,
+    pool: Option<&sqlx::PgPool>,
+) -> Result<Vec<HistoricalValuationEntity>, WorkerError> {
     // 1. Verify portfolio exists
     let _portfolio = db
         .get_portfolio(job_data.portfolio_id)
@@ -181,6 +192,30 @@ pub async fn process_history_refresh_job(
         let record =
             db.store_historical_valuation(job_data.portfolio_id, today, today_value, today_cost);
         records.push(record);
+    }
+
+    if let Some(pool) = pool {
+        for record in &records {
+            let val_f64 = record.value.to_string().parse::<f64>().unwrap_or(0.0);
+            let cost_f64 = record.cost.to_string().parse::<f64>().unwrap_or(0.0);
+
+            sqlx::query(
+                r#"
+                INSERT INTO "PortfolioHistory" (id, "portfolioId", date, value, "investedAmount", "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                ON CONFLICT ("portfolioId", date) DO UPDATE
+                SET value = EXCLUDED.value, "investedAmount" = EXCLUDED."investedAmount", "updatedAt" = NOW();
+                "#,
+            )
+            .bind(record.id.to_string())
+            .bind(record.portfolio_id.to_string())
+            .bind(record.date)
+            .bind(val_f64)
+            .bind(cost_f64)
+            .execute(pool)
+            .await
+            .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
+        }
     }
 
     Ok(records)

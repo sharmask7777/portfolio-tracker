@@ -32,8 +32,9 @@ use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
 use portfolio_worker::WorkerError;
 use portfolio_worker::jobs::{
     HistoryRefreshJobData, NavRefreshJobData, ProcessPdfUploadJobData, normalize_tx_type,
-    parse_cas_date, process_history_refresh_job, process_nav_refresh_job,
-    process_nav_refresh_job_with_pool, process_pdf_job, validate_file_path,
+    parse_cas_date, process_history_refresh_job, process_history_refresh_job_with_pool,
+    process_nav_refresh_job, process_nav_refresh_job_with_pool, process_pdf_job,
+    validate_file_path,
 };
 use portfolio_worker::queue::{InMemoryJobQueue, JobQueue, RedisBullQueue};
 use rust_decimal::Decimal;
@@ -816,4 +817,21 @@ async fn test_cas_upload_job_dummy_pdf_failure_and_cleanup() {
 
     // Verify temp file is cleanly removed
     assert!(!temp_path.exists());
+}
+
+#[tokio::test]
+async fn test_history_refresh_with_pool_fallback_none() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("hr_pool@example.com", "secret");
+    let portfolio = db
+        .create_portfolio(user.id, "History Refresh Pool Test", None)
+        .await
+        .unwrap();
+
+    let job_data = HistoryRefreshJobData::new(portfolio.id);
+    let records = process_history_refresh_job_with_pool(&job_data, &db, None)
+        .await
+        .expect("history refresh with pool=None should succeed");
+
+    assert!(!records.is_empty());
 }
