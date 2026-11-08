@@ -198,7 +198,8 @@ pub async fn upsert_postgres_asset(
 
 /// Upserts a folio account under a portfolio for an asset.
 ///
-/// Enforces uniqueness on (`number`, `assetId`, `portfolioId`).
+/// Normalizes sub-account suffixes (e.g. `15161515 / 16` vs `15161515`) to prevent duplicate folios,
+/// while enforcing uniqueness on (`number`, `assetId`, `portfolioId`).
 pub async fn upsert_postgres_folio(
     pool: &sqlx::PgPool,
     portfolio_id: Uuid,
@@ -207,16 +208,25 @@ pub async fn upsert_postgres_folio(
     amc: Option<&str>,
     pan: Option<&str>,
 ) -> Result<Uuid, DbError> {
+    let trimmed = folio_number.trim();
+    let base_number = trimmed.split('/').next().unwrap_or("").trim();
+
     let existing = sqlx::query_scalar::<_, String>(
         r#"
         SELECT id FROM "Folio"
-        WHERE number = $1 AND "assetId" = $2 AND "portfolioId" = $3
+        WHERE "assetId" = $1 AND "portfolioId" = $2
+          AND (
+              number = $3 
+              OR ($4 <> '' AND split_part(number, '/', 1) = $4)
+          )
+        ORDER BY CASE WHEN number = $3 THEN 0 ELSE 1 END
         LIMIT 1
         "#,
     )
-    .bind(folio_number)
     .bind(asset_id.to_string())
     .bind(portfolio_id.to_string())
+    .bind(trimmed)
+    .bind(base_number)
     .fetch_optional(pool)
     .await?;
 
@@ -237,7 +247,7 @@ pub async fn upsert_postgres_folio(
         "#,
     )
     .bind(new_id.to_string())
-    .bind(folio_number)
+    .bind(trimmed)
     .bind(amc)
     .bind(pan)
     .bind(portfolio_id.to_string())
@@ -249,7 +259,22 @@ pub async fn upsert_postgres_folio(
         .map_err(|e| DbError::Internal(format!("Invalid folio UUID: {e}")))
 }
 
-/// Inserts a transaction into PostgreSQL with idempotency on `externalId`.
+/// Reconciles an ingested folio by clearing out synthetic manual close and anchor markers,
+/// ensuring newly uploaded authoritative CAS statements take precedence.
+pub async fn reconcile_postgres_folio(pool: &sqlx::PgPool, folio_id: Uuid) -> Result<(), DbError> {
+    sqlx::query(
+        r#"
+        DELETE FROM "Transaction"
+        WHERE "folioId" = $1 AND ("externalId" LIKE 'MANUAL_CLOSE%' OR "externalId" LIKE 'ANCHOR%')
+        "#,
+    )
+    .bind(folio_id.to_string())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Inserts a transaction into PostgreSQL with idempotency on `externalId` and transaction signature deduplication.
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_postgres_transaction(
     pool: &sqlx::PgPool,
@@ -262,13 +287,36 @@ pub async fn insert_postgres_transaction(
     balance: Decimal,
     external_id: &str,
 ) -> Result<(), DbError> {
-    let new_id = Uuid::new_v4();
     let date_timestamp = date.and_hms_opt(0, 0, 0).unwrap_or_default();
     let amount_f64 = amount.to_string().parse::<f64>().unwrap_or(0.0);
     let units_f64 = units.to_string().parse::<f64>().unwrap_or(0.0);
     let nav_f64 = nav.to_string().parse::<f64>().unwrap_or(0.0);
     let balance_f64 = balance.to_string().parse::<f64>().unwrap_or(0.0);
 
+    // Deduplication check: verify if an identical transaction already exists for this folio on this date
+    // with the same amount and units (e.g. from prior uploads with legacy externalId hashing).
+    let existing_tx = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT id FROM "Transaction"
+        WHERE "folioId" = $1
+          AND date = $2
+          AND ABS(amount - $3) < 0.001
+          AND ABS(units - $4) < 0.0001
+        LIMIT 1
+        "#,
+    )
+    .bind(folio_id.to_string())
+    .bind(date_timestamp)
+    .bind(amount_f64)
+    .bind(units_f64)
+    .fetch_optional(pool)
+    .await?;
+
+    if existing_tx.is_some() {
+        return Ok(());
+    }
+
+    let new_id = Uuid::new_v4();
     sqlx::query(
         r#"
         INSERT INTO "Transaction" (

@@ -100,9 +100,18 @@ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
 
     if has_explicit_balances {
         for tx in sorted.iter().rev() {
-            let is_auxiliary = (tx.tx_type == TransactionType::Other
-                || tx.tx_type == TransactionType::StampDuty)
-                && tx.units.is_zero();
+            // ONLY consider unit-bearing transactions with valid reported balances!
+            // Auxiliary, fee, tax, stamp duty, or 0-unit note transactions do NOT define the cumulative unit balance.
+            // Furthermore, an addition of units (purchase/SIP) can NEVER legitimately result in a zero balance;
+            // a balance of zero on an addition indicates unrecorded balance, not position closure.
+            if tx.units.is_zero()
+                || (crate::holdings::lot::is_unit_addition(tx.tx_type) && tx.balance.is_zero())
+            {
+                continue;
+            }
+
+            let is_auxiliary =
+                tx.tx_type == TransactionType::Other || tx.tx_type == TransactionType::StampDuty;
             if !is_auxiliary {
                 let current_balance = tx.balance;
                 if current_balance >= fractional_dust_threshold {
@@ -288,5 +297,94 @@ mod tests {
         let nav = get_latest_nav(&[tx_newest_zero_nav, tx_new, tx_old]);
         // Must return 20, the latest positive nav chronologically
         assert_eq!(nav, Nav::from_str("20").unwrap());
+    }
+
+    #[test]
+    fn test_get_latest_units_ignores_zero_unit_auxiliary_transactions_with_zero_balance() {
+        let tx_purchase = Transaction::new(
+            "tx-1",
+            date(2025, 7, 16),
+            TransactionType::PurchaseSip,
+            Money::from_str("1000").unwrap(),
+            Units::from_str("16.382").unwrap(),
+            Nav::from_str("61.04").unwrap(),
+            Units::from_str("3006.521").unwrap(),
+        );
+        // Stamp duty or auxiliary entry on same or later date with units = 0 and balance = 0
+        let tx_stamp_duty = Transaction::new(
+            "tx-2",
+            date(2025, 7, 16),
+            TransactionType::Purchase, // even if misclassified as Purchase
+            Money::from_str("0.05").unwrap(),
+            Units::ZERO,
+            Nav::ZERO,
+            Units::ZERO,
+        );
+        // Another 0-unit remark row on next day
+        let tx_remark = Transaction::new(
+            "tx-3",
+            date(2025, 7, 17),
+            TransactionType::Purchase,
+            Money::ZERO,
+            Units::ZERO,
+            Nav::ZERO,
+            Units::ZERO,
+        );
+
+        let units = get_latest_units(&[tx_purchase, tx_stamp_duty, tx_remark]);
+        assert_eq!(units, Units::from_str("3006.521").unwrap());
+    }
+
+    #[test]
+    fn test_get_latest_units_ignores_purchase_with_missing_zero_balance() {
+        let tx_initial = Transaction::new(
+            "tx-1",
+            date(2025, 1, 1),
+            TransactionType::Purchase,
+            Money::from_str("10000").unwrap(),
+            Units::from_str("100").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::from_str("100").unwrap(),
+        );
+        // Purchase with missing balance (balance = 0)
+        let tx_unrecorded_bal = Transaction::new(
+            "tx-2",
+            date(2025, 2, 1),
+            TransactionType::Purchase,
+            Money::from_str("5000").unwrap(),
+            Units::from_str("50").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::ZERO,
+        );
+
+        let units = get_latest_units(&[tx_initial, tx_unrecorded_bal]);
+        // Since tx-2 had balance 0 on an addition, it should not report 0 units for the fund;
+        // it falls back to the valid explicit balance or FIFO lots
+        assert_eq!(units, Units::from_str("100").unwrap());
+    }
+
+    #[test]
+    fn test_get_latest_units_correctly_identifies_full_redemption_to_zero() {
+        let tx_initial = Transaction::new(
+            "tx-1",
+            date(2025, 1, 1),
+            TransactionType::Purchase,
+            Money::from_str("10000").unwrap(),
+            Units::from_str("100").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::from_str("100").unwrap(),
+        );
+        let tx_redemption = Transaction::new(
+            "tx-2",
+            date(2025, 6, 1),
+            TransactionType::Redemption,
+            Money::from_str("-10000").unwrap(),
+            Units::from_str("-100").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::ZERO,
+        );
+
+        let units = get_latest_units(&[tx_initial, tx_redemption]);
+        assert_eq!(units, Units::ZERO);
     }
 }

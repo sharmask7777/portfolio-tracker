@@ -890,3 +890,228 @@ async fn test_cas_upload_job_with_pool_fallback_none() {
     let job = db.get_upload_job(job_id).expect("job exists");
     assert_eq!(job.status, UploadJobStatus::Completed);
 }
+
+#[tokio::test]
+async fn test_cas_upload_deduplication_and_sub_account_normalization() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("synthetic.investor@example.com", "pwd");
+
+    // 1. First upload: CAS JSON with folio "15161515 / 16"
+    let cas_json_1 = serde_json::json!({
+        "investor_info": { "name": "Synthetic Investor", "pan": "ABCDE1234F" },
+        "folios": [{
+            "folio": "15161515 / 16",
+            "amc": "Kotak Mutual Fund",
+            "pan": "ABCDE1234F",
+            "schemes": [{
+                "scheme": "Kotak Infrastructure Fund",
+                "isin": "INF178L01AL9",
+                "amfi": "133801",
+                "transactions": [
+                    { "date": "2024-01-15", "type": "PURCHASE", "amount": 10000.0, "units": 100.0, "nav": 100.0, "balance": 100.0 },
+                    { "date": "2024-02-15", "type": "PURCHASE_SIP", "amount": 5000.0, "units": 50.0, "nav": 100.0, "balance": 150.0 }
+                ]
+            }]
+        }]
+    });
+
+    let mut temp_file_1 = NamedTempFile::new().expect("create temp file");
+    temp_file_1
+        .write_all(cas_json_1.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path_1 = temp_file_1.path().to_path_buf();
+
+    let job_id_1 = Uuid::new_v4();
+    db.create_upload_job(job_id_1, user.id, &temp_path_1.to_string_lossy());
+    let job_data_1 =
+        ProcessPdfUploadJobData::new(user.id, temp_path_1.to_string_lossy().to_string(), job_id_1);
+
+    let res1 = process_pdf_job_with_pool(&job_data_1, &db, None).await;
+    assert!(res1.is_ok());
+
+    let profile = db
+        .find_profile_by_pan(user.id, "ABCDE1234F")
+        .expect("profile exists");
+    let portfolio = db
+        .find_portfolio_by_profile(user.id, profile.id)
+        .expect("portfolio exists");
+    let folios_after_1 = db.list_folios_by_portfolio(portfolio.id);
+    assert_eq!(folios_after_1.len(), 1, "Must have exactly 1 folio created");
+    let txs_1 = db.list_by_folio(folios_after_1[0].id).await.unwrap();
+    assert_eq!(txs_1.len(), 2, "Must have exactly 2 transactions");
+
+    // 2. Second upload: CAS JSON with folio "15161515" (stripped check digit), identical transactions,
+    // plus a new transaction, a stamp duty line, and a 0-unit note
+    let cas_json_2 = serde_json::json!({
+        "investor_info": { "name": "Synthetic Investor", "pan": "ABCDE1234F" },
+        "folios": [{
+            "folio": "15161515",
+            "amc": "Kotak Mutual Fund",
+            "pan": "ABCDE1234F",
+            "schemes": [{
+                "scheme": "Kotak Infrastructure Fund",
+                "isin": "INF178L01AL9",
+                "amfi": "133801",
+                "transactions": [
+                    { "date": "2024-01-15", "type": "PURCHASE", "amount": 10000.0, "units": 100.0, "nav": 100.0, "balance": 100.0 },
+                    { "date": "2024-02-15", "type": "PURCHASE_SIP", "amount": 5000.0, "units": 50.0, "nav": 100.0, "balance": 150.0 },
+                    { "date": "2024-03-15", "type": "PURCHASE_SIP", "amount": 5000.0, "units": 45.0, "nav": 111.11, "balance": 195.0 },
+                    { "date": "2024-03-15", "type": "Stamp Duty Tax", "amount": 0.25, "units": 0.0, "nav": 0.0, "balance": 0.0 },
+                    { "date": "2024-03-16", "type": "Remarks", "amount": 0.0, "units": 0.0, "nav": 0.0, "balance": 0.0 }
+                ]
+            }]
+        }]
+    });
+
+    let mut temp_file_2 = NamedTempFile::new().expect("create temp file");
+    temp_file_2
+        .write_all(cas_json_2.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path_2 = temp_file_2.path().to_path_buf();
+
+    let job_id_2 = Uuid::new_v4();
+    db.create_upload_job(job_id_2, user.id, &temp_path_2.to_string_lossy());
+    let job_data_2 =
+        ProcessPdfUploadJobData::new(user.id, temp_path_2.to_string_lossy().to_string(), job_id_2);
+
+    let res2 = process_pdf_job_with_pool(&job_data_2, &db, None).await;
+    assert!(res2.is_ok());
+
+    // Verify sub-account normalization: Still exactly 1 folio, NOT 2 folios!
+    let folios_after_2 = db.list_folios_by_portfolio(portfolio.id);
+    assert_eq!(
+        folios_after_2.len(),
+        1,
+        "Must reuse existing folio despite sub-account check-digit difference"
+    );
+
+    // Verify deduplication: 2 original + 1 new SIP + 1 stamp duty = 4 transactions (the 0-unit 0-amount remark was skipped)
+    let txs_2 = db.list_by_folio(folios_after_2[0].id).await.unwrap();
+    assert_eq!(
+        txs_2.len(),
+        4,
+        "Must not duplicate identical transactions and must filter out 0-unit 0-amount notes"
+    );
+
+    // Verify stamp duty normalization: tx_type is STAMP_DUTY_TAX, not PURCHASE
+    let stamp_tx = txs_2
+        .iter()
+        .find(|t| t.amount == rust_decimal::Decimal::new(25, 2))
+        .expect("stamp duty tx exists");
+    assert_eq!(stamp_tx.tx_type, "STAMP_DUTY_TAX");
+
+    // Verify portfolio-core get_latest_units on this ledger returns 195 units (stamp duty balance 0 does not wipe it out)
+    let core_txs: Vec<_> = txs_2
+        .iter()
+        .map(|t| t.to_core_transaction().unwrap())
+        .collect();
+    let units = portfolio_core::holdings::get_latest_units(&core_txs);
+    assert_eq!(
+        units.to_decimal(),
+        rust_decimal::Decimal::from_str("195.0").unwrap()
+    );
+}
+
+#[tokio::test]
+async fn test_cas_upload_clears_prior_manual_close_and_reconciles() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("reconcile.investor@example.com", "pwd");
+
+    // 1. Initial CAS upload with 100 units
+    let cas_json = serde_json::json!({
+        "investor_info": { "name": "Reconcile Investor", "pan": "CQJPS2143F" },
+        "folios": [{
+            "folio": "FOLIO-RECONCILE-1",
+            "amc": "Tata Mutual Fund",
+            "pan": "CQJPS2143F",
+            "schemes": [{
+                "scheme": "Tata ELSS Fund",
+                "isin": "INF277K01I52",
+                "amfi": "132757",
+                "transactions": [
+                    { "date": "2024-01-15", "type": "PURCHASE", "amount": 10000.0, "units": 100.0, "nav": 100.0, "balance": 100.0 }
+                ]
+            }]
+        }]
+    });
+
+    let mut temp_file = NamedTempFile::new().expect("create temp file");
+    temp_file
+        .write_all(cas_json.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path = temp_file.path().to_path_buf();
+
+    let job_id = Uuid::new_v4();
+    db.create_upload_job(job_id, user.id, &temp_path.to_string_lossy());
+    let job_data =
+        ProcessPdfUploadJobData::new(user.id, temp_path.to_string_lossy().to_string(), job_id);
+
+    let res = process_pdf_job_with_pool(&job_data, &db, None).await;
+    assert!(res.is_ok());
+
+    let profile = db
+        .find_profile_by_pan(user.id, "CQJPS2143F")
+        .expect("profile exists");
+    let portfolio = db
+        .find_portfolio_by_profile(user.id, profile.id)
+        .expect("portfolio exists");
+    let folio = &db.list_folios_by_portfolio(portfolio.id)[0];
+
+    // 2. Simulate manual close of folio (inserts MANUAL_CLOSE redemption)
+    let _ = db
+        .create_transaction(
+            folio.id,
+            chrono::NaiveDate::from_ymd_opt(2024, 6, 1).unwrap(),
+            "REDEMPTION",
+            rust_decimal::Decimal::new(-10000, 0),
+            rust_decimal::Decimal::new(-100, 0),
+            rust_decimal::Decimal::new(100, 0),
+            rust_decimal::Decimal::ZERO,
+            Some(&format!("MANUAL_CLOSE-{}-12345", folio.id)),
+        )
+        .await;
+
+    // Verify folio is closed
+    let txs_closed = db.list_by_folio(folio.id).await.unwrap();
+    let core_closed: Vec<_> = txs_closed
+        .iter()
+        .map(|t| t.to_core_transaction().unwrap())
+        .collect();
+    assert_eq!(
+        portfolio_core::holdings::get_latest_units(&core_closed),
+        portfolio_core::types::Units::ZERO
+    );
+
+    // 3. User uploads fresh CAS statement confirming position is still active
+    let mut temp_file_reupload = NamedTempFile::new().expect("create temp file");
+    temp_file_reupload
+        .write_all(cas_json.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path_reupload = temp_file_reupload.path().to_path_buf();
+
+    let job_id_reupload = Uuid::new_v4();
+    db.create_upload_job(
+        job_id_reupload,
+        user.id,
+        &temp_path_reupload.to_string_lossy(),
+    );
+    let job_data_reupload = ProcessPdfUploadJobData::new(
+        user.id,
+        temp_path_reupload.to_string_lossy().to_string(),
+        job_id_reupload,
+    );
+
+    let res_reupload = process_pdf_job_with_pool(&job_data_reupload, &db, None).await;
+    assert!(res_reupload.is_ok());
+
+    // Verify reconciliation: MANUAL_CLOSE was removed and position restored to 100 units
+    let txs_reconciled = db.list_by_folio(folio.id).await.unwrap();
+    let core_reconciled: Vec<_> = txs_reconciled
+        .iter()
+        .map(|t| t.to_core_transaction().unwrap())
+        .collect();
+    assert_eq!(
+        portfolio_core::holdings::get_latest_units(&core_reconciled).to_decimal(),
+        rust_decimal::Decimal::new(100, 0)
+    );
+}

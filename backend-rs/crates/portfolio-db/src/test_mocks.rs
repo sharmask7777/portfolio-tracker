@@ -233,6 +233,38 @@ impl InMemoryDatabase {
         state.folios.get(&id).cloned()
     }
 
+    /// Reconciles an ingested folio by clearing out synthetic manual close and anchor markers.
+    pub fn reconcile_folio_transactions(&self, folio_id: Uuid) {
+        let mut state = self.state.write().expect("lock poisoned");
+        state.transactions.retain(|_, tx| {
+            if tx.folio_id != folio_id {
+                return true;
+            }
+            if let Some(ref ext_id) = tx.external_id {
+                !ext_id.starts_with("MANUAL_CLOSE") && !ext_id.starts_with("ANCHOR")
+            } else {
+                true
+            }
+        });
+    }
+
+    /// Checks if an existing transaction with identical date, amount, and units exists for a folio.
+    pub fn has_duplicate_transaction(
+        &self,
+        folio_id: Uuid,
+        date: NaiveDate,
+        amount: Decimal,
+        units: Decimal,
+    ) -> bool {
+        let state = self.state.read().expect("lock poisoned");
+        state.transactions.values().any(|tx| {
+            tx.folio_id == folio_id
+                && tx.date == date
+                && (tx.amount - amount).abs() < Decimal::new(1, 3)
+                && (tx.units - units).abs() < Decimal::new(1, 4)
+        })
+    }
+
     /// Lists all folios within a portfolio, ordered by creation date.
     pub fn list_folios_by_portfolio(&self, portfolio_id: Uuid) -> Vec<FolioEntity> {
         let state = self.state.read().expect("lock poisoned");
@@ -499,7 +531,7 @@ impl InMemoryDatabase {
             .cloned()
     }
 
-    /// Looks up a folio within a portfolio by asset ID and folio number (case-insensitive).
+    /// Looks up a folio within a portfolio by asset ID and folio number (case-insensitive and sub-account normalized).
     pub fn find_folio(
         &self,
         portfolio_id: Uuid,
@@ -507,13 +539,19 @@ impl InMemoryDatabase {
         number: &str,
     ) -> Option<FolioEntity> {
         let state = self.state.read().expect("lock poisoned");
+        let trimmed = number.trim();
+        let base_number = trimmed.split('/').next().unwrap_or("").trim();
         state
             .folios
             .values()
             .find(|folio| {
-                folio.portfolio_id == portfolio_id
-                    && folio.asset_id == asset_id
-                    && folio.number.eq_ignore_ascii_case(number.trim())
+                if folio.portfolio_id != portfolio_id || folio.asset_id != asset_id {
+                    return false;
+                }
+                let folio_trimmed = folio.number.trim();
+                let folio_base = folio_trimmed.split('/').next().unwrap_or("").trim();
+                folio_trimmed.eq_ignore_ascii_case(trimmed)
+                    || (!base_number.is_empty() && folio_base.eq_ignore_ascii_case(base_number))
             })
             .cloned()
     }

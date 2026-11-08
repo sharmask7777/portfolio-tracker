@@ -212,8 +212,18 @@ pub fn normalize_tx_type(raw_type: &str) -> &'static str {
         "DIVIDEND_REINVESTMENT"
     } else if upper.contains("DIVIDEND") {
         "DIVIDEND_PAYOUT"
+    } else if upper.contains("STAMP")
+        || upper.contains("DUTY")
+        || upper.contains("TAX")
+        || upper.contains("STT")
+        || upper.contains("FEE")
+        || upper.contains("CHARGE")
+    {
+        "STAMP_DUTY_TAX"
+    } else if upper.contains("MISC") {
+        "MISC"
     } else {
-        "PURCHASE"
+        "OTHER"
     }
 }
 
@@ -567,6 +577,15 @@ async fn process_cas_file_internal(
                 None
             };
 
+            // Reconcile existing folio: clear any synthetic MANUAL_CLOSE or ANCHOR markers
+            // so the incoming authoritative statement transactions and balances take precedence.
+            db.reconcile_folio_transactions(folio.id);
+            if let (Some(pool), Some(f_id)) = (pool, pg_folio_id) {
+                portfolio_db::repositories::reconcile_postgres_folio(pool, f_id)
+                    .await
+                    .map_err(WorkerError::Db)?;
+            }
+
             // 5. Transactions
             for tx in &scheme_data.transactions {
                 let date = parse_cas_date(&tx.date)?;
@@ -583,6 +602,11 @@ async fn process_cas_file_internal(
                 };
                 let balance = tx.balance.unwrap_or(Decimal::ZERO).abs();
 
+                // Filter out non-financial notes/remarks with 0 units and 0 amount
+                if units.is_zero() && amount.is_zero() {
+                    continue;
+                }
+
                 // Generate deterministic external_id for idempotency
                 let external_id = format!(
                     "{}-{}-{}-{}-{}-{}-{}",
@@ -595,7 +619,9 @@ async fn process_cas_file_internal(
                     units
                 );
 
-                if db.find_transaction_by_external_id(&external_id).is_none() {
+                if db.find_transaction_by_external_id(&external_id).is_none()
+                    && !db.has_duplicate_transaction(folio.id, date, amount, units)
+                {
                     db.create_transaction(
                         folio.id,
                         date,
