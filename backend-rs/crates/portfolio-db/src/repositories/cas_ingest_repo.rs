@@ -344,18 +344,19 @@ pub async fn upsert_portfolio_history(
 ) -> Result<(), DbError> {
     let val_f64 = value.to_string().parse::<f64>().unwrap_or(0.0);
     let cost_f64 = cost.to_string().parse::<f64>().unwrap_or(0.0);
+    let date_timestamp = date.and_hms_opt(0, 0, 0).unwrap_or_default();
 
     sqlx::query(
         r#"
-        INSERT INTO "PortfolioHistory" (id, "portfolioId", date, value, "investedAmount", "createdAt", "updatedAt")
-        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+        INSERT INTO "PortfolioHistory" (id, "portfolioId", date, value, "investedAmount", "createdAt")
+        VALUES ($1, $2, $3, $4, $5, NOW())
         ON CONFLICT ("portfolioId", date) DO UPDATE
-        SET value = EXCLUDED.value, "investedAmount" = EXCLUDED."investedAmount", "updatedAt" = NOW();
+        SET value = EXCLUDED.value, "investedAmount" = EXCLUDED."investedAmount";
         "#,
     )
     .bind(id.to_string())
     .bind(portfolio_id.to_string())
-    .bind(date)
+    .bind(date_timestamp)
     .bind(val_f64)
     .bind(cost_f64)
     .execute(pool)
