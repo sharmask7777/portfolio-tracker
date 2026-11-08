@@ -59,20 +59,55 @@ pub async fn process_history_refresh_job(
 
 /// Helper handler for recalculating historical valuation timeline with optional PostgreSQL pool.
 ///
-/// When `pool` is provided, upserts the resulting valuation records into PostgreSQL `PortfolioHistory` table.
+/// When `pool` is provided, fetches transactions directly from PostgreSQL and upserts
+/// the resulting valuation records into PostgreSQL `PortfolioHistory` table.
 pub async fn process_history_refresh_job_with_pool(
     job_data: &HistoryRefreshJobData,
     db: &InMemoryDatabase,
     pool: Option<&sqlx::PgPool>,
 ) -> Result<Vec<HistoricalValuationEntity>, WorkerError> {
     // 1. Verify portfolio exists
-    let _portfolio = db
-        .get_portfolio(job_data.portfolio_id)
-        .await?
-        .ok_or(WorkerError::PortfolioNotFound(job_data.portfolio_id))?;
+    if let Some(pool) = pool {
+        let exists = sqlx::query_scalar::<_, bool>(
+            r#"SELECT EXISTS(SELECT 1 FROM "Portfolio" WHERE id = $1)"#,
+        )
+        .bind(job_data.portfolio_id.to_string())
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+        if !exists {
+            return Err(WorkerError::PortfolioNotFound(job_data.portfolio_id));
+        }
+    } else {
+        let _portfolio = db
+            .get_portfolio(job_data.portfolio_id)
+            .await?
+            .ok_or(WorkerError::PortfolioNotFound(job_data.portfolio_id))?;
+    }
 
-    // 2. Fetch all transactions for this portfolio (already sorted chronologically by DB)
-    let transactions = db.list_by_portfolio(job_data.portfolio_id).await?;
+    // 2. Fetch all transactions for this portfolio (already sorted chronologically)
+    let transactions: Vec<portfolio_db::entities::TransactionEntity> = if let Some(pool) = pool {
+        sqlx::query_as::<_, portfolio_db::entities::TransactionEntity>(
+            r#"
+            SELECT t.id::uuid, t."folioId"::uuid, t.date::date as date, t.type,
+                   t.amount::numeric as amount, t.units::numeric as units,
+                   t.nav::numeric as nav, t.balance::numeric as balance,
+                   t."externalId",
+                   t."createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                   t."updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
+            FROM "Transaction" t
+            JOIN "Folio" f ON f.id = t."folioId"
+            WHERE f."portfolioId" = $1
+            ORDER BY t.date ASC, t."createdAt" ASC, t.id ASC
+            "#,
+        )
+        .bind(job_data.portfolio_id.to_string())
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+    } else {
+        db.list_by_portfolio(job_data.portfolio_id).await?
+    };
 
     if transactions.is_empty() {
         let today = Utc::now().date_naive();

@@ -269,6 +269,7 @@ pub fn validate_file_path(path_str: &str) -> Result<PathBuf, WorkerError> {
 /// 6. Recalculates historical valuation timeline for all touched portfolios.
 /// 7. Transitions `UploadJob` status to `COMPLETED` (updates `completed_at`).
 /// 8. Cleans up temporary file (only if it passed validation and exists).
+///
 /// Helper handler for processing CAS PDF / JSON upload jobs with optional PostgreSQL persistence.
 pub async fn process_pdf_job_with_pool(
     job_data: &ProcessPdfUploadJobData,
@@ -359,10 +360,8 @@ async fn upsert_postgres_profile(
     .await
     .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-    if let Some(id_str) = existing {
-        if let Ok(parsed) = Uuid::parse_str(&id_str) {
-            return Ok(parsed);
-        }
+    if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
+        return Ok(parsed);
     }
 
     let new_id = Uuid::new_v4();
@@ -385,8 +384,11 @@ async fn upsert_postgres_profile(
     .await
     .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-    Uuid::parse_str(&profile_id_str)
-        .map_err(|e| WorkerError::Db(portfolio_db::DbError::Internal(format!("Invalid profile UUID: {e}"))))
+    Uuid::parse_str(&profile_id_str).map_err(|e| {
+        WorkerError::Db(portfolio_db::DbError::Internal(format!(
+            "Invalid profile UUID: {e}"
+        )))
+    })
 }
 
 async fn upsert_postgres_portfolio(
@@ -408,10 +410,8 @@ async fn upsert_postgres_portfolio(
     .await
     .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-    if let Some(id_str) = existing {
-        if let Ok(parsed) = Uuid::parse_str(&id_str) {
-            return Ok(parsed);
-        }
+    if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
+        return Ok(parsed);
     }
 
     let new_id = Uuid::new_v4();
@@ -430,8 +430,11 @@ async fn upsert_postgres_portfolio(
     .await
     .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-    Uuid::parse_str(&port_id_str)
-        .map_err(|e| WorkerError::Db(portfolio_db::DbError::Internal(format!("Invalid portfolio UUID: {e}"))))
+    Uuid::parse_str(&port_id_str).map_err(|e| {
+        WorkerError::Db(portfolio_db::DbError::Internal(format!(
+            "Invalid portfolio UUID: {e}"
+        )))
+    })
 }
 
 async fn upsert_postgres_asset(
@@ -441,18 +444,15 @@ async fn upsert_postgres_asset(
     amfi: Option<&str>,
 ) -> Result<Uuid, WorkerError> {
     if let Some(isin_str) = isin {
-        let existing = sqlx::query_scalar::<_, String>(
-            r#"SELECT id FROM "Asset" WHERE isin = $1 LIMIT 1"#,
-        )
-        .bind(isin_str)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
+        let existing =
+            sqlx::query_scalar::<_, String>(r#"SELECT id FROM "Asset" WHERE isin = $1 LIMIT 1"#)
+                .bind(isin_str)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-        if let Some(id_str) = existing {
-            if let Ok(parsed) = Uuid::parse_str(&id_str) {
-                return Ok(parsed);
-            }
+        if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
+            return Ok(parsed);
         }
     }
 
@@ -465,25 +465,20 @@ async fn upsert_postgres_asset(
         .await
         .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-        if let Some(id_str) = existing {
-            if let Ok(parsed) = Uuid::parse_str(&id_str) {
-                return Ok(parsed);
-            }
+        if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
+            return Ok(parsed);
         }
     }
 
-    let existing_name = sqlx::query_scalar::<_, String>(
-        r#"SELECT id FROM "Asset" WHERE name = $1 LIMIT 1"#,
-    )
-    .bind(name)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
+    let existing_name =
+        sqlx::query_scalar::<_, String>(r#"SELECT id FROM "Asset" WHERE name = $1 LIMIT 1"#)
+            .bind(name)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-    if let Some(id_str) = existing_name {
-        if let Ok(parsed) = Uuid::parse_str(&id_str) {
-            return Ok(parsed);
-        }
+    if let Some(parsed) = existing_name.and_then(|s| Uuid::parse_str(&s).ok()) {
+        return Ok(parsed);
     }
 
     let new_id = Uuid::new_v4();
@@ -531,8 +526,11 @@ async fn upsert_postgres_asset(
     }
     .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-    Uuid::parse_str(&inserted)
-        .map_err(|e| WorkerError::Db(portfolio_db::DbError::Internal(format!("Invalid asset UUID: {e}"))))
+    Uuid::parse_str(&inserted).map_err(|e| {
+        WorkerError::Db(portfolio_db::DbError::Internal(format!(
+            "Invalid asset UUID: {e}"
+        )))
+    })
 }
 
 async fn upsert_postgres_folio(
@@ -557,10 +555,8 @@ async fn upsert_postgres_folio(
     .await
     .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-    if let Some(id_str) = existing {
-        if let Ok(parsed) = Uuid::parse_str(&id_str) {
-            return Ok(parsed);
-        }
+    if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
+        return Ok(parsed);
     }
 
     let new_id = Uuid::new_v4();
@@ -585,10 +581,14 @@ async fn upsert_postgres_folio(
     .await
     .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-    Uuid::parse_str(&folio_id_str)
-        .map_err(|e| WorkerError::Db(portfolio_db::DbError::Internal(format!("Invalid folio UUID: {e}"))))
+    Uuid::parse_str(&folio_id_str).map_err(|e| {
+        WorkerError::Db(portfolio_db::DbError::Internal(format!(
+            "Invalid folio UUID: {e}"
+        )))
+    })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_postgres_transaction(
     pool: &sqlx::PgPool,
     folio_id: Uuid,
@@ -883,7 +883,7 @@ async fn process_cas_file_internal(
                     db.create_transaction(
                         folio.id,
                         date,
-                        &tx_type,
+                        tx_type,
                         amount,
                         units,
                         nav,
@@ -905,15 +905,7 @@ async fn process_cas_file_internal(
                         units
                     );
                     insert_postgres_transaction(
-                        pool,
-                        f_id,
-                        date,
-                        &tx_type,
-                        amount,
-                        units,
-                        nav,
-                        balance,
-                        &pg_ext_id,
+                        pool, f_id, date, tx_type, amount, units, nav, balance, &pg_ext_id,
                     )
                     .await?;
                 }
