@@ -281,8 +281,8 @@ describe('TaxView', () => {
       totalPotentialHarvest: 125000,
       estimatedTaxSavings: 15625,
       opportunities: [
-        { folioId: 'f1', schemeName: 'Some Equity Fund', unitsToHarvest: Infinity, unrealizedGain: 125000, currentValue: 200000 },
-        { folioId: 'f2', schemeName: 'Another Fund', unitsToHarvest: NaN, unrealizedGain: 0, currentValue: 0 },
+        { folioId: 'f1', schemeName: 'Some Equity Fund', unitsToHarvest: Infinity, unrealizedGain: 125000, currentValue: 200000, lotsCount: 1 },
+        { folioId: 'f2', schemeName: 'Another Fund', unitsToHarvest: NaN, unrealizedGain: 0, currentValue: 0, lotsCount: 1 },
       ],
       unrealizedSummary: dummyUnrealizedSummary,
     };
@@ -320,7 +320,7 @@ describe('TaxView', () => {
       totalPotentialHarvest: 50000,
       estimatedTaxSavings: 6250,
       opportunities: [
-        { folioId: 'f1', schemeName: 'Equity Fund', unitsToHarvest: undefined as unknown as number, unrealizedGain: 50000, currentValue: 100000 },
+        { folioId: 'f1', schemeName: 'Equity Fund', unitsToHarvest: undefined as unknown as number, unrealizedGain: 50000, currentValue: 100000, lotsCount: 1 },
       ],
       unrealizedSummary: dummyUnrealizedSummary,
     };
@@ -392,17 +392,21 @@ describe('TaxView', () => {
       opportunities: [
         {
           folioId: 'FOLIO-001',
+          folioNumber: '10482910/22',
           schemeName: 'Nifty 50 Index Fund',
           unitsToHarvest: 125.456,
           currentValue: 150000,
           unrealizedGain: 35000,
+          lotsCount: 1,
         },
         {
           folioId: 'FOLIO-002',
+          folioNumber: '91028471/05',
           schemeName: 'Midcap 150 Index Fund',
           unitsToHarvest: 80.123,
           currentValue: 95000,
           unrealizedGain: 25000,
+          lotsCount: 3,
         },
       ],
       unrealizedSummary: dummyUnrealizedSummary,

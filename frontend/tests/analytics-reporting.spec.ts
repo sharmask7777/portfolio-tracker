@@ -83,7 +83,15 @@ test.describe('Analytics & Reporting: Tax Reactivity, Simulation & Performance I
         totalPotentialHarvest: 50000,
         estimatedTaxSavings: 6250,
         opportunities: [
-          { folioId: 'folio-1', schemeName: 'HDFC Top 100 Fund', unitsToHarvest: 100 }
+          {
+            folioId: 'folio-1',
+            folioNumber: '10928374',
+            schemeName: 'HDFC Top 100 Fund',
+            unitsToHarvest: 100,
+            lotsCount: 12,
+            firstLotDate: '2023-01-10',
+            lastLotDate: '2024-01-10',
+          }
         ]
       })});
     });
@@ -140,6 +148,10 @@ test.describe('Analytics & Reporting: Tax Reactivity, Simulation & Performance I
     const taxTab = page.locator('button.tab', { hasText: 'Tax Optimization' });
     await taxTab.click();
     
+    // Verify consolidated folio number and SIP lots badge on card
+    await expect(page.locator('.harvest-card')).toContainText('Folio: 10928374');
+    await expect(page.locator('.harvest-card')).toContainText('12 SIP lots consolidated');
+
     // Find harvesting card and click the link
     const harvestLink = page.locator('.harvest-card .btn-link').first();
     await expect(harvestLink).toBeVisible();

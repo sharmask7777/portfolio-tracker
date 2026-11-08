@@ -356,6 +356,8 @@ pub async fn simulate_sell(
 pub struct HarvestOpportunityDto {
     #[ts(optional = nullable)]
     pub folio_id: Option<String>,
+    #[ts(optional = nullable)]
+    pub folio_number: Option<String>,
     pub scheme_name: String,
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
@@ -366,6 +368,11 @@ pub struct HarvestOpportunityDto {
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub current_value: Decimal,
+    pub lots_count: usize,
+    #[ts(optional = nullable)]
+    pub first_lot_date: Option<NaiveDate>,
+    #[ts(optional = nullable)]
+    pub last_lot_date: Option<NaiveDate>,
 }
 
 /// Detailed holding lot evaluation for tax categorization and harvesting.
@@ -446,10 +453,14 @@ impl From<portfolio_core::tax::harvesting::HarvestingSummary> for HarvestTicketR
                 .into_iter()
                 .map(|op| HarvestOpportunityDto {
                     folio_id: op.folio_id,
+                    folio_number: op.folio_number,
                     scheme_name: op.scheme_name,
                     units_to_harvest: op.units_to_harvest.to_decimal(),
                     unrealized_gain: op.unrealized_gain.to_decimal(),
                     current_value: op.current_value.to_decimal(),
+                    lots_count: op.lots_count,
+                    first_lot_date: op.first_lot_date,
+                    last_lot_date: op.last_lot_date,
                 })
                 .collect(),
             unrealized_summary: UnrealizedSummaryDto {
@@ -526,6 +537,7 @@ pub async fn get_harvesting(
 
             folio_data.push((
                 folio.id.to_string(),
+                folio.number,
                 asset.name,
                 asset_type,
                 core_txs,
@@ -538,14 +550,23 @@ pub async fn get_harvesting(
     let inputs: Vec<FolioHarvestingInput<'_>> = folio_data
         .iter()
         .map(
-            |(folio_id, scheme_name, asset_type, core_transactions, current_nav, exit_load)| {
+            |(
+                folio_id,
+                folio_number,
+                scheme_name,
+                asset_type,
+                core_transactions,
+                current_nav,
+                exit_load,
+            )| {
                 let mut input = FolioHarvestingInput::new(
                     scheme_name,
                     *asset_type,
                     core_transactions,
                     *current_nav,
                 )
-                .with_folio_id(folio_id);
+                .with_folio_id(folio_id)
+                .with_folio_number(folio_number);
                 if let Some(meta) = exit_load {
                     input = input.with_exit_load_metadata(meta.as_str());
                 }
