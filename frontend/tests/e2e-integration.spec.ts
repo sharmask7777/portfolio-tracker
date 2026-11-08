@@ -61,8 +61,11 @@ test.describe('E2E Integration: Real PDF Processing', () => {
     // 5. Assertions
     expect(body).toHaveProperty('status');
     // We expect it to be either PROCESSING (success) or FAILED (because the PDF is dummy)
-    // BUT, it should NOT be "FileNotFound" anymore!
-    expect(body.message).not.toContain('No such file or directory');
-    expect(body.message).not.toContain('File not found');
+    // BUT, it should NEVER fail with a filesystem or database schema failure!
+    const msg = (body.message ?? '').toLowerCase();
+    expect(msg).not.toContain('no such file or directory');
+    expect(msg).not.toContain('file not found');
+    expect(msg).not.toContain('database error');
+    expect(msg).not.toContain('does not exist');
   });
 });
