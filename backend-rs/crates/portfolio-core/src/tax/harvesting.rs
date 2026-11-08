@@ -22,20 +22,28 @@ pub use crate::tax::constants::*;
 use crate::tax::rules::{elss_lock_in_expiry, is_elss, is_equity};
 use crate::types::{AssetType, Money, Nav, Units};
 
-/// Specific harvesting recommendation for an individual scheme holding lot.
+/// Specific harvesting recommendation for an individual scheme holding lot or consolidated folio.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarvestingOpportunity {
     /// Identifier of the folio holding the units, if available.
     pub folio_id: Option<String>,
+    /// Real investor folio number (from CAS statement), if available.
+    pub folio_number: Option<String>,
     /// Name of the scheme recommended for tax harvesting.
     pub scheme_name: String,
-    /// Number of units to sell to harvest the targeted capital gain.
+    /// Total number of units to sell across qualifying lots to harvest the targeted capital gain.
     pub units_to_harvest: Units,
     /// Capital gain amount that will be realized tax-free under Section 112A.
     pub unrealized_gain: Money,
     /// Current gross market value of the units to be harvested (`units * current_nav`).
     pub current_value: Money,
+    /// Number of distinct FIFO purchase lots (e.g. SIP installments) consolidated into this order.
+    pub lots_count: usize,
+    /// Calendar date of the earliest purchase lot redeemed under FIFO.
+    pub first_lot_date: Option<NaiveDate>,
+    /// Calendar date of the latest purchase lot redeemed under FIFO.
+    pub last_lot_date: Option<NaiveDate>,
 }
 
 /// An individual unrealized holding lot analysis.
@@ -99,6 +107,8 @@ pub struct HarvestingSummary {
 pub struct FolioHarvestingInput<'a> {
     /// Identifier of the folio.
     pub folio_id: Option<&'a str>,
+    /// Real investor folio number (from CAS statement).
+    pub folio_number: Option<&'a str>,
     /// Scheme or security name.
     pub scheme_name: &'a str,
     /// Asset type (Equity, Debt, etc.).
@@ -121,6 +131,7 @@ impl<'a> FolioHarvestingInput<'a> {
     ) -> Self {
         Self {
             folio_id: None,
+            folio_number: None,
             scheme_name,
             asset_type,
             transactions,
@@ -135,6 +146,12 @@ impl<'a> FolioHarvestingInput<'a> {
         self
     }
 
+    /// Builder method attaching a real folio number to this input.
+    pub fn with_folio_number(mut self, folio_number: &'a str) -> Self {
+        self.folio_number = Some(folio_number);
+        self
+    }
+
     /// Builder method attaching exit load metadata to this input.
     pub fn with_exit_load_metadata(mut self, metadata: &'a str) -> Self {
         self.exit_load_metadata = Some(metadata);
@@ -145,6 +162,7 @@ impl<'a> FolioHarvestingInput<'a> {
     pub fn from_folio(folio: &'a Folio, current_nav: Nav) -> Self {
         Self {
             folio_id: Some(&folio.id),
+            folio_number: Some(folio.folio_number.as_str()),
             scheme_name: &folio.asset_name,
             asset_type: folio.asset_type,
             transactions: &folio.transactions,
@@ -218,19 +236,24 @@ pub fn compute_unrealized_gains(
 
 /// Identifies LTCG harvesting opportunities up to the statutory Section 112A annual exemption limit.
 ///
-/// # Optimization Algorithm:
+/// # Optimization & Consolidation Algorithm:
 /// 1. Determines remaining exemption limit:
 ///    `remaining_exemption = max(0, statutory_limit - realized_ltcg_fy)`.
-/// 2. Iterates over active equity lots:
-///    - Skips non-equity holdings (debt/commodity do not qualify for Section 112A exemption).
-///    - Skips ELSS lots still subject to the 3-year statutory lock-in.
-///    - Only considers long-term lots (holding >= 365 days) where `current_nav > purchase_nav`.
-/// 3. Computes the harvestable gain capped by remaining exemption:
-///    - If `lot_gain <= available_limit`: Harvest entire lot units.
-///    - If `lot_gain > available_limit`: Harvest fractional units:
-///      `units_to_harvest = available_limit / (current_nav - purchase_nav)`.
-/// 4. Discards negligible gains (< ₹1) to prevent precision dust.
-/// 5. Computes statutory tax savings: `total_potential_harvest * 12.5%`.
+/// 2. Gathers and aggregates qualifying equity lots per input scheme/folio:
+///    - Excludes non-equity assets (Section 112A applies exclusively to equity).
+///    - Excludes ELSS lots within their statutory 3-year lock-in (`holding_days < 1095`).
+///    - Excludes short-term lots (`holding_days < 365`) and lots with zero or negative gains.
+///    - Excludes lots with active exit load penalty schedules.
+/// 3. Computes scheme-level **Gain Density** ($\frac{\text{Unrealized LTCG Gain}}{\text{Gross Market Value}}$).
+/// 4. **Sorts candidate schemes in descending order of Gain Density**:
+///    - Prioritizes schemes with the highest tax-alpha margin first (e.g. 50%–60% gain).
+///    - Minimizes total capital turnover, avoiding liquidating funds with 0.8% gains for trivial tax savings.
+/// 5. **Consolidates qualifying FIFO lots into a single redemption order per scheme/folio**:
+///    - Accumulates units, gains, and current value across all eligible lots in the folio.
+///    - Tracks the number of FIFO lots consolidated (`lots_count`), earliest purchase date (`first_lot_date`),
+///      and latest purchase date (`last_lot_date`).
+///    - Attaches the real investor `folio_number` from the statement.
+/// 6. Computes estimated statutory tax savings: `total_potential_harvest * 12.5%`.
 pub fn get_harvesting_opportunities(
     inputs: &[FolioHarvestingInput<'_>],
     as_of: NaiveDate,
@@ -244,14 +267,25 @@ pub fn get_harvesting_opportunities(
     let mut total_potential_harvest = Money::ZERO;
 
     if remaining_exemption.is_positive() {
-        'outer: for input in inputs {
-            // Exemption under Section 112A applies exclusively to equity assets
+        struct CandidateScheme<'a> {
+            input: &'a FolioHarvestingInput<'a>,
+            qualifying_lots: Vec<(Units, Money, Money, NaiveDate, Decimal)>, // (units, lot_gain, lot_val, buy_date, nav_gain)
+            gain_density: Decimal,
+        }
+
+        let mut candidate_schemes: Vec<CandidateScheme<'_>> = Vec::new();
+
+        for input in inputs {
             if !is_equity(input.asset_type, input.scheme_name) {
                 continue;
             }
 
             let (active_lots, _) = process_fifo_lots(input.transactions);
             let is_elss_scheme = is_elss(input.scheme_name);
+
+            let mut qualifying_lots = Vec::new();
+            let mut scheme_total_gain = Money::ZERO;
+            let mut scheme_total_val = Money::ZERO;
 
             for lot in active_lots {
                 if lot.remaining_units.is_zero() {
@@ -268,7 +302,6 @@ pub fn get_harvesting_opportunities(
                 // Only LTCG lots (holding >= 365 days) with unrealized gains
                 if holding_days >= HOLDING_DAYS_EQUITY_LTCG && input.current_nav > lot.purchase_nav
                 {
-                    // Exit load schedule check: exclude lots with active exit load penalty
                     let lot_val = lot.remaining_units * input.current_nav;
                     let exit_load = crate::tax::rules::get_exit_load(
                         input.scheme_name,
@@ -286,34 +319,100 @@ pub fn get_harvesting_opportunities(
                     let lot_gain = input.current_nav * lot.remaining_units
                         - lot.purchase_nav * lot.remaining_units;
 
-                    let available_limit = remaining_exemption - total_potential_harvest;
-                    let harvestable_gain = lot_gain.min(available_limit);
-
-                    // Ignore negligible gains (< ₹1) to avoid precision noise
-                    if harvestable_gain >= Money::new(Decimal::ONE) {
-                        let units_to_harvest = if harvestable_gain == lot_gain {
-                            lot.remaining_units
-                        } else {
-                            Units::new(harvestable_gain.to_decimal() / nav_gain)
-                        };
-
-                        let current_value = units_to_harvest * input.current_nav;
-
-                        opportunities.push(HarvestingOpportunity {
-                            folio_id: input.folio_id.map(|s| s.to_string()),
-                            scheme_name: input.scheme_name.to_string(),
-                            units_to_harvest,
-                            unrealized_gain: harvestable_gain,
-                            current_value,
-                        });
-
-                        total_potential_harvest += harvestable_gain;
+                    if lot_gain >= Money::new(Decimal::ONE) {
+                        scheme_total_gain += lot_gain;
+                        scheme_total_val += lot_val;
+                        qualifying_lots.push((
+                            lot.remaining_units,
+                            lot_gain,
+                            lot_val,
+                            lot.purchase_date,
+                            nav_gain,
+                        ));
                     }
                 }
+            }
+
+            if !qualifying_lots.is_empty() && scheme_total_gain.is_positive() {
+                let gain_density = if scheme_total_val.is_positive() {
+                    scheme_total_gain.to_decimal() / scheme_total_val.to_decimal()
+                } else {
+                    Decimal::ZERO
+                };
+
+                candidate_schemes.push(CandidateScheme {
+                    input,
+                    qualifying_lots,
+                    gain_density,
+                });
+            }
+        }
+
+        // Sort candidate schemes by Gain Density descending (highest tax-alpha per rupee of turnover)
+        candidate_schemes.sort_by_key(|a| std::cmp::Reverse(a.gain_density));
+
+        'scheme_loop: for candidate in candidate_schemes {
+            if total_potential_harvest >= remaining_exemption {
+                break;
+            }
+
+            let mut consolidated_units = Units::ZERO;
+            let mut consolidated_gain = Money::ZERO;
+            let mut consolidated_value = Money::ZERO;
+            let mut lots_count = 0;
+            let mut first_lot_date = None;
+            let mut last_lot_date = None;
+
+            for (units, lot_gain, _, buy_date, nav_gain) in candidate.qualifying_lots {
+                let available_limit = remaining_exemption - total_potential_harvest;
+                if available_limit.is_zero() {
+                    break 'scheme_loop;
+                }
+
+                let harvestable_gain = lot_gain.min(available_limit);
+                if harvestable_gain < Money::new(Decimal::ONE) {
+                    continue;
+                }
+
+                let units_to_harvest = if harvestable_gain == lot_gain {
+                    units
+                } else {
+                    Units::new(harvestable_gain.to_decimal() / nav_gain)
+                };
+
+                let current_value = units_to_harvest * candidate.input.current_nav;
+
+                consolidated_units += units_to_harvest;
+                consolidated_gain += harvestable_gain;
+                consolidated_value += current_value;
+                lots_count += 1;
+
+                if first_lot_date.is_none() || Some(buy_date) < first_lot_date {
+                    first_lot_date = Some(buy_date);
+                }
+                if last_lot_date.is_none() || Some(buy_date) > last_lot_date {
+                    last_lot_date = Some(buy_date);
+                }
+
+                total_potential_harvest += harvestable_gain;
 
                 if total_potential_harvest >= remaining_exemption {
-                    break 'outer;
+                    break;
                 }
+            }
+
+            if consolidated_gain.is_positive() {
+                opportunities.push(HarvestingOpportunity {
+                    folio_id: candidate.input.folio_id.map(|s| s.to_string()),
+                    folio_number: candidate.input.folio_number.map(|s| s.to_string()),
+                    scheme_name: candidate.input.scheme_name.to_string(),
+                    units_to_harvest: consolidated_units,
+                    unrealized_gain: consolidated_gain,
+                    current_value: consolidated_value,
+                    lots_count,
+                    first_lot_date,
+                    last_lot_date,
+                });
             }
         }
     }
@@ -521,5 +620,107 @@ mod tests {
             summary_800d.opportunities[0].unrealized_gain,
             money("50000")
         );
+    }
+
+    #[test]
+    fn test_harvesting_consolidates_multiple_sip_lots_into_single_order() {
+        // Simulate 36 monthly SIP installments in the same fund/folio
+        let mut sip_txs = Vec::new();
+        for month in 1..=36 {
+            let year = 2020 + (month - 1) / 12;
+            let m = (((month - 1) % 12) + 1) as u32;
+            sip_txs.push(Transaction::new(
+                format!("sip-{month}"),
+                date(year, m, 5),
+                TransactionType::Purchase,
+                money("-5000"),
+                units("100"), // 100 units @ NAV 50
+                nav("50"),
+                units("100"),
+            ));
+        }
+
+        let input = FolioHarvestingInput::new(
+            "Aditya Birla Sun Life Flexi Cap Fund - Growth",
+            AssetType::MutualFund,
+            &sip_txs,
+            nav("100"), // 50 gain per unit * 3600 units = 180,000 unrealized gain
+        )
+        .with_folio_id("folio-absl-flexi")
+        .with_folio_number("10482910/22");
+
+        let as_of = date(2024, 6, 1); // All lots > 1 year
+        let summary = get_harvesting_opportunities(&[input], as_of, Money::ZERO, None);
+
+        // Crucial invariant: Multiple SIP lots for the same folio MUST consolidate into exactly 1 order!
+        assert_eq!(
+            summary.opportunities.len(),
+            1,
+            "All 36 monthly SIP lots must be consolidated into exactly 1 redemption order"
+        );
+
+        let op = &summary.opportunities[0];
+        assert_eq!(op.folio_id.as_deref(), Some("folio-absl-flexi"));
+        assert_eq!(op.folio_number.as_deref(), Some("10482910/22"));
+        assert_eq!(op.unrealized_gain, money("125000")); // Capped at ₹1.25L exemption
+        assert_eq!(op.lots_count, 25); // 25 lots * (100 units * 50 gain) = 125,000 gain
+        assert_eq!(op.units_to_harvest, units("2500"));
+        assert_eq!(op.current_value, money("250000"));
+        assert_eq!(op.first_lot_date, Some(date(2020, 1, 5)));
+        assert_eq!(op.last_lot_date, Some(date(2022, 1, 5)));
+    }
+
+    #[test]
+    fn test_harvesting_prioritizes_high_gain_density_schemes() {
+        // Scheme A: Low gain density (10% gain margin: Buy NAV 90 -> Current NAV 100)
+        let txs_a = vec![Transaction::new(
+            "tx-a",
+            date(2022, 1, 1),
+            TransactionType::Purchase,
+            money("-900000"),
+            units("10000"),
+            nav("90"),
+            units("10000"),
+        )];
+        let input_a = FolioHarvestingInput::new(
+            "Low Margin Large Cap Fund",
+            AssetType::MutualFund,
+            &txs_a,
+            nav("100"), // 10 gain per unit * 10,000 = 100,000 gain (Density: 100k / 1M = 10%)
+        )
+        .with_folio_id("folio-a");
+
+        // Scheme B: High gain density (60% gain margin: Buy NAV 40 -> Current NAV 100)
+        let txs_b = vec![Transaction::new(
+            "tx-b",
+            date(2022, 1, 1),
+            TransactionType::Purchase,
+            money("-400000"),
+            units("10000"),
+            nav("40"),
+            units("10000"),
+        )];
+        let input_b = FolioHarvestingInput::new(
+            "High Margin Mid Cap Fund",
+            AssetType::MutualFund,
+            &txs_b,
+            nav("100"), // 60 gain per unit * 10,000 = 600,000 gain (Density: 600k / 1M = 60%)
+        )
+        .with_folio_id("folio-b");
+
+        let as_of = date(2024, 6, 1);
+        // Pass Low Margin first in the input slice to verify that sorting prioritizes High Margin
+        let summary = get_harvesting_opportunities(&[input_a, input_b], as_of, Money::ZERO, None);
+
+        // High margin scheme B must be harvested first to minimize capital turnover
+        assert_eq!(summary.opportunities.len(), 1);
+        assert_eq!(
+            summary.opportunities[0].scheme_name,
+            "High Margin Mid Cap Fund"
+        );
+        assert_eq!(summary.opportunities[0].unrealized_gain, money("125000"));
+        // At 60 gain per unit, units = 125,000 / 60 = 2083.3333 units
+        // Capital turnover = ~₹2,08,333 instead of ₹12,50,000 required for Scheme A!
+        assert!(summary.opportunities[0].current_value < money("210000"));
     }
 }

@@ -3,4 +3,4 @@
 /**
  * Individual scheme opportunity for Section 112A tax-free harvesting.
  */
-export type HarvestOpportunityDto = { folioId?: string | null, schemeName: string, unitsToHarvest: number, unrealizedGain: number, currentValue: number, };
+export type HarvestOpportunityDto = { folioId?: string | null, folioNumber?: string | null, schemeName: string, unitsToHarvest: number, unrealizedGain: number, currentValue: number, lotsCount: number, firstLotDate?: string | null, lastLotDate?: string | null, };
