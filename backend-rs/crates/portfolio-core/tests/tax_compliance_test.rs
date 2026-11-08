@@ -696,3 +696,82 @@ fn test_itr_invariant_gate_accepts_valid_report() {
     );
     assert!(verify_itr_invariants(&valid_report).is_ok());
 }
+
+#[test]
+fn test_section_112a_harvest_ticket_compliance() {
+    use portfolio_core::tax::harvesting::{
+        FolioHarvestingInput, generate_section_112a_harvest_ticket,
+    };
+
+    let as_of = date(2025, 3, 15);
+
+    // 1. Standard Equity Fund: purchased on 2023-01-01 (>365d, no exit load)
+    let equity_txs = vec![tx(
+        "tx-eq1",
+        date(2023, 1, 1),
+        TransactionType::Buy,
+        units("1000"),
+        nav("100"),
+    )];
+    let equity_input = FolioHarvestingInput::new(
+        "Mirae Asset Large Cap Fund - Direct Plan - Growth",
+        AssetType::MutualFund,
+        &equity_txs,
+        nav("150"),
+    )
+    .with_folio_id("folio-eq1");
+
+    // 2. ELSS Fund: purchased on 2023-01-01 (774 days holding: >365d LTCG, but <1095d LOCKED)
+    let elss_txs = vec![tx(
+        "tx-elss1",
+        date(2023, 1, 1),
+        TransactionType::Buy,
+        units("500"),
+        nav("100"),
+    )];
+    let elss_input = FolioHarvestingInput::new(
+        "Mirae Asset ELSS Tax Saver Fund - Direct Plan - Growth",
+        AssetType::MutualFund,
+        &elss_txs,
+        nav("150"),
+    )
+    .with_folio_id("folio-elss1");
+
+    // 3. Parag Parikh Flexi Cap: purchased on 2024-01-01 (439 days holding: >365d LTCG, but 1% exit load active <730d)
+    let pp_txs = vec![tx(
+        "tx-pp1",
+        date(2024, 1, 1),
+        TransactionType::Buy,
+        units("400"),
+        nav("100"),
+    )];
+    let pp_input = FolioHarvestingInput::new(
+        "Parag Parikh Flexi Cap Fund - Direct Plan - Growth",
+        AssetType::MutualFund,
+        &pp_txs,
+        nav("150"),
+    )
+    .with_folio_id("folio-pp1");
+
+    let inputs = vec![equity_input, elss_input, pp_input];
+    let realized_ltcg = money("50000"); // ₹50k already realized in FY 2024-25
+
+    let ticket = generate_section_112a_harvest_ticket(&inputs, as_of, realized_ltcg, None);
+
+    // Statutory ₹1.25L exemption - ₹50k realized = ₹75,000 remaining
+    assert_eq!(ticket.remaining_exemption, money("75000"));
+    assert_eq!(ticket.realized_ltcg_fy, money("50000"));
+
+    // ELSS and Parag Parikh must be excluded from opportunities
+    assert_eq!(ticket.opportunities.len(), 1);
+    let op = &ticket.opportunities[0];
+    assert_eq!(op.folio_id.as_deref(), Some("folio-eq1"));
+    assert_eq!(
+        op.scheme_name,
+        "Mirae Asset Large Cap Fund - Direct Plan - Growth"
+    );
+    assert_eq!(op.unrealized_gain, money("50000")); // Full 50k unrealized gain is harvested
+    assert_eq!(ticket.total_potential_harvest, money("50000"));
+    // Statutory savings @ 12.5% = ₹6,250
+    assert_eq!(ticket.estimated_tax_savings, money("6250"));
+}

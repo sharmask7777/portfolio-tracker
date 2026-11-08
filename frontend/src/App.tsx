@@ -49,9 +49,19 @@ import { HistoryChart } from './components/Dashboard/HistoryChart';
 import { HistoricalHighlightsCard } from './components/Dashboard/HistoricalHighlightsCard';
 import { TransactionSidePanel } from './components/Dashboard/TransactionSidePanel';
 import api, { API_ENDPOINTS } from './api';
+import type { HarvestTicketResponse } from './types/generated/HarvestTicketResponse';
+import axios from 'axios';
 
 export function Dashboard() {
-  const { theme, toggleTheme, performanceMode, setPerformanceMode } = useSettings();
+  const {
+    theme,
+    toggleTheme,
+    performanceMode,
+    setPerformanceMode,
+    realityCheckMode,
+    cpiInflationRate,
+    marginalTaxBracket,
+  } = useSettings();
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
@@ -74,7 +84,8 @@ export function Dashboard() {
   const [exposures, setExposures] = useState<StockExposure[]>([]);
   const [excludeArbitrage, setExcludeArbitrage] = useState<boolean>(false);
   const [taxSummary, setTaxSummary] = useState<any>(null);
-  const [harvesting, setHarvesting] = useState<any>(null);
+  const [harvesting, setHarvesting] = useState<HarvestTicketResponse | null>(null);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
@@ -158,14 +169,26 @@ export function Dashboard() {
       } else {
         setIsRefetching(true);
       }
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       const [summaryRes, profilesRes] = await Promise.all([
         api.get(`${API_ENDPOINTS.PORTFOLIO}/summary`, {
           params: {
             familyGroupId: selectedFamilyId,
             profileId: selectedProfileId,
-          }
+            cpiInflationRate,
+            marginalTaxBracket,
+          },
+          signal: controller.signal,
         }),
-        api.get(`${API_ENDPOINTS.FAMILY}/profiles`)
+        api.get(`${API_ENDPOINTS.FAMILY}/profiles`, {
+          signal: controller.signal,
+        }),
       ]);
       
       hasLoadedOnceRef.current = true;
@@ -190,13 +213,16 @@ export function Dashboard() {
         if (taxRes.status === 'fulfilled') setTaxSummary(taxRes.value.data);
         if (harvestingRes.status === 'fulfilled') setHarvesting(harvestingRes.value.data);
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      if (axios.isCancel(err) || (err instanceof Error && err.name === 'CanceledError')) {
+        return;
+      }
       console.error('Failed to fetch data:', err);
     } finally {
       setLoading(false);
       setIsRefetching(false);
     }
-  }, [selectedFamilyId, selectedProfileId, excludeArbitrage]);
+  }, [selectedFamilyId, selectedProfileId, excludeArbitrage, cpiInflationRate, marginalTaxBracket]);
 
   const handleToggleExcludeArbitrage = async (val: boolean) => {
     setExcludeArbitrage(val);
@@ -515,6 +541,7 @@ export function Dashboard() {
                 <StatsGrid 
                   metrics={portfolio.metrics}
                   performanceMode={performanceMode}
+                  onNavigateToTax={() => setActiveTab('tax')}
                 />
 
                 <HistoryChart portfolioId={portfolio.id} />
@@ -592,7 +619,7 @@ export function Dashboard() {
                         {renderSortableHeader('Scheme Name', 'name')}
                         {renderSortableHeader('Type', 'type')}
                         {renderSortableHeader('Invested', 'invested')}
-                        {renderSortableHeader('Current Value', 'value')}
+                        {renderSortableHeader(realityCheckMode ? 'Net Realizable Value' : 'Current Value', 'value')}
                         {renderSortableHeader('Day Change', 'dayChange')}
                         {renderSortableHeader(performanceMode === 'XIRR' ? 'XIRR' : 'Return', 'performance')}
                         {renderSortableHeader(`Post-Tax ${performanceMode === 'XIRR' ? 'XIRR' : 'Return'}`, 'postTaxPerformance')}
@@ -650,7 +677,7 @@ export function Dashboard() {
                                 <span className="badge badge-slab">{group.type.replace('_', ' ')}</span>
                               </td>
                               <td>{formatCurrency(group.metrics.investedAmount)}</td>
-                              <td>{formatCurrency(group.metrics.currentValue)}</td>
+                              <td>{formatCurrency(realityCheckMode ? group.metrics.netRealizableValue : group.metrics.currentValue)}</td>
                               <td className={getReturnClass(group.metrics.dayChange)}>
                                 {isValidNumber(group.metrics.dayChange) ? (
                                   <>
@@ -663,6 +690,25 @@ export function Dashboard() {
                               </td>
                               <td className={getReturnClass(performanceMode === 'XIRR' ? group.metrics.xirr : group.metrics.absoluteReturn)}>
                                 {formatPercent(performanceMode === 'XIRR' ? group.metrics.xirr : group.metrics.absoluteReturn)}
+                                {realityCheckMode && (
+                                  <span
+                                    className="badge badge-slab"
+                                    style={{ marginLeft: '4px', fontSize: '0.65rem', verticalAlign: 'middle' }}
+                                    title="Nominal pre-tax XIRR (Aggregate portfolio real post-tax XIRR shown in Reality Check banner above)"
+                                  >
+                                    Nominal
+                                  </span>
+                                )}
+                                {realityCheckMode && (group.type === 'DEBT' || group.type === 'LIQUID') && (
+                                  (performanceMode === 'XIRR' ? group.metrics.xirr : group.metrics.absoluteReturn) * (1 - marginalTaxBracket) < cpiInflationRate
+                                ) && (
+                                  <span
+                                    title={`Negative real return: Estimated yield after ${Math.round(marginalTaxBracket * 100)}% slab tax and ${Math.round(cpiInflationRate * 100)}% inflation is negative`}
+                                    style={{ color: 'var(--warning-color)', marginLeft: '4px', cursor: 'help' }}
+                                  >
+                                    ●
+                                  </span>
+                                )}
                               </td>
                               <td 
                                 className={getReturnClass(performanceMode === 'XIRR' ? group.metrics.postTaxXirr : group.metrics.postTaxAbsoluteReturn)}
@@ -735,7 +781,7 @@ export function Dashboard() {
                                   <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Individual Folio</span>
                                 </td>
                                 <td>{formatCurrency(folio.metrics?.investedAmount)}</td>
-                                <td>{formatCurrency(folio.metrics?.currentValue)}</td>
+                                <td>{formatCurrency(realityCheckMode ? (folio.metrics?.netRealizableValue ?? folio.metrics?.currentValue) : folio.metrics?.currentValue)}</td>
                                 <td className={getReturnClass(folio.metrics?.dayChange)}>
                                   {isValidNumber(folio.metrics?.dayChange) ? (
                                     <>
@@ -748,6 +794,14 @@ export function Dashboard() {
                                 </td>
                                 <td className={getReturnClass(performanceMode === 'XIRR' ? folio.metrics?.xirr : folio.metrics?.absoluteReturn)}>
                                   {formatPercent(performanceMode === 'XIRR' ? folio.metrics?.xirr : folio.metrics?.absoluteReturn)}
+                                  {realityCheckMode && (
+                                    <span
+                                      className="badge badge-slab"
+                                      style={{ marginLeft: '4px', fontSize: '0.65rem', verticalAlign: 'middle' }}
+                                    >
+                                      Nominal
+                                    </span>
+                                  )}
                                 </td>
                                 <td 
                                   className={getReturnClass(performanceMode === 'XIRR' ? folio.metrics?.postTaxXirr : folio.metrics?.postTaxAbsoluteReturn)}

@@ -63,6 +63,13 @@ pub enum ApiError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 
+    #[error("Bad request: {message}")]
+    BadRequestWithDetails {
+        message: String,
+        code: String,
+        details: serde_json::Value,
+    },
+
     #[error("Validation failed: {0}")]
     ValidationFailed(String),
 
@@ -188,6 +195,11 @@ impl IntoResponse for ApiError {
                 "BAD_REQUEST".to_string(),
                 None,
             ),
+            ApiError::BadRequestWithDetails {
+                message,
+                code,
+                details,
+            } => (StatusCode::BAD_REQUEST, message, code, Some(details)),
             ApiError::ValidationFailed(msg) => (
                 StatusCode::BAD_REQUEST,
                 msg,

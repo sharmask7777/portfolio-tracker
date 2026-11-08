@@ -18,7 +18,8 @@ pub use constants::*;
 pub use grandfathering::{calculate_gain, calculate_gain_with_expenses, compute_deemed_cost};
 pub use harvesting::{
     FolioHarvestingInput, HarvestingOpportunity, HarvestingSummary, UnrealizedLotGain,
-    UnrealizedTaxSummary, compute_unrealized_gains, get_harvesting_opportunities,
+    UnrealizedTaxSummary, compute_unrealized_gains, generate_section_112a_harvest_ticket,
+    get_harvesting_opportunities,
 };
 pub use rules::{
     elss_lock_in_expiry, get_exit_load, get_locked_units, is_elss, is_elss_scheme, is_equity,

@@ -386,4 +386,121 @@ proptest! {
             );
         }
     }
+
+    // ========================================================================
+    // Property 5: Fisher Real XIRR Monotonicity with Inflation
+    // ========================================================================
+    // For any post-tax return r > -0.90, if 0.0 <= i1 < i2 <= 1.0, then
+    // calculate_post_tax_real_xirr(r, i1) > calculate_post_tax_real_xirr(r, i2).
+    #[test]
+    fn prop_real_xirr_monotonic_with_inflation(
+        r_raw in -8000i64..=200_000i64, // -80% to +2000%
+        i1_raw in 0u32..=5000u32,       // 0% to 50%
+        i_diff_raw in 100u32..=5000u32, // +1% to +50%
+    ) {
+        use portfolio_core::performance::metrics::calculate_post_tax_real_xirr;
+
+        let r = Decimal::new(r_raw, 4);
+        let i1 = Decimal::new(i1_raw as i64, 4);
+        let i2 = i1 + Decimal::new(i_diff_raw as i64, 4);
+        prop_assert!(i2 > i1);
+
+        let real1 = calculate_post_tax_real_xirr(Some(r), i1).unwrap().unwrap();
+        let real2 = calculate_post_tax_real_xirr(Some(r), i2).unwrap().unwrap();
+
+        prop_assert!(
+            real1 > real2,
+            "Fisher monotonicity violated: for r={}, real(i1={}) = {} must be > real(i2={}) = {}",
+            r, i1, real1, i2, real2
+        );
+    }
+
+    // ========================================================================
+    // Property 6: Zero Tax Drag on Losses or Non-Taxable Positions
+    // ========================================================================
+    #[test]
+    fn prop_zero_tax_drag_on_loss_portfolio(
+        loss_xirr_raw in -5000i64..=0i64, // -50% to 0%
+        cpi_raw in 0u32..=1200u32,        // 0% to 12%
+    ) {
+        use portfolio_core::performance::metrics::calculate_drag_attribution;
+
+        let nominal = Decimal::new(loss_xirr_raw, 4);
+        let inflation = Decimal::new(cpi_raw as i64, 4);
+
+        let drag = calculate_drag_attribution(
+            Some(nominal),
+            Some(nominal), // In losses, post-tax XIRR == nominal XIRR
+            Money::ZERO,
+            Money::ZERO,
+            Money::ZERO,
+            inflation,
+            None,
+        ).unwrap();
+
+        prop_assert_eq!(drag.debt_drag, Decimal::ZERO);
+        prop_assert_eq!(drag.equity_drag, Decimal::ZERO);
+        prop_assert_eq!(drag.cess_and_other_drag, Decimal::ZERO);
+    }
+
+    // ========================================================================
+    // Property 7: Section 112A Harvest Ticket Exemption Bounding & Invariants
+    // ========================================================================
+    #[test]
+    fn prop_section_112a_harvest_ticket_invariants(
+        realized_fy_raw in 0u32..=200_000u32, // ₹0 to ₹2,00,000 realized LTCG
+        gain_per_lot_raw in 100u32..=50_000u32, // ₹100 to ₹50,000 gain
+        lot_count in 1usize..=10usize,
+    ) {
+        use portfolio_core::tax::harvesting::{FolioHarvestingInput, get_harvesting_opportunities};
+
+        let realized_fy = Money::new(Decimal::new(realized_fy_raw as i64, 0));
+        let as_of = NaiveDate::from_ymd_opt(2025, 3, 15).unwrap();
+        let buy_date_ltcg = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(); // > 365 days
+
+        let mut txs_list = Vec::new();
+        for i in 0..lot_count {
+            let buy_nav = Nav::new(Decimal::new(100, 0));
+            let current_nav = Nav::new(Decimal::new(100 + (gain_per_lot_raw as i64 / 10).max(1), 0));
+            let tx = vec![Transaction::new(
+                format!("tx-{i}"),
+                buy_date_ltcg,
+                TransactionType::Purchase,
+                Money::new(Decimal::from(-10000)),
+                Units::new(Decimal::from(100)),
+                buy_nav,
+                Units::new(Decimal::from(100)),
+            )];
+            txs_list.push((tx, current_nav));
+        }
+
+        let inputs: Vec<FolioHarvestingInput<'_>> = txs_list.iter().map(|(tx, nav)| {
+            FolioHarvestingInput::new("HDFC Top 100 Equity Fund - Direct", AssetType::MutualFund, tx, *nav)
+        }).collect();
+
+        let summary = get_harvesting_opportunities(&inputs, as_of, realized_fy, None);
+
+        let statutory_exemption = Money::new(Decimal::from(125_000));
+        let expected_remaining = (statutory_exemption - realized_fy).max(Money::ZERO);
+        prop_assert_eq!(summary.remaining_exemption, expected_remaining);
+
+        // Invariant 1: Total harvested LTCG never exceeds remaining exemption
+        prop_assert!(
+            summary.total_potential_harvest <= summary.remaining_exemption,
+            "Harvest {} exceeded remaining exemption {}",
+            summary.total_potential_harvest,
+            summary.remaining_exemption
+        );
+
+        // Invariant 2: When realized LTCG >= ₹1.25L, ticket returns 0 opportunities
+        if realized_fy >= statutory_exemption {
+            prop_assert_eq!(summary.remaining_exemption, Money::ZERO);
+            prop_assert_eq!(summary.total_potential_harvest, Money::ZERO);
+            prop_assert!(summary.opportunities.is_empty());
+        }
+
+        // Invariant 3: Sum of opportunity gains equals total_potential_harvest
+        let opportunities_sum: Money = summary.opportunities.iter().map(|op| op.unrealized_gain).sum();
+        prop_assert_eq!(opportunities_sum, summary.total_potential_harvest);
+    }
 }

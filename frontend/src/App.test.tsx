@@ -25,12 +25,28 @@ vi.mock('./contexts/AuthContext', () => ({
   }),
 }));
 
+let mockRealityCheckMode = false;
+let mockCpiInflationRate = 0.06;
+let mockMarginalTaxBracket = 0.30;
+
 vi.mock('./contexts/SettingsContext', () => ({
   useSettings: () => ({
     theme: 'light',
     toggleTheme: vi.fn(),
     performanceMode: 'XIRR',
     setPerformanceMode: vi.fn(),
+    realityCheckMode: mockRealityCheckMode,
+    setRealityCheckMode: vi.fn((val: boolean) => {
+      mockRealityCheckMode = val;
+    }),
+    cpiInflationRate: mockCpiInflationRate,
+    setCpiInflationRate: vi.fn((val: number) => {
+      mockCpiInflationRate = val;
+    }),
+    marginalTaxBracket: mockMarginalTaxBracket,
+    setMarginalTaxBracket: vi.fn((val: number) => {
+      mockMarginalTaxBracket = val;
+    }),
   }),
 }));
 
@@ -53,6 +69,9 @@ vi.mock('./components/Insights/GoalTracker', () => ({
 describe('App Dashboard - Stock Intersection excludeArbitrage data flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRealityCheckMode = false;
+    mockCpiInflationRate = 0.06;
+    mockMarginalTaxBracket = 0.30;
   });
 
   it('fetches exposures with ?excludeArbitrage=false initially and passes excludeArbitrage state to IntersectionView', async () => {
@@ -220,5 +239,99 @@ describe('App Dashboard - Stock Intersection excludeArbitrage data flow', () => 
     );
 
     consoleSpy.mockRestore();
+  });
+
+  describe('Reality Check Mode & Scheme Holdings Table Reaction', () => {
+    it('switches table headers to Net Realizable Value and displays Nominal badge', async () => {
+      vi.mocked(api.get).mockImplementation((url: string) => {
+        if (url === `${API_ENDPOINTS.PORTFOLIO}/summary`) {
+          return Promise.resolve({
+            data: {
+              id: 'port-reality-1',
+              name: 'Reality Portfolio',
+              folios: [
+                {
+                  id: 'folio-d1',
+                  number: 'F-101',
+                  pan: 'ABCDE1234F',
+                  schemeName: 'HDFC Corporate Bond Fund',
+                  schemeType: 'DEBT',
+                  asset: {
+                    name: 'HDFC Corporate Bond Fund',
+                    type: 'DEBT',
+                  },
+                  amcCode: 'HDFC',
+                  metrics: {
+                    investedAmount: 100000,
+                    currentValue: 106000,
+                    dayChange: 50,
+                    dayChangePercentage: 0.05,
+                    xirr: 0.06, // 6% nominal yield
+                    absoluteReturn: 0.06,
+                    postTaxXirr: 0.042,
+                    postTaxAbsoluteReturn: 0.042,
+                    netRealizableValue: 104200,
+                  },
+                },
+              ],
+              metrics: {
+                totalValue: 106000,
+                totalInvested: 100000,
+                totalGain: 6000,
+                absReturn: 6,
+                xirr: 6,
+                postTaxTotalValue: 104200,
+                realPostTaxXirr: -0.015,
+                drags: {
+                  nominalXirr: 0.06,
+                  debtDrag: 0.018,
+                  equityDrag: 0,
+                  cessDrag: 0.001,
+                  inflationDrag: 0.056,
+                  realPostTaxXirr: -0.015,
+                  benchmarkSpread: -0.025,
+                },
+              },
+            },
+          });
+        }
+        if (url === `${API_ENDPOINTS.FAMILY}/profiles`) {
+          return Promise.resolve({ data: [] });
+        }
+        if (url.startsWith(`${API_ENDPOINTS.PORTFOLIO}/port-reality-1/`)) {
+          return Promise.resolve({ data: {} });
+        }
+        if (url.startsWith(`${API_ENDPOINTS.TAX}/harvesting-opportunities`)) {
+          return Promise.resolve({ data: [] });
+        }
+        return Promise.resolve({ data: {} });
+      });
+
+      const { rerender } = render(<Dashboard />);
+
+      // Initially Broker View
+      await waitFor(() => {
+        expect(screen.getByText('Current Value')).toBeInTheDocument();
+      });
+
+      // Click Reality Check switch in StatsGrid
+      const realityToggle = screen.getByRole('button', { name: /Reality Check/i });
+      fireEvent.click(realityToggle);
+
+      // Re-render to reflect new mock state
+      rerender(<Dashboard />);
+
+      // Verify table header changed to Net Realizable Value
+      await waitFor(() => {
+        expect(screen.getByText('Net Realizable Value')).toBeInTheDocument();
+      });
+
+      // Verify "Nominal" badge is rendered next to scheme XIRR
+      expect(screen.getByText('Nominal')).toBeInTheDocument();
+
+      // Verify negative real return indicator dot is rendered on the debt scheme
+      const dot = screen.getByTitle(/Negative real return/i);
+      expect(dot).toBeInTheDocument();
+    });
   });
 });

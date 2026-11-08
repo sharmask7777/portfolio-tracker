@@ -51,8 +51,113 @@ pub struct OverlapQuery {
 #[serde(rename_all = "camelCase")]
 pub struct SummaryParams {
     pub profile_id: Option<String>,
-    pub tax_slab: Option<Decimal>,
+    #[serde(alias = "tax_slab", alias = "marginal_tax_bracket")]
+    pub marginal_tax_bracket: Option<Decimal>,
+    #[serde(alias = "cpi_inflation_rate")]
+    pub cpi_inflation_rate: Option<Decimal>,
     pub family_group_id: Option<String>,
+}
+
+impl SummaryParams {
+    /// Backward-compatible accessor for tax slab.
+    pub fn tax_slab(&self) -> Option<Decimal> {
+        self.marginal_tax_bracket
+    }
+
+    /// Validates query parameters against statutory and mathematical bounds.
+    pub fn validate(&self) -> Result<(), ApiError> {
+        if let Some(cpi) = self.cpi_inflation_rate
+            && (cpi < Decimal::ZERO || cpi > Decimal::ONE)
+        {
+            return Err(ApiError::BadRequestWithDetails {
+                message: format!("Invalid cpiInflationRate: {cpi}. Must be between 0.0 and 1.0"),
+                code: "INVALID_INFLATION_RATE".to_string(),
+                details: serde_json::json!({
+                    "what": format!("cpiInflationRate={cpi}"),
+                    "fix": "Pass cpiInflationRate between 0.0 and 1.0 (e.g., 0.06 for 6% annual inflation)",
+                    "recovery": "fix_and_retry",
+                    "sideEffects": "none",
+                    "context": {
+                        "min": 0.0,
+                        "max": 1.0,
+                        "received": cpi.to_string(),
+                    }
+                }),
+            });
+        }
+
+        if let Some(slab) = self.marginal_tax_bracket
+            && (slab < Decimal::ZERO || slab > Decimal::new(5, 1))
+        {
+            return Err(ApiError::BadRequestWithDetails {
+                message: format!(
+                    "Invalid marginalTaxBracket: {slab}. Must be a valid tax bracket between 0.0 and 0.50"
+                ),
+                code: "INVALID_TAX_BRACKET".to_string(),
+                details: serde_json::json!({
+                    "what": format!("marginalTaxBracket={slab}"),
+                    "fix": "Pass marginalTaxBracket corresponding to your statutory income slab (e.g., 0.0, 0.10, 0.15, 0.20, 0.30, 0.39)",
+                    "recovery": "fix_and_retry",
+                    "sideEffects": "none",
+                    "context": {
+                        "allowed": [0.0, 0.10, 0.15, 0.20, 0.30, 0.39],
+                        "received": slab.to_string(),
+                    }
+                }),
+            });
+        }
+
+        Ok(())
+    }
+}
+
+/// Detailed sequential teardown of return drag from nominal returns down to real purchasing power.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DragDecompositionDto {
+    /// Nominal gross annualized internal rate of return across all cash flows.
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub nominal_xirr: Option<Decimal>,
+    /// Drag attributed to Section 50AA debt gains slab taxation.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub debt_drag: Decimal,
+    /// Drag attributed to Section 112A / 111A equity capital gains taxation.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub equity_drag: Decimal,
+    /// Drag attributed to Health & Education Cess, surcharge, and expense overheads.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub cess_and_other_drag: Decimal,
+    /// Drag attributed to CPI inflation eroding purchasing power.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub inflation_drag: Decimal,
+    /// Net real purchasing-power return after tax and inflation.
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub real_post_tax_xirr: Option<Decimal>,
+    /// Real spread over the real post-tax risk-free benchmark rate.
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub benchmark_spread: Option<Decimal>,
+}
+
+impl From<portfolio_core::performance::metrics::DragDecomposition> for DragDecompositionDto {
+    fn from(core: portfolio_core::performance::metrics::DragDecomposition) -> Self {
+        Self {
+            nominal_xirr: core.nominal_xirr,
+            debt_drag: core.debt_drag,
+            equity_drag: core.equity_drag,
+            cess_and_other_drag: core.cess_and_other_drag,
+            inflation_drag: core.inflation_drag,
+            real_post_tax_xirr: core.real_post_tax_xirr,
+            benchmark_spread: core.benchmark_spread,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -80,6 +185,11 @@ pub struct SummaryMetrics {
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub post_tax_xirr: Decimal,
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub real_post_tax_xirr: Option<Decimal>,
+    #[ts(optional = nullable)]
+    pub drags: Option<DragDecompositionDto>,
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub estimated_tax: Decimal,
@@ -1826,7 +1936,10 @@ pub async fn get_portfolio_summary(
     State(state): State<AppState>,
     Query(params): Query<SummaryParams>,
 ) -> Result<Json<ConsolidatedSummaryResponse>, ApiError> {
-    let slab_value = params.tax_slab.unwrap_or_else(|| Decimal::new(3, 1));
+    params.validate()?;
+    let slab_value = params
+        .marginal_tax_bracket
+        .unwrap_or_else(|| Decimal::new(3, 1));
     let res_id = params
         .profile_id
         .clone()
@@ -1861,6 +1974,8 @@ pub async fn get_portfolio_summary(
                 absolute_return: Decimal::ZERO,
                 xirr: Decimal::ZERO,
                 post_tax_xirr: Decimal::ZERO,
+                real_post_tax_xirr: None,
+                drags: None,
                 estimated_tax: Decimal::ZERO,
                 day_change: Decimal::ZERO,
                 day_change_percentage: Decimal::ZERO,
@@ -2031,6 +2146,60 @@ pub async fn get_portfolio_summary(
         Decimal::ZERO
     };
 
+    let cpi_rate = params
+        .cpi_inflation_rate
+        .unwrap_or_else(|| Decimal::new(6, 2));
+
+    let opt_nominal_xirr = if overall_xirr.is_zero() && all_cash_flows.is_empty() {
+        None
+    } else {
+        Some(overall_xirr)
+    };
+    let opt_post_tax_xirr = if overall_post_tax_xirr.is_zero() && all_cash_flows.is_empty() {
+        None
+    } else {
+        Some(overall_post_tax_xirr)
+    };
+
+    let real_post_tax_xirr = portfolio_core::performance::metrics::calculate_post_tax_real_xirr(
+        opt_post_tax_xirr,
+        cpi_rate,
+    )
+    .ok()
+    .flatten();
+
+    let mut debt_tax = Decimal::ZERO;
+    let mut equity_tax = Decimal::ZERO;
+    for folio in &active_folios {
+        if let Some(tax) = folio.metrics.estimated_tax {
+            let is_debt = folio.asset.as_ref().is_some_and(|a| {
+                a.asset_type.eq_ignore_ascii_case("DEBT")
+                    || a.name.to_lowercase().contains("liquid")
+                    || a.name.to_lowercase().contains("overnight")
+                    || a.name.to_lowercase().contains("money market")
+            });
+            if is_debt {
+                debt_tax += tax;
+            } else {
+                equity_tax += tax;
+            }
+        }
+    }
+
+    // Default risk-free benchmark: 6.5% nominal (e.g. 1-year T-Bill/FD)
+    let risk_free_nominal = Some(Decimal::new(65, 3));
+    let drags = portfolio_core::performance::metrics::calculate_drag_attribution(
+        opt_nominal_xirr,
+        opt_post_tax_xirr,
+        Money::new(debt_tax),
+        Money::new(equity_tax),
+        Money::ZERO,
+        cpi_rate,
+        risk_free_nominal,
+    )
+    .ok()
+    .map(DragDecompositionDto::from);
+
     Ok(Json(ConsolidatedSummaryResponse {
         id: res_id,
         name: res_name,
@@ -2045,6 +2214,8 @@ pub async fn get_portfolio_summary(
             absolute_return,
             xirr: overall_xirr,
             post_tax_xirr: overall_post_tax_xirr,
+            real_post_tax_xirr,
+            drags,
             estimated_tax: total_estimated_tax,
             day_change: total_day_change,
             day_change_percentage: total_day_change_percentage,

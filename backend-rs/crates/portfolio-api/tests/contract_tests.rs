@@ -2091,3 +2091,153 @@ async fn test_dynamic_exposure_uses_db_holdings_when_available() {
         "Un-ingested fund (UTI Nifty 50) must continue resolving via resolve_holdings fallback"
     );
 }
+
+#[tokio::test]
+async fn test_portfolio_summary_reality_check_metrics_and_query_validation() {
+    let (app, db, _) = setup_test_app();
+
+    // 1. Register and login
+    let reg_payload = json!({
+        "email": "reality.check@example.com",
+        "password": "SecurePassword123!"
+    });
+    let reg_req = Request::builder()
+        .uri("/api/auth/register")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(reg_payload.to_string()))
+        .unwrap();
+    let reg_res = app.clone().oneshot(reg_req).await.unwrap();
+    let reg_json = parse_json(reg_res.into_body()).await;
+    let token = reg_json["token"].as_str().unwrap().to_string();
+    let user_id = Uuid::parse_str(reg_json["id"].as_str().unwrap()).unwrap();
+
+    // 2. Insert portfolio, asset, folio, transactions
+    let port = db
+        .create_portfolio(user_id, "Reality Check Portfolio", None)
+        .await
+        .unwrap();
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "Nifty 50 Index Fund",
+        Some("INF000000001"),
+        None,
+        None,
+        None,
+    );
+    let folio = db
+        .create_folio(
+            port.id,
+            asset.id,
+            "FOLIO-REALITY-01",
+            Some("HDFC AMC"),
+            None,
+        )
+        .unwrap();
+
+    let d1 = Utc::now().date_naive() - Duration::days(400);
+    let d2 = Utc::now().date_naive() - Duration::days(100);
+    db.create_transaction(
+        folio.id,
+        d1,
+        "PURCHASE",
+        Decimal::from(10000),
+        Decimal::from(100),
+        Decimal::from(100),
+        Decimal::from(100),
+        None,
+    )
+    .await
+    .unwrap();
+    db.create_transaction(
+        folio.id,
+        d2,
+        "PURCHASE",
+        Decimal::from(6000),
+        Decimal::from(50),
+        Decimal::from(120),
+        Decimal::from(150),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // 3. Test validation error for negative cpiInflationRate
+    let bad_cpi_req = Request::builder()
+        .uri("/api/portfolio/summary?cpiInflationRate=-0.05")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let bad_cpi_res = app.clone().oneshot(bad_cpi_req).await.unwrap();
+    assert_eq!(bad_cpi_res.status(), StatusCode::BAD_REQUEST);
+    let bad_cpi_json = parse_json(bad_cpi_res.into_body()).await;
+    assert_eq!(bad_cpi_json["code"], "INVALID_INFLATION_RATE");
+    assert!(bad_cpi_json.get("details").is_some());
+    assert_eq!(bad_cpi_json["details"]["recovery"], "fix_and_retry");
+    assert_eq!(bad_cpi_json["details"]["sideEffects"], "none");
+
+    // 4. Test validation error for marginalTaxBracket > 0.50
+    let bad_tax_req = Request::builder()
+        .uri("/api/portfolio/summary?marginalTaxBracket=0.75")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let bad_tax_res = app.clone().oneshot(bad_tax_req).await.unwrap();
+    assert_eq!(bad_tax_res.status(), StatusCode::BAD_REQUEST);
+    let bad_tax_json = parse_json(bad_tax_res.into_body()).await;
+    assert_eq!(bad_tax_json["code"], "INVALID_TAX_BRACKET");
+    assert!(bad_tax_json.get("details").is_some());
+
+    // 5. Test valid request with camelCase parameters
+    let valid_req = Request::builder()
+        .uri("/api/portfolio/summary?cpiInflationRate=0.06&marginalTaxBracket=0.30")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let valid_res = app.clone().oneshot(valid_req).await.unwrap();
+    assert_eq!(valid_res.status(), StatusCode::OK);
+    let valid_json = parse_json(valid_res.into_body()).await;
+    let metrics = &valid_json["metrics"];
+    assert!(metrics["totalInvested"].is_number());
+    assert!(metrics["totalValue"].is_number());
+    assert!(metrics["postTaxTotalValue"].is_number());
+    assert!(metrics.get("realPostTaxXirr").is_some());
+    assert!(metrics.get("drags").is_some());
+
+    let drags = &metrics["drags"];
+    assert!(drags["debtDrag"].is_number());
+    assert!(drags["equityDrag"].is_number());
+    assert!(drags["cessAndOtherDrag"].is_number());
+    assert!(drags["inflationDrag"].is_number());
+
+    // 6. Test backward-compatible Serde alias parameters
+    let alias_req = Request::builder()
+        .uri("/api/portfolio/summary?cpi_inflation_rate=0.06&tax_slab=0.30")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let alias_res = app.clone().oneshot(alias_req).await.unwrap();
+    assert_eq!(alias_res.status(), StatusCode::OK);
+
+    // 7. Test Tax Harvesting Endpoint returns typed HarvestTicketResponse
+    let harvest_req = Request::builder()
+        .uri("/api/tax/harvesting")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let harvest_res = app.clone().oneshot(harvest_req).await.unwrap();
+    assert_eq!(harvest_res.status(), StatusCode::OK);
+    let harvest_json = parse_json(harvest_res.into_body()).await;
+    assert!(harvest_json["realizedLtcgFy"].is_number());
+    assert!(harvest_json["remainingExemption"].is_number());
+    assert!(harvest_json["totalPotentialHarvest"].is_number());
+    assert!(harvest_json["estimatedTaxSavings"].is_number());
+    assert!(harvest_json["opportunities"].is_array());
+    assert!(harvest_json["unrealizedSummary"].is_object());
+    assert!(harvest_json["unrealizedSummary"]["lots"].is_array());
+}
