@@ -107,6 +107,8 @@ pub struct FolioHarvestingInput<'a> {
     pub transactions: &'a [Transaction],
     /// Current valuation NAV for the scheme.
     pub current_nav: Nav,
+    /// Fund exit load metadata string, if available.
+    pub exit_load_metadata: Option<&'a str>,
 }
 
 impl<'a> FolioHarvestingInput<'a> {
@@ -123,12 +125,19 @@ impl<'a> FolioHarvestingInput<'a> {
             asset_type,
             transactions,
             current_nav,
+            exit_load_metadata: None,
         }
     }
 
     /// Builder method attaching a folio ID to this input.
     pub fn with_folio_id(mut self, folio_id: &'a str) -> Self {
         self.folio_id = Some(folio_id);
+        self
+    }
+
+    /// Builder method attaching exit load metadata to this input.
+    pub fn with_exit_load_metadata(mut self, metadata: &'a str) -> Self {
+        self.exit_load_metadata = Some(metadata);
         self
     }
 
@@ -140,6 +149,7 @@ impl<'a> FolioHarvestingInput<'a> {
             asset_type: folio.asset_type,
             transactions: &folio.transactions,
             current_nav,
+            exit_load_metadata: None,
         }
     }
 }
@@ -258,6 +268,20 @@ pub fn get_harvesting_opportunities(
                 // Only LTCG lots (holding >= 365 days) with unrealized gains
                 if holding_days >= HOLDING_DAYS_EQUITY_LTCG && input.current_nav > lot.purchase_nav
                 {
+                    // Exit load schedule check: exclude lots with active exit load penalty
+                    let lot_val = lot.remaining_units * input.current_nav;
+                    let exit_load = crate::tax::rules::get_exit_load(
+                        input.scheme_name,
+                        input.asset_type,
+                        lot.purchase_date,
+                        as_of,
+                        lot_val,
+                        input.exit_load_metadata,
+                    );
+                    if !exit_load.is_zero() {
+                        continue;
+                    }
+
                     let nav_gain = input.current_nav.to_decimal() - lot.purchase_nav.to_decimal();
                     let lot_gain = input.current_nav * lot.remaining_units
                         - lot.purchase_nav * lot.remaining_units;
@@ -306,6 +330,16 @@ pub fn get_harvesting_opportunities(
         estimated_tax_savings,
         unrealized_summary,
     }
+}
+
+/// Alias for [`get_harvesting_opportunities`] providing a statutory Section 112A harvest ticket.
+pub fn generate_section_112a_harvest_ticket(
+    inputs: &[FolioHarvestingInput<'_>],
+    as_of: NaiveDate,
+    realized_ltcg_fy: Money,
+    custom_exemption_limit: Option<Money>,
+) -> HarvestingSummary {
+    get_harvesting_opportunities(inputs, as_of, realized_ltcg_fy, custom_exemption_limit)
 }
 
 #[cfg(test)]
@@ -436,5 +470,56 @@ mod tests {
 
         assert_eq!(summary.total_potential_harvest, Money::ZERO);
         assert_eq!(summary.opportunities.len(), 0);
+    }
+
+    #[test]
+    fn test_harvesting_excludes_parag_parikh_with_active_exit_load() {
+        // Parag Parikh Flexi Cap: 2% exit load < 365d, 1% exit load < 730d, 0% thereafter.
+        // Purchase on 2023-01-01, as_of 2024-02-05 (400 days holding):
+        // > 365 days (LTCG under Section 112A), but < 730 days (1% exit load active).
+        let tx_400d = vec![Transaction::new(
+            "tx-pp1",
+            date(2023, 1, 1),
+            TransactionType::Purchase,
+            money("-100000"),
+            units("1000"),
+            nav("100"),
+            units("1000"),
+        )];
+        let input_400d = FolioHarvestingInput::new(
+            "Parag Parikh Flexi Cap Fund - Direct Plan - Growth",
+            AssetType::MutualFund,
+            &tx_400d,
+            nav("150"),
+        );
+
+        let as_of_400d = date(2024, 2, 5);
+        let summary_400d =
+            get_harvesting_opportunities(&[input_400d], as_of_400d, Money::ZERO, None);
+        assert_eq!(
+            summary_400d.opportunities.len(),
+            0,
+            "Lot with 1% exit load (<730d) must be excluded from harvest ticket"
+        );
+
+        // Now evaluate at 800 days (as_of 2025-03-11): > 730 days -> 0% exit load.
+        let input_800d = FolioHarvestingInput::new(
+            "Parag Parikh Flexi Cap Fund - Direct Plan - Growth",
+            AssetType::MutualFund,
+            &tx_400d,
+            nav("150"),
+        );
+        let as_of_800d = date(2025, 3, 11);
+        let summary_800d =
+            get_harvesting_opportunities(&[input_800d], as_of_800d, Money::ZERO, None);
+        assert_eq!(
+            summary_800d.opportunities.len(),
+            1,
+            "Lot with 0% exit load (>730d) should be eligible for harvesting"
+        );
+        assert_eq!(
+            summary_800d.opportunities[0].unrealized_gain,
+            money("50000")
+        );
     }
 }

@@ -349,6 +349,134 @@ pub async fn simulate_sell(
     Ok(Json(to_simulation_response(simulation)))
 }
 
+/// Individual scheme opportunity for Section 112A tax-free harvesting.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct HarvestOpportunityDto {
+    #[ts(optional = nullable)]
+    pub folio_id: Option<String>,
+    pub scheme_name: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub units_to_harvest: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub unrealized_gain: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub current_value: Decimal,
+}
+
+/// Detailed holding lot evaluation for tax categorization and harvesting.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct UnrealizedLotGainDto {
+    pub scheme_name: String,
+    pub buy_date: NaiveDate,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub units: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub purchase_nav: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub current_nav: Decimal,
+    pub holding_days: i64,
+    pub is_ltcg: bool,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub unrealized_gain: Decimal,
+}
+
+/// Aggregated breakdown of unrealized capital gains and losses across active holdings.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct UnrealizedSummaryDto {
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub stcg: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub ltcg: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub losses: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub net_gain: Decimal,
+    pub lots: Vec<UnrealizedLotGainDto>,
+}
+
+/// Strongly-typed response payload for Section 112A tax-free harvesting opportunities.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct HarvestTicketResponse {
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub realized_ltcg_fy: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub remaining_exemption: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub total_potential_harvest: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub estimated_tax_savings: Decimal,
+    pub opportunities: Vec<HarvestOpportunityDto>,
+    pub unrealized_summary: UnrealizedSummaryDto,
+}
+
+pub type HarvestTicket = HarvestTicketResponse;
+
+impl From<portfolio_core::tax::harvesting::HarvestingSummary> for HarvestTicketResponse {
+    fn from(summary: portfolio_core::tax::harvesting::HarvestingSummary) -> Self {
+        Self {
+            realized_ltcg_fy: summary.realized_ltcg_fy.to_decimal(),
+            remaining_exemption: summary.remaining_exemption.to_decimal(),
+            total_potential_harvest: summary.total_potential_harvest.to_decimal(),
+            estimated_tax_savings: summary.estimated_tax_savings.to_decimal(),
+            opportunities: summary
+                .opportunities
+                .into_iter()
+                .map(|op| HarvestOpportunityDto {
+                    folio_id: op.folio_id,
+                    scheme_name: op.scheme_name,
+                    units_to_harvest: op.units_to_harvest.to_decimal(),
+                    unrealized_gain: op.unrealized_gain.to_decimal(),
+                    current_value: op.current_value.to_decimal(),
+                })
+                .collect(),
+            unrealized_summary: UnrealizedSummaryDto {
+                stcg: summary.unrealized_summary.stcg.to_decimal(),
+                ltcg: summary.unrealized_summary.ltcg.to_decimal(),
+                losses: summary.unrealized_summary.losses.to_decimal(),
+                net_gain: summary.unrealized_summary.net_gain.to_decimal(),
+                lots: summary
+                    .unrealized_summary
+                    .lots
+                    .into_iter()
+                    .map(|lot| UnrealizedLotGainDto {
+                        scheme_name: lot.scheme_name,
+                        buy_date: lot.buy_date,
+                        units: lot.units.to_decimal(),
+                        purchase_nav: lot.purchase_nav.to_decimal(),
+                        current_nav: lot.current_nav.to_decimal(),
+                        holding_days: lot.holding_days,
+                        is_ltcg: lot.is_ltcg,
+                        unrealized_gain: lot.unrealized_gain.to_decimal(),
+                    })
+                    .collect(),
+            },
+        }
+    }
+}
+
 /// Route handler for `GET /api/tax/harvesting` and `/api/tax/harvesting-opportunities`.
 ///
 /// Identifies mutual fund lots with unrealized LTCG that can be redeemed tax-free
@@ -357,8 +485,7 @@ pub async fn get_harvesting(
     auth_user: AuthUser,
     State(state): State<AppState>,
     Query(query): Query<HarvestingQuery>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    use rust_decimal::prelude::ToPrimitive;
+) -> Result<Json<HarvestTicketResponse>, ApiError> {
     let as_of = query.as_of.unwrap_or_else(|| Utc::now().date_naive());
     let realized_ltcg = Money::new(query.realized_ltcg.unwrap_or(Decimal::ZERO));
 
@@ -403,6 +530,7 @@ pub async fn get_harvesting(
                 asset_type,
                 core_txs,
                 current_nav,
+                asset.exit_load_metadata,
             ));
         }
     }
@@ -410,49 +538,24 @@ pub async fn get_harvesting(
     let inputs: Vec<FolioHarvestingInput<'_>> = folio_data
         .iter()
         .map(
-            |(folio_id, scheme_name, asset_type, core_transactions, current_nav)| {
-                FolioHarvestingInput::new(scheme_name, *asset_type, core_transactions, *current_nav)
-                    .with_folio_id(folio_id)
+            |(folio_id, scheme_name, asset_type, core_transactions, current_nav, exit_load)| {
+                let mut input = FolioHarvestingInput::new(
+                    scheme_name,
+                    *asset_type,
+                    core_transactions,
+                    *current_nav,
+                )
+                .with_folio_id(folio_id);
+                if let Some(meta) = exit_load {
+                    input = input.with_exit_load_metadata(meta.as_str());
+                }
+                input
             },
         )
         .collect();
 
     let summary = get_harvesting_opportunities(&inputs, as_of, realized_ltcg, None);
-    let decimal_to_f64 = |v: Decimal| v.to_f64().unwrap_or(0.0);
-    let json_val = serde_json::json!({
-        "realizedLtcgFy": decimal_to_f64(summary.realized_ltcg_fy.to_decimal()),
-        "remainingExemption": decimal_to_f64(summary.remaining_exemption.to_decimal()),
-        "totalPotentialHarvest": decimal_to_f64(summary.total_potential_harvest.to_decimal()),
-        "estimatedTaxSavings": decimal_to_f64(summary.estimated_tax_savings.to_decimal()),
-        "opportunities": summary.opportunities.iter().map(|op| {
-            serde_json::json!({
-                "folioId": op.folio_id,
-                "schemeName": op.scheme_name,
-                "unitsToHarvest": decimal_to_f64(op.units_to_harvest.to_decimal()),
-                "unrealizedGain": decimal_to_f64(op.unrealized_gain.to_decimal()),
-                "currentValue": decimal_to_f64(op.current_value.to_decimal()),
-            })
-        }).collect::<Vec<_>>(),
-        "unrealizedSummary": {
-            "stcg": decimal_to_f64(summary.unrealized_summary.stcg.to_decimal()),
-            "ltcg": decimal_to_f64(summary.unrealized_summary.ltcg.to_decimal()),
-            "losses": decimal_to_f64(summary.unrealized_summary.losses.to_decimal()),
-            "netGain": decimal_to_f64(summary.unrealized_summary.net_gain.to_decimal()),
-            "lots": summary.unrealized_summary.lots.iter().map(|lot| {
-                serde_json::json!({
-                    "schemeName": lot.scheme_name,
-                    "buyDate": lot.buy_date,
-                    "units": decimal_to_f64(lot.units.to_decimal()),
-                    "purchaseNav": decimal_to_f64(lot.purchase_nav.to_decimal()),
-                    "currentNav": decimal_to_f64(lot.current_nav.to_decimal()),
-                    "holdingDays": lot.holding_days,
-                    "isLtcg": lot.is_ltcg,
-                    "unrealizedGain": decimal_to_f64(lot.unrealized_gain.to_decimal()),
-                })
-            }).collect::<Vec<_>>(),
-        }
-    });
-    Ok(Json(json_val))
+    Ok(Json(HarvestTicketResponse::from(summary)))
 }
 
 /// Constructs and returns the Axum router for tax simulation and harvesting endpoints.

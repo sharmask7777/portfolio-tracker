@@ -44,6 +44,26 @@ pub struct PerformanceMetrics {
     pub estimated_tax: Option<Money>,
 }
 
+/// Decomposition of sequential return drag from nominal gross return to real purchasing-power return.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DragDecomposition {
+    /// Nominal gross annualized internal rate of return across all cash flows.
+    pub nominal_xirr: Option<Decimal>,
+    /// Drag attributed to Section 50AA debt gains slab taxation.
+    pub debt_drag: Decimal,
+    /// Drag attributed to Section 112A / 111A equity capital gains taxation.
+    pub equity_drag: Decimal,
+    /// Drag attributed to Health & Education Cess, surcharge, and expense overheads.
+    pub cess_and_other_drag: Decimal,
+    /// Drag attributed to CPI inflation eroding purchasing power.
+    pub inflation_drag: Decimal,
+    /// Net real purchasing-power return after tax and inflation.
+    pub real_post_tax_xirr: Option<Decimal>,
+    /// Real spread over the real post-tax risk-free benchmark rate.
+    pub benchmark_spread: Option<Decimal>,
+}
+
 /// Optional configuration and overrides for performance calculation.
 #[derive(Debug, Clone, Default)]
 pub struct PerformanceOptions {
@@ -171,6 +191,105 @@ pub fn calculate_cagr(
     } else {
         Ok(rounded)
     }
+}
+
+/// Calculates Fisher-deflated Real Post-Tax XIRR.
+///
+/// # Mathematical Formulation:
+///
+/// $$r_{\text{real}} = \frac{1 + r_{\text{post-tax}}}{1 + i_{\text{inflation}}} - 1$$
+///
+/// # Invariants & Error Safeguards:
+/// - If nominal post-tax XIRR is `None` (undefined cash flows), returns `Ok(None)`.
+/// - If deflator $1 + i_{\text{inflation}} \le 0$ ($i \le -100\%$), returns [`PortfolioError::InvalidTransaction`].
+/// - Normalizes and rounds to 6 decimal places ($10^{-6}$ precision).
+pub fn calculate_post_tax_real_xirr(
+    nominal_post_tax_xirr: Option<Decimal>,
+    cpi_inflation_rate: Decimal,
+) -> Result<Option<Decimal>, PortfolioError> {
+    let Some(post_tax) = nominal_post_tax_xirr else {
+        return Ok(None);
+    };
+    let divisor = Decimal::ONE + cpi_inflation_rate;
+    if divisor <= Decimal::ZERO {
+        return Err(PortfolioError::InvalidTransaction {
+            reason: format!(
+                "CPI inflation rate {} results in non-positive deflator (1 + i <= 0)",
+                cpi_inflation_rate
+            ),
+        });
+    }
+    let real = ((Decimal::ONE + post_tax) / divisor) - Decimal::ONE;
+    Ok(Some(real.round_dp(6).normalize()))
+}
+
+/// Computes a closed-form proportional decomposition of return drags from nominal to real purchasing power.
+///
+/// # Mathematical Invariants:
+/// Enforces the exact identity:
+/// $$\text{XIRR}_{\text{nominal}} - (\text{debt\_drag} + \text{equity\_drag} + \text{cess\_drag} + \text{inflation\_drag}) \equiv \text{XIRR}_{\text{real}}$$
+///
+/// Intermediate tax drags are apportioned proportionally from total tax drag
+/// $\Delta_{\text{tax}} = \text{XIRR}_{\text{nominal}} - \text{XIRR}_{\text{post-tax}}$ based on
+/// the relative proportions of statutory debt tax (Section 50AA), equity tax (Section 112A/111A),
+/// and cess/expenses.
+pub fn calculate_drag_attribution(
+    nominal_xirr: Option<Decimal>,
+    post_tax_xirr: Option<Decimal>,
+    debt_tax: Money,
+    equity_tax: Money,
+    cess_and_other_tax: Money,
+    cpi_inflation_rate: Decimal,
+    risk_free_nominal_rate: Option<Decimal>,
+) -> Result<DragDecomposition, PortfolioError> {
+    let real_post_tax_xirr = calculate_post_tax_real_xirr(post_tax_xirr, cpi_inflation_rate)?;
+
+    let (debt_drag, equity_drag, cess_drag, inflation_drag) =
+        match (nominal_xirr, post_tax_xirr, real_post_tax_xirr) {
+            (Some(nom), Some(pt), Some(real)) if nom > Decimal::ZERO => {
+                let total_tax_drag = (nom - pt).max(Decimal::ZERO);
+                let total_tax = debt_tax + equity_tax + cess_and_other_tax;
+
+                let (d_drag, eq_drag, c_drag) = if total_tax.is_positive()
+                    && total_tax_drag.is_sign_positive()
+                    && !total_tax_drag.is_zero()
+                {
+                    let d_ratio = debt_tax / total_tax;
+                    let eq_ratio = equity_tax / total_tax;
+                    let d_drag = (total_tax_drag * d_ratio).round_dp(6);
+                    let eq_drag = (total_tax_drag * eq_ratio).round_dp(6);
+                    let c_drag = (total_tax_drag - d_drag - eq_drag).round_dp(6);
+                    (d_drag, eq_drag, c_drag)
+                } else {
+                    (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO)
+                };
+
+                let inf_drag = (pt - real).round_dp(6);
+                (d_drag, eq_drag, c_drag, inf_drag)
+            }
+            _ => (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
+        };
+
+    // Risk-free benchmark comparison (e.g. 1-year T-Bill / FD default 6.5% nominal, 30% slab -> 4.55% post-tax)
+    let benchmark_spread =
+        if let (Some(real), Some(rf_nom)) = (real_post_tax_xirr, risk_free_nominal_rate) {
+            let rf_post_tax = rf_nom * Decimal::from_str_exact("0.70").unwrap_or(Decimal::ONE);
+            let rf_real = calculate_post_tax_real_xirr(Some(rf_post_tax), cpi_inflation_rate)?
+                .unwrap_or(Decimal::ZERO);
+            Some((real - rf_real).round_dp(6))
+        } else {
+            None
+        };
+
+    Ok(DragDecomposition {
+        nominal_xirr,
+        debt_drag,
+        equity_drag,
+        cess_and_other_drag: cess_drag,
+        inflation_drag,
+        real_post_tax_xirr,
+        benchmark_spread,
+    })
 }
 
 /// Aggregates performance metrics for a given set of transactions and current valuation price.
@@ -562,5 +681,74 @@ mod tests {
         let deserialized: PerformanceMetrics =
             serde_json::from_str(&json).expect("deserialization should succeed");
         assert_eq!(deserialized, metrics);
+    }
+
+    #[test]
+    fn test_calculate_post_tax_real_xirr_success() {
+        // Post-tax 14.0% with 6.0% inflation -> (1.14 / 1.06) - 1 = 0.075471698... -> 0.075472
+        let real = calculate_post_tax_real_xirr(Some(dec("0.14")), dec("0.06"))
+            .expect("should calculate")
+            .expect("should be some");
+        assert_eq!(real, dec("0.075472"));
+    }
+
+    #[test]
+    fn test_calculate_post_tax_real_xirr_none_input() {
+        let result = calculate_post_tax_real_xirr(None, dec("0.06")).expect("should succeed");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_calculate_post_tax_real_xirr_degenerate_deflator() {
+        // -1.0 means 1 + i = 0 -> error
+        let err = calculate_post_tax_real_xirr(Some(dec("0.10")), dec("-1.0"));
+        assert!(matches!(
+            err,
+            Err(PortfolioError::InvalidTransaction { .. })
+        ));
+
+        // -1.5 means 1 + i < 0 -> error
+        let err2 = calculate_post_tax_real_xirr(Some(dec("0.10")), dec("-1.5"));
+        assert!(matches!(
+            err2,
+            Err(PortfolioError::InvalidTransaction { .. })
+        ));
+    }
+
+    #[test]
+    fn test_calculate_drag_attribution_exact_identity() {
+        let nom_val = dec("0.182");
+        let nominal = Some(nom_val); // 18.2%
+        let post_tax = Some(dec("0.140")); // 14.0% -> total tax drag = 0.042
+        let debt_tax = money("3000"); // 30% of 10,000
+        let equity_tax = money("6000"); // 60% of 10,000
+        let cess_tax = money("1000"); // 10% of 10,000
+        let inflation = dec("0.06"); // 6% inflation
+        let rf = Some(dec("0.065")); // 6.5% risk-free nominal
+
+        let drag = calculate_drag_attribution(
+            nominal, post_tax, debt_tax, equity_tax, cess_tax, inflation, rf,
+        )
+        .expect("drag attribution should succeed");
+
+        assert_eq!(drag.nominal_xirr, nominal);
+        assert_eq!(drag.debt_drag, dec("0.0126")); // 0.042 * 0.3
+        assert_eq!(drag.equity_drag, dec("0.0252")); // 0.042 * 0.6
+        assert_eq!(drag.cess_and_other_drag, dec("0.0042")); // 0.042 * 0.1
+        let tax_sum = drag.debt_drag + drag.equity_drag + drag.cess_and_other_drag;
+        assert_eq!(tax_sum, dec("0.042"));
+
+        let real = drag.real_post_tax_xirr.expect("real xirr present");
+        assert_eq!(real, dec("0.075472"));
+
+        // Invariant: nominal - sum(drags) == real (within rounding bounds Delta <= 10^-6)
+        let total_drags =
+            drag.debt_drag + drag.equity_drag + drag.cess_and_other_drag + drag.inflation_drag;
+        let delta = (nom_val - total_drags - real).abs();
+        assert!(
+            delta <= dec("0.000001"),
+            "Drag identity violated: delta = {delta}"
+        );
+        assert!(drag.benchmark_spread.is_some());
     }
 }

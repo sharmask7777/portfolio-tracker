@@ -64,7 +64,7 @@ describe('sortSchemeGroups & extra sorting coverage', () => {
       pans: ['ABCDE1234F'],
       folioCount: 1,
       folios: [],
-      metrics: { investedAmount: 10000, currentValue: 12000, dayChange: 100, dayChangePercentage: 1.0, xirr: 0.15, postTaxXirr: 0.12, absoluteReturn: 0.2, postTaxAbsoluteReturn: 0.16 }
+      metrics: { investedAmount: 10000, currentValue: 12000, dayChange: 100, dayChangePercentage: 1.0, xirr: 0.15, postTaxXirr: 0.12, absoluteReturn: 0.2, postTaxAbsoluteReturn: 0.16, estimatedTax: 0, netRealizableValue: 12000 }
     },
     {
       id: 'grp-2',
@@ -73,7 +73,7 @@ describe('sortSchemeGroups & extra sorting coverage', () => {
       pans: ['ABCDE1234F'],
       folioCount: 1,
       folios: [],
-      metrics: { investedAmount: 5000, currentValue: 8000, dayChange: -50, dayChangePercentage: -0.5, xirr: 0.25, postTaxXirr: 0.20, absoluteReturn: 0.6, postTaxAbsoluteReturn: 0.48 }
+      metrics: { investedAmount: 5000, currentValue: 8000, dayChange: -50, dayChangePercentage: -0.5, xirr: 0.25, postTaxXirr: 0.20, absoluteReturn: 0.6, postTaxAbsoluteReturn: 0.48, estimatedTax: 0, netRealizableValue: 8000 }
     }
   ];
 

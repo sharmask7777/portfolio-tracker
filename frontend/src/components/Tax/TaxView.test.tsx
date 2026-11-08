@@ -1,6 +1,16 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { TaxView } from './TaxView';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { TaxView, getDaysUntilFYEndIST, formatHarvestInstructions } from './TaxView';
+import type { HarvestTicketResponse } from '../../types/generated/HarvestTicketResponse';
+import type { UnrealizedSummaryDto } from '../../types/generated/UnrealizedSummaryDto';
 import { describe, it, expect, vi } from 'vitest';
+
+const dummyUnrealizedSummary: UnrealizedSummaryDto = {
+  stcg: 0,
+  ltcg: 0,
+  losses: 0,
+  netGain: 0,
+  lots: [],
+};
 
 describe('TaxView', () => {
   const mockGains = [
@@ -265,13 +275,16 @@ describe('TaxView', () => {
 
   it('does NOT crash when unitsToHarvest is Infinity or NaN (regression: toFixed is not a function)', () => {
     // Harvesting opportunity with Infinity unitsToHarvest (caused by zero price-diff division in backend)
-    const harvestingWithInfinity = {
+    const harvestingWithInfinity: HarvestTicketResponse = {
+      realizedLtcgFy: 0,
+      remainingExemption: 125000,
       totalPotentialHarvest: 125000,
       estimatedTaxSavings: 15625,
       opportunities: [
         { folioId: 'f1', schemeName: 'Some Equity Fund', unitsToHarvest: Infinity, unrealizedGain: 125000, currentValue: 200000 },
         { folioId: 'f2', schemeName: 'Another Fund', unitsToHarvest: NaN, unrealizedGain: 0, currentValue: 0 },
       ],
+      unrealizedSummary: dummyUnrealizedSummary,
     };
 
     // Use a sell date in the CURRENT FY (2026-27) so the harvesting card renders
@@ -301,12 +314,15 @@ describe('TaxView', () => {
   });
 
   it('does NOT crash when harvesting opportunity has undefined or non-number unitsToHarvest', () => {
-    const harvestingWithUndefined = {
+    const harvestingWithUndefined: HarvestTicketResponse = {
+      realizedLtcgFy: 0,
+      remainingExemption: 125000,
       totalPotentialHarvest: 50000,
       estimatedTaxSavings: 6250,
       opportunities: [
-        { folioId: 'f1', schemeName: 'Equity Fund', unitsToHarvest: undefined as unknown as number },
+        { folioId: 'f1', schemeName: 'Equity Fund', unitsToHarvest: undefined as unknown as number, unrealizedGain: 50000, currentValue: 100000 },
       ],
+      unrealizedSummary: dummyUnrealizedSummary,
     };
 
     const firstDetail = mockSummary.details[0];
@@ -365,5 +381,145 @@ describe('TaxView', () => {
     expect(() =>
       render(<TaxView summary={summaryWithUndefinedTaxType} harvesting={null} />)
     ).not.toThrow();
+  });
+
+  describe('Section 112A Harvesting Ticket and Seasonal Helpers', () => {
+    const validTicket: HarvestTicketResponse = {
+      realizedLtcgFy: 40000,
+      remainingExemption: 85000,
+      totalPotentialHarvest: 60000,
+      estimatedTaxSavings: 7500,
+      opportunities: [
+        {
+          folioId: 'FOLIO-001',
+          schemeName: 'Nifty 50 Index Fund',
+          unitsToHarvest: 125.456,
+          currentValue: 150000,
+          unrealizedGain: 35000,
+        },
+        {
+          folioId: 'FOLIO-002',
+          schemeName: 'Midcap 150 Index Fund',
+          unitsToHarvest: 80.123,
+          currentValue: 95000,
+          unrealizedGain: 25000,
+        },
+      ],
+      unrealizedSummary: dummyUnrealizedSummary,
+    };
+
+    const currentFYSummary = {
+      ...mockSummary,
+      details: [
+        {
+          ...mockSummary.details[0]!,
+          sellDate: '2026-10-10',
+          advanceTaxQuarter: 'Q3 (16/09 - 15/12)',
+        },
+      ],
+    };
+
+    it('computes days until FY end in IST and formats FY string', () => {
+      const res = getDaysUntilFYEndIST();
+      expect(res.daysRemaining).toBeGreaterThanOrEqual(0);
+      expect(res.fyString).toMatch(/^FY \d{4}-\d{2}$/);
+    });
+
+    it('formats harvest instructions with CBDT Sec 112A header and lot details', () => {
+      const text = formatHarvestInstructions(validTicket);
+      expect(text).toContain('SECTION 112A TAX-FREE HARVESTING REDEMPTION INSTRUCTIONS');
+      expect(text).toContain('Remaining Statutory Exemption: ₹85,000');
+      expect(text).toContain('Total Tax-Free Gains to Harvest: ₹60,000');
+      expect(text).toContain('Nifty 50 Index Fund');
+      expect(text).toContain('125.456 units');
+      expect(text).toContain('Midcap 150 Index Fund');
+      expect(text).toContain('80.123 units');
+    });
+
+    it('renders the Section 112A harvesting ticket with itemized table and metrics', () => {
+      const onSimulate = vi.fn();
+      render(
+        <TaxView
+          summary={currentFYSummary}
+          harvesting={validTicket}
+          onSimulateHarvest={onSimulate}
+        />
+      );
+
+      expect(screen.getByText(/Tax Harvesting Opportunity/i)).toBeInTheDocument();
+      expect(screen.getByText('₹85,000')).toBeInTheDocument();
+      expect(screen.getByText('₹60,000')).toBeInTheDocument();
+      expect(screen.getByText('₹7,500')).toBeInTheDocument();
+      expect(screen.getByText('Nifty 50 Index Fund')).toBeInTheDocument();
+      expect(screen.getByText('Midcap 150 Index Fund')).toBeInTheDocument();
+
+      const simulateBtns = screen.getAllByRole('button', { name: /Simulate/i });
+      expect(simulateBtns.length).toBe(2);
+      fireEvent.click(simulateBtns[0]!);
+      expect(onSimulate).toHaveBeenCalledWith('FOLIO-001', 125.456);
+    });
+
+    it('handles clipboard copy success with visual feedback', async () => {
+      const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+      Object.assign(navigator, {
+        clipboard: {
+          writeText: writeTextSpy,
+        },
+      });
+
+      render(<TaxView summary={currentFYSummary} harvesting={validTicket} />);
+
+      const copyBtn = screen.getByRole('button', { name: /Copy MF Central Instructions/i });
+      fireEvent.click(copyBtn);
+
+      expect(writeTextSpy).toHaveBeenCalledTimes(1);
+      expect(writeTextSpy.mock.calls[0]![0]).toContain('SECTION 112A TAX-FREE HARVESTING');
+
+      await waitFor(() => {
+        expect(screen.getByText(/Copied Instructions!/i)).toBeInTheDocument();
+      });
+    });
+
+    it('opens fallback modal with textarea when clipboard write fails', async () => {
+      const writeTextSpy = vi.fn().mockRejectedValue(new Error('Permission denied'));
+      Object.assign(navigator, {
+        clipboard: {
+          writeText: writeTextSpy,
+        },
+      });
+
+      render(<TaxView summary={currentFYSummary} harvesting={validTicket} />);
+
+      const copyBtn = screen.getByRole('button', { name: /Copy MF Central Instructions/i });
+      fireEvent.click(copyBtn);
+
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Clipboard access was unavailable or denied/i)).toBeInTheDocument();
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+      expect(textarea.value).toContain('SECTION 112A TAX-FREE HARVESTING');
+
+      const doneBtn = screen.getByRole('button', { name: /Done/i });
+      fireEvent.click(doneBtn);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('renders statutory empty state when exemption runway exists but 0 opportunities qualify', () => {
+      const emptyTicket: HarvestTicketResponse = {
+        realizedLtcgFy: 50000,
+        remainingExemption: 75000,
+        totalPotentialHarvest: 0,
+        estimatedTaxSavings: 0,
+        opportunities: [],
+        unrealizedSummary: dummyUnrealizedSummary,
+      };
+
+      render(<TaxView summary={currentFYSummary} harvesting={emptyTicket} />);
+
+      expect(screen.getByText(/statutory tax-free exemption runway remaining/i)).toBeInTheDocument();
+      expect(screen.getByText(/ELSS 3-year lock-in/i)).toBeInTheDocument();
+    });
   });
 });

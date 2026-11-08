@@ -46,6 +46,14 @@ vi.mock('lucide-react', () => {
     Upload: Icon,
     Trophy: Icon,
     RefreshCw: Icon,
+    Zap: Icon,
+    BarChart2: Icon,
+    Sliders: Icon,
+    ArrowRight: Icon,
+    ShieldAlert: Icon,
+    Copy: Icon,
+    Clock: Icon,
+    Sparkles: Icon,
   };
 });
 

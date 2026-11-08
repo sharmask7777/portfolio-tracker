@@ -189,6 +189,46 @@ fn test_portfolio_1_scheme_consolidation() {
         money("130000"),
         "Consolidated invested amount must be 130,000 (100,000 + 30,000)"
     );
+
+    // 4. Verify Real Post-Tax XIRR & Drag Attribution across Portfolio 1
+    use portfolio_core::performance::metrics::{
+        calculate_drag_attribution, calculate_post_tax_real_xirr,
+    };
+    let cpi_inflation = dec("0.06");
+    let options1_tax = PerformanceOptions::new()
+        .with_units_override(units1)
+        .with_tax_slab(dec("0.30"))
+        .with_asset_type(AssetType::MutualFund)
+        .with_asset_name("Mirae Asset Large Cap Fund - Direct Plan - Growth")
+        .with_as_of_date(date(2024, 1, 10));
+    let metrics1_tax = get_metrics(&folio1_txs, current_price, Some(options1_tax));
+    assert!(metrics1_tax.xirr.is_some());
+    assert!(metrics1_tax.post_tax_xirr.is_some());
+
+    let real_xirr = calculate_post_tax_real_xirr(metrics1_tax.post_tax_xirr, cpi_inflation)
+        .expect("calculation should succeed")
+        .expect("real xirr should be some");
+    assert!(real_xirr < metrics1_tax.post_tax_xirr.unwrap());
+
+    let drag = calculate_drag_attribution(
+        metrics1_tax.xirr,
+        metrics1_tax.post_tax_xirr,
+        Money::ZERO, // pure equity
+        metrics1_tax.estimated_tax.unwrap_or(Money::ZERO),
+        Money::ZERO,
+        cpi_inflation,
+        Some(dec("0.065")),
+    )
+    .expect("drag attribution should succeed");
+
+    assert_eq!(drag.real_post_tax_xirr, Some(real_xirr));
+    let total_drags =
+        drag.debt_drag + drag.equity_drag + drag.cess_and_other_drag + drag.inflation_drag;
+    let identity_delta = (metrics1_tax.xirr.unwrap() - total_drags - real_xirr).abs();
+    assert!(
+        identity_delta <= dec("0.000001"),
+        "Drags identity must hold within 10^-6"
+    );
 }
 
 // ============================================================================

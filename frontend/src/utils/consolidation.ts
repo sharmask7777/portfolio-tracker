@@ -94,6 +94,10 @@ export interface ConsolidatedSchemeMetrics {
   absoluteReturn: number;
   /** Aggregate post-tax simple return based on post-tax net liquidation valuation. */
   postTaxAbsoluteReturn: number;
+  /** Total estimated accrued capital gains tax liability (STCG + LTCG). */
+  estimatedTax: number;
+  /** Net realizable value after deducting estimated tax liability (currentValue - estimatedTax). */
+  netRealizableValue: number;
 }
 
 /**
@@ -220,6 +224,9 @@ export function consolidateFoliosIntoSchemes(
       const singleFolio = firstFolio;
       const absoluteReturn = singleFolio.metrics?.absoluteReturn ?? 0;
       const postTaxAbsoluteReturn = singleFolio.metrics?.postTaxAbsoluteReturn ?? 0;
+      const singleCurrentValue = singleFolio.metrics?.currentValue ?? 0;
+      const singleEstimatedTax = singleFolio.metrics?.estimatedTax ?? 0;
+      const singleNetRealizableValue = Math.max(0, singleCurrentValue - singleEstimatedTax);
 
       result.push({
         id: singleFolio.id,
@@ -230,13 +237,15 @@ export function consolidateFoliosIntoSchemes(
         pans: singleFolio.pan ? [singleFolio.pan] : [],
         metrics: {
           investedAmount: singleFolio.metrics?.investedAmount ?? 0,
-          currentValue: singleFolio.metrics?.currentValue ?? 0,
+          currentValue: singleCurrentValue,
           dayChange: singleFolio.metrics?.dayChange ?? 0,
           dayChangePercentage: singleFolio.metrics?.dayChangePercentage ?? 0,
           xirr: sanitizeReturnRate(singleFolio.metrics?.xirr, absoluteReturn),
           postTaxXirr: sanitizeReturnRate(singleFolio.metrics?.postTaxXirr, postTaxAbsoluteReturn),
           absoluteReturn,
           postTaxAbsoluteReturn,
+          estimatedTax: singleEstimatedTax,
+          netRealizableValue: singleNetRealizableValue,
         },
         folios: groupFolios,
         folioCount: 1,
@@ -356,6 +365,8 @@ export function consolidateFoliosIntoSchemes(
         postTaxXirr: weightedPostTaxXirr,
         absoluteReturn,
         postTaxAbsoluteReturn,
+        estimatedTax: totalEstimatedTax,
+        netRealizableValue: postTaxCurrentValue,
       },
       folios: sortedConstituents,
       folioCount: groupFolios.length,

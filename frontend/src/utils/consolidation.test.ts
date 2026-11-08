@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { consolidateFoliosIntoSchemes } from './consolidation';
+import type { FolioInput } from './consolidation';
 
 describe('consolidateFoliosIntoSchemes', () => {
   it('returns empty array when input is empty or null', () => {
     expect(consolidateFoliosIntoSchemes([])).toEqual([]);
-    expect(consolidateFoliosIntoSchemes(null as any)).toEqual([]);
+    expect(consolidateFoliosIntoSchemes(null as unknown as FolioInput[])).toEqual([]);
   });
 
   it('preserves single-folio schemes with folioCount = 1', () => {
@@ -29,6 +30,7 @@ describe('consolidateFoliosIntoSchemes', () => {
           postTaxXirr: 0.13,
           absoluteReturn: 0.5,
           postTaxAbsoluteReturn: 0.45,
+          estimatedTax: 5000,
         },
         transactions: [],
       },
@@ -46,6 +48,8 @@ describe('consolidateFoliosIntoSchemes', () => {
     expect(first.metrics.currentValue).toBe(150000);
     expect(first.metrics.dayChange).toBe(500);
     expect(first.metrics.xirr).toBe(0.15);
+    expect(first.metrics.estimatedTax).toBe(5000);
+    expect(first.metrics.netRealizableValue).toBe(145000);
   });
 
   it('consolidates multiple folios of Parag Parikh Flexi Cap Fund into a single master scheme group with unique PANs', () => {
@@ -114,6 +118,8 @@ describe('consolidateFoliosIntoSchemes', () => {
     expect(ppfc.metrics.investedAmount).toBe(800000);
     expect(ppfc.metrics.currentValue).toBe(1000000);
     expect(ppfc.metrics.dayChange).toBe(3000);
+    expect(ppfc.metrics.estimatedTax).toBe(10000);
+    expect(ppfc.metrics.netRealizableValue).toBe(990000);
 
     // Consolidated day change %
     // prevValue = 1000000 - 3000 = 997000
