@@ -68,14 +68,10 @@ pub async fn process_history_refresh_job_with_pool(
 ) -> Result<Vec<HistoricalValuationEntity>, WorkerError> {
     // 1. Verify portfolio exists
     if let Some(pool) = pool {
-        let exists = sqlx::query_scalar::<_, bool>(
-            r#"SELECT EXISTS(SELECT 1 FROM "Portfolio" WHERE id = $1)"#,
-        )
-        .bind(job_data.portfolio_id.to_string())
-        .fetch_one(pool)
-        .await
-        .unwrap_or(false);
-        if !exists {
+        if !portfolio_db::repositories::check_portfolio_exists(pool, job_data.portfolio_id)
+            .await
+            .map_err(WorkerError::Db)?
+        {
             return Err(WorkerError::PortfolioNotFound(job_data.portfolio_id));
         }
     } else {
@@ -87,24 +83,9 @@ pub async fn process_history_refresh_job_with_pool(
 
     // 2. Fetch all transactions for this portfolio (already sorted chronologically)
     let transactions: Vec<portfolio_db::entities::TransactionEntity> = if let Some(pool) = pool {
-        sqlx::query_as::<_, portfolio_db::entities::TransactionEntity>(
-            r#"
-            SELECT t.id::uuid, t."folioId"::uuid, t.date::date as date, t.type,
-                   t.amount::numeric as amount, t.units::numeric as units,
-                   t.nav::numeric as nav, t.balance::numeric as balance,
-                   t."externalId",
-                   t."createdAt" AT TIME ZONE 'UTC' as "createdAt",
-                   t."updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
-            FROM "Transaction" t
-            JOIN "Folio" f ON f.id = t."folioId"
-            WHERE f."portfolioId" = $1
-            ORDER BY t.date ASC, t."createdAt" ASC, t.id ASC
-            "#,
-        )
-        .bind(job_data.portfolio_id.to_string())
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
+        portfolio_db::repositories::fetch_portfolio_transactions(pool, job_data.portfolio_id)
+            .await
+            .map_err(WorkerError::Db)?
     } else {
         db.list_by_portfolio(job_data.portfolio_id).await?
     };
@@ -231,25 +212,16 @@ pub async fn process_history_refresh_job_with_pool(
 
     if let Some(pool) = pool {
         for record in &records {
-            let val_f64 = record.value.to_string().parse::<f64>().unwrap_or(0.0);
-            let cost_f64 = record.cost.to_string().parse::<f64>().unwrap_or(0.0);
-
-            sqlx::query(
-                r#"
-                INSERT INTO "PortfolioHistory" (id, "portfolioId", date, value, "investedAmount", "createdAt", "updatedAt")
-                VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-                ON CONFLICT ("portfolioId", date) DO UPDATE
-                SET value = EXCLUDED.value, "investedAmount" = EXCLUDED."investedAmount", "updatedAt" = NOW();
-                "#,
+            portfolio_db::repositories::upsert_portfolio_history(
+                pool,
+                record.id,
+                record.portfolio_id,
+                record.date,
+                record.value,
+                record.cost,
             )
-            .bind(record.id.to_string())
-            .bind(record.portfolio_id.to_string())
-            .bind(record.date)
-            .bind(val_f64)
-            .bind(cost_f64)
-            .execute(pool)
             .await
-            .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
+            .map_err(WorkerError::Db)?;
         }
     }
 

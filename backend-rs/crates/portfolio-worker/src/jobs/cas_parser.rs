@@ -20,7 +20,6 @@ use portfolio_db::entities::{AssetEntity, FolioEntity, ManagedProfileEntity, Por
 use portfolio_db::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::error::WorkerError;
 use crate::jobs::{
@@ -340,298 +339,6 @@ pub async fn process_pdf_job(
     process_pdf_job_with_pool(job_data, db, None).await
 }
 
-async fn upsert_postgres_profile(
-    pool: &sqlx::PgPool,
-    user_id: Uuid,
-    pan: &str,
-    name: &str,
-    tax_slab: Decimal,
-) -> Result<Uuid, WorkerError> {
-    let existing = sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT id FROM "ManagedProfile"
-        WHERE "userId" = $1 AND pan = $2
-        LIMIT 1
-        "#,
-    )
-    .bind(user_id.to_string())
-    .bind(pan)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-    if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
-        return Ok(parsed);
-    }
-
-    let new_id = Uuid::new_v4();
-    let slab_f64 = tax_slab.to_string().parse::<f64>().unwrap_or(0.3);
-
-    let profile_id_str = sqlx::query_scalar::<_, String>(
-        r#"
-        INSERT INTO "ManagedProfile" (id, name, pan, "userId", "taxSlab", "createdAt", "updatedAt")
-        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-        ON CONFLICT ("userId", pan) DO UPDATE SET "updatedAt" = NOW()
-        RETURNING id
-        "#,
-    )
-    .bind(new_id.to_string())
-    .bind(name)
-    .bind(pan)
-    .bind(user_id.to_string())
-    .bind(slab_f64)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-    Uuid::parse_str(&profile_id_str).map_err(|e| {
-        WorkerError::Db(portfolio_db::DbError::Internal(format!(
-            "Invalid profile UUID: {e}"
-        )))
-    })
-}
-
-async fn upsert_postgres_portfolio(
-    pool: &sqlx::PgPool,
-    user_id: Uuid,
-    profile_id: Uuid,
-    name: &str,
-) -> Result<Uuid, WorkerError> {
-    let existing = sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT id FROM "Portfolio"
-        WHERE "userId" = $1 AND "managedProfileId" = $2
-        LIMIT 1
-        "#,
-    )
-    .bind(user_id.to_string())
-    .bind(profile_id.to_string())
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-    if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
-        return Ok(parsed);
-    }
-
-    let new_id = Uuid::new_v4();
-    let port_id_str = sqlx::query_scalar::<_, String>(
-        r#"
-        INSERT INTO "Portfolio" (id, name, "userId", "managedProfileId", "createdAt", "updatedAt")
-        VALUES ($1, $2, $3, $4, NOW(), NOW())
-        RETURNING id
-        "#,
-    )
-    .bind(new_id.to_string())
-    .bind(name)
-    .bind(user_id.to_string())
-    .bind(profile_id.to_string())
-    .fetch_one(pool)
-    .await
-    .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-    Uuid::parse_str(&port_id_str).map_err(|e| {
-        WorkerError::Db(portfolio_db::DbError::Internal(format!(
-            "Invalid portfolio UUID: {e}"
-        )))
-    })
-}
-
-async fn upsert_postgres_asset(
-    pool: &sqlx::PgPool,
-    name: &str,
-    isin: Option<&str>,
-    amfi: Option<&str>,
-) -> Result<Uuid, WorkerError> {
-    if let Some(isin_str) = isin {
-        let existing =
-            sqlx::query_scalar::<_, String>(r#"SELECT id FROM "Asset" WHERE isin = $1 LIMIT 1"#)
-                .bind(isin_str)
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-        if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
-            return Ok(parsed);
-        }
-    }
-
-    if let Some(amfi_str) = amfi {
-        let existing = sqlx::query_scalar::<_, String>(
-            r#"SELECT id FROM "Asset" WHERE "amfiCode" = $1 LIMIT 1"#,
-        )
-        .bind(amfi_str)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-        if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
-            return Ok(parsed);
-        }
-    }
-
-    let existing_name =
-        sqlx::query_scalar::<_, String>(r#"SELECT id FROM "Asset" WHERE name = $1 LIMIT 1"#)
-            .bind(name)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-    if let Some(parsed) = existing_name.and_then(|s| Uuid::parse_str(&s).ok()) {
-        return Ok(parsed);
-    }
-
-    let new_id = Uuid::new_v4();
-    let inserted = if let Some(isin_str) = isin {
-        sqlx::query_scalar::<_, String>(
-            r#"
-            INSERT INTO "Asset" (id, type, name, isin, "amfiCode", "createdAt", "updatedAt")
-            VALUES ($1, 'MUTUAL_FUND', $2, $3, $4, NOW(), NOW())
-            ON CONFLICT (isin) DO UPDATE SET name = EXCLUDED.name, "amfiCode" = COALESCE(EXCLUDED."amfiCode", "Asset"."amfiCode"), "updatedAt" = NOW()
-            RETURNING id
-            "#,
-        )
-        .bind(new_id.to_string())
-        .bind(name)
-        .bind(isin_str)
-        .bind(amfi)
-        .fetch_one(pool)
-        .await
-    } else if let Some(amfi_str) = amfi {
-        sqlx::query_scalar::<_, String>(
-            r#"
-            INSERT INTO "Asset" (id, type, name, isin, "amfiCode", "createdAt", "updatedAt")
-            VALUES ($1, 'MUTUAL_FUND', $2, NULL, $3, NOW(), NOW())
-            ON CONFLICT ("amfiCode") DO UPDATE SET name = EXCLUDED.name, "updatedAt" = NOW()
-            RETURNING id
-            "#,
-        )
-        .bind(new_id.to_string())
-        .bind(name)
-        .bind(amfi_str)
-        .fetch_one(pool)
-        .await
-    } else {
-        sqlx::query_scalar::<_, String>(
-            r#"
-            INSERT INTO "Asset" (id, type, name, isin, "amfiCode", "createdAt", "updatedAt")
-            VALUES ($1, 'MUTUAL_FUND', $2, NULL, NULL, NOW(), NOW())
-            RETURNING id
-            "#,
-        )
-        .bind(new_id.to_string())
-        .bind(name)
-        .fetch_one(pool)
-        .await
-    }
-    .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-    Uuid::parse_str(&inserted).map_err(|e| {
-        WorkerError::Db(portfolio_db::DbError::Internal(format!(
-            "Invalid asset UUID: {e}"
-        )))
-    })
-}
-
-async fn upsert_postgres_folio(
-    pool: &sqlx::PgPool,
-    portfolio_id: Uuid,
-    asset_id: Uuid,
-    folio_number: &str,
-    amc: Option<&str>,
-    pan: Option<&str>,
-) -> Result<Uuid, WorkerError> {
-    let existing = sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT id FROM "Folio"
-        WHERE number = $1 AND "assetId" = $2 AND "portfolioId" = $3
-        LIMIT 1
-        "#,
-    )
-    .bind(folio_number)
-    .bind(asset_id.to_string())
-    .bind(portfolio_id.to_string())
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-    if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
-        return Ok(parsed);
-    }
-
-    let new_id = Uuid::new_v4();
-    let folio_id_str = sqlx::query_scalar::<_, String>(
-        r#"
-        INSERT INTO "Folio" (id, number, amc, pan, "portfolioId", "assetId", "createdAt", "updatedAt")
-        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-        ON CONFLICT (number, "assetId", "portfolioId") DO UPDATE
-        SET amc = COALESCE(EXCLUDED.amc, "Folio".amc),
-            pan = COALESCE(EXCLUDED.pan, "Folio".pan),
-            "updatedAt" = NOW()
-        RETURNING id
-        "#,
-    )
-    .bind(new_id.to_string())
-    .bind(folio_number)
-    .bind(amc)
-    .bind(pan)
-    .bind(portfolio_id.to_string())
-    .bind(asset_id.to_string())
-    .fetch_one(pool)
-    .await
-    .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-    Uuid::parse_str(&folio_id_str).map_err(|e| {
-        WorkerError::Db(portfolio_db::DbError::Internal(format!(
-            "Invalid folio UUID: {e}"
-        )))
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn insert_postgres_transaction(
-    pool: &sqlx::PgPool,
-    folio_id: Uuid,
-    date: NaiveDate,
-    tx_type: &str,
-    amount: Decimal,
-    units: Decimal,
-    nav: Decimal,
-    balance: Decimal,
-    external_id: &str,
-) -> Result<(), WorkerError> {
-    let new_id = Uuid::new_v4();
-    let date_timestamp = date.and_hms_opt(0, 0, 0).unwrap_or_default();
-    let amount_f64 = amount.to_string().parse::<f64>().unwrap_or(0.0);
-    let units_f64 = units.to_string().parse::<f64>().unwrap_or(0.0);
-    let nav_f64 = nav.to_string().parse::<f64>().unwrap_or(0.0);
-    let balance_f64 = balance.to_string().parse::<f64>().unwrap_or(0.0);
-
-    sqlx::query(
-        r#"
-        INSERT INTO "Transaction" (
-            id, date, type, amount, units, nav, balance, "folioId", "externalId", "createdAt", "updatedAt"
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-        ON CONFLICT ("externalId") DO NOTHING
-        "#,
-    )
-    .bind(new_id.to_string())
-    .bind(date_timestamp)
-    .bind(tx_type)
-    .bind(amount_f64)
-    .bind(units_f64)
-    .bind(nav_f64)
-    .bind(balance_f64)
-    .bind(folio_id.to_string())
-    .bind(external_id)
-    .execute(pool)
-    .await
-    .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
-
-    Ok(())
-}
-
 async fn process_cas_file_internal(
     job_data: &ProcessPdfUploadJobData,
     db: &InMemoryDatabase,
@@ -737,14 +444,15 @@ async fn process_cas_file_internal(
 
             let pg_profile_id = if let Some(pool) = pool {
                 Some(
-                    upsert_postgres_profile(
+                    portfolio_db::repositories::upsert_postgres_profile(
                         pool,
                         job_data.user_id,
                         &scheme_pan,
                         &profile_name,
                         Decimal::new(30, 2),
                     )
-                    .await?,
+                    .await
+                    .map_err(WorkerError::Db)?,
                 )
             } else {
                 None
@@ -766,13 +474,14 @@ async fn process_cas_file_internal(
             touched_portfolios.insert(portfolio.id);
 
             let pg_portfolio_id = if let (Some(pool), Some(prof_id)) = (pool, pg_profile_id) {
-                let pid = upsert_postgres_portfolio(
+                let pid = portfolio_db::repositories::upsert_postgres_portfolio(
                     pool,
                     job_data.user_id,
                     prof_id,
                     &format!("{profile_name} Portfolio"),
                 )
-                .await?;
+                .await
+                .map_err(WorkerError::Db)?;
                 touched_pg_portfolios.insert(pid);
                 Some(pid)
             } else {
@@ -808,7 +517,13 @@ async fn process_cas_file_internal(
             };
 
             let pg_asset_id = if let Some(pool) = pool {
-                Some(upsert_postgres_asset(pool, fund_name, isin, amfi_code).await?)
+                Some(
+                    portfolio_db::repositories::upsert_postgres_asset(
+                        pool, fund_name, isin, amfi_code,
+                    )
+                    .await
+                    .map_err(WorkerError::Db)?,
+                )
             } else {
                 None
             };
@@ -837,7 +552,7 @@ async fn process_cas_file_internal(
                 (pool, pg_portfolio_id, pg_asset_id)
             {
                 Some(
-                    upsert_postgres_folio(
+                    portfolio_db::repositories::upsert_postgres_folio(
                         pool,
                         p_id,
                         a_id,
@@ -845,7 +560,8 @@ async fn process_cas_file_internal(
                         folio_data.amc.as_deref(),
                         Some(&scheme_pan),
                     )
-                    .await?,
+                    .await
+                    .map_err(WorkerError::Db)?,
                 )
             } else {
                 None
@@ -904,10 +620,11 @@ async fn process_cas_file_internal(
                         amount,
                         units
                     );
-                    insert_postgres_transaction(
+                    portfolio_db::repositories::insert_postgres_transaction(
                         pool, f_id, date, tx_type, amount, units, nav, balance, &pg_ext_id,
                     )
-                    .await?;
+                    .await
+                    .map_err(WorkerError::Db)?;
                 }
             }
         }
