@@ -54,14 +54,41 @@ pub async fn process_history_refresh_job(
     job_data: &HistoryRefreshJobData,
     db: &InMemoryDatabase,
 ) -> Result<Vec<HistoricalValuationEntity>, WorkerError> {
-    // 1. Verify portfolio exists
-    let _portfolio = db
-        .get_portfolio(job_data.portfolio_id)
-        .await?
-        .ok_or(WorkerError::PortfolioNotFound(job_data.portfolio_id))?;
+    process_history_refresh_job_with_pool(job_data, db, None).await
+}
 
-    // 2. Fetch all transactions for this portfolio (already sorted chronologically by DB)
-    let transactions = db.list_by_portfolio(job_data.portfolio_id).await?;
+/// Helper handler for recalculating historical valuation timeline with optional PostgreSQL pool.
+///
+/// When `pool` is provided, fetches transactions directly from PostgreSQL and upserts
+/// the resulting valuation records into PostgreSQL `PortfolioHistory` table.
+pub async fn process_history_refresh_job_with_pool(
+    job_data: &HistoryRefreshJobData,
+    db: &InMemoryDatabase,
+    pool: Option<&sqlx::PgPool>,
+) -> Result<Vec<HistoricalValuationEntity>, WorkerError> {
+    // 1. Verify portfolio exists
+    if let Some(pool) = pool {
+        if !portfolio_db::repositories::check_portfolio_exists(pool, job_data.portfolio_id)
+            .await
+            .map_err(WorkerError::Db)?
+        {
+            return Err(WorkerError::PortfolioNotFound(job_data.portfolio_id));
+        }
+    } else {
+        let _portfolio = db
+            .get_portfolio(job_data.portfolio_id)
+            .await?
+            .ok_or(WorkerError::PortfolioNotFound(job_data.portfolio_id))?;
+    }
+
+    // 2. Fetch all transactions for this portfolio (already sorted chronologically)
+    let transactions: Vec<portfolio_db::entities::TransactionEntity> = if let Some(pool) = pool {
+        portfolio_db::repositories::fetch_portfolio_transactions(pool, job_data.portfolio_id)
+            .await
+            .map_err(WorkerError::Db)?
+    } else {
+        db.list_by_portfolio(job_data.portfolio_id).await?
+    };
 
     if transactions.is_empty() {
         let today = Utc::now().date_naive();
@@ -181,6 +208,21 @@ pub async fn process_history_refresh_job(
         let record =
             db.store_historical_valuation(job_data.portfolio_id, today, today_value, today_cost);
         records.push(record);
+    }
+
+    if let Some(pool) = pool {
+        for record in &records {
+            portfolio_db::repositories::upsert_portfolio_history(
+                pool,
+                record.id,
+                record.portfolio_id,
+                record.date,
+                record.value,
+                record.cost,
+            )
+            .await
+            .map_err(WorkerError::Db)?;
+        }
     }
 
     Ok(records)

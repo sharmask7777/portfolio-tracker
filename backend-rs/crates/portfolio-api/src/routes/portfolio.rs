@@ -1918,8 +1918,7 @@ pub async fn get_portfolio_summary(
             let current_value_decimal = metrics.current_value.to_decimal();
             let units_decimal = units.to_decimal();
 
-            let is_active = units_decimal >= Decimal::from_str("0.001").unwrap_or(Decimal::ZERO)
-                && current_value_decimal >= Decimal::from_str("0.01").unwrap_or(Decimal::ZERO);
+            let is_active = units_decimal >= Decimal::from_str("0.001").unwrap_or(Decimal::ZERO);
 
             let (day_change, day_change_percentage) = if is_active {
                 if let Some(prev) = previous_nav

@@ -22,7 +22,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::error::WorkerError;
-use crate::jobs::{HistoryRefreshJobData, ProcessPdfUploadJobData, process_history_refresh_job};
+use crate::jobs::{
+    HistoryRefreshJobData, ProcessPdfUploadJobData, process_history_refresh_job_with_pool,
+};
 
 /// In-memory CAS Statement models mapping casparser JSON output.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -210,8 +212,18 @@ pub fn normalize_tx_type(raw_type: &str) -> &'static str {
         "DIVIDEND_REINVESTMENT"
     } else if upper.contains("DIVIDEND") {
         "DIVIDEND_PAYOUT"
+    } else if upper.contains("STAMP")
+        || upper.contains("DUTY")
+        || upper.contains("TAX")
+        || upper.contains("STT")
+        || upper.contains("FEE")
+        || upper.contains("CHARGE")
+    {
+        "STAMP_DUTY_TAX"
+    } else if upper.contains("MISC") {
+        "MISC"
     } else {
-        "PURCHASE"
+        "OTHER"
     }
 }
 
@@ -266,9 +278,12 @@ pub fn validate_file_path(path_str: &str) -> Result<PathBuf, WorkerError> {
 /// 6. Recalculates historical valuation timeline for all touched portfolios.
 /// 7. Transitions `UploadJob` status to `COMPLETED` (updates `completed_at`).
 /// 8. Cleans up temporary file (only if it passed validation and exists).
-pub async fn process_pdf_job(
+///
+/// Helper handler for processing CAS PDF / JSON upload jobs with optional PostgreSQL persistence.
+pub async fn process_pdf_job_with_pool(
     job_data: &ProcessPdfUploadJobData,
     db: &InMemoryDatabase,
+    pool: Option<&sqlx::PgPool>,
 ) -> Result<(), WorkerError> {
     // Ensure upload job entity exists in database
     if db.get_upload_job(job_data.job_id).is_none() {
@@ -295,7 +310,7 @@ pub async fn process_pdf_job(
     }
 
     // Process with guaranteed cleanup only if path passed validation and exists
-    let process_result = process_cas_file_internal(job_data, db, &validated_path).await;
+    let process_result = process_cas_file_internal(job_data, db, pool, &validated_path).await;
 
     // Step 8: Safe cleanup: only unlink if validated and exists
     if validated_path.exists() {
@@ -316,9 +331,28 @@ pub async fn process_pdf_job(
     }
 }
 
+/// Core handler for processing CAS PDF / JSON upload jobs.
+///
+/// Lifecycle:
+/// 1. Transitions `UploadJob` status to `PROCESSING` (updates `started_at`).
+/// 2. Validates that the input file path resides safely within `uploads/` or temp dirs.
+/// 3. Verifies file presence on disk.
+/// 4. Executes Python `casparser` script if input is PDF, or parses raw JSON.
+/// 5. Ingests assets, folios, and transactions into database with multi-PAN isolation.
+/// 6. Recalculates historical valuation timeline for all touched portfolios.
+/// 7. Transitions `UploadJob` status to `COMPLETED` (updates `completed_at`).
+/// 8. Cleans up temporary file (only if it passed validation and exists).
+pub async fn process_pdf_job(
+    job_data: &ProcessPdfUploadJobData,
+    db: &InMemoryDatabase,
+) -> Result<(), WorkerError> {
+    process_pdf_job_with_pool(job_data, db, None).await
+}
+
 async fn process_cas_file_internal(
     job_data: &ProcessPdfUploadJobData,
     db: &InMemoryDatabase,
+    pool: Option<&sqlx::PgPool>,
     file_path: &Path,
 ) -> Result<(), WorkerError> {
     let bytes = std::fs::read(file_path)?;
@@ -385,6 +419,7 @@ async fn process_cas_file_internal(
         .unwrap_or("ABCDE1234F");
 
     let mut touched_portfolios = HashSet::new();
+    let mut touched_pg_portfolios = HashSet::new();
 
     // Step 4: Ingest assets, folios, and transactions
     for folio_data in &statement.folios {
@@ -401,6 +436,8 @@ async fn process_cas_file_internal(
                 .trim()
                 .to_uppercase();
 
+            let profile_name = format!("{scheme_pan} Profile");
+
             // 1. Managed Profile for this PAN
             let profile: ManagedProfileEntity =
                 if let Some(existing) = db.find_profile_by_pan(job_data.user_id, &scheme_pan) {
@@ -408,12 +445,28 @@ async fn process_cas_file_internal(
                 } else {
                     db.create_managed_profile(
                         job_data.user_id,
-                        &format!("{scheme_pan} Profile"),
+                        &profile_name,
                         &scheme_pan,
                         Decimal::new(30, 2), // Default 30% tax slab
                     )
                     .await?
                 };
+
+            let pg_profile_id = if let Some(pool) = pool {
+                Some(
+                    portfolio_db::repositories::upsert_postgres_profile(
+                        pool,
+                        job_data.user_id,
+                        &scheme_pan,
+                        &profile_name,
+                        Decimal::new(30, 2),
+                    )
+                    .await
+                    .map_err(WorkerError::Db)?,
+                )
+            } else {
+                None
+            };
 
             // 2. Portfolio for this Profile
             let portfolio: PortfolioEntity = if let Some(existing) =
@@ -429,6 +482,21 @@ async fn process_cas_file_internal(
                 .await?
             };
             touched_portfolios.insert(portfolio.id);
+
+            let pg_portfolio_id = if let (Some(pool), Some(prof_id)) = (pool, pg_profile_id) {
+                let pid = portfolio_db::repositories::upsert_postgres_portfolio(
+                    pool,
+                    job_data.user_id,
+                    prof_id,
+                    &format!("{profile_name} Portfolio"),
+                )
+                .await
+                .map_err(WorkerError::Db)?;
+                touched_pg_portfolios.insert(pid);
+                Some(pid)
+            } else {
+                None
+            };
 
             // 3. Asset
             let fund_name = scheme_data
@@ -458,6 +526,18 @@ async fn process_cas_file_internal(
                 db.create_asset("MUTUAL_FUND", fund_name, isin, amfi_code, None, None)
             };
 
+            let pg_asset_id = if let Some(pool) = pool {
+                Some(
+                    portfolio_db::repositories::upsert_postgres_asset(
+                        pool, fund_name, isin, amfi_code,
+                    )
+                    .await
+                    .map_err(WorkerError::Db)?,
+                )
+            } else {
+                None
+            };
+
             // 4. Folio
             let folio_number = if folio_data.folio.trim().is_empty() {
                 "DEFAULT-FOLIO"
@@ -478,6 +558,34 @@ async fn process_cas_file_internal(
                     )?
                 };
 
+            let pg_folio_id = if let (Some(pool), Some(p_id), Some(a_id)) =
+                (pool, pg_portfolio_id, pg_asset_id)
+            {
+                Some(
+                    portfolio_db::repositories::upsert_postgres_folio(
+                        pool,
+                        p_id,
+                        a_id,
+                        folio_number,
+                        folio_data.amc.as_deref(),
+                        Some(&scheme_pan),
+                    )
+                    .await
+                    .map_err(WorkerError::Db)?,
+                )
+            } else {
+                None
+            };
+
+            // Reconcile existing folio: clear any synthetic MANUAL_CLOSE or ANCHOR markers
+            // so the incoming authoritative statement transactions and balances take precedence.
+            db.reconcile_folio_transactions(folio.id);
+            if let (Some(pool), Some(f_id)) = (pool, pg_folio_id) {
+                portfolio_db::repositories::reconcile_postgres_folio(pool, f_id)
+                    .await
+                    .map_err(WorkerError::Db)?;
+            }
+
             // 5. Transactions
             for tx in &scheme_data.transactions {
                 let date = parse_cas_date(&tx.date)?;
@@ -494,6 +602,11 @@ async fn process_cas_file_internal(
                 };
                 let balance = tx.balance.unwrap_or(Decimal::ZERO).abs();
 
+                // Filter out non-financial notes/remarks with 0 units and 0 amount
+                if units.is_zero() && amount.is_zero() {
+                    continue;
+                }
+
                 // Generate deterministic external_id for idempotency
                 let external_id = format!(
                     "{}-{}-{}-{}-{}-{}-{}",
@@ -506,7 +619,9 @@ async fn process_cas_file_internal(
                     units
                 );
 
-                if db.find_transaction_by_external_id(&external_id).is_none() {
+                if db.find_transaction_by_external_id(&external_id).is_none()
+                    && !db.has_duplicate_transaction(folio.id, date, amount, units)
+                {
                     db.create_transaction(
                         folio.id,
                         date,
@@ -519,6 +634,24 @@ async fn process_cas_file_internal(
                     )
                     .await?;
                 }
+
+                if let (Some(pool), Some(f_id), Some(p_id)) = (pool, pg_folio_id, pg_portfolio_id) {
+                    let pg_ext_id = format!(
+                        "{}-{}-{}-{}-{}-{}-{}",
+                        p_id,
+                        folio.number,
+                        isin.unwrap_or("UNKNOWN"),
+                        date,
+                        tx_type,
+                        amount,
+                        units
+                    );
+                    portfolio_db::repositories::insert_postgres_transaction(
+                        pool, f_id, date, tx_type, amount, units, nav, balance, &pg_ext_id,
+                    )
+                    .await
+                    .map_err(WorkerError::Db)?;
+                }
             }
         }
     }
@@ -528,7 +661,16 @@ async fn process_cas_file_internal(
     touched_vec.sort();
     for portfolio_id in touched_vec {
         let refresh_data = HistoryRefreshJobData::new(portfolio_id);
-        process_history_refresh_job(&refresh_data, db).await?;
+        process_history_refresh_job_with_pool(&refresh_data, db, None).await?;
+    }
+
+    if let Some(pool) = pool {
+        let mut touched_pg_vec: Vec<uuid::Uuid> = touched_pg_portfolios.into_iter().collect();
+        touched_pg_vec.sort();
+        for pg_port_id in touched_pg_vec {
+            let refresh_data = HistoryRefreshJobData::new(pg_port_id);
+            process_history_refresh_job_with_pool(&refresh_data, db, Some(pool)).await?;
+        }
     }
 
     Ok(())
