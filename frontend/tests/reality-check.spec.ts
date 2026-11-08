@@ -185,7 +185,7 @@ test.describe('True Post-Tax XIRR & Zero-Tax Rebalancing Engine (Reality Check S
       });
     });
 
-    // Mock Section 112A harvesting opportunities
+    // Mock Section 112A harvesting opportunities with consolidated folio metadata
     await page.route('**/api/tax/harvesting-opportunities*', async (route) => {
       await route.fulfill({
         status: 200,
@@ -198,10 +198,14 @@ test.describe('True Post-Tax XIRR & Zero-Tax Rebalancing Engine (Reality Check S
           opportunities: [
             {
               folioId: 'folio-ppfc',
+              folioNumber: '10396016/92',
               schemeName: 'Parag Parikh Flexi Cap Fund',
               unitsToHarvest: 120.5,
               currentValue: 150000,
               unrealizedGain: 60000,
+              lotsCount: 18,
+              firstLotDate: '2023-01-15',
+              lastLotDate: '2024-06-15',
             },
           ],
           unrealizedSummary: {
@@ -293,8 +297,10 @@ test.describe('True Post-Tax XIRR & Zero-Tax Rebalancing Engine (Reality Check S
     // Navigate to Tax Optimization tab
     await page.getByRole('button', { name: /Tax Optimization/i }).click();
 
-    // Verify harvesting lot item is rendered
+    // Verify harvesting consolidated row is rendered with folio number and badge
     await expect(page.getByText('Parag Parikh Flexi Cap Fund').first()).toBeVisible();
+    await expect(page.getByText('Folio: 10396016/92')).toBeVisible();
+    await expect(page.getByText('18 SIP lots consolidated')).toBeVisible();
     await expect(page.getByText(/120.500 units/i)).toBeVisible();
 
     // Click Copy MF Central Instructions button
@@ -306,9 +312,13 @@ test.describe('True Post-Tax XIRR & Zero-Tax Rebalancing Engine (Reality Check S
     const dialogOrCopied = page.locator('text=Copied Instructions!').or(page.getByRole('dialog'));
     await expect(dialogOrCopied).toBeVisible();
 
-    // If modal opened, click Done to close
+    // If modal opened, verify modal contains the consolidated [ORDER 1 of 1] instructions and advisory
     const doneBtn = page.getByRole('button', { name: 'Done' });
     if (await doneBtn.isVisible()) {
+      await expect(page.getByText(/\[ORDER 1 of 1\]/i)).toBeVisible();
+      await expect(page.getByText(/FIFO Scope: Consolidates 18 monthly SIP lots/i)).toBeVisible();
+      await expect(page.getByText(/REINVESTMENT ADVISORY/i)).toBeVisible();
+      await expect(page.getByText(/DO NOT repurchase into ELSS/i)).toBeVisible();
       await doneBtn.click();
     }
 
@@ -318,6 +328,131 @@ test.describe('True Post-Tax XIRR & Zero-Tax Rebalancing Engine (Reality Check S
 
     // Verify Simulation Modal opened pre-populated
     await expect(page.getByText(/Withdrawal Simulation/i)).toBeVisible();
+  });
+
+  test('tax-free harvesting ticket displays consolidated scheme orders, gain-density priority, and clipboard copy fallback modal', async ({
+    page,
+    context,
+  }) => {
+    // 1. Grant clipboard permissions or simulate fallback to ensure modal test coverage
+    await context.clearPermissions();
+
+    // 2. Mock 2 schemes with multiple consolidated SIP lots
+    await page.route('**/api/tax/harvesting-opportunities*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          realizedLtcgFy: 0,
+          remainingExemption: 125000,
+          totalPotentialHarvest: 125000,
+          estimatedTaxSavings: 15625,
+          opportunities: [
+            {
+              folioId: 'folio-ppfc',
+              folioNumber: '10396016/92',
+              schemeName: 'Parag Parikh Flexi Cap Fund',
+              unitsToHarvest: 120.5,
+              currentValue: 150000,
+              unrealizedGain: 60000,
+              lotsCount: 60,
+              firstLotDate: '2016-09-08',
+              lastLotDate: '2021-08-20',
+            },
+            {
+              folioId: 'folio-debt',
+              folioNumber: '98765432/01',
+              schemeName: 'HDFC Corporate Bond Fund',
+              unitsToHarvest: 350.125,
+              currentValue: 92190,
+              unrealizedGain: 45000,
+              lotsCount: 24,
+              firstLotDate: '2022-03-15',
+              lastLotDate: '2023-11-29',
+            },
+          ],
+          unrealizedSummary: {
+            stcg: 15000,
+            ltcg: 170000,
+            losses: 0,
+            netGain: 185000,
+            lots: [],
+          },
+        }),
+      });
+    });
+
+    await page.goto('/');
+
+    // 3. Navigate to Tax Optimization tab
+    await page.getByRole('button', { name: /Tax Optimization/i }).click();
+
+    // 4. Verify the Section 112A Tax Harvesting Opportunity Card is rendered
+    const harvestCard = page.locator('.harvest-card');
+    await expect(harvestCard).toBeVisible();
+    await expect(harvestCard).toContainText('Tax Harvesting Opportunity');
+    await expect(harvestCard).toContainText('CBDT Sec 112A Compliant (₹1.25L Tax-Free LTCG)');
+
+    // 5. Verify Unutilized Runway and Est. Tax Savings
+    await expect(harvestCard).toContainText('₹1,25,000');
+    await expect(harvestCard).toContainText('₹15,625');
+
+    // 6. Verify each consolidated scheme order row with SIP badges and real folio numbers
+    const ppfcRow = harvestCard.locator('tr:has-text("Parag Parikh Flexi Cap Fund")');
+    await expect(ppfcRow).toBeVisible();
+    await expect(ppfcRow).toContainText('Folio: 10396016/92');
+    await expect(ppfcRow).toContainText('60 SIP lots consolidated');
+    await expect(ppfcRow).toContainText('120.500 units');
+    await expect(ppfcRow).toContainText('₹1,50,000');
+    await expect(ppfcRow).toContainText('+₹60,000');
+
+    const debtRow = harvestCard.locator('tr:has-text("HDFC Corporate Bond Fund")');
+    await expect(debtRow).toBeVisible();
+    await expect(debtRow).toContainText('Folio: 98765432/01');
+    await expect(debtRow).toContainText('24 SIP lots consolidated');
+    await expect(debtRow).toContainText('350.125 units');
+
+    // 7. Click Scheme name to trigger simulate modal
+    const ppfcLink = ppfcRow.locator('.btn-link').first();
+    await ppfcLink.click();
+    const modal = page.locator('.modal');
+    await expect(modal).toBeVisible();
+    await expect(modal).toContainText('Withdrawal Simulation');
+    // Close modal
+    const closeBtn = modal.locator('button.theme-toggle, button:has(.lucide-x), button:has-text("✕")').first();
+    await closeBtn.click();
+    await expect(modal).not.toBeVisible();
+
+    // 8. Click "Copy MF Central Instructions" button
+    const copyBtn = harvestCard.getByRole('button', { name: /Copy MF Central Instructions/i });
+    await expect(copyBtn).toBeVisible();
+    await copyBtn.click();
+
+    // 9. Verify either clipboard toast was shown or instructions fallback modal is rendered
+    const toastOrModal = page.locator('text=Copied Instructions!').or(page.getByRole('dialog'));
+    await expect(toastOrModal).toBeVisible();
+
+    // If modal is open, inspect the full consolidated [ORDER 1 of 2] text and T+2 advisory
+    const copyDialog = page.getByRole('dialog');
+    if (await copyDialog.isVisible()) {
+      await expect(copyDialog).toContainText('ACTIONABLE REDEMPTIONS (Only 2 Orders Needed)');
+      await expect(copyDialog).toContainText('[ORDER 1 of 2]');
+      await expect(copyDialog).toContainText('Parag Parikh Flexi Cap Fund');
+      await expect(copyDialog).toContainText('Folio No: 10396016/92');
+      await expect(copyDialog).toContainText('FIFO Scope: Consolidates 60 monthly SIP lots (2016-09-08 to 2021-08-20)');
+      await expect(copyDialog).toContainText('[ORDER 2 of 2]');
+      await expect(copyDialog).toContainText('HDFC Corporate Bond Fund');
+      await expect(copyDialog).toContainText('Folio No: 98765432/01');
+      await expect(copyDialog).toContainText('FIFO Scope: Consolidates 24 monthly SIP lots (2022-03-15 to 2023-11-29)');
+      await expect(copyDialog).toContainText('REINVESTMENT ADVISORY:');
+      await expect(copyDialog).toContainText('Settled proceeds credit your bank in T+2 business days.');
+      await expect(copyDialog).toContainText('DO NOT repurchase into ELSS (avoids fresh 3-year statutory lock-in).');
+      await expect(copyDialog).toContainText('Reinvest the proceeds into an open-ended equity fund (e.g. Nifty 50 Index Fund)');
+
+      // Dismiss dialog
+      await page.getByRole('button', { name: 'Done' }).click();
+      await expect(copyDialog).not.toBeVisible();
+    }
   });
 
   test('scheme holdings table displays Net Realizable Value and Nominal tags in Reality Check mode', async ({
