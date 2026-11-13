@@ -2713,11 +2713,42 @@ pub async fn get_history(
 
         let rows = sqlx::query_as::<_, HistoryRow>(
             r#"
-            SELECT date::date as date, SUM(value)::numeric as value, SUM("investedAmount")::numeric as "investedAmount"
-            FROM "PortfolioHistory"
-            WHERE "portfolioId" = ANY($1)
-            GROUP BY date::date
-            ORDER BY date ASC
+            WITH target_history AS (
+                SELECT "portfolioId", date::date as dt, value, "investedAmount"
+                FROM "PortfolioHistory"
+                WHERE "portfolioId" = ANY($1)
+            ),
+            dates AS (
+                SELECT DISTINCT dt FROM target_history
+            ),
+            portfolio_list AS (
+                SELECT UNNEST($1::text[]) as pid
+            ),
+            grid AS (
+                SELECT d.dt, p.pid
+                FROM dates d
+                CROSS JOIN portfolio_list p
+            ),
+            filled AS (
+                SELECT g.dt, g.pid,
+                       th.value, th."investedAmount",
+                       COUNT(th.value) OVER (PARTITION BY g.pid ORDER BY g.dt) as val_grp,
+                       COUNT(th."investedAmount") OVER (PARTITION BY g.pid ORDER BY g.dt) as inv_grp
+                FROM grid g
+                LEFT JOIN target_history th ON th."portfolioId" = g.pid AND th.dt = g.dt
+            ),
+            locf AS (
+                SELECT dt, pid,
+                       FIRST_VALUE(value) OVER (PARTITION BY pid, val_grp ORDER BY dt) as filled_val,
+                       FIRST_VALUE("investedAmount") OVER (PARTITION BY pid, inv_grp ORDER BY dt) as filled_inv
+                FROM filled
+            )
+            SELECT dt as date, 
+                   SUM(COALESCE(filled_val, 0))::numeric as value, 
+                   SUM(COALESCE(filled_inv, 0))::numeric as "investedAmount"
+            FROM locf
+            GROUP BY dt
+            ORDER BY dt ASC
             "#,
         )
         .bind(&p_ids)
@@ -2759,10 +2790,37 @@ pub async fn get_stats(
 
         let ath = sqlx::query_as::<_, StatRow>(
             r#"
-            SELECT SUM(value)::numeric as value, date::date as date
-            FROM "PortfolioHistory"
-            WHERE "portfolioId" = ANY($1)
-            GROUP BY date::date
+            WITH target_history AS (
+                SELECT "portfolioId", date::date as dt, value, "investedAmount"
+                FROM "PortfolioHistory"
+                WHERE "portfolioId" = ANY($1)
+            ),
+            dates AS (
+                SELECT DISTINCT dt FROM target_history
+            ),
+            portfolio_list AS (
+                SELECT UNNEST($1::text[]) as pid
+            ),
+            grid AS (
+                SELECT d.dt, p.pid
+                FROM dates d
+                CROSS JOIN portfolio_list p
+            ),
+            filled AS (
+                SELECT g.dt, g.pid,
+                       th.value,
+                       COUNT(th.value) OVER (PARTITION BY g.pid ORDER BY g.dt) as val_grp
+                FROM grid g
+                LEFT JOIN target_history th ON th."portfolioId" = g.pid AND th.dt = g.dt
+            ),
+            locf AS (
+                SELECT dt, pid,
+                       FIRST_VALUE(value) OVER (PARTITION BY pid, val_grp ORDER BY dt) as filled_val
+                FROM filled
+            )
+            SELECT dt as date, SUM(COALESCE(filled_val, 0))::numeric as value
+            FROM locf
+            GROUP BY dt
             ORDER BY value DESC
             LIMIT 1
             "#,
@@ -2775,10 +2833,37 @@ pub async fn get_stats(
 
         let max_inv = sqlx::query_as::<_, StatRow>(
             r#"
-            SELECT SUM("investedAmount")::numeric as value, date::date as date
-            FROM "PortfolioHistory"
-            WHERE "portfolioId" = ANY($1)
-            GROUP BY date::date
+            WITH target_history AS (
+                SELECT "portfolioId", date::date as dt, "investedAmount"
+                FROM "PortfolioHistory"
+                WHERE "portfolioId" = ANY($1)
+            ),
+            dates AS (
+                SELECT DISTINCT dt FROM target_history
+            ),
+            portfolio_list AS (
+                SELECT UNNEST($1::text[]) as pid
+            ),
+            grid AS (
+                SELECT d.dt, p.pid
+                FROM dates d
+                CROSS JOIN portfolio_list p
+            ),
+            filled AS (
+                SELECT g.dt, g.pid,
+                       th."investedAmount",
+                       COUNT(th."investedAmount") OVER (PARTITION BY g.pid ORDER BY g.dt) as inv_grp
+                FROM grid g
+                LEFT JOIN target_history th ON th."portfolioId" = g.pid AND th.dt = g.dt
+            ),
+            locf AS (
+                SELECT dt, pid,
+                       FIRST_VALUE("investedAmount") OVER (PARTITION BY pid, inv_grp ORDER BY dt) as filled_inv
+                FROM filled
+            )
+            SELECT dt as date, SUM(COALESCE(filled_inv, 0))::numeric as value
+            FROM locf
+            GROUP BY dt
             ORDER BY value DESC
             LIMIT 1
             "#,
@@ -2798,16 +2883,48 @@ pub async fn get_stats(
 
         let yearly_rows = sqlx::query_as::<_, YearlyRow>(
             r#"
+            WITH target_history AS (
+                SELECT "portfolioId", date::date as dt, value, "investedAmount"
+                FROM "PortfolioHistory"
+                WHERE "portfolioId" = ANY($1)
+            ),
+            dates AS (
+                SELECT DISTINCT dt FROM target_history
+            ),
+            portfolio_list AS (
+                SELECT UNNEST($1::text[]) as pid
+            ),
+            grid AS (
+                SELECT d.dt, p.pid
+                FROM dates d
+                CROSS JOIN portfolio_list p
+            ),
+            filled AS (
+                SELECT g.dt, g.pid,
+                       th.value, th."investedAmount",
+                       COUNT(th.value) OVER (PARTITION BY g.pid ORDER BY g.dt) as val_grp,
+                       COUNT(th."investedAmount") OVER (PARTITION BY g.pid ORDER BY g.dt) as inv_grp
+                FROM grid g
+                LEFT JOIN target_history th ON th."portfolioId" = g.pid AND th.dt = g.dt
+            ),
+            locf AS (
+                SELECT dt, pid,
+                       FIRST_VALUE(value) OVER (PARTITION BY pid, val_grp ORDER BY dt) as filled_val,
+                       FIRST_VALUE("investedAmount") OVER (PARTITION BY pid, inv_grp ORDER BY dt) as filled_inv
+                FROM filled
+            ),
+            daily_agg AS (
+                SELECT dt as date, 
+                       SUM(COALESCE(filled_val, 0))::numeric as value, 
+                       SUM(COALESCE(filled_inv, 0))::numeric as "investedAmount"
+                FROM locf
+                GROUP BY dt
+            )
             SELECT
                 EXTRACT(YEAR FROM date)::int as year,
                 MAX(value)::numeric as max_value,
                 MAX("investedAmount")::numeric as max_invested
-            FROM (
-                SELECT date::date as date, SUM(value)::numeric as value, SUM("investedAmount")::numeric as "investedAmount"
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = ANY($1)
-                GROUP BY date::date
-            ) sub
+            FROM daily_agg
             GROUP BY EXTRACT(YEAR FROM date)
             ORDER BY year DESC
             "#,
