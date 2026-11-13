@@ -248,12 +248,13 @@ impl InMemoryDatabase {
         });
     }
 
-    /// Checks if an existing transaction with identical date, amount, and units exists for a folio
+    /// Checks if an existing transaction with identical date, type, amount, and units exists for a folio
     /// (comparing absolute values to be resilient against positive vs negative representation across formats).
     pub fn has_duplicate_transaction(
         &self,
         folio_id: Uuid,
         date: NaiveDate,
+        tx_type: &str,
         amount: Decimal,
         units: Decimal,
     ) -> bool {
@@ -261,6 +262,7 @@ impl InMemoryDatabase {
         state.transactions.values().any(|tx| {
             tx.folio_id == folio_id
                 && tx.date == date
+                && tx.tx_type.eq_ignore_ascii_case(tx_type)
                 && (tx.amount.abs() - amount.abs()).abs() < Decimal::new(1, 3)
                 && (tx.units.abs() - units.abs()).abs() < Decimal::new(1, 4)
         })

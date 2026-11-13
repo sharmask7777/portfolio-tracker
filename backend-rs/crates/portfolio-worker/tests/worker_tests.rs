@@ -1004,6 +1004,7 @@ async fn test_cas_upload_deduplication_and_sub_account_normalization() {
     let has_dup = db.has_duplicate_transaction(
         folios_after_2[0].id,
         chrono::NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+        "PURCHASE",
         rust_decimal::Decimal::from_str("-10000.0").unwrap(),
         rust_decimal::Decimal::from_str("-100.0").unwrap(),
     );
