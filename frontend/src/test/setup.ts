@@ -39,6 +39,7 @@ vi.mock('lucide-react', () => {
     LogOut: Icon,
     ChevronDown: Icon,
     ChevronRight: Icon,
+    ChevronLeft: Icon,
     ArrowUp: Icon,
     ArrowDown: Icon,
     ArrowUpDown: Icon,
@@ -54,6 +55,7 @@ vi.mock('lucide-react', () => {
     Copy: Icon,
     Clock: Icon,
     Sparkles: Icon,
+    ExternalLink: Icon,
   };
 });
 
