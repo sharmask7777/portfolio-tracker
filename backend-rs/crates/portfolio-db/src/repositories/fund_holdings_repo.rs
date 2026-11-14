@@ -142,7 +142,8 @@ impl FundHoldingsRepository for SqlxFundHoldingsRepo {
             result_map.entry(isin_str.to_string()).or_default();
         }
 
-        let isin_strings: Vec<String> = isins.iter().map(|item| item.to_string()).collect();
+        let isin_strings: Vec<String> =
+            isins.iter().map(std::string::ToString::to_string).collect();
 
         // Optimized CTE (Common Table Expression):
         // 1. `latest_dates`: Groups by scheme ISIN across the ANY($1) array to find each

@@ -11,8 +11,6 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-authors = ["Portfolio Tracker Contributors"]
-license = "ISC"
 
 [workspace.dependencies]
 rust_decimal = { version = "1.36", features = ["serde-with-str", "serde-with-float", "maths"] }
@@ -45,14 +43,27 @@ broken_intra_doc_links = "deny"
 bare_urls = "warn"
 
 [workspace.lints.clippy]
-all = { level = "warn", priority = -1 }
+all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 unwrap_used = "deny"
 panic = "deny"
 todo = "deny"
 redundant_clone = "deny"
 undocumented_unsafe_blocks = "deny"
-doc_markdown = "allow"
+
+# Tightened static guardrail lints (previously allowed, now denied or warned)
+uninlined_format_args = "allow" # LaTeX and long math formatting
+doc_markdown = "allow" # KaTeX math syntax $f(x)$ / $w_A(c)$ conflicts with markdown backtick parser
+inefficient_to_string = "deny"
+redundant_else = "deny"
+manual_string_new = "deny"
+map_unwrap_or = "deny"
+manual_let_else = "deny"
+redundant_closure_for_method_calls = "deny"
+unnested_or_patterns = "deny"
+manual_midpoint = "deny"
+
+# Pedantic allowances with clear rationale
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
@@ -66,18 +77,11 @@ match_same_arms = "allow"
 struct_excessive_bools = "allow"
 needless_pass_by_value = "allow"
 unreadable_literal = "allow"
-uninlined_format_args = "allow"
 return_self_not_must_use = "allow"
-redundant_closure_for_method_calls = "allow"
-redundant_else = "allow"
 items_after_statements = "allow"
-map_unwrap_or = "allow"
 cast_lossless = "allow"
 cast_possible_wrap = "allow"
 ignored_unit_patterns = "allow"
-manual_midpoint = "allow"
-manual_let_else = "allow"
-inefficient_to_string = "allow"
 implicit_hasher = "allow"
 if_not_else = "allow"
 format_push_string = "allow"
@@ -85,6 +89,4 @@ float_cmp = "allow"
 default_trait_access = "allow"
 wildcard_imports = "allow"
 used_underscore_binding = "allow"
-unnested_or_patterns = "allow"
-manual_string_new = "allow"
 

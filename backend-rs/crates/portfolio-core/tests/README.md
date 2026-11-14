@@ -40,6 +40,7 @@ Per the repository's data privacy invariants:
 | [`auditor_defensive_test.rs`](./auditor_defensive_test.rs) | Boundary Conditions & Edge Cases | Defensive Adversarial Testing | Sub-unit fractional dust ($< 0.001$), zero balances, extreme NAV, negative inputs, duplicate dates, empty transactions. |
 | [`xirr_safeguards_test.rs`](./xirr_safeguards_test.rs) | Numerical Solver Safeguards | Bounded Solvers & Guardrails | Newton-Raphson non-convergence fallback, short-duration ($< 30$ days) fallback to absolute return, clamping to $[-100\%, +1000\%]$. |
 | [`types_test.rs`](./types_test.rs) | Financial Primitives & Serialization | Unit Tests + Property Tests | `Money` addition/subtraction identities, banker's rounding, `Units` 4-decimal precision, string validation for `Pan`, `FolioNumber`, `Isin`. |
+| [`architecture_invariants_test.rs`](./architecture_invariants_test.rs) | ArchUnit Architecture Safeguards | Static & Manifest Invariant Testing | Compile-time and manifest assertion of Zero-I/O policy (zero tokio, sqlx, reqwest, redis in dependencies) and `#![forbid(unsafe_code)]` compliance. |
 | [`fixtures/golden_tax_vectors.json`](./fixtures/golden_tax_vectors.json) | Ground-Truth Oracle Vectors | JSON Spec Test Matrix | 33 statutory vectors covering grandfathering, tax classifications, capital loss set-offs, and advance tax dates. |
 
 ---

@@ -790,12 +790,10 @@ pub async fn get_summary(
         let asset = fetch_asset_for_folio(&state, folio.asset_id).await?;
         let scheme_name = asset
             .as_ref()
-            .map(|a| a.name.clone())
-            .unwrap_or_else(|| "Unknown Asset".to_string());
+            .map_or_else(|| "Unknown Asset".to_string(), |a| a.name.clone());
         let asset_type = asset
             .as_ref()
-            .map(|a| a.asset_type.clone())
-            .unwrap_or_else(|| "MUTUAL_FUND".to_string());
+            .map_or_else(|| "MUTUAL_FUND".to_string(), |a| a.asset_type.clone());
 
         let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
         let mut core_txs = Vec::with_capacity(tx_entities.len());
@@ -1410,9 +1408,8 @@ pub async fn compute_portfolio_exposures(
     for portfolio in &portfolios {
         let folios = fetch_folios_for_portfolio(state, portfolio.id).await?;
         for folio in folios {
-            let asset = match fetch_asset_for_folio(state, folio.asset_id).await? {
-                Some(a) => a,
-                None => continue,
+            let Some(asset) = fetch_asset_for_folio(state, folio.asset_id).await? else {
+                continue;
             };
             let tx_entities = fetch_transactions_for_folio(state, folio.id).await?;
             if tx_entities.is_empty() {
@@ -1897,10 +1894,7 @@ pub async fn get_portfolio_summary(
                 .as_ref()
                 .and_then(|a| a.asset_type.parse::<AssetType>().ok())
                 .unwrap_or(AssetType::MutualFund);
-            let asset_name = asset
-                .as_ref()
-                .map(|a| a.name.as_str())
-                .unwrap_or("Unknown Asset");
+            let asset_name = asset.as_ref().map_or("Unknown Asset", |a| a.name.as_str());
             let perf_options = PerformanceOptions::new()
                 .with_as_of_date(today)
                 .with_tax_slab(slab_value)
@@ -1940,7 +1934,7 @@ pub async fn get_portfolio_summary(
                 post_tax_absolute_return: metrics
                     .post_tax_absolute_return
                     .or(Some(metrics.absolute_return)),
-                estimated_tax: metrics.estimated_tax.map(|t| t.to_decimal()),
+                estimated_tax: metrics.estimated_tax.map(portfolio_core::Money::to_decimal),
                 current_price: latest_nav.to_decimal(),
                 day_change,
                 day_change_percentage,
@@ -2160,14 +2154,10 @@ pub async fn get_xray(
 
             total_val += holding_market_value;
 
-            let asset_name = asset
-                .as_ref()
-                .map(|a| a.name.as_str())
-                .unwrap_or("Mutual Fund");
+            let asset_name = asset.as_ref().map_or("Mutual Fund", |a| a.name.as_str());
             let asset_type = asset
                 .as_ref()
-                .map(|a| a.asset_type.as_str())
-                .unwrap_or("MUTUAL_FUND");
+                .map_or("MUTUAL_FUND", |a| a.asset_type.as_str());
             let isin_str = asset
                 .as_ref()
                 .and_then(|a| a.isin.clone())
@@ -2519,7 +2509,7 @@ pub async fn get_xray(
 
     let total_annual_fees: Decimal = fund_breakdowns
         .iter()
-        .filter_map(|f| f.get("annualizedFee").and_then(|v| v.as_f64()))
+        .filter_map(|f| f.get("annualizedFee").and_then(serde_json::Value::as_f64))
         .map(|f| Decimal::from_f64_retain(f).unwrap_or(Decimal::ZERO))
         .sum();
     let weighted_ter = if total_val > Decimal::ZERO {
@@ -2602,8 +2592,7 @@ pub async fn get_exposures(
     let exclude_arbitrage = params
         .get("excludeArbitrage")
         .or_else(|| params.get("exclude_arbitrage"))
-        .map(|v| v == "true")
-        .unwrap_or(false);
+        .is_some_and(|v| v == "true");
     let exposures =
         compute_portfolio_exposures(&state, auth_user.user_id, &id, exclude_arbitrage).await?;
     Ok(Json(exposures))
@@ -2658,9 +2647,8 @@ pub async fn get_tax_summary(
     for portfolio in &portfolios {
         let folios = fetch_folios_for_portfolio(&state, portfolio.id).await?;
         for folio in folios {
-            let asset = match fetch_asset_for_folio(&state, folio.asset_id).await? {
-                Some(a) => a,
-                None => continue,
+            let Some(asset) = fetch_asset_for_folio(&state, folio.asset_id).await? else {
+                continue;
             };
             let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
             if tx_entities.is_empty() {
@@ -2783,9 +2771,9 @@ pub async fn get_tax_summary(
         .map(|g| {
             json!({
                 "assetName": g.asset_name,
-                "folioNumber": g.folio_number.as_ref().map(|f| f.as_str()),
-                "isin": g.isin.as_ref().map(|i| i.as_str()),
-                "pan": g.pan.as_ref().map(|p| p.as_str()),
+                "folioNumber": g.folio_number.as_ref().map(portfolio_core::FolioNumber::as_str),
+                "isin": g.isin.as_ref().map(portfolio_core::Isin::as_str),
+                "pan": g.pan.as_ref().map(portfolio_core::Pan::as_str),
                 "assetClass": g.asset_class,
                 "section": g.section.to_string(),
                 "buyDate": g.buy_date.to_string(),
@@ -2807,7 +2795,7 @@ pub async fn get_tax_summary(
                 "taxBeforeCess": decimal_to_f64(g.tax_before_cess.to_decimal()),
                 "cess": decimal_to_f64(g.cess.to_decimal()),
                 "estimatedTax": decimal_to_f64(g.estimated_tax.to_decimal()),
-                "advanceTaxQuarter": g.advance_tax_quarter.as_ref().map(|q| q.as_str()),
+                "advanceTaxQuarter": g.advance_tax_quarter.as_ref().map(portfolio_core::AdvanceTaxQuarter::as_str),
                 "isGrandfathered": g.is_grandfathered,
                 "grandfatheredStatus": g.grandfathered_status,
             })
@@ -2918,7 +2906,10 @@ pub async fn get_history(
     }
 
     let mut points: Vec<crate::services::HistoryPoint> = if let Some(pool) = state.pool() {
-        let p_ids: Vec<String> = p_uuids.iter().map(|p| p.to_string()).collect();
+        let p_ids: Vec<String> = p_uuids
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         sqlx::query_as::<_, crate::services::HistoryPoint>(
             r#"
             WITH target_history AS (
@@ -3013,7 +3004,10 @@ pub async fn get_stats(
 
         let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
         let p_uuids: Vec<Uuid> = portfolios.iter().map(|p| p.id).collect();
-        let p_ids: Vec<String> = p_uuids.iter().map(|p| p.to_string()).collect();
+        let p_ids: Vec<String> = p_uuids
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
 
         if p_ids.is_empty() {
             return Ok(Json(json!({
@@ -3176,9 +3170,9 @@ pub async fn get_stats(
         use chrono::Datelike;
         use rust_decimal::prelude::ToPrimitive;
 
-        let mut ath_val = ath.as_ref().map(|a| a.value).unwrap_or(Decimal::ZERO);
+        let mut ath_val = ath.as_ref().map_or(Decimal::ZERO, |a| a.value);
         let mut ath_date = ath.as_ref().map(|a| a.date.to_string());
-        let mut max_inv_val = max_inv.as_ref().map(|m| m.value).unwrap_or(Decimal::ZERO);
+        let mut max_inv_val = max_inv.as_ref().map_or(Decimal::ZERO, |m| m.value);
         let mut max_inv_date = max_inv.as_ref().map(|m| m.date.to_string());
 
         if let Some(ref live_snap) = live {
@@ -3219,7 +3213,7 @@ pub async fn get_stats(
             let cur_year = live_snap.as_of_date.year();
             if !yearly
                 .iter()
-                .any(|y| y.get("year").and_then(|v| v.as_i64()) == Some(cur_year as i64))
+                .any(|y| y.get("year").and_then(serde_json::Value::as_i64) == Some(cur_year as i64))
                 && (!live_snap.total_value.is_zero() || !live_snap.total_invested.is_zero())
             {
                 yearly.insert(
@@ -3304,8 +3298,7 @@ pub async fn close_folio(
             .iter()
             .rev()
             .find(|t| t.nav.is_positive())
-            .map(|t| t.nav.to_decimal())
-            .unwrap_or(Decimal::ONE);
+            .map_or(Decimal::ONE, |t| t.nav.to_decimal());
         let today = Utc::now().date_naive();
         let amount = -(units.to_decimal() * last_nav);
         let ext_id = format!(

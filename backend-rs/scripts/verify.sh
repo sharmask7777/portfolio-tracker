@@ -58,8 +58,12 @@ else
 fi
 
 echo ""
-echo "▶ [8/8] Parity Validation Harness: cargo run --package portfolio-parity"
+echo "▶ [8/9] Parity Validation Harness: cargo run --package portfolio-parity"
 cargo run --package portfolio-parity
+
+echo ""
+echo "▶ [9/9] Static Privacy & Anti-PII Guardrail: scripts/check-privacy-and-pii.py"
+python3 "${SCRIPT_DIR}/../../scripts/check-privacy-and-pii.py"
 
 echo ""
 echo "================================================================================"

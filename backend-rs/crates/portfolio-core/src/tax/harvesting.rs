@@ -403,8 +403,14 @@ pub fn get_harvesting_opportunities(
 
             if consolidated_gain.is_positive() {
                 opportunities.push(HarvestingOpportunity {
-                    folio_id: candidate.input.folio_id.map(|s| s.to_string()),
-                    folio_number: candidate.input.folio_number.map(|s| s.to_string()),
+                    folio_id: candidate
+                        .input
+                        .folio_id
+                        .map(std::string::ToString::to_string),
+                    folio_number: candidate
+                        .input
+                        .folio_number
+                        .map(std::string::ToString::to_string),
                     scheme_name: candidate.input.scheme_name.to_string(),
                     units_to_harvest: consolidated_units,
                     unrealized_gain: consolidated_gain,

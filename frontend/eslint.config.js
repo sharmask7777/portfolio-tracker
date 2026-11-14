@@ -76,19 +76,11 @@ export default defineConfig([
       ],
     },
     rules: {
-      'boundaries/element-types': [
-        'error',
-        {
-          default: 'allow',
-          rules: boundaryPolicies,
-          policies: boundaryPolicies,
-        },
-      ],
       'boundaries/dependencies': [
         'error',
         {
           default: 'allow',
-          policies: boundaryPolicies,
+          rules: boundaryPolicies,
         },
       ],
       'check-file/filename-naming-convention': [
@@ -101,6 +93,13 @@ export default defineConfig([
           ignoreMiddleExtensions: true,
         },
       ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'MemberExpression[object.meta.name="import"][object.property.name="meta"][property.name="env"]',
+          message: 'Direct access to import.meta.env is forbidden. Centralize environment variable access in src/env.ts using Zod validation.',
+        },
+      ],
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
       'react-hooks/set-state-in-effect': 'off',
@@ -108,6 +107,13 @@ export default defineConfig([
       'react-refresh/only-export-components': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
+  {
+    // src/env.ts is the designated central hub validated with Zod for import.meta.env
+    files: ['src/env.ts'],
+    rules: {
+      'no-restricted-syntax': 'off',
     },
   },
 ])

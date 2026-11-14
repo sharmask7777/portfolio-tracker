@@ -511,9 +511,8 @@ pub async fn get_harvesting(
     for portfolio in &portfolios {
         let folios = fetch_folios_for_portfolio(&state, portfolio.id).await?;
         for folio in folios {
-            let asset = match fetch_asset_for_folio(&state, folio.asset_id).await? {
-                Some(a) => a,
-                None => continue,
+            let Some(asset) = fetch_asset_for_folio(&state, folio.asset_id).await? else {
+                continue;
             };
 
             let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
