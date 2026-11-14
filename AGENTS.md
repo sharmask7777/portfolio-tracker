@@ -41,7 +41,16 @@ Before committing or creating a PR, you MUST run and pass the full hermetic veri
   - Ensures all new tax rules or statutory amendments include corresponding property-based tests in `tax_oracle_test.rs` and golden vectors in `golden_tax_vectors.json`.
   - Verifies that `verify_itr_invariants` enforces all statutory constraints on Schedule CG outputs.
 
-### 6. Test Suite Catalogs & Invariant Documentation
+### 6. Mandatory Multi-Specialist Review Crew for New Features
+For all non-trivial feature development or analytical enhancements, agents MUST execute review via a specialized agent crew before merging:
+1. **CX & Frontend Specialist (`cx-frontend-auditor`)**:
+   - Audits interaction ergonomics, keyboard accessibility (WCAG 2.1 AA roving tabindex, ARIA roles, live regions), responsive layouts ($375\text{px}$ to $1440\text{px}$), visual clutter avoidance (e.g. 4-tier tile dimension thresholds, clipping paths), and layout memoization.
+2. **Quantitative Finance & Visual Invariant Specialist (`finance-visual-auditor`)**:
+   - Audits mathematical reconciliation, Value Conservation Law ($\Delta \le ₹0.01$), sum-of-parts completeness, tail holding reconciliation for undisclosed portfolios, denominator clarity (distinguishing `% of Portfolio`, `% of Asset Class`, `% of Parent`), and statutory/hedging segregation (such as cash-futures arbitrage funds).
+3. **Architecture & Code Quality Auditor (`code-quality-auditor`)**:
+   - Enforces the Zero-Any rule, exact optional property safety (`exactOptionalPropertyTypes: true`), layer boundary isolation (`eslint-plugin-boundaries`), knip production zero-dead-code compliance, and self-documenting code.
+
+### 7. Test Suite Catalogs & Invariant Documentation
 Comprehensive documentation of all backend and frontend test suites, financial invariants, and extension procedures is maintained in the following catalogs:
 - **Backend Test Catalog:** [`backend-rs/crates/portfolio-core/tests/README.md`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/backend-rs/crates/portfolio-core/tests/README.md)
   - Documents the strict Zero-I/O policy, precision bounds, synthetic data mandate, and detailed domain invariant mappings for all 7 backend test suites (`tax_oracle_test.rs`, `tax_compliance_test.rs`, `mock_portfolios.rs`, `proptests.rs`, `auditor_defensive_test.rs`, `xirr_safeguards_test.rs`, `types_test.rs`) and the 33-vector statutory golden fixtures (`golden_tax_vectors.json`).
