@@ -8,7 +8,7 @@
  * weightings, and arbitrage hedging exclusions.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Layers, ArrowUpDown, ArrowUp, ArrowDown, Upload, X } from 'lucide-react';
 
 /**
@@ -49,6 +49,8 @@ export interface IntersectionViewProps {
   isLoading?: boolean;
   /** Callback triggered when user clicks the upload CTA in an empty portfolio state. */
   onUploadClick?: () => void;
+  /** Initial or controlled search query for filtering stock holdings. */
+  initialSearchQuery?: string;
   /**
    * Whether arbitrage mutual funds are excluded from look-through exposure calculations.
    *
@@ -92,10 +94,16 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
   exposures,
   isLoading = false,
   onUploadClick,
+  initialSearchQuery = '',
   excludeArbitrage = false,
   onToggleExcludeArbitrage,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+
+  // Sync external search query changes (e.g. navigation from XRayView)
+  useEffect(() => {
+    setSearchQuery(initialSearchQuery);
+  }, [initialSearchQuery]);
   const [selectedSector, setSelectedSector] = useState('All Sectors');
   const [sortField, setSortField] = useState<SortField>('percentage');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');

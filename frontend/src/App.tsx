@@ -82,6 +82,7 @@ export function Dashboard() {
   const [portfolio, setPortfolio] = useState<any>(null);
   const [xrayData, setXRayData] = useState<any>(null);
   const [exposures, setExposures] = useState<StockExposure[]>([]);
+  const [intersectionSearchQuery, setIntersectionSearchQuery] = useState<string>('');
   const [excludeArbitrage, setExcludeArbitrage] = useState<boolean>(false);
   const [taxSummary, setTaxSummary] = useState<any>(null);
   const [harvesting, setHarvesting] = useState<HarvestTicketResponse | null>(null);
@@ -919,12 +920,24 @@ export function Dashboard() {
               </>
             )}
 
-            {activeTab === 'xray' && <XRayView data={xrayData} />}
+            {activeTab === 'xray' && (
+              <XRayView
+                data={xrayData}
+                exposures={exposures}
+                excludeArbitrage={excludeArbitrage}
+                onToggleExcludeArbitrage={handleToggleExcludeArbitrage}
+                onNavigateToIntersection={(stockName) => {
+                  setIntersectionSearchQuery(stockName);
+                  setActiveTab('intersection');
+                }}
+              />
+            )}
             {activeTab === 'intersection' && (
               <IntersectionView
                 exposures={exposures}
                 isLoading={loading}
                 onUploadClick={() => setShowUpload(true)}
+                initialSearchQuery={intersectionSearchQuery}
                 excludeArbitrage={excludeArbitrage}
                 onToggleExcludeArbitrage={handleToggleExcludeArbitrage}
               />
