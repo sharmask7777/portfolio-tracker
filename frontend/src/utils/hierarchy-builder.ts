@@ -565,13 +565,13 @@ export function buildPortfolioHierarchy(
   const includeSchemes = options?.includeSchemes ?? false;
 
   // Step 1: Select active asset allocation and sector breakdown based on excludeArbitrage toggle
-  const isExArbActive = excludeArbitrage && data.exArbitrage !== undefined;
-  const activeAllocation = isExArbActive && data.exArbitrage ? data.exArbitrage.assetAllocation : data.assetAllocation;
-  const activeSectors = isExArbActive && data.exArbitrage ? data.exArbitrage.sectors : data.sectors;
+  const isExArbActive = excludeArbitrage && data?.exArbitrage !== undefined;
+  const activeAllocation = (isExArbActive && data?.exArbitrage ? data.exArbitrage.assetAllocation : data?.assetAllocation) ?? {};
+  const activeSectors = (isExArbActive && data?.exArbitrage ? data.exArbitrage.sectors : data?.sectors) ?? [];
 
   // Step 2: Establish root portfolio net worth
-  const rawRootValue = data.totalValue;
-  const rootValue = Number.isFinite(rawRootValue) && rawRootValue > 0 ? rawRootValue : 0;
+  const rawRootValue = data?.totalValue;
+  const rootValue = Number.isFinite(rawRootValue) && (rawRootValue ?? 0) > 0 ? (rawRootValue ?? 0) : 0;
 
   // Step 3: Construct Macro Asset Classes
   const assetClassNodes: HierarchyNode[] = [];

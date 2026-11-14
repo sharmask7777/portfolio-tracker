@@ -70,7 +70,7 @@ export const XRayView: React.FC<XRayViewProps> = ({
 
   // Rebuild hierarchical tree whenever data, exposures, or arbitrage toggle changes
   const rootHierarchyNode = useMemo(() => {
-    if (!data || data.totalValue === 0) {
+    if (!data || !data.sectors || data.totalValue === 0) {
       return null;
     }
     return buildPortfolioHierarchy(data, exposures, {
@@ -198,7 +198,6 @@ export const XRayView: React.FC<XRayViewProps> = ({
         </div>
       )}
 
-      {/* In Classic mode, render the standard XRayDashboard cards */}
       {viewMode === 'classic' && (
         <>
           <XRayDashboard data={data} title="Standard View" />
