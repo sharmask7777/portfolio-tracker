@@ -472,7 +472,7 @@ export const MultiLevelTreemap: React.FC<MultiLevelTreemapProps> = ({
 
                 {/* Text Content based on 4-Tier Rules */}
                 {(isTier1 || isTier2) && (
-                  <g clipPath={`url(#clip-${node.id}-${index})`}>
+                  <g clipPath={`url(#clip-${node.id}-${index})`} aria-hidden="true">
                     <text
                       x={rect.x + 6}
                       y={rect.y + 16}
