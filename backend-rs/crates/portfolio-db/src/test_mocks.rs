@@ -296,6 +296,12 @@ impl InMemoryDatabase {
         });
     }
 
+    /// Purges all transactions for a specific folio, ensuring clean-slate reconstruction.
+    pub fn purge_folio_transactions(&self, folio_id: Uuid) {
+        let mut state = self.state.write().expect("lock poisoned");
+        state.transactions.retain(|_, tx| tx.folio_id != folio_id);
+    }
+
     /// Checks if an existing transaction with identical date, type, amount, and units exists for a folio
     /// (comparing absolute values to be resilient against positive vs negative representation across formats).
     pub fn has_duplicate_transaction(
@@ -313,6 +319,27 @@ impl InMemoryDatabase {
                 && tx.tx_type.eq_ignore_ascii_case(tx_type)
                 && (tx.amount.abs() - amount.abs()).abs() < Decimal::new(1, 3)
                 && (tx.units.abs() - units.abs()).abs() < Decimal::new(1, 4)
+        })
+    }
+
+    /// Checks if an existing transaction with identical date, type, amount, units, and running balance exists for a folio.
+    pub fn has_duplicate_transaction_with_balance(
+        &self,
+        folio_id: Uuid,
+        date: NaiveDate,
+        tx_type: &str,
+        amount: Decimal,
+        units: Decimal,
+        balance: Decimal,
+    ) -> bool {
+        let state = self.state.read().expect("lock poisoned");
+        state.transactions.values().any(|tx| {
+            tx.folio_id == folio_id
+                && tx.date == date
+                && tx.tx_type.eq_ignore_ascii_case(tx_type)
+                && (tx.amount.abs() - amount.abs()).abs() < Decimal::new(1, 3)
+                && (tx.units.abs() - units.abs()).abs() < Decimal::new(1, 4)
+                && (tx.balance.abs() - balance.abs()).abs() < Decimal::new(1, 4)
         })
     }
 

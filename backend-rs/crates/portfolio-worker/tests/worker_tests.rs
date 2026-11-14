@@ -1286,3 +1286,213 @@ async fn test_cas_upload_purges_and_reconstructs_history() {
         "Must not accumulate duplicate history checkpoints for 2024-01-15"
     );
 }
+
+#[tokio::test]
+async fn test_cas_upload_cleans_legacy_duplicates_and_restores_accurate_xirr() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("xirr_repair_test@example.com", "pwd");
+
+    // 1. Initial authoritative CAS statement:
+    // Purchase: 2021-01-01: ₹1,00,000, 1000 units @ NAV 100, balance 1000
+    // Partial Redemption: 2023-01-01: ₹60,000, 500 units @ NAV 120, balance 500
+    let cas_json = serde_json::json!({
+        "investor_info": { "name": "Arjun Mehta", "pan": "ABCDE1234F" },
+        "folios": [{
+            "folio": "FOLIO-XIRR-1",
+            "amc": "Parag Parikh Mutual Fund",
+            "pan": "ABCDE1234F",
+            "schemes": [{
+                "scheme": "Parag Parikh Flexi Cap Fund",
+                "isin": "INF879O01018",
+                "amfi": "122639",
+                "transactions": [
+                    { "date": "2021-01-01", "type": "PURCHASE", "amount": 100000.0, "units": 1000.0, "nav": 100.0, "balance": 1000.0 },
+                    { "date": "2023-01-01", "type": "REDEMPTION", "amount": 60000.0, "units": 500.0, "nav": 120.0, "balance": 500.0 }
+                ]
+            }]
+        }]
+    });
+
+    let mut temp_file_1 = NamedTempFile::new().expect("create temp file");
+    temp_file_1
+        .write_all(cas_json.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path_1 = temp_file_1.path().to_path_buf();
+
+    let job_id_1 = Uuid::new_v4();
+    db.create_upload_job(job_id_1, user.id, &temp_path_1.to_string_lossy());
+    let job_data_1 =
+        ProcessPdfUploadJobData::new(user.id, temp_path_1.to_string_lossy().to_string(), job_id_1);
+
+    let res1 = process_pdf_job_with_pool(&job_data_1, &db, None).await;
+    assert!(res1.is_ok());
+
+    let profile = db
+        .find_profile_by_pan(user.id, "ABCDE1234F")
+        .expect("profile exists");
+    let portfolio = db
+        .find_portfolio_by_profile(user.id, profile.id)
+        .expect("portfolio exists");
+    let folios = db.list_folios_by_portfolio(portfolio.id);
+    assert_eq!(folios.len(), 1);
+    let folio = &folios[0];
+
+    // 2. Simulate dirty NAS state: an external/legacy process inserted a duplicate redemption record
+    // with different externalId (e.g. from negative-amount format before b5b7bba)
+    let dirty_ext_id = format!(
+        "{}-{}-legacy-duplicate-redemption",
+        portfolio.id, folio.number
+    );
+    db.create_transaction(
+        folio.id,
+        NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        "REDEMPTION",
+        dec("60000.0"),
+        dec("500.0"),
+        dec("120.0"),
+        dec("500.0"),
+        Some(&dirty_ext_id),
+    )
+    .await
+    .expect("create duplicate tx");
+
+    let dirty_txs = db.list_by_folio(folio.id).await.unwrap();
+    assert_eq!(
+        dirty_txs.len(),
+        3,
+        "Database is now in corrupted state with 3 transactions (1 purchase, 2 duplicate redemptions)"
+    );
+
+    // Compute metrics on dirty state to verify XIRR is distorted
+    let dirty_core: Vec<_> = dirty_txs
+        .iter()
+        .map(|t| t.to_core_transaction().unwrap())
+        .collect();
+    let as_of_date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let perf_options =
+        portfolio_core::performance::PerformanceOptions::new().with_as_of_date(as_of_date);
+    let dirty_metrics = portfolio_core::performance::get_metrics(
+        &dirty_core,
+        portfolio_core::types::Nav::new(dec("150.0")),
+        Some(perf_options.clone()),
+    );
+    let dirty_xirr = dirty_metrics.xirr.expect("xirr computed");
+    // Duplicate redemption inflates XIRR significantly above 25%
+    assert!(
+        dirty_xirr > dec("0.25"),
+        "Dirty ledger with duplicate redemption artificially inflates XIRR: {dirty_xirr}"
+    );
+
+    // 3. User re-uploads the authoritative CAS statement on the dirty NAS database without manual purging.
+    let mut temp_file_2 = NamedTempFile::new().expect("create temp file");
+    temp_file_2
+        .write_all(cas_json.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path_2 = temp_file_2.path().to_path_buf();
+
+    let job_id_2 = Uuid::new_v4();
+    db.create_upload_job(job_id_2, user.id, &temp_path_2.to_string_lossy());
+    let job_data_2 =
+        ProcessPdfUploadJobData::new(user.id, temp_path_2.to_string_lossy().to_string(), job_id_2);
+
+    let res2 = process_pdf_job_with_pool(&job_data_2, &db, None).await;
+    assert!(res2.is_ok(), "CAS upload processing must succeed");
+
+    // 4. Assert clean-slate reconstruction: the touched folio transactions were purged and reconstructed.
+    let clean_txs = db.list_by_folio(folio.id).await.unwrap();
+    assert_eq!(
+        clean_txs.len(),
+        2,
+        "Re-uploading CAS must clean-slate reconstruct the folio ledger, purging the duplicate redemption"
+    );
+
+    let clean_core: Vec<_> = clean_txs
+        .iter()
+        .map(|t| t.to_core_transaction().unwrap())
+        .collect();
+    let clean_units = portfolio_core::holdings::get_latest_units(&clean_core);
+    assert_eq!(
+        clean_units.to_decimal(),
+        dec("500.0"),
+        "Remaining units must accurately be 500"
+    );
+
+    let clean_metrics = portfolio_core::performance::get_metrics(
+        &clean_core,
+        portfolio_core::types::Nav::new(dec("150.0")),
+        Some(perf_options),
+    );
+    let clean_xirr = clean_metrics.xirr.expect("clean xirr computed");
+    // With 100k outflow at 2021-01-01, 60k inflow at 2023-01-01, 75k terminal at 2024-01-01:
+    // Net gain is 35k on 100k over 3 years => annualized return is ~11.5%
+    assert!(
+        clean_xirr > dec("0.10") && clean_xirr < dec("0.13"),
+        "Clean ledger must produce accurate ~11.5% XIRR without distortion, actual: {clean_xirr}"
+    );
+}
+
+#[tokio::test]
+async fn test_cas_upload_preserves_legitimate_same_day_sips_with_distinct_balances() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("same_day_sip@example.com", "pwd");
+
+    // An investor has two legitimate ₹5,000 SIPs executed on the exact same date with advancing running balances
+    let cas_json = serde_json::json!({
+        "investor_info": { "name": "Priya Nair", "pan": "ABCDE1234F" },
+        "folios": [{
+            "folio": "SIP-SAME-DAY",
+            "amc": "HDFC Mutual Fund",
+            "pan": "ABCDE1234F",
+            "schemes": [{
+                "scheme": "HDFC Top 100 Fund",
+                "isin": "INF179K01BE2",
+                "amfi": "100033",
+                "transactions": [
+                    { "date": "2024-03-01", "type": "PURCHASE_SIP", "amount": 5000.0, "units": 50.0, "nav": 100.0, "balance": 50.0 },
+                    { "date": "2024-03-01", "type": "PURCHASE_SIP", "amount": 5000.0, "units": 50.0, "nav": 100.0, "balance": 100.0 }
+                ]
+            }]
+        }]
+    });
+
+    let mut temp_file = NamedTempFile::new().expect("create temp file");
+    temp_file
+        .write_all(cas_json.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path = temp_file.path().to_path_buf();
+
+    let job_id = Uuid::new_v4();
+    db.create_upload_job(job_id, user.id, &temp_path.to_string_lossy());
+    let job_data =
+        ProcessPdfUploadJobData::new(user.id, temp_path.to_string_lossy().to_string(), job_id);
+
+    let res = process_pdf_job_with_pool(&job_data, &db, None).await;
+    assert!(res.is_ok(), "CAS upload must succeed");
+
+    let profile = db
+        .find_profile_by_pan(user.id, "ABCDE1234F")
+        .expect("profile exists");
+    let portfolio = db
+        .find_portfolio_by_profile(user.id, profile.id)
+        .expect("portfolio exists");
+    let folios = db.list_folios_by_portfolio(portfolio.id);
+    assert_eq!(folios.len(), 1);
+
+    let txs = db.list_by_folio(folios[0].id).await.unwrap();
+    assert_eq!(
+        txs.len(),
+        2,
+        "Both legitimate same-day SIPs with distinct balances must be preserved"
+    );
+
+    let core_txs: Vec<_> = txs
+        .iter()
+        .map(|t| t.to_core_transaction().unwrap())
+        .collect();
+    let units = portfolio_core::holdings::get_latest_units(&core_txs);
+    assert_eq!(
+        units.to_decimal(),
+        dec("100.0"),
+        "Total active units from both SIPs must be 100"
+    );
+}

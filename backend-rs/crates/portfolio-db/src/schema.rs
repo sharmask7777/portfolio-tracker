@@ -254,11 +254,90 @@ pub fn generate_ddl() -> &'static str {
     VALUES ('00000000-0000-0000-0000-000000000001', 'test@example.com', '$2b$12$dummyhashforplaywrighttestuser', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT ("id") DO NOTHING;
 
-    -- Self-healing data migration: enforce non-negative invariant on existing Transaction records
-    UPDATE "Transaction"
-    SET amount = ABS(amount), units = ABS(units)
-    WHERE amount < 0 OR units < 0;
+    CREATE TABLE IF NOT EXISTS "_SchemaMigrations" (
+        "id" TEXT PRIMARY KEY,
+        "appliedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     "#
+}
+
+/// Runs one-off self-healing data migrations tracked in `_SchemaMigrations`.
+///
+/// This avoids running expensive table scans and lock contention on every container restart,
+/// ensuring that data fixes (such as deduplication of legacy transactions) execute strictly once.
+pub async fn run_self_healing_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let migrated: bool = sqlx::query_scalar::<_, bool>(
+        r#"SELECT EXISTS(SELECT 1 FROM "_SchemaMigrations" WHERE id = 'dedup_legacy_transactions_v2')"#,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !migrated {
+        sqlx::raw_sql(
+            r#"
+            -- Enforce non-negative invariant on existing Transaction records
+            UPDATE "Transaction"
+            SET amount = ABS(amount), units = ABS(units)
+            WHERE amount < 0 OR units < 0;
+
+            -- Deduplicate exact duplicate transaction clones, prioritizing canonical 8-part external IDs
+            WITH "ExactDuplicateRows" AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "folioId",
+                                        date::date,
+                                        UPPER(TRIM(type)),
+                                        ROUND(ABS(amount)::numeric, 2),
+                                        ROUND(ABS(units)::numeric, 4),
+                                        ROUND(ABS(balance)::numeric, 4)
+                           ORDER BY 
+                               CASE 
+                                   WHEN "externalId" LIKE '%-%-%-%-%-%-%-%' AND "externalId" NOT LIKE '%--%' THEN 0
+                                   WHEN "externalId" IS NOT NULL AND "externalId" NOT LIKE '%--%' THEN 1
+                                   ELSE 2 
+                               END ASC,
+                               "createdAt" ASC,
+                               id ASC
+                       ) AS rank_idx
+                FROM "Transaction"
+            )
+            DELETE FROM "Transaction"
+            WHERE id IN (
+                SELECT id 
+                FROM "ExactDuplicateRows" 
+                WHERE rank_idx > 1
+            );
+
+            -- Remove legacy zero-balance duplicates when an authoritative transaction with valid balance already exists
+            WITH "ZeroBalanceDuplicates" AS (
+                SELECT id
+                FROM "Transaction" t_zero
+                WHERE ABS(t_zero.balance) < 0.0001
+                  AND EXISTS (
+                      SELECT 1 FROM "Transaction" t_real
+                      WHERE t_real."folioId" = t_zero."folioId"
+                        AND t_real.date::date = t_zero.date::date
+                        AND UPPER(TRIM(t_real.type)) = UPPER(TRIM(t_zero.type))
+                        AND ROUND(ABS(t_real.amount)::numeric, 2) = ROUND(ABS(t_zero.amount)::numeric, 2)
+                        AND ROUND(ABS(t_real.units)::numeric, 4) = ROUND(ABS(t_zero.units)::numeric, 4)
+                        AND ABS(t_real.balance) >= 0.0001
+                  )
+            )
+            DELETE FROM "Transaction"
+            WHERE id IN (
+                SELECT id FROM "ZeroBalanceDuplicates"
+            );
+
+            INSERT INTO "_SchemaMigrations" ("id") VALUES ('dedup_legacy_transactions_v2')
+            ON CONFLICT ("id") DO NOTHING;
+            "#,
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
 }
 
 /// Executes the DDL statements on the given PostgreSQL connection pool.
@@ -272,6 +351,8 @@ pub fn generate_ddl() -> &'static str {
 /// drops, or database syntax issues.
 pub async fn init_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::raw_sql(generate_ddl()).execute(pool).await?;
+
+    run_self_healing_migrations(pool).await?;
 
     // Seed StockMetadata if empty
     let count: (i64,) = sqlx::query_as(r#"SELECT COUNT(*) FROM "StockMetadata""#)

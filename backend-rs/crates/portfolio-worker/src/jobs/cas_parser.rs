@@ -420,6 +420,8 @@ async fn process_cas_file_internal(
 
     let mut touched_portfolios = HashSet::new();
     let mut touched_pg_portfolios = HashSet::new();
+    let mut purged_folios = HashSet::new();
+    let mut purged_pg_folios = HashSet::new();
 
     // Step 4: Ingest assets, folios, and transactions
     for folio_data in &statement.folios {
@@ -577,11 +579,17 @@ async fn process_cas_file_internal(
                 None
             };
 
-            // Reconcile existing folio: clear any synthetic MANUAL_CLOSE or ANCHOR markers
-            // so the incoming authoritative statement transactions and balances take precedence.
-            db.reconcile_folio_transactions(folio.id);
-            if let (Some(pool), Some(f_id)) = (pool, pg_folio_id) {
-                portfolio_db::repositories::reconcile_postgres_folio(pool, f_id)
+            // Clean-slate folio reconstruction: CAS statements uploaded by users contain complete
+            // transaction history from inception. Purging all previous transactions for touched
+            // folios guarantees state predictability, eliminating duplicate rows, legacy sign
+            // discrepancies, and synthetic markers.
+            if purged_folios.insert(folio.id) {
+                db.purge_folio_transactions(folio.id);
+            }
+            if let (Some(pool), Some(f_id)) = (pool, pg_folio_id)
+                && purged_pg_folios.insert(f_id)
+            {
+                portfolio_db::repositories::purge_folio_transactions(pool, f_id)
                     .await
                     .map_err(WorkerError::Db)?;
             }
@@ -607,20 +615,23 @@ async fn process_cas_file_internal(
                     continue;
                 }
 
-                // Generate deterministic external_id for idempotency
+                // Generate deterministic external_id for idempotency (including balance to distinguish legitimate same-day SIPs/transfers)
                 let external_id = format!(
-                    "{}-{}-{}-{}-{}-{}-{}",
+                    "{}-{}-{}-{}-{}-{}-{}-{}",
                     portfolio.id,
                     folio.number,
                     isin.unwrap_or("UNKNOWN"),
                     date,
                     tx_type,
                     amount,
-                    units
+                    units,
+                    balance
                 );
 
                 if db.find_transaction_by_external_id(&external_id).is_none()
-                    && !db.has_duplicate_transaction(folio.id, date, tx_type, amount, units)
+                    && !db.has_duplicate_transaction_with_balance(
+                        folio.id, date, tx_type, amount, units, balance,
+                    )
                 {
                     db.create_transaction(
                         folio.id,
@@ -637,14 +648,15 @@ async fn process_cas_file_internal(
 
                 if let (Some(pool), Some(f_id), Some(p_id)) = (pool, pg_folio_id, pg_portfolio_id) {
                     let pg_ext_id = format!(
-                        "{}-{}-{}-{}-{}-{}-{}",
+                        "{}-{}-{}-{}-{}-{}-{}-{}",
                         p_id,
                         folio.number,
                         isin.unwrap_or("UNKNOWN"),
                         date,
                         tx_type,
                         amount,
-                        units
+                        units,
+                        balance
                     );
                     portfolio_db::repositories::insert_postgres_transaction(
                         pool, f_id, date, tx_type, amount, units, nav, balance, &pg_ext_id,
