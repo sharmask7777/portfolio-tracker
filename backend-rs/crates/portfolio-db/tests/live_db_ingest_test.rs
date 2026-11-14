@@ -135,4 +135,66 @@ async fn test_cas_ingest_repo_against_real_postgres() {
     .expect(
         "upsert_portfolio_history must execute without column or type errors against PostgreSQL",
     );
+
+    // 8. Verify clean-slate purge_folio_transactions against real PostgreSQL
+    purge_folio_transactions(&pool, folio_id)
+        .await
+        .expect("purge_folio_transactions must succeed against PostgreSQL");
+    let txs_after_purge = fetch_portfolio_transactions(&pool, portfolio_id)
+        .await
+        .expect("fetch_portfolio_transactions must succeed");
+    assert_eq!(
+        txs_after_purge.len(),
+        0,
+        "All transactions for purged folio must be cleared"
+    );
+
+    // 9. Verify self-healing transaction deduplication migration in init_schema
+    // Insert two identical clone transactions with raw SQL
+    let tx_clone_1 = Uuid::new_v4();
+    let tx_clone_2 = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO "Transaction" (id, date, type, amount, units, nav, balance, "folioId", "externalId", "createdAt", "updatedAt")
+        VALUES ($1, '2023-01-15 00:00:00', 'PURCHASE', 10000.0, 100.0, 100.0, 100.0, $3, $4, NOW(), NOW()),
+               ($2, '2023-01-15 00:00:00', 'PURCHASE', 10000.0, 100.0, 100.0, 100.0, $3, $5, NOW(), NOW())
+        "#,
+    )
+    .bind(tx_clone_1.to_string())
+    .bind(tx_clone_2.to_string())
+    .bind(folio_id.to_string())
+    .bind(format!("dup-ext-1-{tx_clone_1}"))
+    .bind(format!("dup-ext-2-{tx_clone_2}"))
+    .execute(&pool)
+    .await
+    .expect("seeding clone transactions must succeed");
+
+    let txs_before_migration = fetch_portfolio_transactions(&pool, portfolio_id)
+        .await
+        .expect("fetch must succeed");
+    assert_eq!(
+        txs_before_migration.len(),
+        2,
+        "Both clones exist before migration"
+    );
+
+    // Reset migration record in _SchemaMigrations to simulate first-time migration trigger on startup
+    sqlx::query(r#"DELETE FROM "_SchemaMigrations" WHERE id = 'dedup_legacy_transactions_v2'"#)
+        .execute(&pool)
+        .await
+        .expect("clearing migration record must succeed");
+
+    // Run init_schema: self-healing deduplication migration runs and deletes the duplicate clone
+    init_schema(&pool)
+        .await
+        .expect("init_schema must succeed and run self-healing deduplication");
+
+    let txs_after_migration = fetch_portfolio_transactions(&pool, portfolio_id)
+        .await
+        .expect("fetch must succeed");
+    assert_eq!(
+        txs_after_migration.len(),
+        1,
+        "Deduplication migration must cleanly keep exactly 1 canonical record"
+    );
 }

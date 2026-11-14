@@ -274,6 +274,24 @@ pub async fn reconcile_postgres_folio(pool: &sqlx::PgPool, folio_id: Uuid) -> Re
     Ok(())
 }
 
+/// Purges all existing transactions for an ingested folio from PostgreSQL.
+///
+/// Because CAS statements contain the complete, authoritative transaction history from inception,
+/// clearing all existing ledger entries for touched folios guarantees clean-slate predictability,
+/// eliminating duplicate rows, legacy sign anomalies, and synthetic markers.
+pub async fn purge_folio_transactions(pool: &sqlx::PgPool, folio_id: Uuid) -> Result<(), DbError> {
+    sqlx::query(
+        r#"
+        DELETE FROM "Transaction"
+        WHERE "folioId" = $1
+        "#,
+    )
+    .bind(folio_id.to_string())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Inserts a transaction into PostgreSQL with idempotency on `externalId` and transaction signature deduplication.
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_postgres_transaction(
@@ -294,7 +312,7 @@ pub async fn insert_postgres_transaction(
     let balance_f64 = balance.to_string().parse::<f64>().unwrap_or(0.0);
 
     // Deduplication check: verify if an identical transaction already exists for this folio on this date
-    // with the same type and magnitude of amount and units (handling positive vs negative signs across legacy imports and CAS formats).
+    // with the same type and magnitude of amount, units, and balance (handling positive vs negative signs across legacy imports and CAS formats).
     let existing_tx = sqlx::query_scalar::<_, String>(
         r#"
         SELECT id FROM "Transaction"
@@ -303,6 +321,7 @@ pub async fn insert_postgres_transaction(
           AND type = $3
           AND ABS(ABS(amount) - ABS($4)) < 0.001
           AND ABS(ABS(units) - ABS($5)) < 0.0001
+          AND ABS(ABS(balance) - ABS($6)) < 0.0001
         LIMIT 1
         "#,
     )
@@ -311,6 +330,7 @@ pub async fn insert_postgres_transaction(
     .bind(tx_type)
     .bind(amount_f64)
     .bind(units_f64)
+    .bind(balance_f64)
     .fetch_optional(pool)
     .await?;
 

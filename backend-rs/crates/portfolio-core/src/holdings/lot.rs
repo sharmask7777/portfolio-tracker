@@ -66,6 +66,20 @@ pub fn sort_transactions(transactions: &[Transaction]) -> Vec<Transaction> {
                 let b_is_sell = is_unit_redemption(b.tx_type) || b.units.is_negative();
                 a_is_sell.cmp(&b_is_sell)
             })
+            .then_with(|| {
+                if !a.balance.is_zero() && !b.balance.is_zero() && a.balance != b.balance {
+                    let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
+                    if a_is_sell {
+                        // For redemptions on the same date, balance decreases over time (earlier redemption has higher balance)
+                        b.balance.cmp(&a.balance)
+                    } else {
+                        // For purchases on the same date, balance increases over time (earlier purchase has lower balance)
+                        a.balance.cmp(&b.balance)
+                    }
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            })
             .then_with(|| a.id.cmp(&b.id))
     });
     sorted
