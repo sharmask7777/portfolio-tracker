@@ -402,7 +402,9 @@ pub async fn upsert_portfolio_history(
         r#"
         INSERT INTO "PortfolioHistory" (id, "portfolioId", date, value, "investedAmount", "createdAt")
         VALUES ($1, $2, $3, $4, $5, NOW())
-        ON CONFLICT ("portfolioId", date) DO NOTHING;
+        ON CONFLICT ("portfolioId", date) DO UPDATE SET
+            value = EXCLUDED.value,
+            "investedAmount" = EXCLUDED."investedAmount";
         "#,
     )
     .bind(id.to_string())
@@ -414,6 +416,38 @@ pub async fn upsert_portfolio_history(
     .await?;
 
     Ok(())
+}
+
+/// Fetches the latest published market NAV for each active folio in the given portfolio from `HistoricalNAV`.
+pub async fn fetch_latest_navs_for_portfolio(
+    pool: &sqlx::PgPool,
+    portfolio_id: Uuid,
+) -> Result<std::collections::HashMap<Uuid, Decimal>, DbError> {
+    let rows = sqlx::query_as::<_, (String, Decimal)>(
+        r#"
+        SELECT f.id, h.nav::numeric
+        FROM "Folio" f
+        JOIN "Asset" a ON a.id = f."assetId"
+        JOIN LATERAL (
+            SELECT nav FROM "HistoricalNAV"
+            WHERE "amfiCode" = a."amfiCode" AND nav > 0
+            ORDER BY date DESC LIMIT 1
+        ) h ON true
+        WHERE f."portfolioId" = $1
+        "#,
+    )
+    .bind(portfolio_id.to_string())
+    .fetch_all(pool)
+    .await?;
+
+    let mut map = std::collections::HashMap::with_capacity(rows.len());
+    for (folio_id_str, nav) in rows {
+        if let Ok(folio_id) = Uuid::parse_str(&folio_id_str) {
+            map.insert(folio_id, nav);
+        }
+    }
+
+    Ok(map)
 }
 
 /// Purges existing historical valuation snapshots for a portfolio from PostgreSQL.

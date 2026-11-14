@@ -2853,32 +2853,73 @@ pub async fn get_tax_impact_query(
     .await
 }
 
+/// Helper function to perform LOCF historical valuation aggregation from in-memory database.
+fn fetch_in_memory_history(
+    db: &portfolio_db::InMemoryDatabase,
+    portfolio_ids: &[Uuid],
+) -> Vec<crate::services::HistoryPoint> {
+    let mut all_valuations = Vec::new();
+    let mut all_dates = std::collections::BTreeSet::new();
+
+    for &pid in portfolio_ids {
+        let records = db.list_historical_valuations(pid);
+        for r in records {
+            all_dates.insert(r.date);
+            all_valuations.push(r);
+        }
+    }
+
+    if all_dates.is_empty() {
+        return Vec::new();
+    }
+
+    let mut history_points = Vec::with_capacity(all_dates.len());
+    let mut last_known_per_portfolio: std::collections::HashMap<Uuid, (Decimal, Decimal)> =
+        std::collections::HashMap::new();
+
+    for date in all_dates {
+        for &pid in portfolio_ids {
+            if let Some(r) = all_valuations
+                .iter()
+                .find(|v| v.portfolio_id == pid && v.date == date)
+            {
+                last_known_per_portfolio.insert(pid, (r.value, r.cost));
+            }
+        }
+
+        let mut date_val = Decimal::ZERO;
+        let mut date_inv = Decimal::ZERO;
+        for &(v, c) in last_known_per_portfolio.values() {
+            date_val += v;
+            date_inv += c;
+        }
+
+        history_points.push(crate::services::HistoryPoint {
+            date,
+            value: date_val,
+            invested_amount: date_inv,
+        });
+    }
+
+    history_points
+}
+
 /// Route handler for `GET /api/portfolio/:id/history` retrieving historical valuation timeline.
 pub async fn get_history(
     auth_user: AuthUser,
     Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    if let Some(pool) = state.pool() {
-        #[derive(sqlx::FromRow, Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct HistoryRow {
-            date: NaiveDate,
-            #[serde(with = "rust_decimal::serde::float")]
-            value: Decimal,
-            #[sqlx(rename = "investedAmount")]
-            #[serde(with = "rust_decimal::serde::float")]
-            invested_amount: Decimal,
-        }
+    let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
+    let p_uuids: Vec<Uuid> = portfolios.iter().map(|p| p.id).collect();
 
-        let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
-        let p_ids: Vec<String> = portfolios.into_iter().map(|p| p.id.to_string()).collect();
+    if p_uuids.is_empty() {
+        return Ok(Json(json!([])));
+    }
 
-        if p_ids.is_empty() {
-            return Ok(Json(json!([])));
-        }
-
-        let rows = sqlx::query_as::<_, HistoryRow>(
+    let mut points: Vec<crate::services::HistoryPoint> = if let Some(pool) = state.pool() {
+        let p_ids: Vec<String> = p_uuids.iter().map(|p| p.to_string()).collect();
+        sqlx::query_as::<_, crate::services::HistoryPoint>(
             r#"
             WITH target_history AS (
                 SELECT "portfolioId", date::date as dt, value, "investedAmount"
@@ -2921,14 +2962,40 @@ pub async fn get_history(
         .bind(&p_ids)
         .fetch_all(pool)
         .await
-        .unwrap_or_default();
-
-        Ok(Json(
-            serde_json::to_value(rows).unwrap_or_else(|_| json!([])),
-        ))
+        .unwrap_or_default()
     } else {
-        Ok(Json(json!([])))
+        fetch_in_memory_history(state.db().as_ref(), &p_uuids)
+    };
+
+    // Reconcile terminal checkpoint against live mark-to-market valuation
+    let live = crate::services::ValuationService::compute_live_valuation(&state, &p_uuids).await?;
+    let today = live.as_of_date;
+
+    if points.is_empty() {
+        if !live.total_invested.is_zero() || !live.total_value.is_zero() {
+            points.push(crate::services::HistoryPoint {
+                date: today,
+                value: live.total_value,
+                invested_amount: live.total_invested,
+            });
+        }
+    } else {
+        let last = points.last_mut().expect("points is not empty");
+        if last.date == today {
+            last.value = live.total_value;
+            last.invested_amount = live.total_invested;
+        } else if last.date < today {
+            points.push(crate::services::HistoryPoint {
+                date: today,
+                value: live.total_value,
+                invested_amount: live.total_invested,
+            });
+        }
     }
+
+    Ok(Json(
+        serde_json::to_value(points).unwrap_or_else(|_| json!([])),
+    ))
 }
 
 /// Route handler for `GET /api/portfolio/:id/stats` returning all-time high (ATH) and annual milestones.
@@ -2945,7 +3012,8 @@ pub async fn get_stats(
         }
 
         let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
-        let p_ids: Vec<String> = portfolios.into_iter().map(|p| p.id.to_string()).collect();
+        let p_uuids: Vec<Uuid> = portfolios.iter().map(|p| p.id).collect();
+        let p_ids: Vec<String> = p_uuids.iter().map(|p| p.to_string()).collect();
 
         if p_ids.is_empty() {
             return Ok(Json(json!({
@@ -2954,6 +3022,10 @@ pub async fn get_stats(
                 "yearly": []
             })));
         }
+
+        let live = crate::services::ValuationService::compute_live_valuation(&state, &p_uuids)
+            .await
+            .ok();
 
         let ath = sqlx::query_as::<_, StatRow>(
             r#"
@@ -3101,35 +3173,99 @@ pub async fn get_stats(
         .await
         .unwrap_or_default();
 
+        use chrono::Datelike;
         use rust_decimal::prelude::ToPrimitive;
-        let yearly: Vec<_> = yearly_rows
+
+        let mut ath_val = ath.as_ref().map(|a| a.value).unwrap_or(Decimal::ZERO);
+        let mut ath_date = ath.as_ref().map(|a| a.date.to_string());
+        let mut max_inv_val = max_inv.as_ref().map(|m| m.value).unwrap_or(Decimal::ZERO);
+        let mut max_inv_date = max_inv.as_ref().map(|m| m.date.to_string());
+
+        if let Some(ref live_snap) = live {
+            if live_snap.total_value > ath_val {
+                ath_val = live_snap.total_value;
+                ath_date = Some(live_snap.as_of_date.to_string());
+            }
+            if live_snap.total_invested > max_inv_val {
+                max_inv_val = live_snap.total_invested;
+                max_inv_date = Some(live_snap.as_of_date.to_string());
+            }
+        }
+
+        let mut yearly: Vec<_> = yearly_rows
             .into_iter()
             .map(|y| {
+                let mut max_val = y.max_value;
+                let mut max_inv = y.max_invested;
+                if let Some(ref live_snap) = live
+                    && y.year == live_snap.as_of_date.year()
+                {
+                    if live_snap.total_value > max_val {
+                        max_val = live_snap.total_value;
+                    }
+                    if live_snap.total_invested > max_inv {
+                        max_inv = live_snap.total_invested;
+                    }
+                }
                 json!({
                     "year": y.year,
-                    "ath": { "value": y.max_value.to_f64().unwrap_or(0.0), "date": format!("{}-12-31", y.year) },
-                    "maxInvested": { "value": y.max_invested.to_f64().unwrap_or(0.0), "date": format!("{}-12-31", y.year) }
+                    "ath": { "value": max_val.to_f64().unwrap_or(0.0), "date": format!("{}-12-31", y.year) },
+                    "maxInvested": { "value": max_inv.to_f64().unwrap_or(0.0), "date": format!("{}-12-31", y.year) }
                 })
             })
             .collect();
 
+        if let Some(ref live_snap) = live {
+            let cur_year = live_snap.as_of_date.year();
+            if !yearly
+                .iter()
+                .any(|y| y.get("year").and_then(|v| v.as_i64()) == Some(cur_year as i64))
+                && (!live_snap.total_value.is_zero() || !live_snap.total_invested.is_zero())
+            {
+                yearly.insert(
+                    0,
+                    json!({
+                        "year": cur_year,
+                        "ath": { "value": live_snap.total_value.to_f64().unwrap_or(0.0), "date": live_snap.as_of_date.to_string() },
+                        "maxInvested": { "value": live_snap.total_invested.to_f64().unwrap_or(0.0), "date": live_snap.as_of_date.to_string() }
+                    }),
+                );
+            }
+        }
+
         Ok(Json(json!({
             "ath": {
-                "value": ath.as_ref().and_then(|a| a.value.to_f64()).unwrap_or(0.0),
-                "date": ath.as_ref().map(|a| a.date.to_string())
+                "value": ath_val.to_f64().unwrap_or(0.0),
+                "date": ath_date
             },
             "maxInvested": {
-                "value": max_inv.as_ref().and_then(|m| m.value.to_f64()).unwrap_or(0.0),
-                "date": max_inv.as_ref().map(|m| m.date.to_string())
+                "value": max_inv_val.to_f64().unwrap_or(0.0),
+                "date": max_inv_date
             },
             "yearly": yearly
         })))
     } else {
-        Ok(Json(json!({
-            "ath": { "value": 0.0, "date": serde_json::Value::Null },
-            "maxInvested": { "value": 0.0, "date": serde_json::Value::Null },
-            "yearly": []
-        })))
+        let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
+        let p_uuids: Vec<Uuid> = portfolios.iter().map(|p| p.id).collect();
+        let live = crate::services::ValuationService::compute_live_valuation(&state, &p_uuids)
+            .await
+            .ok();
+        use rust_decimal::prelude::ToPrimitive;
+        if let Some(live_snap) = live
+            && (!live_snap.total_value.is_zero() || !live_snap.total_invested.is_zero())
+        {
+            Ok(Json(json!({
+                "ath": { "value": live_snap.total_value.to_f64().unwrap_or(0.0), "date": live_snap.as_of_date.to_string() },
+                "maxInvested": { "value": live_snap.total_invested.to_f64().unwrap_or(0.0), "date": live_snap.as_of_date.to_string() },
+                "yearly": []
+            })))
+        } else {
+            Ok(Json(json!({
+                "ath": { "value": 0.0, "date": serde_json::Value::Null },
+                "maxInvested": { "value": 0.0, "date": serde_json::Value::Null },
+                "yearly": []
+            })))
+        }
     }
 }
 

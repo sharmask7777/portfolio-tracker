@@ -192,10 +192,42 @@ pub async fn process_history_refresh_job_with_pool(
         }
     }
 
-    // Ensure a valuation checkpoint for today exists if transactions are prior to today
+    // Mark active folios to live market NAV for today's valuation snapshot.
+    // Historical transaction replays track transaction-level NAVs; however, the valuation
+    // on 'today' must reflect the latest market NAV published by AMFI / HistoricalNAV.
     let today = Utc::now().date_naive();
+    if let Some(pool) = pool {
+        if let Ok(market_navs) =
+            portfolio_db::repositories::fetch_latest_navs_for_portfolio(pool, job_data.portfolio_id)
+                .await
+        {
+            for (folio_id, state) in &mut folio_states {
+                if state.active_units.is_positive()
+                    && let Some(&market_nav) = market_navs.get(folio_id)
+                    && market_nav > Decimal::ZERO
+                {
+                    state.latest_nav = Nav::new(market_nav);
+                }
+            }
+        }
+    } else {
+        // InMemoryDatabase fallback for hermetic testing
+        for (folio_id, state) in &mut folio_states {
+            if state.active_units.is_positive()
+                && let Some(folio) = db.get_folio(*folio_id)
+                && let Some(asset) = db.get_asset(folio.asset_id)
+                && let Some(amfi) = &asset.amfi_code
+            {
+                let navs = db.list_navs(amfi);
+                if let Some(latest_nav) = navs.iter().rfind(|n| n.nav > Decimal::ZERO) {
+                    state.latest_nav = Nav::new(latest_nav.nav);
+                }
+            }
+        }
+    }
+
     if let Some(last_tx) = transactions.last()
-        && last_tx.date < today
+        && last_tx.date <= today
     {
         let today_value: Decimal = folio_states
             .values()
@@ -205,9 +237,23 @@ pub async fn process_history_refresh_job_with_pool(
             .values()
             .map(|f| f.invested_cost.to_decimal())
             .sum();
-        let record =
-            db.store_historical_valuation(job_data.portfolio_id, today, today_value, today_cost);
-        records.push(record);
+
+        if last_tx.date == today {
+            if let Some(last_rec) = records.last_mut()
+                && last_rec.date == today
+            {
+                last_rec.value = today_value;
+                last_rec.cost = today_cost;
+            }
+        } else {
+            let record = db.store_historical_valuation(
+                job_data.portfolio_id,
+                today,
+                today_value,
+                today_cost,
+            );
+            records.push(record);
+        }
     }
 
     if let Some(pool) = pool {

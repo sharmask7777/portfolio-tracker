@@ -2321,3 +2321,115 @@ async fn test_stock_metadata_api_ingestion_and_query() {
     assert_eq!(get_json["symbol"], "DYNAMICSTOCK");
     assert_eq!(get_json["marketCapTier"], "small");
 }
+
+#[tokio::test]
+async fn test_portfolio_history_terminal_parity_with_live_summary() {
+    let (app, db, _) = setup_test_app();
+    let user = db.create_user("parity.user@example.com", "hash_pw");
+    let token = portfolio_api::create_jwt(
+        user.id,
+        &user.email,
+        "hermetic_test_secret_for_parity_verification_12345",
+    )
+    .unwrap();
+
+    let port = db
+        .create_portfolio(user.id, "Parity Test Portfolio", None)
+        .await
+        .unwrap();
+    let port_id = port.id;
+
+    let amfi_code = "120503";
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "Parity Dynamic Growth Fund",
+        Some("INF109K01PA1"),
+        Some(amfi_code),
+        None,
+        None,
+    );
+
+    let folio = db
+        .create_folio(
+            port_id,
+            asset.id,
+            "FOLIO-PARITY-1",
+            Some("Parity AMC"),
+            Some("ALPAC1001A"),
+        )
+        .unwrap();
+
+    let t0 = Utc::now().date_naive() - chrono::Duration::days(60);
+    let today = Utc::now().date_naive();
+
+    // 1. Transaction: Buy 100 units @ 100 on t0 (Invested = 10,000, Tx NAV = 100)
+    db.create_transaction(
+        folio.id,
+        t0,
+        "PURCHASE",
+        Decimal::from_str("10000").unwrap(),
+        Decimal::from_str("100").unwrap(),
+        Decimal::from_str("100").unwrap(),
+        Decimal::from_str("100").unwrap(),
+        Some("TX-P1"),
+    )
+    .await
+    .unwrap();
+
+    // Store historical valuation checkpoint for t0
+    db.store_historical_valuation(port_id, t0, Decimal::from(10000), Decimal::from(10000));
+
+    // 2. Published live market NAV on today: NAV has appreciated from 100 to 150
+    db.store_nav(amfi_code, today, Decimal::from(150));
+
+    // 3. Query GET /api/portfolio/{port_id}/summary
+    let sum_req = Request::builder()
+        .uri(format!("/api/portfolio/{port_id}/summary"))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let sum_res = app.clone().oneshot(sum_req).await.unwrap();
+    assert_eq!(sum_res.status(), StatusCode::OK);
+    let sum_json = parse_json(sum_res.into_body()).await;
+
+    assert_eq!(sum_json["investedAmount"], "10000");
+    assert_eq!(sum_json["currentValue"], "15000"); // 100 units * 150 = 15,000
+
+    // 4. Query GET /api/portfolio/{port_id}/history
+    let hist_req = Request::builder()
+        .uri(format!("/api/portfolio/{port_id}/history"))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let hist_res = app.clone().oneshot(hist_req).await.unwrap();
+    assert_eq!(hist_res.status(), StatusCode::OK);
+    let hist_json = parse_json(hist_res.into_body()).await;
+    let hist_arr = hist_json.as_array().expect("history is array");
+    assert!(
+        hist_arr.len() >= 2,
+        "Expected at least historical and terminal checkpoints"
+    );
+
+    let terminal_point = hist_arr.last().expect("terminal point exists");
+    assert_eq!(terminal_point["date"], today.to_string());
+    assert_eq!(terminal_point["investedAmount"], 10000.0);
+    assert_eq!(terminal_point["value"], 15000.0); // Exact parity with summary.currentValue!
+
+    // 5. Query GET /api/portfolio/{port_id}/stats
+    let stats_req = Request::builder()
+        .uri(format!("/api/portfolio/{port_id}/stats"))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let stats_res = app.clone().oneshot(stats_req).await.unwrap();
+    assert_eq!(stats_res.status(), StatusCode::OK);
+    let stats_json = parse_json(stats_res.into_body()).await;
+    assert_eq!(stats_json["ath"]["value"], 15000.0);
+    assert_eq!(stats_json["maxInvested"]["value"], 10000.0);
+}

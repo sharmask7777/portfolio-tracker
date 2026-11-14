@@ -25,7 +25,7 @@ use std::str::FromStr;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use portfolio_db::InMemoryDatabase;
 use portfolio_db::entities::UploadJobStatus;
 use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
@@ -525,6 +525,62 @@ async fn test_history_refresh_job_processing() {
     let bad_job = HistoryRefreshJobData::new(bad_portfolio_id);
     let bad_res = process_history_refresh_job(&bad_job, &db).await;
     assert!(matches!(bad_res, Err(WorkerError::PortfolioNotFound(_))));
+}
+
+#[tokio::test]
+async fn test_history_refresh_job_marks_today_to_live_market_nav() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("market.user@example.com", "hash");
+    let portfolio = db
+        .create_portfolio(user.id, "Market NAV Test Portfolio", None)
+        .await
+        .unwrap();
+
+    let amfi_code = "119001";
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "Market Alpha Equity Fund",
+        Some("INF109K01MK1"),
+        Some(amfi_code),
+        None,
+        None,
+    );
+
+    let folio = db
+        .create_folio(portfolio.id, asset.id, "FOLIO-MK-1", None, None)
+        .expect("folio");
+
+    let t0 = Utc::now().date_naive() - chrono::Duration::days(45);
+    let today = Utc::now().date_naive();
+
+    // Purchase 100 units @ 100 on t0
+    db.create_transaction(
+        folio.id,
+        t0,
+        "PURCHASE",
+        dec("10000.00"),
+        dec("100.0000"),
+        dec("100.0000"),
+        dec("100.0000"),
+        Some("TX-MK1"),
+    )
+    .await
+    .expect("tx1");
+
+    // Live AMFI market NAV today is 250 (appreciated by 150%)
+    db.store_nav(amfi_code, today, dec("250.00"));
+
+    let job_data = HistoryRefreshJobData::new(portfolio.id);
+    let records = process_history_refresh_job(&job_data, &db)
+        .await
+        .expect("history refresh should succeed");
+
+    assert!(records.len() >= 2);
+    let today_rec = records.last().expect("today checkpoint");
+    assert_eq!(today_rec.date, today);
+    assert_eq!(today_rec.cost, dec("10000.00"));
+    // Marked to market: 100 units * 250.00 NAV = 25,000.00 (not historical 10,000!)
+    assert_eq!(today_rec.value, dec("25000.000000"));
 }
 
 #[tokio::test]
