@@ -31,7 +31,9 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use portfolio_api::{AppState, create_app, get_stock_sector, resolve_holdings};
+use portfolio_api::{
+    AppState, create_app, get_stock_market_cap, get_stock_sector, resolve_holdings,
+};
 use portfolio_db::InMemoryDatabase;
 use portfolio_db::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
 
@@ -2240,4 +2242,82 @@ async fn test_portfolio_summary_reality_check_metrics_and_query_validation() {
     assert!(harvest_json["opportunities"].is_array());
     assert!(harvest_json["unrealizedSummary"].is_object());
     assert!(harvest_json["unrealizedSummary"]["lots"].is_array());
+}
+
+#[tokio::test]
+async fn test_security_master_and_market_cap_resolution() {
+    // Large caps
+    assert_eq!(get_stock_market_cap("Reliance Industries Limited"), "large");
+    assert_eq!(get_stock_market_cap("HDFC Bank Ltd."), "large");
+    assert_eq!(get_stock_market_cap("TCS"), "large");
+
+    // Mid caps
+    assert_eq!(
+        get_stock_market_cap("The Indian Hotels Company Limited"),
+        "mid"
+    );
+    assert_eq!(get_stock_market_cap("Cummins India Limited"), "mid");
+    assert_eq!(get_stock_market_cap("Federal Bank Limited"), "mid");
+
+    // Small caps
+    assert_eq!(get_stock_market_cap("Sonata Software Limited"), "small");
+    assert_eq!(get_stock_market_cap("CEAT Limited"), "small");
+
+    // Unmapped / foreign / other
+    assert_eq!(
+        get_stock_market_cap("Some Random Unknown Startup Co."),
+        "other"
+    );
+    assert_eq!(get_stock_sector("Some Random Unknown Startup Co."), "Other");
+}
+
+#[tokio::test]
+async fn test_stock_metadata_api_ingestion_and_query() {
+    let (app, db, jwt_secret) = setup_test_app();
+    let user = db.get_user_by_email("test@example.com").unwrap();
+    let token = portfolio_api::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
+
+    // Ingest dynamic stock metadata
+    let payload = json!({
+        "stocks": [
+            {
+                "isin": "INE123XYZ01",
+                "symbol": "DYNAMICSTOCK",
+                "name": "Dynamic Stock Ingested Ltd",
+                "sector": "Industrials",
+                "marketCapTier": "small",
+                "marketCapRank": 450,
+                "marketCapCr": 1200.0,
+                "asOfDate": "2026-06-30"
+            }
+        ]
+    });
+
+    let ingest_req = Request::builder()
+        .uri("/api/stock-metadata")
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let ingest_res = app.clone().oneshot(ingest_req).await.unwrap();
+    assert_eq!(ingest_res.status(), StatusCode::OK);
+    let ingest_json = parse_json(ingest_res.into_body()).await;
+    assert_eq!(ingest_json["count"], 1);
+    assert_eq!(ingest_json["status"], "ok");
+
+    // Query ingested metadata by ISIN
+    let get_req = Request::builder()
+        .uri("/api/stock-metadata/INE123XYZ01")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let get_res = app.clone().oneshot(get_req).await.unwrap();
+    assert_eq!(get_res.status(), StatusCode::OK);
+    let get_json = parse_json(get_res.into_body()).await;
+    assert_eq!(get_json["symbol"], "DYNAMICSTOCK");
+    assert_eq!(get_json["marketCapTier"], "small");
 }

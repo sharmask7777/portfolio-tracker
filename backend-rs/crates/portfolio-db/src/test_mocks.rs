@@ -25,11 +25,12 @@ use uuid::Uuid;
 use crate::entities::{
     AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, FundHoldingEntity,
     HistoricalNavEntity, HistoricalValuationEntity, ManagedProfileEntity, PortfolioEntity,
-    TransactionEntity, UploadJobEntity, UploadJobStatus, UserEntity,
+    StockMetadataEntity, TransactionEntity, UploadJobEntity, UploadJobStatus, UserEntity,
 };
 use crate::error::DbError;
 use crate::repositories::{
-    FamilyRepository, FundHoldingsRepository, PortfolioRepository, TransactionRepository,
+    FamilyRepository, FundHoldingsRepository, PortfolioRepository, StockMetadataRepository,
+    TransactionRepository,
 };
 
 /// In-memory storage state holding entity tables as hash maps.
@@ -59,6 +60,8 @@ pub struct InMemoryDatabaseState {
     pub historical_valuations: HashMap<(Uuid, NaiveDate), HistoricalValuationEntity>,
     /// Table storing AMC fund look-through equity disclosures keyed by `(isin, as_of_date, stock_name)`.
     pub fund_holdings: HashMap<(String, NaiveDate, String), FundHoldingEntity>,
+    /// Table storing equity classification master data keyed by ISIN.
+    pub stock_metadata: HashMap<String, StockMetadataEntity>,
 }
 
 /// Thread-safe in-memory database mock.
@@ -70,14 +73,40 @@ pub struct InMemoryDatabase {
 
 impl InMemoryDatabase {
     /// Creates a new `InMemoryDatabase` pre-seeded with a default test user
-    /// matching the PostgreSQL schema DDL seed (`00000000-0000-0000-0000-000000000001`).
+    /// matching the PostgreSQL schema DDL seed (`00000000-0000-0000-0000-000000000001`),
+    /// and pre-seeded with authoritative stock metadata from `portfolio_core::xray::security_master`.
     pub fn new() -> Self {
         let database = Self {
             state: Arc::new(RwLock::new(InMemoryDatabaseState::default())),
         };
         let default_test_user_id = Uuid::from_u128(1);
         database.create_user_with_id(default_test_user_id, "test@example.com", "test");
+        database.seed_default_stock_metadata();
         database
+    }
+
+    fn seed_default_stock_metadata(&self) {
+        let mut state = self.state.write().expect("lock poisoned");
+        let now = Utc::now();
+        let as_of_date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default();
+        for item in portfolio_core::xray::security_master::SEBI_TOP_EQUITIES {
+            let rank = item.rank.map(|r| r as i32);
+            state.stock_metadata.insert(
+                item.isin.to_string(),
+                StockMetadataEntity {
+                    isin: item.isin.to_string(),
+                    symbol: item.symbol.to_string(),
+                    name: item.name.to_string(),
+                    sector: item.sector.to_string(),
+                    market_cap_tier: item.tier.as_str().to_string(),
+                    market_cap_rank: rank,
+                    market_cap_cr: None,
+                    as_of_date,
+                    created_at: now,
+                    updated_at: now,
+                },
+            );
+        }
     }
 
     /// Resets all data in the in-memory database and restores the default test user.
@@ -96,6 +125,25 @@ impl InMemoryDatabase {
                 updated_at: now,
             },
         );
+        let as_of_date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default();
+        for item in portfolio_core::xray::security_master::SEBI_TOP_EQUITIES {
+            let rank = item.rank.map(|r| r as i32);
+            state.stock_metadata.insert(
+                item.isin.to_string(),
+                StockMetadataEntity {
+                    isin: item.isin.to_string(),
+                    symbol: item.symbol.to_string(),
+                    name: item.name.to_string(),
+                    sector: item.sector.to_string(),
+                    market_cap_tier: item.tier.as_str().to_string(),
+                    market_cap_rank: rank,
+                    market_cap_cr: None,
+                    as_of_date,
+                    created_at: now,
+                    updated_at: now,
+                },
+            );
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -934,5 +982,35 @@ impl FundHoldingsRepository for InMemoryDatabase {
             result_map.insert(isin_str.to_string(), holdings);
         }
         Ok(result_map)
+    }
+}
+
+#[async_trait]
+impl StockMetadataRepository for InMemoryDatabase {
+    async fn upsert_batch(&self, items: &[StockMetadataEntity]) -> Result<(), DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        for item in items {
+            state.stock_metadata.insert(item.isin.clone(), item.clone());
+        }
+        Ok(())
+    }
+
+    async fn find_by_isin(&self, isin: &str) -> Result<Option<StockMetadataEntity>, DbError> {
+        let state = self.state.read().expect("lock poisoned");
+        Ok(state.stock_metadata.get(isin).cloned())
+    }
+
+    async fn find_by_symbol(&self, symbol: &str) -> Result<Option<StockMetadataEntity>, DbError> {
+        let state = self.state.read().expect("lock poisoned");
+        Ok(state
+            .stock_metadata
+            .values()
+            .find(|m| m.symbol.eq_ignore_ascii_case(symbol))
+            .cloned())
+    }
+
+    async fn get_all_as_map(&self) -> Result<HashMap<String, StockMetadataEntity>, DbError> {
+        let state = self.state.read().expect("lock poisoned");
+        Ok(state.stock_metadata.clone())
     }
 }

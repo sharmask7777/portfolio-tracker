@@ -19,13 +19,17 @@ use portfolio_core::performance::metrics::{
 };
 use portfolio_core::performance::xirr::{CashFlow, calculate_xirr};
 use portfolio_core::types::{AssetType, Money, Nav};
-use portfolio_core::xray::{FundHolding, FundOverlap, calculate_fund_overlap};
+use portfolio_core::xray::{
+    FundHolding, FundOverlap, MarketCapTier, calculate_fund_overlap, classify_stock_market_cap,
+    classify_stock_sector, resolve_security_classification,
+};
 use portfolio_db::entities::{
     AssetEntity, FolioEntity, PortfolioEntity, TransactionEntity, UploadJobEntity, UploadJobStatus,
 };
 use portfolio_db::error::DbError;
 use portfolio_db::repositories::{
-    FundHoldingsRepository, PortfolioRepository, SqlxFundHoldingsRepo, TransactionRepository,
+    FundHoldingsRepository, PortfolioRepository, SqlxFundHoldingsRepo, SqlxStockMetadataRepo,
+    StockMetadataRepository, TransactionRepository,
 };
 
 use crate::errors::ApiError;
@@ -894,198 +898,20 @@ pub async fn get_overlap(
     Ok(Json(overlap))
 }
 
-/// Classifies a company equity name into a standard economic sector.
+/// Classifies a company stock name or ticker symbol into a GICS/SEBI economic sector.
 ///
-/// Uses an exhaustive keyword taxonomy matching Indian and global corporate identifiers
-/// to standard SEBI/GICS sectors (Financial Services, Information Technology, Energy,
-/// Healthcare, Consumer Goods, Automobile, Industrials, Utilities, Materials, etc.).
-/// Defaults to `"Other"` when unclassified.
+/// Delegates to the authoritative `portfolio_core::xray::security_master` catalog,
+/// defaulting to `"Other"` when unclassified.
 pub fn get_stock_sector(name: &str) -> &'static str {
-    let lower = name.to_lowercase();
-    if lower.contains("bank")
-        || lower.contains("financial")
-        || lower.contains("bajaj")
-        || lower.contains("rec ltd")
-        || lower.starts_with("rec ")
-        || lower.contains("pfc")
-        || lower.contains("power finance")
-        || lower.contains("cholamandalam")
-        || lower.contains("jpmorgan")
-        || lower.contains("berkshire")
-        || lower.contains("visa")
-        || lower.contains("mastercard")
-    {
-        "Financial Services"
-    } else if lower.contains("tech")
-        || lower.contains("infosys")
-        || lower.contains("tcs")
-        || lower.contains("tata consultancy")
-        || lower.contains("wipro")
-        || lower.contains("alphabet")
-        || lower.contains("microsoft")
-        || lower.contains("apple")
-        || lower.contains("nvidia")
-        || lower.contains("broadcom")
-        || lower.contains("netflix")
-        || lower.contains("amd")
-        || lower.contains("advanced micro")
-        || lower.contains("qualcomm")
-        || lower.contains("asml")
-        || lower.contains("adobe")
-        || lower.contains("cisco")
-        || lower.contains("applied materials")
-        || lower.contains("texas instruments")
-        || lower.contains("intuit")
-        || lower.contains("snowflake")
-        || lower.contains("crowdstrike")
-    {
-        "Technology"
-    } else if lower.contains("reliance")
-        || lower.contains("coal")
-        || lower.contains("oil")
-        || lower.contains("petro")
-        || lower.contains("energy")
-        || lower.contains("natural gas")
-        || lower.contains("ongc")
-        || lower.contains("gail")
-        || lower.contains("exxon")
-        || lower.contains("chevron")
-        || lower.contains("bpcl")
-        || lower.contains("bharat petroleum")
-    {
-        "Energy"
-    } else if lower.contains("airtel")
-        || lower.contains("telecom")
-        || lower.contains("communication")
-        || lower.contains("meta")
-        || lower.contains("google")
-    {
-        "Communication Services"
-    } else if lower.contains("pharma")
-        || lower.contains("health")
-        || lower.contains("sun")
-        || lower.contains("lilly")
-        || lower.contains("dr. reddy")
-        || lower.contains("cipla")
-        || lower.contains("unitedhealth")
-        || lower.contains("johnson")
-        || lower.contains("abbvie")
-        || lower.contains("merck")
-    {
-        "Healthcare"
-    } else if lower.contains("power")
-        || lower.contains("ntpc")
-        || lower.contains("utility")
-        || lower.contains("grid")
-    {
-        "Utilities"
-    } else if lower.contains("itc")
-        || lower.contains("unilever")
-        || lower.contains("nestle")
-        || lower.contains("defensive")
-        || lower.contains("hindustan unilever")
-        || lower.contains("britannia")
-        || lower.contains("consumer")
-        || lower.contains("costco")
-        || lower.contains("procter")
-        || lower.contains("walmart")
-    {
-        "Consumer Defensive"
-    } else if lower.contains("motor")
-        || lower.contains("maruti")
-        || lower.contains("tata motor")
-        || lower.contains("mahindra")
-        || lower.contains("titan")
-        || lower.contains("paint")
-        || lower.contains("cyclical")
-        || lower.contains("amazon")
-        || lower.contains("tesla")
-        || lower.contains("trent")
-        || lower.contains("zomato")
-        || lower.contains("hotel")
-        || lower.contains("home depot")
-        || lower.contains("booking")
-    {
-        "Consumer Cyclical"
-    } else if lower.contains("larsen")
-        || lower.contains("toubro")
-        || lower.contains("cummins")
-        || lower.contains("apar")
-        || lower.contains("industrials")
-        || lower.contains("electronics")
-        || lower.contains("aeronautics")
-        || lower.contains("siemens")
-        || lower.contains("bharat electronics")
-        || lower.contains("hindustan aeronautics")
-        || lower.contains("tube investments")
-    {
-        "Industrials"
-    } else if lower.contains("steel")
-        || lower.contains("cement")
-        || lower.contains("materials")
-        || lower.contains("vedanta")
-        || lower.contains("hindalco")
-        || lower.contains("jsw")
-    {
-        "Basic Materials"
-    } else if lower.contains("dlf") || lower.contains("realty") || lower.contains("estate") {
-        "Real Estate"
-    } else {
-        "Other"
-    }
+    classify_stock_sector(None, None, name)
 }
 
-/// Classifies a company stock name or fund scheme context into a market cap tier:
-/// Large Cap, Mid Cap, or Small Cap.
+/// Classifies a company stock name or ticker symbol into a market cap tier:
+/// Large Cap ("large"), Mid Cap ("mid"), Small Cap ("small"), or Other ("other").
 ///
-/// Follows SEBI categorization guidelines (Top 100: Large Cap; 101-250: Mid Cap; 251+: Small Cap)
-/// and prominent benchmark constituents (Nifty 50, Nifty Next 50, S&P 500, NASDAQ 100).
+/// Follows SEBI categorization guidelines (Top 100: Large Cap; 101-250: Mid Cap; 251+: Small Cap; Other: Unclassified).
 pub fn get_stock_market_cap(name: &str) -> &'static str {
-    let lower = name.to_lowercase();
-    // Mid-cap indicators
-    if lower.contains("indian hotels")
-        || lower.contains("max healthcare")
-        || lower.contains("cummins")
-        || lower.contains("federal bank")
-        || lower.contains("apar")
-        || lower.contains("mid cap")
-        || lower.contains("midcap")
-        || lower.contains("tube investments")
-        || lower.contains("ashok leyland")
-        || lower.contains("polycab")
-        || lower.contains("supreme industries")
-        || lower.contains("coforge")
-        || lower.contains("mphasis")
-        || lower.contains("persitent")
-        || lower.contains("voltas")
-        || lower.contains("tata communications")
-        || lower.contains("jubilant")
-        || lower.contains("pi industries")
-        || lower.contains("astral")
-        || lower.contains("balkrishna")
-        || lower.contains("sundram")
-    {
-        "mid"
-    } else if lower.contains("small cap")
-        || lower.contains("smallcap")
-        || lower.contains("sonata")
-        || lower.contains("karur")
-        || lower.contains("ceat")
-        || lower.contains("eclerx")
-        || lower.contains("kpit")
-        || lower.contains("cyient")
-        || lower.contains("radico")
-        || lower.contains("equitas")
-        || lower.contains("ujjivan")
-        || lower.contains("granules")
-        || lower.contains("century ply")
-        || lower.contains("birlasoft")
-    {
-        "small"
-    } else {
-        // High-conviction large caps, Nifty 50, Nifty Next 50, and mega-cap US equities
-        "large"
-    }
+    classify_stock_market_cap(None, None, name).as_str()
 }
 
 /// Resolves synthetic benchmark or category-level fallback stock holdings for a mutual fund scheme.
@@ -2436,7 +2262,8 @@ pub async fn get_xray(
             "marketCap": {
                 "large": { "percentage": 0.0, "value": 0.0 },
                 "mid": { "percentage": 0.0, "value": 0.0 },
-                "small": { "percentage": 0.0, "value": 0.0 }
+                "small": { "percentage": 0.0, "value": 0.0 },
+                "other": { "percentage": 0.0, "value": 0.0 }
             },
             "assetAllocation": {
                 "equity": { "percentage": 0.0, "value": 0.0 },
@@ -2478,6 +2305,14 @@ pub async fn get_xray(
         std::collections::HashMap::new()
     };
 
+    let db_metadata = match &state.backend {
+        DbBackend::InMemory(mem) => mem.get_all_as_map().await.unwrap_or_default(),
+        DbBackend::Postgres(pool) => {
+            let repo = SqlxStockMetadataRepo::new(pool.clone());
+            repo.get_all_as_map().await.unwrap_or_default()
+        }
+    };
+
     // Helper closure to build sector and market cap breakdowns
     let compute_lookthrough = |folios_to_include: &[(AssetEntity, Decimal, bool)]| {
         let mut sector_map: std::collections::BTreeMap<String, Decimal> =
@@ -2485,7 +2320,43 @@ pub async fn get_xray(
         let mut large_cap_val = Decimal::ZERO;
         let mut mid_cap_val = Decimal::ZERO;
         let mut small_cap_val = Decimal::ZERO;
+        let mut other_cap_val = Decimal::ZERO;
         let mut effective_equity_val = Decimal::ZERO;
+
+        let resolve_stock = |stock_isin: Option<&str>,
+                             stock_name: &str|
+         -> (String, MarketCapTier) {
+            // 1. Try DB metadata by ISIN
+            if let Some(isin_str) = stock_isin.filter(|s| !s.trim().is_empty())
+                && let Some(meta) = db_metadata.get(isin_str)
+            {
+                let tier = match meta.market_cap_tier.to_lowercase().as_str() {
+                    "mid" => MarketCapTier::Mid,
+                    "small" => MarketCapTier::Small,
+                    "large" => MarketCapTier::Large,
+                    _ => MarketCapTier::Other,
+                };
+                return (meta.sector.clone(), tier);
+            }
+            // 2. Try DB metadata by name
+            let trimmed = stock_name.trim();
+            if !trimmed.is_empty()
+                && let Some(meta) = db_metadata
+                    .values()
+                    .find(|m| m.name.eq_ignore_ascii_case(trimmed))
+            {
+                let tier = match meta.market_cap_tier.to_lowercase().as_str() {
+                    "mid" => MarketCapTier::Mid,
+                    "small" => MarketCapTier::Small,
+                    "large" => MarketCapTier::Large,
+                    _ => MarketCapTier::Other,
+                };
+                return (meta.sector.clone(), tier);
+            }
+            // 3. Fallback to portfolio_core authoritative security master
+            let (sec_sector, tier) = resolve_security_classification(stock_isin, None, stock_name);
+            (sec_sector.unwrap_or("Other").to_string(), tier)
+        };
 
         for (asset, folio_val, _) in folios_to_include {
             effective_equity_val += *folio_val;
@@ -2500,18 +2371,20 @@ pub async fn get_xray(
                 for h in entries {
                     let weight_pct = h.weight;
                     let allocated_val = *folio_val * (weight_pct / Decimal::from(100));
+                    let (resolved_sector, resolved_tier) =
+                        resolve_stock(h.stock_isin.as_deref(), &h.stock_name);
                     let sector = if !h.sector.is_empty() && h.sector != "Other" {
                         h.sector.clone()
                     } else {
-                        get_stock_sector(&h.stock_name).to_string()
+                        resolved_sector
                     };
                     *sector_map.entry(sector).or_insert(Decimal::ZERO) += allocated_val;
 
-                    let tier = get_stock_market_cap(&h.stock_name);
-                    match tier {
-                        "mid" => mid_cap_val += allocated_val,
-                        "small" => small_cap_val += allocated_val,
-                        _ => large_cap_val += allocated_val,
+                    match resolved_tier {
+                        MarketCapTier::Mid => mid_cap_val += allocated_val,
+                        MarketCapTier::Small => small_cap_val += allocated_val,
+                        MarketCapTier::Large => large_cap_val += allocated_val,
+                        MarketCapTier::Other => other_cap_val += allocated_val,
                     }
                 }
             } else {
@@ -2520,14 +2393,14 @@ pub async fn get_xray(
                 for h in &holdings {
                     let weight_pct = h.weight;
                     let allocated_val = *folio_val * (weight_pct / Decimal::from(100));
-                    let sector = get_stock_sector(&h.name).to_string();
+                    let (sector, resolved_tier) = resolve_stock(None, &h.name);
                     *sector_map.entry(sector).or_insert(Decimal::ZERO) += allocated_val;
 
-                    let tier = get_stock_market_cap(&h.name);
-                    match tier {
-                        "mid" => mid_cap_val += allocated_val,
-                        "small" => small_cap_val += allocated_val,
-                        _ => large_cap_val += allocated_val,
+                    match resolved_tier {
+                        MarketCapTier::Mid => mid_cap_val += allocated_val,
+                        MarketCapTier::Small => small_cap_val += allocated_val,
+                        MarketCapTier::Large => large_cap_val += allocated_val,
+                        MarketCapTier::Other => other_cap_val += allocated_val,
                     }
                 }
 
@@ -2543,8 +2416,13 @@ pub async fn get_xray(
                         small_cap_val += remainder_val;
                     } else if fund_lower.contains("mid") {
                         mid_cap_val += remainder_val;
-                    } else {
+                    } else if fund_lower.contains("large")
+                        || fund_lower.contains("nifty")
+                        || fund_lower.contains("flexi")
+                    {
                         large_cap_val += remainder_val;
+                    } else {
+                        other_cap_val += remainder_val;
                     }
                 }
             }
@@ -2575,7 +2453,7 @@ pub async fn get_xray(
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let total_mc_val = large_cap_val + mid_cap_val + small_cap_val;
+        let total_mc_val = large_cap_val + mid_cap_val + small_cap_val + other_cap_val;
         let large_pct = if total_mc_val > Decimal::ZERO {
             (large_cap_val / total_mc_val)
                 .round_dp(4)
@@ -2600,13 +2478,22 @@ pub async fn get_xray(
         } else {
             0.0
         };
+        let other_pct = if total_mc_val > Decimal::ZERO {
+            (other_cap_val / total_mc_val)
+                .round_dp(4)
+                .to_f64()
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
 
         (
             sectors_vec,
             json!({
                 "large": { "percentage": large_pct, "value": large_cap_val.round_dp(2).to_f64().unwrap_or(0.0) },
                 "mid": { "percentage": mid_pct, "value": mid_cap_val.round_dp(2).to_f64().unwrap_or(0.0) },
-                "small": { "percentage": small_pct, "value": small_cap_val.round_dp(2).to_f64().unwrap_or(0.0) }
+                "small": { "percentage": small_pct, "value": small_cap_val.round_dp(2).to_f64().unwrap_or(0.0) },
+                "other": { "percentage": other_pct, "value": other_cap_val.round_dp(2).to_f64().unwrap_or(0.0) }
             }),
             effective_equity_val,
         )

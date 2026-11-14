@@ -412,6 +412,44 @@ pub struct FundHoldingEntity {
     pub created_at: DateTime<Utc>,
 }
 
+/// Database entity for the `"StockMetadata"` table representing equity classification master data.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct StockMetadataEntity {
+    /// International Securities Identification Number.
+    pub isin: String,
+    /// Exchange ticker symbol.
+    pub symbol: String,
+    /// Canonical company name.
+    pub name: String,
+    /// Economic sector classification.
+    pub sector: String,
+    /// Market capitalization tier ("large", "mid", "small", "other").
+    #[sqlx(rename = "marketCapTier")]
+    #[serde(rename = "marketCapTier", alias = "market_cap_tier")]
+    pub market_cap_tier: String,
+    /// Market capitalization rank (1-100 Large, 101-250 Mid, 251+ Small).
+    #[sqlx(rename = "marketCapRank")]
+    #[serde(default, rename = "marketCapRank", alias = "market_cap_rank")]
+    pub market_cap_rank: Option<i32>,
+    /// Market capitalization in Crores (INR).
+    #[sqlx(rename = "marketCapCr")]
+    #[serde(default, rename = "marketCapCr", alias = "market_cap_cr")]
+    pub market_cap_cr: Option<f64>,
+    /// Date of classification data.
+    #[sqlx(rename = "asOfDate")]
+    #[serde(rename = "asOfDate", alias = "as_of_date")]
+    pub as_of_date: NaiveDate,
+    /// Timestamp when record was created.
+    #[sqlx(rename = "createdAt")]
+    #[serde(rename = "createdAt", alias = "created_at")]
+    pub created_at: DateTime<Utc>,
+    /// Timestamp when record was last updated.
+    #[sqlx(rename = "updatedAt")]
+    #[serde(rename = "updatedAt", alias = "updated_at")]
+    pub updated_at: DateTime<Utc>,
+}
+
 // ---------------------------------------------------------------------------
 // Conversion to / from portfolio-core domain models
 // ---------------------------------------------------------------------------

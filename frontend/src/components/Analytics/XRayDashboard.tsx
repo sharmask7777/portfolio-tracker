@@ -20,6 +20,7 @@ export interface DashboardData {
     large: { percentage: number; value: number };
     mid: { percentage: number; value: number };
     small: { percentage: number; value: number };
+    other?: { percentage: number; value: number };
   };
   assetAllocation: {
     equity?: { percentage: number; value: number };
@@ -36,6 +37,13 @@ interface XRayDashboardProps {
   title: string;
 }
 
+interface TreemapPayloadItem {
+  payload?: {
+    name?: string;
+    percentage?: number;
+  };
+}
+
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1'];
 
 export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => {
@@ -49,6 +57,9 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
     { name: 'Large Cap', value: (data.marketCap?.large?.percentage || 0) * 100 },
     { name: 'Mid Cap', value: (data.marketCap?.mid?.percentage || 0) * 100 },
     { name: 'Small Cap', value: (data.marketCap?.small?.percentage || 0) * 100 },
+    ...(data.marketCap?.other && data.marketCap.other.value > 0
+      ? [{ name: 'Other / Unclassified', value: (data.marketCap.other.percentage || 0) * 100 }]
+      : []),
   ];
 
   const assetData = [
@@ -76,10 +87,12 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
               fill="var(--accent-color)"
             >
               <Tooltip 
-                formatter={(_value: any, _name: any, props: any) => [
-                  `${(props.payload.percentage * 100).toFixed(2)}%`, 
-                  props.payload.name
-                ]}
+                formatter={(_value: unknown, _name: unknown, props: unknown) => {
+                  const item = props as TreemapPayloadItem;
+                  const pct = item.payload?.percentage ?? 0;
+                  const label = item.payload?.name ?? '';
+                  return [`${(pct * 100).toFixed(2)}%`, label];
+                }}
               />
             </Treemap>
           </ResponsiveContainer>
@@ -95,7 +108,7 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border-color)" />
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" width={100} stroke="var(--text-secondary)" fontSize={12} />
-                <Tooltip formatter={(val: any) => `${Number(val).toFixed(2)}%`} />
+                <Tooltip formatter={(val: unknown) => `${Number(val).toFixed(2)}%`} />
                 <Bar dataKey="value" fill="var(--accent-color)" radius={[0, 4, 4, 0]} barSize={30} />
               </BarChart>
             </ResponsiveContainer>
@@ -120,7 +133,7 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length] ?? '#3b82f6'} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(val: any) => `${(Number(val) * 100).toFixed(2)}%`} />
+                <Tooltip formatter={(val: unknown) => `${(Number(val) * 100).toFixed(2)}%`} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>

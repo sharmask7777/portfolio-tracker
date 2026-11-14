@@ -56,6 +56,7 @@ fn test_schema_ddl_contains_all_core_tables() {
     assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"Goal\""));
     assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"_GoalAssets\""));
     assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"FundHolding\""));
+    assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"StockMetadata\""));
     assert!(ddl.contains("CREATE TYPE \"AssetType\" AS ENUM"));
     assert!(ddl.contains("CREATE TYPE \"UploadJobStatus\" AS ENUM"));
 }
@@ -80,6 +81,15 @@ fn test_schema_tables_and_columns_parsed_correctly() {
     assert!(tables["PortfolioHistory"].contains("createdAt"));
     // Critically: PortfolioHistory MUST NOT have updatedAt
     assert!(!tables["PortfolioHistory"].contains("updatedAt"));
+
+    assert!(tables.contains_key("StockMetadata"));
+    assert!(tables["StockMetadata"].contains("isin"));
+    assert!(tables["StockMetadata"].contains("symbol"));
+    assert!(tables["StockMetadata"].contains("name"));
+    assert!(tables["StockMetadata"].contains("sector"));
+    assert!(tables["StockMetadata"].contains("marketCapTier"));
+    assert!(tables["StockMetadata"].contains("createdAt"));
+    assert!(tables["StockMetadata"].contains("updatedAt"));
 }
 
 #[test]

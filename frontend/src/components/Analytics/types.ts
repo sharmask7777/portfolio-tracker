@@ -4,6 +4,7 @@ export interface XRayData {
     large: { percentage: number; value: number };
     mid: { percentage: number; value: number };
     small: { percentage: number; value: number };
+    other?: { percentage: number; value: number };
   };
   assetAllocation: {
     equity: { percentage: number; value: number };
@@ -19,6 +20,7 @@ export interface XRayData {
       large: { percentage: number; value: number };
       mid: { percentage: number; value: number };
       small: { percentage: number; value: number };
+      other?: { percentage: number; value: number };
     };
     assetAllocation: {
       equity: { percentage: number; value: number };
