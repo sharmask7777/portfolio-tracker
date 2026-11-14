@@ -383,7 +383,9 @@ pub async fn fetch_portfolio_transactions(
     Ok(txs)
 }
 
-/// Upserts a historical portfolio valuation snapshot in PostgreSQL.
+/// Inserts a historical portfolio valuation snapshot in PostgreSQL if no record exists for that date.
+///
+/// Preserves authoritative daily market history by ignoring conflicting coarse transaction snapshots.
 pub async fn upsert_portfolio_history(
     pool: &sqlx::PgPool,
     id: Uuid,
@@ -400,8 +402,7 @@ pub async fn upsert_portfolio_history(
         r#"
         INSERT INTO "PortfolioHistory" (id, "portfolioId", date, value, "investedAmount", "createdAt")
         VALUES ($1, $2, $3, $4, $5, NOW())
-        ON CONFLICT ("portfolioId", date) DO UPDATE
-        SET value = EXCLUDED.value, "investedAmount" = EXCLUDED."investedAmount";
+        ON CONFLICT ("portfolioId", date) DO NOTHING;
         "#,
     )
     .bind(id.to_string())

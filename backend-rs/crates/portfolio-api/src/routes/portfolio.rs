@@ -1035,6 +1035,59 @@ pub fn get_stock_sector(name: &str) -> &'static str {
     }
 }
 
+/// Classifies a company stock name or fund scheme context into a market cap tier:
+/// Large Cap, Mid Cap, or Small Cap.
+///
+/// Follows SEBI categorization guidelines (Top 100: Large Cap; 101-250: Mid Cap; 251+: Small Cap)
+/// and prominent benchmark constituents (Nifty 50, Nifty Next 50, S&P 500, NASDAQ 100).
+pub fn get_stock_market_cap(name: &str) -> &'static str {
+    let lower = name.to_lowercase();
+    // Mid-cap indicators
+    if lower.contains("indian hotels")
+        || lower.contains("max healthcare")
+        || lower.contains("cummins")
+        || lower.contains("federal bank")
+        || lower.contains("apar")
+        || lower.contains("mid cap")
+        || lower.contains("midcap")
+        || lower.contains("tube investments")
+        || lower.contains("ashok leyland")
+        || lower.contains("polycab")
+        || lower.contains("supreme industries")
+        || lower.contains("coforge")
+        || lower.contains("mphasis")
+        || lower.contains("persitent")
+        || lower.contains("voltas")
+        || lower.contains("tata communications")
+        || lower.contains("jubilant")
+        || lower.contains("pi industries")
+        || lower.contains("astral")
+        || lower.contains("balkrishna")
+        || lower.contains("sundram")
+    {
+        "mid"
+    } else if lower.contains("small cap")
+        || lower.contains("smallcap")
+        || lower.contains("sonata")
+        || lower.contains("karur")
+        || lower.contains("ceat")
+        || lower.contains("eclerx")
+        || lower.contains("kpit")
+        || lower.contains("cyient")
+        || lower.contains("radico")
+        || lower.contains("equitas")
+        || lower.contains("ujjivan")
+        || lower.contains("granules")
+        || lower.contains("century ply")
+        || lower.contains("birlasoft")
+    {
+        "small"
+    } else {
+        // High-conviction large caps, Nifty 50, Nifty Next 50, and mega-cap US equities
+        "large"
+    }
+}
+
 /// Resolves synthetic benchmark or category-level fallback stock holdings for a mutual fund scheme.
 ///
 /// ## Universal Generality Mandate
@@ -2232,6 +2285,8 @@ pub async fn get_xray(
     Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    use rust_decimal::prelude::ToPrimitive;
+
     let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
 
     let mut total_val = Decimal::ZERO;
@@ -2239,9 +2294,14 @@ pub async fn get_xray(
     let mut debt_val = Decimal::ZERO;
     let mut cash_val = Decimal::ZERO;
     let mut gold_val = Decimal::ZERO;
+    let mut arbitrage_val = Decimal::ZERO;
     let mut other_val = Decimal::ZERO;
 
+    let mut active_val = Decimal::ZERO;
+    let mut index_val = Decimal::ZERO;
+
     let mut fund_breakdowns = Vec::new();
+    let mut active_equity_folios: Vec<(AssetEntity, Decimal, bool)> = Vec::new();
 
     for portfolio in &portfolios {
         let folios = fetch_folios_for_portfolio(&state, portfolio.id).await?;
@@ -2294,31 +2354,77 @@ pub async fn get_xray(
                 Decimal::new(15, 1) // 1.5%
             };
 
-            let annualized_fee = holding_market_value * (ter / Decimal::from(100));
+            let annualized_fee = (holding_market_value * (ter / Decimal::from(100))).round_dp(2);
+
+            let is_debt = lower.contains("debt")
+                || lower.contains("liquid")
+                || lower.contains("bond")
+                || lower.contains("gilt")
+                || lower.contains("overnight")
+                || asset_type == "DEBT";
+            let is_gold = lower.contains("gold") || asset_type == "GOLD";
+            let is_cash = lower.contains("cash") || asset_type == "CASH";
+            let is_arbitrage = lower.contains("arbitrage");
+            let is_index = lower.contains("index")
+                || lower.contains("nifty")
+                || lower.contains("sensex")
+                || lower.contains("etf")
+                || lower.contains("s&p")
+                || lower.contains("nasdaq")
+                || lower.contains("passive");
+
+            let category_label = if is_debt {
+                "Debt"
+            } else if is_gold {
+                "Gold"
+            } else if is_cash {
+                "Cash"
+            } else if is_arbitrage {
+                "Arbitrage"
+            } else {
+                "Equity"
+            };
 
             fund_breakdowns.push(json!({
                 "name": asset_name,
                 "isin": isin_str,
-                "category": if lower.contains("debt") || lower.contains("liquid") { "Debt" } else { "Equity" },
-                "ter": ter,
-                "annualizedFee": annualized_fee,
-                "value": holding_market_value
+                "category": category_label,
+                "ter": ter.to_f64().unwrap_or(0.0),
+                "annualizedFee": annualized_fee.to_f64().unwrap_or(0.0),
+                "value": holding_market_value.to_f64().unwrap_or(0.0)
             }));
 
-            if lower.contains("debt")
-                || lower.contains("liquid")
-                || lower.contains("bond")
-                || lower.contains("gilt")
-            {
+            if is_debt {
                 debt_val += holding_market_value;
-            } else if lower.contains("gold") || asset_type == "GOLD" {
+            } else if is_gold {
                 gold_val += holding_market_value;
-            } else if lower.contains("cash") || asset_type == "CASH" {
+            } else if is_cash {
                 cash_val += holding_market_value;
+            } else if is_arbitrage {
+                arbitrage_val += holding_market_value;
+                equity_val += holding_market_value; // In standard view, arbitrage is included under equity/hybrid
             } else if asset_type == "EQUITY" || asset_type == "MUTUAL_FUND" {
                 equity_val += holding_market_value;
             } else {
                 other_val += holding_market_value;
+            }
+
+            if is_arbitrage {
+                // Tracked separately in fund category allocation
+            } else if is_index {
+                index_val += holding_market_value;
+            } else if is_debt || is_gold || is_cash {
+                // Not active equity
+            } else {
+                active_val += holding_market_value;
+            }
+
+            if let Some(asset_entity) = asset
+                && !is_debt
+                && !is_gold
+                && !is_cash
+            {
+                active_equity_folios.push((asset_entity, holding_market_value, is_arbitrage));
             }
         }
     }
@@ -2354,8 +2460,168 @@ pub async fn get_xray(
         })));
     }
 
-    use rust_decimal::prelude::ToPrimitive;
-    let decimal_to_f64 = |v: Decimal| v.to_f64().unwrap_or(0.0);
+    let isin_list: Vec<&str> = active_equity_folios
+        .iter()
+        .filter_map(|(a, _, _)| a.isin.as_deref())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let db_holdings = if !isin_list.is_empty() {
+        match &state.backend {
+            DbBackend::InMemory(mem) => mem.get_latest_holdings_batch(&isin_list).await?,
+            DbBackend::Postgres(pool) => {
+                let repo = SqlxFundHoldingsRepo::new(pool.clone());
+                repo.get_latest_holdings_batch(&isin_list).await?
+            }
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // Helper closure to build sector and market cap breakdowns
+    let compute_lookthrough = |folios_to_include: &[(AssetEntity, Decimal, bool)]| {
+        let mut sector_map: std::collections::BTreeMap<String, Decimal> =
+            std::collections::BTreeMap::new();
+        let mut large_cap_val = Decimal::ZERO;
+        let mut mid_cap_val = Decimal::ZERO;
+        let mut small_cap_val = Decimal::ZERO;
+        let mut effective_equity_val = Decimal::ZERO;
+
+        for (asset, folio_val, _) in folios_to_include {
+            effective_equity_val += *folio_val;
+            let isin = asset.isin.as_deref().unwrap_or("");
+            let db_entries = if !isin.is_empty() {
+                db_holdings.get(isin)
+            } else {
+                None
+            };
+
+            if let Some(entries) = db_entries.filter(|e| !e.is_empty()) {
+                for h in entries {
+                    let weight_pct = h.weight;
+                    let allocated_val = *folio_val * (weight_pct / Decimal::from(100));
+                    let sector = if !h.sector.is_empty() && h.sector != "Other" {
+                        h.sector.clone()
+                    } else {
+                        get_stock_sector(&h.stock_name).to_string()
+                    };
+                    *sector_map.entry(sector).or_insert(Decimal::ZERO) += allocated_val;
+
+                    let tier = get_stock_market_cap(&h.stock_name);
+                    match tier {
+                        "mid" => mid_cap_val += allocated_val,
+                        "small" => small_cap_val += allocated_val,
+                        _ => large_cap_val += allocated_val,
+                    }
+                }
+            } else {
+                let (_, holdings) = resolve_holdings(isin, &asset.name);
+                let fallback_weight_sum: Decimal = holdings.iter().map(|h| h.weight).sum();
+                for h in &holdings {
+                    let weight_pct = h.weight;
+                    let allocated_val = *folio_val * (weight_pct / Decimal::from(100));
+                    let sector = get_stock_sector(&h.name).to_string();
+                    *sector_map.entry(sector).or_insert(Decimal::ZERO) += allocated_val;
+
+                    let tier = get_stock_market_cap(&h.name);
+                    match tier {
+                        "mid" => mid_cap_val += allocated_val,
+                        "small" => small_cap_val += allocated_val,
+                        _ => large_cap_val += allocated_val,
+                    }
+                }
+
+                // Allocate remainder (unallocated equity) proportionally
+                if fallback_weight_sum < Decimal::from(100) {
+                    let remainder_val = *folio_val
+                        * ((Decimal::from(100) - fallback_weight_sum) / Decimal::from(100));
+                    *sector_map
+                        .entry("Other".to_string())
+                        .or_insert(Decimal::ZERO) += remainder_val;
+                    let fund_lower = asset.name.to_lowercase();
+                    if fund_lower.contains("small") {
+                        small_cap_val += remainder_val;
+                    } else if fund_lower.contains("mid") {
+                        mid_cap_val += remainder_val;
+                    } else {
+                        large_cap_val += remainder_val;
+                    }
+                }
+            }
+        }
+
+        let total_sector_val: Decimal = sector_map.values().copied().sum();
+        let mut sectors_vec: Vec<serde_json::Value> = sector_map
+            .into_iter()
+            .map(|(name, val)| {
+                let pct = if total_sector_val > Decimal::ZERO {
+                    (val / total_sector_val).round_dp(4).to_f64().unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+                json!({
+                    "name": name,
+                    "percentage": pct,
+                    "value": val.round_dp(2).to_f64().unwrap_or(0.0)
+                })
+            })
+            .collect();
+
+        sectors_vec.sort_by(|a, b| {
+            let val_a = a["value"].as_f64().unwrap_or(0.0);
+            let val_b = b["value"].as_f64().unwrap_or(0.0);
+            val_b
+                .partial_cmp(&val_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let total_mc_val = large_cap_val + mid_cap_val + small_cap_val;
+        let large_pct = if total_mc_val > Decimal::ZERO {
+            (large_cap_val / total_mc_val)
+                .round_dp(4)
+                .to_f64()
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        let mid_pct = if total_mc_val > Decimal::ZERO {
+            (mid_cap_val / total_mc_val)
+                .round_dp(4)
+                .to_f64()
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        let small_pct = if total_mc_val > Decimal::ZERO {
+            (small_cap_val / total_mc_val)
+                .round_dp(4)
+                .to_f64()
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+
+        (
+            sectors_vec,
+            json!({
+                "large": { "percentage": large_pct, "value": large_cap_val.round_dp(2).to_f64().unwrap_or(0.0) },
+                "mid": { "percentage": mid_pct, "value": mid_cap_val.round_dp(2).to_f64().unwrap_or(0.0) },
+                "small": { "percentage": small_pct, "value": small_cap_val.round_dp(2).to_f64().unwrap_or(0.0) }
+            }),
+            effective_equity_val,
+        )
+    };
+
+    let (standard_sectors, standard_mc, _) = compute_lookthrough(&active_equity_folios);
+
+    let ex_arbitrage_folios: Vec<(AssetEntity, Decimal, bool)> = active_equity_folios
+        .iter()
+        .filter(|(_, _, is_arb)| !*is_arb)
+        .cloned()
+        .collect();
+    let (ex_arb_sectors, ex_arb_mc, ex_arb_equity_val) = compute_lookthrough(&ex_arbitrage_folios);
+
+    let decimal_to_f64 = |v: Decimal| v.round_dp(2).to_f64().unwrap_or(0.0);
     let calculate_percentage = |v: Decimal| {
         if total_val > Decimal::ZERO {
             (v / total_val).round_dp(4).to_f64().unwrap_or(0.0)
@@ -2363,17 +2629,11 @@ pub async fn get_xray(
             0.0
         }
     };
-    let large_val = (equity_val * Decimal::new(6, 1)).round_dp(2);
-    let mid_val = (equity_val * Decimal::new(25, 2)).round_dp(2);
-    let small_val = equity_val - large_val - mid_val;
 
     let total_annual_fees: Decimal = fund_breakdowns
         .iter()
-        .filter_map(|f| {
-            f.get("annualizedFee")
-                .and_then(|v| v.as_str())
-                .and_then(|s| Decimal::from_str(s).ok())
-        })
+        .filter_map(|f| f.get("annualizedFee").and_then(|v| v.as_f64()))
+        .map(|f| Decimal::from_f64_retain(f).unwrap_or(Decimal::ZERO))
         .sum();
     let weighted_ter = if total_val > Decimal::ZERO {
         (total_annual_fees / total_val * Decimal::from(100))
@@ -2384,20 +2644,17 @@ pub async fn get_xray(
         0.0
     };
 
-    Ok(Json(json!({
-        "sectors": [
-            { "name": "Financial Services", "percentage": 0.325, "value": decimal_to_f64((equity_val * Decimal::new(325, 3)).round_dp(2)) },
-            { "name": "Information Technology", "percentage": 0.182, "value": decimal_to_f64((equity_val * Decimal::new(182, 3)).round_dp(2)) },
-            { "name": "Oil & Gas", "percentage": 0.120, "value": decimal_to_f64((equity_val * Decimal::new(12, 2)).round_dp(2)) },
-            { "name": "Consumer Goods", "percentage": 0.115, "value": decimal_to_f64((equity_val * Decimal::new(115, 3)).round_dp(2)) },
-            { "name": "Automobile", "percentage": 0.080, "value": decimal_to_f64((equity_val * Decimal::new(8, 2)).round_dp(2)) }
-        ],
+    let other_cat_val = total_val - active_val - index_val - arbitrage_val;
+    let other_cat_val = if other_cat_val.is_sign_negative() {
+        Decimal::ZERO
+    } else {
+        other_cat_val
+    };
+
+    let mut response = json!({
+        "sectors": standard_sectors,
         "totalValue": decimal_to_f64(total_val),
-        "marketCap": {
-            "large": { "percentage": calculate_percentage(large_val), "value": decimal_to_f64(large_val) },
-            "mid": { "percentage": calculate_percentage(mid_val), "value": decimal_to_f64(mid_val) },
-            "small": { "percentage": calculate_percentage(small_val), "value": decimal_to_f64(small_val) }
-        },
+        "marketCap": standard_mc,
         "assetAllocation": {
             "equity": { "percentage": calculate_percentage(equity_val), "value": decimal_to_f64(equity_val) },
             "debt": { "percentage": calculate_percentage(debt_val), "value": decimal_to_f64(debt_val) },
@@ -2409,17 +2666,40 @@ pub async fn get_xray(
             "totalAnnualFees": decimal_to_f64(total_annual_fees),
             "weightedAvgTer": weighted_ter,
             "categoryBreakdown": [
-                { "category": "Equity", "totalFees": decimal_to_f64(total_annual_fees), "avgTer": weighted_ter, "percentage": 1.0, "value": decimal_to_f64(total_val) }
+                {
+                    "category": "Equity",
+                    "totalFees": decimal_to_f64(total_annual_fees),
+                    "avgTer": weighted_ter,
+                    "percentage": 1.0,
+                    "value": decimal_to_f64(total_val)
+                }
             ],
             "fundBreakdown": fund_breakdowns
         },
         "fundCategoryAllocation": {
-            "active": { "percentage": 0.85, "value": decimal_to_f64((total_val * Decimal::new(85, 2)).round_dp(2)) },
-            "index": { "percentage": 0.15, "value": decimal_to_f64((total_val * Decimal::new(15, 2)).round_dp(2)) },
-            "arbitrage": { "percentage": 0.0, "value": 0.0 },
-            "other": { "percentage": 0.0, "value": 0.0 }
+            "active": { "percentage": calculate_percentage(active_val), "value": decimal_to_f64(active_val) },
+            "index": { "percentage": calculate_percentage(index_val), "value": decimal_to_f64(index_val) },
+            "arbitrage": { "percentage": calculate_percentage(arbitrage_val), "value": decimal_to_f64(arbitrage_val) },
+            "other": { "percentage": calculate_percentage(other_cat_val), "value": decimal_to_f64(other_cat_val) }
         }
-    })))
+    });
+
+    if arbitrage_val > Decimal::ZERO {
+        response["exArbitrage"] = json!({
+            "sectors": ex_arb_sectors,
+            "marketCap": ex_arb_mc,
+            "assetAllocation": {
+                "equity": { "percentage": calculate_percentage(ex_arb_equity_val), "value": decimal_to_f64(ex_arb_equity_val) },
+                "debt": { "percentage": calculate_percentage(debt_val), "value": decimal_to_f64(debt_val) },
+                "cash": { "percentage": calculate_percentage(cash_val), "value": decimal_to_f64(cash_val) },
+                "gold": { "percentage": calculate_percentage(gold_val), "value": decimal_to_f64(gold_val) },
+                "arbitrage": { "percentage": calculate_percentage(arbitrage_val), "value": decimal_to_f64(arbitrage_val) },
+                "other": { "percentage": calculate_percentage(other_val), "value": decimal_to_f64(other_val) }
+            }
+        });
+    }
+
+    Ok(Json(response))
 }
 
 /// Route handler for `GET /api/portfolio/:id/exposures` returning company-level stock exposures.
