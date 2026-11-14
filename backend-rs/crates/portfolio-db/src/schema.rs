@@ -237,6 +237,11 @@ pub fn generate_ddl() -> &'static str {
     INSERT INTO "User" ("id", "email", "password", "createdAt", "updatedAt")
     VALUES ('00000000-0000-0000-0000-000000000001', 'test@example.com', '$2b$12$dummyhashforplaywrighttestuser', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT ("id") DO NOTHING;
+
+    -- Self-healing data migration: enforce non-negative invariant on existing Transaction records
+    UPDATE "Transaction"
+    SET amount = ABS(amount), units = ABS(units)
+    WHERE amount < 0 OR units < 0;
     "#
 }
 

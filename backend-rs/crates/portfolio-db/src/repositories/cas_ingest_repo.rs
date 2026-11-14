@@ -415,3 +415,25 @@ pub async fn upsert_portfolio_history(
 
     Ok(())
 }
+
+/// Purges existing historical valuation snapshots for a portfolio from PostgreSQL.
+///
+/// Since uploaded CAS statements contain complete transaction history from inception,
+/// clearing existing `PortfolioHistory` for touched portfolios ensures a clean-slate
+/// reconstruction without conflicting or stale checkpoints from older imports.
+pub async fn purge_portfolio_history(
+    pool: &sqlx::PgPool,
+    portfolio_id: Uuid,
+) -> Result<(), DbError> {
+    sqlx::query(
+        r#"
+        DELETE FROM "PortfolioHistory"
+        WHERE "portfolioId" = $1
+        "#,
+    )
+    .bind(portfolio_id.to_string())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}

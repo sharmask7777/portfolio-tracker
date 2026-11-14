@@ -500,6 +500,14 @@ impl InMemoryDatabase {
         list
     }
 
+    /// Purges all historical valuation snapshots for a portfolio in memory.
+    pub fn purge_historical_valuations(&self, portfolio_id: Uuid) {
+        let mut state = self.state.write().expect("lock poisoned");
+        state
+            .historical_valuations
+            .retain(|(p_id, _), _| *p_id != portfolio_id);
+    }
+
     // -----------------------------------------------------------------------
     // Lookup helpers
     // -----------------------------------------------------------------------
