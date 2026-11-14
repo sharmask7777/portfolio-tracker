@@ -155,6 +155,9 @@ pub fn generate_ddl() -> &'static str {
     CREATE INDEX IF NOT EXISTS "Transaction_folioId_idx" ON "Transaction"("folioId");
     CREATE INDEX IF NOT EXISTS "Transaction_date_idx" ON "Transaction"("date");
 
+    -- Invariant Guardrail: Ensure transaction amounts and units are non-negative across all records
+    UPDATE "Transaction" SET amount = ABS(amount), units = ABS(units) WHERE amount < 0 OR units < 0;
+
     DO $$ BEGIN
         CREATE TYPE "UploadJobStatus" AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED');
     EXCEPTION

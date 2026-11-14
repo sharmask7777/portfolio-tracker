@@ -620,7 +620,7 @@ async fn process_cas_file_internal(
                 );
 
                 if db.find_transaction_by_external_id(&external_id).is_none()
-                    && !db.has_duplicate_transaction(folio.id, date, amount, units)
+                    && !db.has_duplicate_transaction(folio.id, date, tx_type, amount, units)
                 {
                     db.create_transaction(
                         folio.id,

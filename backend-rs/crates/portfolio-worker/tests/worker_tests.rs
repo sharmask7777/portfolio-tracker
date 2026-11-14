@@ -1000,6 +1000,19 @@ async fn test_cas_upload_deduplication_and_sub_account_normalization() {
         .expect("stamp duty tx exists");
     assert_eq!(stamp_tx.tx_type, "STAMP_DUTY_TAX");
 
+    // Verify deduplication resilience against sign discrepancies (negative vs positive amounts/units)
+    let has_dup = db.has_duplicate_transaction(
+        folios_after_2[0].id,
+        chrono::NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+        "PURCHASE",
+        rust_decimal::Decimal::from_str("-10000.0").unwrap(),
+        rust_decimal::Decimal::from_str("-100.0").unwrap(),
+    );
+    assert!(
+        has_dup,
+        "Deduplication check must match magnitude regardless of sign discrepancies"
+    );
+
     // Verify portfolio-core get_latest_units on this ledger returns 195 units (stamp duty balance 0 does not wipe it out)
     let core_txs: Vec<_> = txs_2
         .iter()

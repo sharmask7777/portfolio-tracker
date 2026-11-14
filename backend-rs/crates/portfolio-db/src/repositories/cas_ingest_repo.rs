@@ -294,19 +294,21 @@ pub async fn insert_postgres_transaction(
     let balance_f64 = balance.to_string().parse::<f64>().unwrap_or(0.0);
 
     // Deduplication check: verify if an identical transaction already exists for this folio on this date
-    // with the same amount and units (e.g. from prior uploads with legacy externalId hashing).
+    // with the same type and magnitude of amount and units (handling positive vs negative signs across legacy imports and CAS formats).
     let existing_tx = sqlx::query_scalar::<_, String>(
         r#"
         SELECT id FROM "Transaction"
         WHERE "folioId" = $1
           AND date = $2
-          AND ABS(amount - $3) < 0.001
-          AND ABS(units - $4) < 0.0001
+          AND type = $3
+          AND ABS(ABS(amount) - ABS($4)) < 0.001
+          AND ABS(ABS(units) - ABS($5)) < 0.0001
         LIMIT 1
         "#,
     )
     .bind(folio_id.to_string())
     .bind(date_timestamp)
+    .bind(tx_type)
     .bind(amount_f64)
     .bind(units_f64)
     .fetch_optional(pool)

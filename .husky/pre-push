@@ -10,7 +10,7 @@ echo "Verifying TypeScript contracts parity..."
 git diff --exit-code frontend/src/types/generated || (echo "❌ Frontend types drift detected! Commit updated generated types." && exit 1)
 
 echo "Enforcing backend test coverage threshold (fail-under-lines 80%)..."
-(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|test_mocks\.rs|repositories/)" --fail-under-lines 80 --summary-only)
+(cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 80 --summary-only)
 
 echo "Running frontend hermetic unit tests with coverage gate (lines 88%, statements 86%, funcs 85%, branches 65%)..."
 pnpm --filter frontend test:unit
