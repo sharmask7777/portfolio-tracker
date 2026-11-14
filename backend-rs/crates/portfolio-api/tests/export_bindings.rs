@@ -11,6 +11,7 @@ use portfolio_api::routes::tax::{
     HarvestOpportunityDto, HarvestTicketResponse, SimulationSellRequest, SimulationSellResponse,
     TaxViewResponse, TsExportExt, UnrealizedLotGainDto, UnrealizedSummaryDto,
 };
+use portfolio_api::services::{HistoryPoint, PortfolioValuationSnapshot};
 use std::fs;
 use std::path::Path;
 use ts_rs::TS;
@@ -50,6 +51,9 @@ fn test_export_typescript_bindings() {
         .expect("exported");
     UnrealizedSummaryDto::export_to(output_dir.join("UnrealizedSummaryDto.ts")).expect("exported");
     UnrealizedLotGainDto::export_to(output_dir.join("UnrealizedLotGainDto.ts")).expect("exported");
+    HistoryPoint::export_to(output_dir.join("HistoryPoint.ts")).expect("exported");
+    PortfolioValuationSnapshot::export_to(output_dir.join("PortfolioValuationSnapshot.ts"))
+        .expect("exported");
 
     assert!(output_dir.join("SimulationSellRequest.ts").exists());
     assert!(output_dir.join("SimulationSellResponse.ts").exists());
@@ -61,4 +65,6 @@ fn test_export_typescript_bindings() {
     assert!(output_dir.join("HarvestOpportunityDto.ts").exists());
     assert!(output_dir.join("UnrealizedSummaryDto.ts").exists());
     assert!(output_dir.join("UnrealizedLotGainDto.ts").exists());
+    assert!(output_dir.join("HistoryPoint.ts").exists());
+    assert!(output_dir.join("PortfolioValuationSnapshot.ts").exists());
 }

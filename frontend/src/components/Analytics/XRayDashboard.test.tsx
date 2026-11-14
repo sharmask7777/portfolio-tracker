@@ -1,14 +1,15 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { XRayDashboard, type DashboardData } from './XRayDashboard';
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock recharts responsive container and charts
 vi.mock('recharts', () => ({
-  ResponsiveContainer: ({ children }: any) => <div data-testid="responsive-container">{children}</div>,
-  PieChart: ({ children }: any) => <div data-testid="pie-chart">{children}</div>,
-  Pie: ({ data }: any) => (
+  ResponsiveContainer: ({ children }: { children?: React.ReactNode }) => <div data-testid="responsive-container">{children}</div>,
+  PieChart: ({ children }: { children?: React.ReactNode }) => <div data-testid="pie-chart">{children}</div>,
+  Pie: ({ data }: { data?: { name: string; value: number }[] }) => (
     <div data-testid="pie-data">
-      {data.map((item: any) => (
+      {data?.map(item => (
         <span key={item.name} data-testid={`pie-item-${item.name.toLowerCase()}`}>
           {item.name}: {item.value}
         </span>
@@ -18,7 +19,16 @@ vi.mock('recharts', () => ({
   Cell: () => null,
   Legend: () => null,
   Tooltip: () => null,
-  BarChart: ({ children }: any) => <div>{children}</div>,
+  BarChart: ({ data, children }: { data?: { name: string; value: number }[]; children?: React.ReactNode }) => (
+    <div data-testid="bar-chart">
+      {data?.map(item => (
+        <span key={item.name} data-testid={`bar-item-${item.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}>
+          {item.name}: {item.value}
+        </span>
+      ))}
+      {children}
+    </div>
+  ),
   Bar: () => null,
   XAxis: () => null,
   YAxis: () => null,
@@ -63,5 +73,18 @@ describe('XRayDashboard', () => {
 
     render(<XRayDashboard data={dataWithOther} title="Standard View" />);
     expect(screen.getByTestId('pie-item-other')).toHaveTextContent('Other: 0.05');
+  });
+
+  it('renders Other / Unclassified in market cap breakdown when other value is positive', () => {
+    const dataWithOtherMarketCap: DashboardData = {
+      ...sampleData,
+      marketCap: {
+        ...sampleData.marketCap,
+        other: { percentage: 0.05, value: 5000 },
+      },
+    };
+
+    render(<XRayDashboard data={dataWithOtherMarketCap} title="Standard View" />);
+    expect(screen.getByTestId('bar-item-other---unclassified')).toHaveTextContent('Other / Unclassified: 5');
   });
 });

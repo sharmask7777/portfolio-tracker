@@ -41,6 +41,7 @@
 //! - **`"PortfolioHistory_portfolioId_date_key"`**: Enforces a single valuation snapshot per portfolio per date.
 //! - **`"HistoricalNAV_amfiCode_date_key"`**: Enforces a single NAV entry per AMFI scheme code per date.
 
+use chrono::Utc;
 use sqlx::PgPool;
 
 /// Returns the complete DDL schema definition for PostgreSQL matching the canonical application structure.
@@ -234,9 +235,29 @@ pub fn generate_ddl() -> &'static str {
     CREATE INDEX IF NOT EXISTS "FundHolding_isin_idx" ON "FundHolding"("isin");
     CREATE INDEX IF NOT EXISTS "FundHolding_asOfDate_idx" ON "FundHolding"("asOfDate");
 
+    CREATE TABLE IF NOT EXISTS "StockMetadata" (
+        "isin" TEXT PRIMARY KEY,
+        "symbol" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "sector" TEXT NOT NULL DEFAULT 'Other',
+        "marketCapTier" TEXT NOT NULL,
+        "marketCapRank" INT,
+        "marketCapCr" DOUBLE PRECISION,
+        "asOfDate" DATE NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS "StockMetadata_symbol_idx" ON "StockMetadata"("symbol");
+    CREATE INDEX IF NOT EXISTS "StockMetadata_name_idx" ON "StockMetadata"("name");
+
     INSERT INTO "User" ("id", "email", "password", "createdAt", "updatedAt")
     VALUES ('00000000-0000-0000-0000-000000000001', 'test@example.com', '$2b$12$dummyhashforplaywrighttestuser', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT ("id") DO NOTHING;
+
+    -- Self-healing data migration: enforce non-negative invariant on existing Transaction records
+    UPDATE "Transaction"
+    SET amount = ABS(amount), units = ABS(units)
+    WHERE amount < 0 OR units < 0;
     "#
 }
 
@@ -251,5 +272,38 @@ pub fn generate_ddl() -> &'static str {
 /// drops, or database syntax issues.
 pub async fn init_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::raw_sql(generate_ddl()).execute(pool).await?;
+
+    // Seed StockMetadata if empty
+    let count: (i64,) = sqlx::query_as(r#"SELECT COUNT(*) FROM "StockMetadata""#)
+        .fetch_one(pool)
+        .await
+        .unwrap_or((0,));
+
+    if count.0 == 0 {
+        let now = Utc::now();
+        let as_of_date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default();
+        for item in portfolio_core::xray::security_master::SEBI_TOP_EQUITIES {
+            let rank = item.rank.map(|r| r as i32);
+            let _ = sqlx::query(
+                r#"
+                INSERT INTO "StockMetadata" ("isin", "symbol", "name", "sector", "marketCapTier", "marketCapRank", "asOfDate", "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT ("isin") DO NOTHING
+                "#,
+            )
+            .bind(item.isin)
+            .bind(item.symbol)
+            .bind(item.name)
+            .bind(item.sector)
+            .bind(item.tier.as_str())
+            .bind(rank)
+            .bind(as_of_date)
+            .bind(now)
+            .bind(now)
+            .execute(pool)
+            .await;
+        }
+    }
+
     Ok(())
 }

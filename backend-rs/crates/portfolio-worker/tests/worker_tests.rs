@@ -25,7 +25,7 @@ use std::str::FromStr;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use portfolio_db::InMemoryDatabase;
 use portfolio_db::entities::UploadJobStatus;
 use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
@@ -525,6 +525,62 @@ async fn test_history_refresh_job_processing() {
     let bad_job = HistoryRefreshJobData::new(bad_portfolio_id);
     let bad_res = process_history_refresh_job(&bad_job, &db).await;
     assert!(matches!(bad_res, Err(WorkerError::PortfolioNotFound(_))));
+}
+
+#[tokio::test]
+async fn test_history_refresh_job_marks_today_to_live_market_nav() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("market.user@example.com", "hash");
+    let portfolio = db
+        .create_portfolio(user.id, "Market NAV Test Portfolio", None)
+        .await
+        .unwrap();
+
+    let amfi_code = "119001";
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "Market Alpha Equity Fund",
+        Some("INF109K01MK1"),
+        Some(amfi_code),
+        None,
+        None,
+    );
+
+    let folio = db
+        .create_folio(portfolio.id, asset.id, "FOLIO-MK-1", None, None)
+        .expect("folio");
+
+    let t0 = Utc::now().date_naive() - chrono::Duration::days(45);
+    let today = Utc::now().date_naive();
+
+    // Purchase 100 units @ 100 on t0
+    db.create_transaction(
+        folio.id,
+        t0,
+        "PURCHASE",
+        dec("10000.00"),
+        dec("100.0000"),
+        dec("100.0000"),
+        dec("100.0000"),
+        Some("TX-MK1"),
+    )
+    .await
+    .expect("tx1");
+
+    // Live AMFI market NAV today is 250 (appreciated by 150%)
+    db.store_nav(amfi_code, today, dec("250.00"));
+
+    let job_data = HistoryRefreshJobData::new(portfolio.id);
+    let records = process_history_refresh_job(&job_data, &db)
+        .await
+        .expect("history refresh should succeed");
+
+    assert!(records.len() >= 2);
+    let today_rec = records.last().expect("today checkpoint");
+    assert_eq!(today_rec.date, today);
+    assert_eq!(today_rec.cost, dec("10000.00"));
+    // Marked to market: 100 units * 250.00 NAV = 25,000.00 (not historical 10,000!)
+    assert_eq!(today_rec.value, dec("25000.000000"));
 }
 
 #[tokio::test]
@@ -1126,5 +1182,107 @@ async fn test_cas_upload_clears_prior_manual_close_and_reconciles() {
     assert_eq!(
         portfolio_core::holdings::get_latest_units(&core_reconciled).to_decimal(),
         rust_decimal::Decimal::new(100, 0)
+    );
+}
+
+#[tokio::test]
+async fn test_cas_upload_purges_and_reconstructs_history() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("history_purge_test@example.com", "pwd");
+
+    // 1. First upload with 1 transaction
+    let cas_json_1 = serde_json::json!({
+        "investor_info": { "name": "History Investor", "pan": "ABCDE1234F" },
+        "folios": [{
+            "folio": "HIST-1",
+            "amc": "DSP Mutual Fund",
+            "pan": "ABCDE1234F",
+            "schemes": [{
+                "scheme": "DSP Small Cap Fund",
+                "isin": "INF740K01022",
+                "amfi": "103196",
+                "transactions": [
+                    { "date": "2024-01-15", "type": "PURCHASE", "amount": 10000.0, "units": 100.0, "nav": 100.0, "balance": 100.0 }
+                ]
+            }]
+        }]
+    });
+
+    let mut temp_file_1 = NamedTempFile::new().expect("create temp file");
+    temp_file_1
+        .write_all(cas_json_1.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path_1 = temp_file_1.path().to_path_buf();
+
+    let job_id_1 = Uuid::new_v4();
+    db.create_upload_job(job_id_1, user.id, &temp_path_1.to_string_lossy());
+    let job_data_1 =
+        ProcessPdfUploadJobData::new(user.id, temp_path_1.to_string_lossy().to_string(), job_id_1);
+
+    let res1 = process_pdf_job_with_pool(&job_data_1, &db, None).await;
+    assert!(res1.is_ok());
+
+    let profile = db
+        .find_profile_by_pan(user.id, "ABCDE1234F")
+        .expect("profile exists");
+    let portfolio = db
+        .find_portfolio_by_profile(user.id, profile.id)
+        .expect("portfolio exists");
+
+    let history_1 = db.list_historical_valuations(portfolio.id);
+    assert!(
+        !history_1.is_empty(),
+        "History checkpoints must be generated on first upload"
+    );
+
+    // 2. Second upload: add a second transaction
+    let cas_json_2 = serde_json::json!({
+        "investor_info": { "name": "History Investor", "pan": "ABCDE1234F" },
+        "folios": [{
+            "folio": "HIST-1",
+            "amc": "DSP Mutual Fund",
+            "pan": "ABCDE1234F",
+            "schemes": [{
+                "scheme": "DSP Small Cap Fund",
+                "isin": "INF740K01022",
+                "amfi": "103196",
+                "transactions": [
+                    { "date": "2024-01-15", "type": "PURCHASE", "amount": 10000.0, "units": 100.0, "nav": 100.0, "balance": 100.0 },
+                    { "date": "2024-02-15", "type": "PURCHASE_SIP", "amount": 5000.0, "units": 50.0, "nav": 100.0, "balance": 150.0 }
+                ]
+            }]
+        }]
+    });
+
+    let mut temp_file_2 = NamedTempFile::new().expect("create temp file");
+    temp_file_2
+        .write_all(cas_json_2.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path_2 = temp_file_2.path().to_path_buf();
+
+    let job_id_2 = Uuid::new_v4();
+    db.create_upload_job(job_id_2, user.id, &temp_path_2.to_string_lossy());
+    let job_data_2 =
+        ProcessPdfUploadJobData::new(user.id, temp_path_2.to_string_lossy().to_string(), job_id_2);
+
+    let res2 = process_pdf_job_with_pool(&job_data_2, &db, None).await;
+    assert!(res2.is_ok());
+
+    let history_2 = db.list_historical_valuations(portfolio.id);
+    // On second upload, history was purged and reconstructed from the full statement.
+    // Checkpoints: 2024-01-15, 2024-02-15, and today's valuation point.
+    assert!(
+        history_2
+            .iter()
+            .any(|h| h.date == chrono::NaiveDate::from_ymd_opt(2024, 2, 15).unwrap()),
+        "Must contain reconstructed valuation point for 2024-02-15"
+    );
+    assert_eq!(
+        history_2
+            .iter()
+            .filter(|h| h.date == chrono::NaiveDate::from_ymd_opt(2024, 1, 15).unwrap())
+            .count(),
+        1,
+        "Must not accumulate duplicate history checkpoints for 2024-01-15"
     );
 }

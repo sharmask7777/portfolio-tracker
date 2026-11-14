@@ -10,10 +10,12 @@ pub mod cas_ingest_repo;
 pub mod family_repo;
 pub mod fund_holdings_repo;
 pub mod portfolio_repo;
+pub mod stock_metadata_repo;
 pub mod transaction_repo;
 
 pub use cas_ingest_repo::*;
 pub use family_repo::{FamilyRepository, SqlxFamilyRepo};
 pub use fund_holdings_repo::{FundHoldingsRepository, SqlxFundHoldingsRepo};
 pub use portfolio_repo::{PortfolioRepository, SqlxPortfolioRepo};
+pub use stock_metadata_repo::{SqlxStockMetadataRepo, StockMetadataRepository};
 pub use transaction_repo::{SqlxTransactionRepo, TransactionRepository};

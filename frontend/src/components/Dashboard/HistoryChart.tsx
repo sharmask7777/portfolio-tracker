@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
+import type { HistoryPoint } from '../../types/generated/HistoryPoint';
 import { 
   AreaChart, 
   Area, 
@@ -10,17 +11,21 @@ import {
   ResponsiveContainer
 } from 'recharts';
 
-interface HistoryPoint {
-  date: string;
-  value: number;
-  investedAmount: number;
-}
-
 interface HistoryChartProps {
   portfolioId: string;
 }
 
 type RangePreset = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
+
+interface TooltipPayloadItem {
+  payload: HistoryPoint;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayloadItem[];
+  label?: string;
+}
 
 export const HistoryChart: React.FC<HistoryChartProps> = ({ portfolioId }) => {
   const [selectedRange, setSelectedRange] = useState<RangePreset>('3M');
@@ -99,16 +104,17 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ portfolioId }) => {
     return new Date(str).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
   };
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
+  const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label }) => {
+    const firstItem = payload?.[0];
+    if (active && firstItem) {
+      const data = firstItem.payload;
       const gain = data.value - data.investedAmount;
       const gainPercent = data.investedAmount > 0 ? (gain / data.investedAmount) * 100 : 0;
       const isPositive = gain >= 0;
 
       return (
         <div className="card" style={{ padding: '1rem', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)', minWidth: '220px' }}>
-          <p style={{ margin: '0 0 0.75rem 0', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>{formatDate(label)}</p>
+          <p style={{ margin: '0 0 0.75rem 0', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>{label ? formatDate(label) : ''}</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
               <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Current Value</span>

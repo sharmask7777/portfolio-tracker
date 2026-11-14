@@ -656,10 +656,15 @@ async fn process_cas_file_internal(
         }
     }
 
-    // Step 6: Recalculate historical valuation timeline for all touched portfolios
+    // Step 6: Recalculate historical valuation timeline for all touched portfolios.
+    //
+    // CAS statements uploaded by users contain complete transaction history from inception.
+    // To ensure clean-slate reconstruction without accumulating stale or conflicting historical
+    // checkpoints, we purge previous history for touched portfolios before regenerating the timeline.
     let mut touched_vec: Vec<uuid::Uuid> = touched_portfolios.into_iter().collect();
     touched_vec.sort();
     for portfolio_id in touched_vec {
+        db.purge_historical_valuations(portfolio_id);
         let refresh_data = HistoryRefreshJobData::new(portfolio_id);
         process_history_refresh_job_with_pool(&refresh_data, db, None).await?;
     }
@@ -668,6 +673,9 @@ async fn process_cas_file_internal(
         let mut touched_pg_vec: Vec<uuid::Uuid> = touched_pg_portfolios.into_iter().collect();
         touched_pg_vec.sort();
         for pg_port_id in touched_pg_vec {
+            portfolio_db::repositories::purge_portfolio_history(pool, pg_port_id)
+                .await
+                .map_err(WorkerError::Db)?;
             let refresh_data = HistoryRefreshJobData::new(pg_port_id);
             process_history_refresh_job_with_pool(&refresh_data, db, Some(pool)).await?;
         }

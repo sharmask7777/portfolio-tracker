@@ -383,7 +383,9 @@ pub async fn fetch_portfolio_transactions(
     Ok(txs)
 }
 
-/// Upserts a historical portfolio valuation snapshot in PostgreSQL.
+/// Inserts a historical portfolio valuation snapshot in PostgreSQL if no record exists for that date.
+///
+/// Preserves authoritative daily market history by ignoring conflicting coarse transaction snapshots.
 pub async fn upsert_portfolio_history(
     pool: &sqlx::PgPool,
     id: Uuid,
@@ -400,8 +402,9 @@ pub async fn upsert_portfolio_history(
         r#"
         INSERT INTO "PortfolioHistory" (id, "portfolioId", date, value, "investedAmount", "createdAt")
         VALUES ($1, $2, $3, $4, $5, NOW())
-        ON CONFLICT ("portfolioId", date) DO UPDATE
-        SET value = EXCLUDED.value, "investedAmount" = EXCLUDED."investedAmount";
+        ON CONFLICT ("portfolioId", date) DO UPDATE SET
+            value = EXCLUDED.value,
+            "investedAmount" = EXCLUDED."investedAmount";
         "#,
     )
     .bind(id.to_string())
@@ -409,6 +412,60 @@ pub async fn upsert_portfolio_history(
     .bind(date_timestamp)
     .bind(val_f64)
     .bind(cost_f64)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Fetches the latest published market NAV for each active folio in the given portfolio from `HistoricalNAV`.
+pub async fn fetch_latest_navs_for_portfolio(
+    pool: &sqlx::PgPool,
+    portfolio_id: Uuid,
+) -> Result<std::collections::HashMap<Uuid, Decimal>, DbError> {
+    let rows = sqlx::query_as::<_, (String, Decimal)>(
+        r#"
+        SELECT f.id, h.nav::numeric
+        FROM "Folio" f
+        JOIN "Asset" a ON a.id = f."assetId"
+        JOIN LATERAL (
+            SELECT nav FROM "HistoricalNAV"
+            WHERE "amfiCode" = a."amfiCode" AND nav > 0
+            ORDER BY date DESC LIMIT 1
+        ) h ON true
+        WHERE f."portfolioId" = $1
+        "#,
+    )
+    .bind(portfolio_id.to_string())
+    .fetch_all(pool)
+    .await?;
+
+    let mut map = std::collections::HashMap::with_capacity(rows.len());
+    for (folio_id_str, nav) in rows {
+        if let Ok(folio_id) = Uuid::parse_str(&folio_id_str) {
+            map.insert(folio_id, nav);
+        }
+    }
+
+    Ok(map)
+}
+
+/// Purges existing historical valuation snapshots for a portfolio from PostgreSQL.
+///
+/// Since uploaded CAS statements contain complete transaction history from inception,
+/// clearing existing `PortfolioHistory` for touched portfolios ensures a clean-slate
+/// reconstruction without conflicting or stale checkpoints from older imports.
+pub async fn purge_portfolio_history(
+    pool: &sqlx::PgPool,
+    portfolio_id: Uuid,
+) -> Result<(), DbError> {
+    sqlx::query(
+        r#"
+        DELETE FROM "PortfolioHistory"
+        WHERE "portfolioId" = $1
+        "#,
+    )
+    .bind(portfolio_id.to_string())
     .execute(pool)
     .await?;
 
