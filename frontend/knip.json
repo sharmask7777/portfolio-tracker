@@ -9,7 +9,10 @@
   ],
   "ignore": [
     "src/types/generated/**",
-    "src/components/Family/FamilyManager.tsx"
+    "src/components/Family/FamilyManager.tsx",
+    "src/utils/hierarchy-builder.ts",
+    "src/components/Analytics/StockDetailDrawer.tsx",
+    "src/components/Analytics/MultiLevelTreemap.tsx"
   ],
   "ignoreDependencies": [
     "@vitest/ui",

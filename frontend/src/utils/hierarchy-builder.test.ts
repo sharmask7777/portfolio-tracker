@@ -235,8 +235,9 @@ describe('Hierarchy Tree Transformation Engine & Financial Invariants', () => {
     expect(root.metrics.weightOfSector).toBeUndefined();
 
     // Equity Asset Class node
-    const equity = root.children?.find(c => c.name === 'Equity')!;
+    const equity = root.children?.find(c => c.name === 'Equity');
     expect(equity).toBeDefined();
+    if (!equity) throw new Error('Equity node missing');
     expect(equity.metrics.signedValue).toBe(700000);
     expect(equity.metrics.weightOfPortfolio).toBeCloseTo(700000 / 1000000, 6); // 0.70
     expect(equity.metrics.weightOfAssetClass).toBe(1.0);
@@ -244,8 +245,9 @@ describe('Hierarchy Tree Transformation Engine & Financial Invariants', () => {
     expect(equity.metrics.weightOfSector).toBeUndefined();
 
     // Sector node: Financial Services
-    const finServices = equity.children?.find(c => c.name === 'Financial Services')!;
+    const finServices = equity.children?.find(c => c.name === 'Financial Services');
     expect(finServices).toBeDefined();
+    if (!finServices) throw new Error('Financial Services node missing');
     expect(finServices.metrics.signedValue).toBe(280000);
     expect(finServices.metrics.weightOfPortfolio).toBeCloseTo(280000 / 1000000, 6); // 0.28
     expect(finServices.metrics.weightOfAssetClass).toBeCloseTo(280000 / 700000, 6); // 0.40
@@ -253,8 +255,9 @@ describe('Hierarchy Tree Transformation Engine & Financial Invariants', () => {
     expect(finServices.metrics.weightOfSector).toBe(1.0);
 
     // Stock node: HDFC Bank Ltd. (value 160,000)
-    const hdfc = finServices.children?.find(c => c.name === 'HDFC Bank Ltd.')!;
+    const hdfc = finServices.children?.find(c => c.name === 'HDFC Bank Ltd.');
     expect(hdfc).toBeDefined();
+    if (!hdfc) throw new Error('HDFC Bank node missing');
     expect(hdfc.metrics.signedValue).toBe(160000);
     expect(hdfc.metrics.weightOfPortfolio).toBeCloseTo(160000 / 1000000, 6); // 0.16
     expect(hdfc.metrics.weightOfAssetClass).toBeCloseTo(160000 / 700000, 6); // ~0.228571
@@ -262,8 +265,9 @@ describe('Hierarchy Tree Transformation Engine & Financial Invariants', () => {
     expect(hdfc.metrics.weightOfSector).toBeCloseTo(160000 / 280000, 6); // ~0.571428
 
     // Debt Asset Class node (shallower depth leaf)
-    const debt = root.children?.find(c => c.name === 'Debt')!;
+    const debt = root.children?.find(c => c.name === 'Debt');
     expect(debt).toBeDefined();
+    if (!debt) throw new Error('Debt node missing');
     expect(debt.metrics.signedValue).toBe(200000);
     expect(debt.metrics.weightOfPortfolio).toBeCloseTo(200000 / 1000000, 6); // 0.20
     expect(debt.metrics.weightOfAssetClass).toBe(1.0);
