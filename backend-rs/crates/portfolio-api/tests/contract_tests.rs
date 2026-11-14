@@ -2080,13 +2080,10 @@ async fn test_dynamic_exposure_uses_db_holdings_when_available() {
 
     // Step D: Un-ingested fund (UTI Nifty 50) continues to resolve seamlessly via resolve_holdings heuristic!
     let uti_stock = list_after.iter().find(|e| {
-        e["contributions"]
-            .as_array()
-            .map(|c| {
-                c.iter()
-                    .any(|item| item["schemeName"].as_str().unwrap_or("").contains("UTI"))
-            })
-            .unwrap_or(false)
+        e["contributions"].as_array().is_some_and(|c| {
+            c.iter()
+                .any(|item| item["schemeName"].as_str().unwrap_or("").contains("UTI"))
+        })
     });
     assert!(
         uti_stock.is_some(),

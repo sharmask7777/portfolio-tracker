@@ -728,7 +728,7 @@ fn test_portfolio_9_elss_3yr_lockin() {
     assert!(
         matches!(
             sell_700_result,
-            Err(PortfolioError::UnitsLocked { .. }) | Err(PortfolioError::InsufficientUnits { .. })
+            Err(PortfolioError::UnitsLocked { .. } | PortfolioError::InsufficientUnits { .. })
         ),
         "Selling 700 units must fail with UnitsLocked or InsufficientUnits"
     );

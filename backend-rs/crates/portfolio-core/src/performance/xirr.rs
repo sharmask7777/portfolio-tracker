@@ -145,7 +145,7 @@ where
             // Secant method
             upper_bound - f_upper * (upper_bound - lower_bound) / (f_upper - f_lower)
         } else {
-            (lower_bound + upper_bound) / 2.0
+            f64::midpoint(lower_bound, upper_bound)
         };
 
         // Verification conditions deciding whether to accept interpolation or fall back to bisection
@@ -169,7 +169,7 @@ where
             || condition5
             || !candidate_root.is_finite()
         {
-            candidate_root = (lower_bound + upper_bound) / 2.0;
+            candidate_root = f64::midpoint(lower_bound, upper_bound);
             force_bisection = true;
         } else {
             force_bisection = false;

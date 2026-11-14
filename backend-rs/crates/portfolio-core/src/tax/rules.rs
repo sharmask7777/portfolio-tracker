@@ -145,7 +145,7 @@ pub fn parse_exit_load_from_metadata(metadata: &str, holding_days: i64) -> Optio
             let num_str: String = rest
                 .chars()
                 .skip_while(|c| c.is_whitespace())
-                .take_while(|c| c.is_ascii_digit())
+                .take_while(char::is_ascii_digit)
                 .collect();
             if let Ok(days) = num_str.parse::<i64>()
                 && holding_days > days
@@ -177,7 +177,7 @@ pub fn parse_exit_load_from_metadata(metadata: &str, holding_days: i64) -> Optio
                     .chars()
                     .rev()
                     .skip_while(|c| c.is_whitespace())
-                    .take_while(|c| c.is_ascii_digit())
+                    .take_while(char::is_ascii_digit)
                     .collect::<Vec<_>>()
                     .into_iter()
                     .rev()

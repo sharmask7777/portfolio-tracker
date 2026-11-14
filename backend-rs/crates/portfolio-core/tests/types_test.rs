@@ -169,10 +169,7 @@ fn test_pan_strong_type_with_validation() {
         Pan::new("ABCDEF1234F"), // 11 characters
         Err(PortfolioError::InvalidPan("ABCDEF1234F".to_string()))
     );
-    assert_eq!(
-        Pan::new(""),
-        Err(PortfolioError::InvalidPan("".to_string()))
-    );
+    assert_eq!(Pan::new(""), Err(PortfolioError::InvalidPan(String::new())));
 }
 
 #[test]
@@ -190,7 +187,7 @@ fn test_folio_number_strong_type_with_validation() {
     // Invalid folios: empty or invalid characters
     assert_eq!(
         FolioNumber::new(""),
-        Err(PortfolioError::InvalidFolio("".to_string()))
+        Err(PortfolioError::InvalidFolio(String::new()))
     );
     assert_eq!(
         FolioNumber::new("   "),
@@ -466,7 +463,7 @@ fn test_portfolio_error_variants() {
     let err5 = PortfolioError::InvalidPan("INVALID".to_string());
     assert_eq!(format!("{err5}"), "Invalid PAN: INVALID");
 
-    let err6 = PortfolioError::InvalidFolio("".to_string());
+    let err6 = PortfolioError::InvalidFolio(String::new());
     assert_eq!(format!("{err6}"), "Invalid folio number: ");
 
     let err7 = PortfolioError::InvalidIsin("BAD".to_string());

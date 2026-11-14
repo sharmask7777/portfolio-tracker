@@ -15,6 +15,8 @@
 - **File Naming Conventions**: Standardized casing is enforced via `eslint-plugin-check-file` (PascalCase for React components under `src/components/`, kebab-case for utilities under `src/utils/`).
 - **Schema-Validated Environment Variables**: All environment variable access is centralized in `frontend/src/env.ts` validated via `@t3-oss/env-core` and `zod`. Direct unvalidated access to `import.meta.env` is prohibited; invalid or missing variables fail loudly at build time.
 - **Dead-Code & Dependency Auditing**: `knip` runs via `knip --production` during builds. Zero unused files, exports, or dependencies permitted. Code-generated Rust bindings (`src/types/generated/**`) are explicitly preserved.
+- **Static Privacy & Anti-PII Guardrail**: `scripts/check-privacy-and-pii.py` scans all tracked repository files before commit/push, statically barring real-world PAN patterns, non-synthetic identifiers, or CAS PDF/JSON files.
+- **Rust ArchUnit Boundary Oracle**: `backend-rs/crates/portfolio-core/tests/architecture_invariants_test.rs` programmatically asserts Zero-I/O compliance (no networking, async runtime, database, or cache dependencies) and `#![forbid(unsafe_code)]` in domain roots.
 - **Build Verification Gate**: `pnpm --filter frontend build` (`pnpm build:verify && vite build`) and `pnpm --filter frontend build:verify` (`pnpm lint && pnpm typecheck && pnpm knip`) must pass cleanly with zero type errors, zero lint warnings, and zero dead code.
 
 ### 3. ITR Report Invariant Gate

@@ -116,9 +116,8 @@ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
                 let current_balance = tx.balance;
                 if current_balance >= fractional_dust_threshold {
                     return current_balance;
-                } else {
-                    return Units::ZERO;
                 }
+                return Units::ZERO;
             }
         }
     }
@@ -147,7 +146,7 @@ pub fn get_latest_nav(transactions: &[Transaction]) -> Nav {
             return tx.nav;
         }
     }
-    sorted.last().map(|tx| tx.nav).unwrap_or(Nav::ZERO)
+    sorted.last().map_or(Nav::ZERO, |tx| tx.nav)
 }
 
 /// Consolidates multiple folios for the same scheme (grouped by ISIN if present, or asset name),
