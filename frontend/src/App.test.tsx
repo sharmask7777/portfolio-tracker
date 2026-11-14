@@ -157,6 +157,92 @@ describe('App Dashboard - Stock Intersection excludeArbitrage data flow', () => 
     });
   });
 
+  it('switches to stock intersection tab with pre-filled search when inspecting from XRayView', async () => {
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === `${API_ENDPOINTS.PORTFOLIO}/summary`) {
+        return Promise.resolve({
+          data: {
+            id: 'port-123',
+            name: 'Synthetic Test Portfolio',
+            folios: [],
+            metrics: {
+              totalValue: 500000,
+              totalInvested: 400000,
+              totalGain: 100000,
+              absReturn: 25,
+              xirr: 15,
+            },
+          },
+        });
+      }
+      if (url === `${API_ENDPOINTS.FAMILY}/profiles`) {
+        return Promise.resolve({ data: [] });
+      }
+      if (url === `${API_ENDPOINTS.PORTFOLIO}/port-123/xray`) {
+        return Promise.resolve({
+          data: {
+            totalValue: 500000,
+            assetAllocation: {
+              equity: { value: 350000, percentage: 70 },
+              debt: { value: 150000, percentage: 30 },
+              cash: { value: 0, percentage: 0 },
+              gold: { value: 0, percentage: 0 },
+              other: { value: 0, percentage: 0 },
+            },
+            marketCap: {
+              large: { value: 250000, percentage: 50 },
+              mid: { value: 100000, percentage: 20 },
+              small: { value: 0, percentage: 0 },
+            },
+            sectors: [{ name: 'Financial Services', value: 350000, percentage: 70 }],
+          },
+        });
+      }
+      if (url.startsWith(`${API_ENDPOINTS.PORTFOLIO}/port-123/exposures`)) {
+        return Promise.resolve({
+          data: [
+            {
+              name: 'HDFC Bank Ltd.',
+              sector: 'Financial Services',
+              absoluteValue: 150000,
+              percentage: 30,
+              contributions: [{ schemeName: 'Equity Fund', value: 150000, weight: 30 }],
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<Dashboard />);
+
+    // Switch to X-Ray tab
+    const xrayTab = await screen.findByRole('button', { name: /Portfolio X-Ray/i });
+    fireEvent.click(xrayTab);
+
+    // Drill into Equity in Treemap
+    const equityTile = await screen.findByRole('button', { name: /Equity/i });
+    fireEvent.click(equityTile);
+
+    // Drill into Financial Services
+    const finTile = await screen.findByRole('button', { name: /Financial Services/i });
+    fireEvent.click(finTile);
+
+    // Click HDFC Bank Ltd. tile
+    const stockTile = await screen.findByRole('button', { name: /HDFC Bank Ltd\./i });
+    fireEvent.click(stockTile);
+
+    // Drawer opens
+    const inspectBtn = await screen.findByRole('button', { name: /Inspect in Stock Intersection/i });
+    fireEvent.click(inspectBtn);
+
+    // Verify it switched to Intersection tab and search input contains "HDFC Bank Ltd."
+    await waitFor(() => {
+      const searchInput = screen.getByPlaceholderText(/Search stocks, sectors, or funds/i);
+      expect(searchInput).toHaveValue('HDFC Bank Ltd.');
+    });
+  });
+
   it('handles exposure refetch error gracefully on toggle without crashing', async () => {
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === `${API_ENDPOINTS.PORTFOLIO}/summary`) {

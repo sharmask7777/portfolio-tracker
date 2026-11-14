@@ -18,6 +18,7 @@
   ],
   "ignoreExportsUsedInFile": true,
   "ignoreIssues": {
-    "src/utils/sorting.ts": ["exports"]
+    "src/utils/sorting.ts": ["exports"],
+    "src/utils/hierarchy-builder.ts": ["exports"]
   }
 }

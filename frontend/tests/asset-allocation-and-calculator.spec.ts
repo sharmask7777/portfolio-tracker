@@ -130,6 +130,11 @@ test.describe('Asset Allocation and Tax Calculator Tests', () => {
     await expect(xrayTab).toBeVisible();
     await xrayTab.click();
 
+    // Switch to Classic Grid view mode to inspect the Recharts Asset Allocation Pie Chart
+    const classicTab = page.locator('button[role="tab"]', { hasText: 'Classic Grid' });
+    await expect(classicTab).toBeVisible();
+    await classicTab.click();
+
     // Verify Asset Allocation section appears
     await expect(page.locator('h3', { hasText: 'Asset Allocation' })).toBeVisible();
 

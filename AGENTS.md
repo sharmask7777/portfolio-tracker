@@ -41,12 +41,23 @@ Before committing or creating a PR, you MUST run and pass the full hermetic veri
   - Ensures all new tax rules or statutory amendments include corresponding property-based tests in `tax_oracle_test.rs` and golden vectors in `golden_tax_vectors.json`.
   - Verifies that `verify_itr_invariants` enforces all statutory constraints on Schedule CG outputs.
 
-### 6. Test Suite Catalogs & Invariant Documentation
+### 6. Mandatory Multi-Specialist Review Crew for New Features
+For all non-trivial feature development or analytical enhancements, agents MUST execute review via a specialized agent crew before merging:
+1. **CX & Frontend Specialist (`cx-frontend-auditor`)**:
+   - Audits interaction ergonomics, keyboard accessibility (WCAG 2.1 AA roving tabindex, ARIA roles, live regions), responsive layouts ($375\text{px}$ to $1440\text{px}$), visual clutter avoidance (e.g. 4-tier tile dimension thresholds, clipping paths), and layout memoization.
+2. **Quantitative Finance & Visual Invariant Specialist (`finance-visual-auditor`)**:
+   - Audits mathematical reconciliation, Value Conservation Law ($\Delta \le ₹0.01$), sum-of-parts completeness, tail holding reconciliation for undisclosed portfolios, denominator clarity (distinguishing `% of Portfolio`, `% of Asset Class`, `% of Parent`), and statutory/hedging segregation (such as cash-futures arbitrage funds).
+3. **Architecture & Code Quality Auditor (`code-quality-auditor`)**:
+   - Enforces the Zero-Any rule, exact optional property safety (`exactOptionalPropertyTypes: true`), layer boundary isolation (`eslint-plugin-boundaries`), knip production zero-dead-code compliance, and self-documenting code.
+
+### 7. Test Suite Catalogs & Invariant Documentation
 Comprehensive documentation of all backend and frontend test suites, financial invariants, and extension procedures is maintained in the following catalogs:
 - **Backend Test Catalog:** [`backend-rs/crates/portfolio-core/tests/README.md`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/backend-rs/crates/portfolio-core/tests/README.md)
   - Documents the strict Zero-I/O policy, precision bounds, synthetic data mandate, and detailed domain invariant mappings for all 7 backend test suites (`tax_oracle_test.rs`, `tax_compliance_test.rs`, `mock_portfolios.rs`, `proptests.rs`, `auditor_defensive_test.rs`, `xirr_safeguards_test.rs`, `types_test.rs`) and the 33-vector statutory golden fixtures (`golden_tax_vectors.json`).
 - **Frontend Test Catalog:** [`frontend/tests/README.md`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/frontend/tests/README.md)
   - Documents the 4-domain E2E taxonomy across 16 Playwright spec suites (Core Portfolio Operations, Tax & Statutory Compliance, Analytics & Reporting, Platform & UX Safeguards), all 12 Vitest unit test suites (`frontend/src/`), Page Object Models (`frontend/tests/pom/`), and privacy rules.
+- **Documented Solutions:** [`docs/solutions/`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/docs/solutions/) — documented solutions to past problems (bugs, database issues, tax compliance, performance patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
+- **Shared Domain Vocabulary:** [`CONCEPTS.md`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/CONCEPTS.md) — shared domain vocabulary (entities, named processes, status concepts) — relevant when orienting to the codebase or discussing domain concepts.
 
 ### 7. Universal Generality Mandate (No Portfolio-Specific Hacks)
 - **Zero Portfolio-Specific Hacks**: Agents must NEVER introduce fixes, heuristics, conditional branches, or hardcoded overrides tailored to a single specific portfolio, account, user, or single statement instance.
