@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { consolidateFoliosIntoSchemes, type FolioInput, type ConsolidatedSchemeGroup } from './consolidation';
 import { sortSchemeGroups } from './sorting';
-import type { ConsolidatedSchemeGroup } from './consolidation';
 
 /**
  * ELABORATE FRONTEND MOCK PORTFOLIOS UNIT TEST SUITE
