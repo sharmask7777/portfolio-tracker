@@ -2,13 +2,21 @@ import React, { useState, useEffect } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
 import { Users, Plus, Check } from 'lucide-react';
 
+interface FamilyGroup {
+  id: string;
+  name: string;
+  _count?: {
+    members?: number;
+  };
+}
+
 interface FamilyManagerProps {
   onSelect: (groupId: string | null) => void;
   selectedId: string | null;
 }
 
 export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selectedId }) => {
-  const [families, setFamilies] = useState<any[]>([]);
+  const [families, setFamilies] = useState<FamilyGroup[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
 
@@ -16,8 +24,8 @@ export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selected
     try {
       const res = await api.get(`${API_ENDPOINTS.FAMILY}/list`);
       setFamilies(res.data);
-    } catch (e) {
-      console.error('Failed to fetch families', e);
+    } catch {
+      console.error('Failed to fetch families');
     }
   };
 
@@ -32,7 +40,7 @@ export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selected
       setName('');
       setShowCreate(false);
       fetchFamilies();
-    } catch (e) {
+    } catch {
       alert('Failed to create group');
     }
   };
@@ -92,7 +100,7 @@ export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selected
             }}
             onClick={() => onSelect(f.id)}
           >
-            {f.name} ({f._count.members}) {selectedId === f.id && <Check size={14} />}
+            {f.name} {f._count?.members != null ? `(${f._count.members})` : ''} {selectedId === f.id && <Check size={14} />}
           </button>
         ))}
       </div>

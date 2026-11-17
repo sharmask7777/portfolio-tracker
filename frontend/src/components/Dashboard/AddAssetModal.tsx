@@ -2,10 +2,16 @@ import React, { useState, useEffect } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
 import { X } from 'lucide-react';
 
+interface ProfileItem {
+  id: string;
+  name: string;
+  pan: string;
+}
+
 interface AddAssetModalProps {
   onClose: () => void;
   onSuccess: () => void;
-  profiles: any[];
+  profiles: ProfileItem[];
   selectedProfileId: string | null;
 }
 
@@ -43,7 +49,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
       });
       onSuccess();
       onClose();
-    } catch (e) {
+    } catch {
       alert('Failed to add asset');
     } finally {
       setLoading(false);

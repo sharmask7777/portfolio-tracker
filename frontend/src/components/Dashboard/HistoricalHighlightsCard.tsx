@@ -52,7 +52,8 @@ export const HistoricalHighlightsCard: React.FC<HistoricalHighlightsCardProps> =
     fetchStats();
   }, [portfolioId]);
 
-  const formatCurrency = (val: any) => {
+  const formatCurrency = (val: number | string | null | undefined) => {
+    if (val === null || val === undefined) return '₹0';
     const num = typeof val === 'number' ? val : parseFloat(val);
     if (isNaN(num)) return '₹0';
     return new Intl.NumberFormat('en-IN', {

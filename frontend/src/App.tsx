@@ -927,7 +927,9 @@ export function Dashboard() {
                 excludeArbitrage={excludeArbitrage}
                 onToggleExcludeArbitrage={handleToggleExcludeArbitrage}
                 onNavigateToIntersection={(stockName) => {
-                  setIntersectionSearchQuery(stockName);
+                  if (stockName) {
+                    setIntersectionSearchQuery(stockName);
+                  }
                   setActiveTab('intersection');
                 }}
               />

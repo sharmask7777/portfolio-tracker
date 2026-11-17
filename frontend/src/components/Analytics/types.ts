@@ -4,7 +4,7 @@ export interface XRayData {
     large: { percentage: number; value: number };
     mid: { percentage: number; value: number };
     small: { percentage: number; value: number };
-    other?: { percentage: number; value: number };
+    other?: { percentage: number; value: number } | undefined;
   };
   assetAllocation: {
     equity: { percentage: number; value: number };
@@ -20,7 +20,7 @@ export interface XRayData {
       large: { percentage: number; value: number };
       mid: { percentage: number; value: number };
       small: { percentage: number; value: number };
-      other?: { percentage: number; value: number };
+      other?: { percentage: number; value: number } | undefined;
     };
     assetAllocation: {
       equity: { percentage: number; value: number };
@@ -30,17 +30,17 @@ export interface XRayData {
       arbitrage: { percentage: number; value: number };
       other: { percentage: number; value: number };
     };
-  };
-  expenseAnalysis: {
+  } | undefined;
+  expenseAnalysis?: {
     totalAnnualFees: number;
     weightedAvgTer: number;
     categoryBreakdown: { category: string; totalFees: number; avgTer: number; percentage: number; value: number }[];
     fundBreakdown: { name: string; isin: string; category: string; ter: number; annualizedFee: number; value: number }[];
-  };
-  fundCategoryAllocation: {
+  } | undefined;
+  fundCategoryAllocation?: {
     active: { percentage: number; value: number };
     index: { percentage: number; value: number };
     arbitrage: { percentage: number; value: number };
     other: { percentage: number; value: number };
-  };
+  } | undefined;
 }

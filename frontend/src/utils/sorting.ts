@@ -21,8 +21,60 @@ export interface SortableFolio {
   metrics: SortableFolioMetrics;
 }
 
-export type SortField = 'name' | 'type' | 'invested' | 'value' | 'dayChange' | 'performance' | 'postTaxPerformance';
+export type SortField =
+  | 'name'
+  | 'type'
+  | 'invested'
+  | 'value'
+  | 'dayChange'
+  | 'performance'
+  | 'postTaxPerformance';
 export type SortDirection = 'asc' | 'desc';
+
+function compareValues<T extends string | number>(
+  aVal: T,
+  bVal: T,
+  direction: SortDirection
+): number {
+  if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+  if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+  return 0;
+}
+
+function resolveMetricValue(
+  metrics: SortableFolioMetrics | undefined,
+  field: SortField,
+  mode: 'XIRR' | 'ABS'
+): number {
+  if (!metrics) return 0;
+  if (field === 'invested') return metrics.investedAmount ?? 0;
+  if (field === 'value') return metrics.currentValue ?? 0;
+  if (field === 'dayChange') return metrics.dayChange ?? 0;
+  if (field === 'postTaxPerformance') {
+    return mode === 'XIRR' ? (metrics.postTaxXirr ?? 0) : (metrics.postTaxAbsoluteReturn ?? 0);
+  }
+  return mode === 'XIRR' ? (metrics.xirr ?? 0) : (metrics.absoluteReturn ?? 0);
+}
+
+function extractFolioSortValue(
+  folio: SortableFolio,
+  field: SortField,
+  mode: 'XIRR' | 'ABS'
+): string | number {
+  if (field === 'name') return folio.asset?.name?.toLowerCase() || '';
+  if (field === 'type') return folio.asset?.type?.toLowerCase() || '';
+  return resolveMetricValue(folio.metrics, field, mode);
+}
+
+function extractSchemeGroupSortValue(
+  group: ConsolidatedSchemeGroup,
+  field: SortField,
+  mode: 'XIRR' | 'ABS'
+): string | number {
+  if (field === 'name') return group.schemeName?.toLowerCase() || '';
+  if (field === 'type') return group.type?.toLowerCase() || '';
+  return resolveMetricValue(group.metrics, field, mode);
+}
 
 export function sortFolios(
   folios: SortableFolio[],
@@ -35,43 +87,9 @@ export function sortFolios(
   if (!sortField || !sortDirection) return foliosCopy;
 
   return foliosCopy.sort((a, b) => {
-    let aVal: string | number = '';
-    let bVal: string | number = '';
-
-    switch (sortField) {
-      case 'name':
-        aVal = a.asset?.name?.toLowerCase() || '';
-        bVal = b.asset?.name?.toLowerCase() || '';
-        break;
-      case 'type':
-        aVal = a.asset?.type?.toLowerCase() || '';
-        bVal = b.asset?.type?.toLowerCase() || '';
-        break;
-      case 'invested':
-        aVal = a.metrics?.investedAmount ?? 0;
-        bVal = b.metrics?.investedAmount ?? 0;
-        break;
-      case 'value':
-        aVal = a.metrics?.currentValue ?? 0;
-        bVal = b.metrics?.currentValue ?? 0;
-        break;
-      case 'dayChange':
-        aVal = a.metrics?.dayChange ?? 0;
-        bVal = b.metrics?.dayChange ?? 0;
-        break;
-      case 'performance':
-        aVal = performanceMode === 'XIRR' ? (a.metrics?.xirr ?? 0) : (a.metrics?.absoluteReturn ?? 0);
-        bVal = performanceMode === 'XIRR' ? (b.metrics?.xirr ?? 0) : (b.metrics?.absoluteReturn ?? 0);
-        break;
-      case 'postTaxPerformance':
-        aVal = performanceMode === 'XIRR' ? (a.metrics?.postTaxXirr ?? 0) : (a.metrics?.postTaxAbsoluteReturn ?? 0);
-        bVal = performanceMode === 'XIRR' ? (b.metrics?.postTaxXirr ?? 0) : (b.metrics?.postTaxAbsoluteReturn ?? 0);
-        break;
-    }
-
-    if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-    if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-    return 0;
+    const aVal = extractFolioSortValue(a, sortField, performanceMode);
+    const bVal = extractFolioSortValue(b, sortField, performanceMode);
+    return compareValues(aVal, bVal, sortDirection);
   });
 }
 
@@ -86,42 +104,8 @@ export function sortSchemeGroups(
   if (!sortField || !sortDirection) return groupsCopy;
 
   return groupsCopy.sort((a, b) => {
-    let aVal: string | number = '';
-    let bVal: string | number = '';
-
-    switch (sortField) {
-      case 'name':
-        aVal = a.schemeName?.toLowerCase() || '';
-        bVal = b.schemeName?.toLowerCase() || '';
-        break;
-      case 'type':
-        aVal = a.type?.toLowerCase() || '';
-        bVal = b.type?.toLowerCase() || '';
-        break;
-      case 'invested':
-        aVal = a.metrics?.investedAmount ?? 0;
-        bVal = b.metrics?.investedAmount ?? 0;
-        break;
-      case 'value':
-        aVal = a.metrics?.currentValue ?? 0;
-        bVal = b.metrics?.currentValue ?? 0;
-        break;
-      case 'dayChange':
-        aVal = a.metrics?.dayChange ?? 0;
-        bVal = b.metrics?.dayChange ?? 0;
-        break;
-      case 'performance':
-        aVal = performanceMode === 'XIRR' ? (a.metrics?.xirr ?? 0) : (a.metrics?.absoluteReturn ?? 0);
-        bVal = performanceMode === 'XIRR' ? (b.metrics?.xirr ?? 0) : (b.metrics?.absoluteReturn ?? 0);
-        break;
-      case 'postTaxPerformance':
-        aVal = performanceMode === 'XIRR' ? (a.metrics?.postTaxXirr ?? 0) : (a.metrics?.postTaxAbsoluteReturn ?? 0);
-        bVal = performanceMode === 'XIRR' ? (b.metrics?.postTaxXirr ?? 0) : (b.metrics?.postTaxAbsoluteReturn ?? 0);
-        break;
-    }
-
-    if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-    if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-    return 0;
+    const aVal = extractSchemeGroupSortValue(a, sortField, performanceMode);
+    const bVal = extractSchemeGroupSortValue(b, sortField, performanceMode);
+    return compareValues(aVal, bVal, sortDirection);
   });
 }
