@@ -8,10 +8,10 @@ Enforces AGENTS.md mandates:
 2. Invariant Oracle checks: Verifies that golden vectors and property bounds are not relaxed.
 """
 
-import sys
 import os
 import re
 import subprocess
+import sys
 
 # Known fictitious synthetic test PANs used strictly in mocks and tests
 ALLOWED_SYNTHETIC_PANS = {
@@ -71,47 +71,54 @@ def get_tracked_files():
     result = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True)
     return [f.strip() for f in result.stdout.splitlines() if f.strip()]
 
+def check_file_privacy(file_path: str) -> list[str]:
+    violations: list[str] = []
+    if file_path in ALLOWLISTED_PATHS:
+        return violations
+
+    # Check for forbidden binary or CAS exports
+    if file_path.endswith((".cas.json", "parsed_cas.json")):
+        violations.append(f"Forbidden CAS data file tracked in git: {file_path}")
+        return violations
+
+    if file_path.endswith(".pdf") and file_path != "test.pdf":
+        violations.append(f"Forbidden PDF file tracked in git: {file_path}")
+        return violations
+
+    # Ignore images, lockfiles, compiled targets
+    if file_path.endswith((".png", ".jpg", ".jpeg", ".ico", ".svg", ".lock", ".wasm")):
+        return violations
+
+    if not os.path.isfile(file_path):
+        return violations
+
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line_idx, line in enumerate(f, start=1):
+                # Check for PAN occurrences
+                pans = PAN_REGEX.findall(line)
+                for pan in pans:
+                    if pan not in ALLOWED_SYNTHETIC_PANS:
+                        violations.append(
+                            f"{file_path}:{line_idx} - Non-synthetic PAN detected: '{pan}' "
+                            f"(Violates Zero Real Data Commitment mandate)"
+                        )
+    except (OSError, UnicodeDecodeError) as e:
+        violations.append(f"Error reading file {file_path}: {e}")
+
+    return violations
+
+
 def main():
     print("================================================================================")
     print("Running Static Security & Privacy Guardrail (Anti-PII & Oracle Guard)")
     print("================================================================================")
-    
+
     files = get_tracked_files()
-    violations = []
+    violations: list[str] = []
 
     for file_path in files:
-        if file_path in ALLOWLISTED_PATHS:
-            continue
-
-        # Check for forbidden binary or CAS exports
-        if file_path.endswith((".cas.json", "parsed_cas.json")):
-            violations.append(f"Forbidden CAS data file tracked in git: {file_path}")
-            continue
-
-        if file_path.endswith(".pdf") and file_path != "test.pdf":
-            violations.append(f"Forbidden PDF file tracked in git: {file_path}")
-            continue
-
-        # Ignore images, lockfiles, compiled targets
-        if file_path.endswith((".png", ".jpg", ".jpeg", ".ico", ".svg", ".lock", ".wasm")):
-            continue
-
-        if not os.path.isfile(file_path):
-            continue
-
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                for line_idx, line in enumerate(f, start=1):
-                    # Check for PAN occurrences
-                    pans = PAN_REGEX.findall(line)
-                    for pan in pans:
-                        if pan not in ALLOWED_SYNTHETIC_PANS:
-                            violations.append(
-                                f"{file_path}:{line_idx} - Non-synthetic PAN detected: '{pan}' "
-                                f"(Violates Zero Real Data Commitment mandate)"
-                            )
-        except Exception as e:
-            violations.append(f"Error reading file {file_path}: {e}")
+        violations.extend(check_file_privacy(file_path))
 
     if violations:
         print("\n❌ STATIC PRIVACY GUARDRAIL VIOLATIONS FOUND:")
@@ -120,7 +127,9 @@ def main():
         print("\nAborting: Please remove real PII / non-synthetic test fixtures.")
         sys.exit(1)
 
-    print("✅ All tracked files conform to the Zero Real Data Commitment & Synthetic Privacy Mandate.")
+    print(
+        "✅ All tracked files conform to the Zero Real Data Commitment & Synthetic Privacy Mandate."
+    )
     print("================================================================================\n")
 
 if __name__ == "__main__":
