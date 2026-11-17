@@ -1,6 +1,10 @@
 //! Zero-I/O deterministic financial calculations for Portfolio Tracker.
 
 #![forbid(unsafe_code)]
+// Maintainability and complexity sensors for coding agents (Martin Fowler / Böckeler)
+#![deny(clippy::cognitive_complexity)]
+#![deny(clippy::too_many_arguments)]
+#![deny(clippy::fn_params_excessive_bools)]
 
 /// Central domain error types.
 pub mod error;
