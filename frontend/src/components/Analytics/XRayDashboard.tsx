@@ -1,39 +1,42 @@
 import React from 'react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  Treemap, 
-  PieChart, 
-  Pie, 
-  Cell, 
-  Legend 
+import {
+  Treemap,
+  ResponsiveContainer,
+  Tooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from 'recharts';
 
-export interface DashboardData {
+export interface XRayDashboardData {
+  totalValue?: number | undefined;
+  assetAllocation?: {
+    equity?: { percentage: number; value: number } | undefined;
+    debt?: { percentage: number; value: number } | undefined;
+    cash?: { percentage: number; value: number } | undefined;
+    gold?: { percentage: number; value: number } | undefined;
+    arbitrage?: { percentage: number; value: number } | undefined;
+    other?: { percentage: number; value: number } | undefined;
+  } | undefined;
   sectors: { name: string; percentage: number; value: number }[];
-  marketCap: {
-    large: { percentage: number; value: number };
-    mid: { percentage: number; value: number };
-    small: { percentage: number; value: number };
-    other?: { percentage: number; value: number };
-  };
-  assetAllocation: {
-    equity?: { percentage: number; value: number };
-    debt?: { percentage: number; value: number };
-    cash?: { percentage: number; value: number };
-    gold?: { percentage: number; value: number };
-    arbitrage?: { percentage: number; value: number };
-    other?: { percentage: number; value: number };
-  };
+  marketCap?: {
+    large?: { percentage: number; value: number } | undefined;
+    mid?: { percentage: number; value: number } | undefined;
+    small?: { percentage: number; value: number } | undefined;
+    other?: { percentage: number; value: number } | undefined;
+  } | undefined;
 }
 
+export type { XRayDashboardData as DashboardData };
+
 interface XRayDashboardProps {
-  data: DashboardData;
+  data: XRayDashboardData;
   title: string;
 }
 
@@ -46,6 +49,40 @@ interface TreemapPayloadItem {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1'];
 
+function buildMarketCapItems(marketCap: XRayDashboardData['marketCap']) {
+  const large = (marketCap?.large?.percentage ?? 0) * 100;
+  const mid = (marketCap?.mid?.percentage ?? 0) * 100;
+  const small = (marketCap?.small?.percentage ?? 0) * 100;
+
+  const items = [
+    { name: 'Large Cap', value: large },
+    { name: 'Mid Cap', value: mid },
+    { name: 'Small Cap', value: small },
+  ];
+
+  if (marketCap?.other && marketCap.other.value > 0) {
+    items.push({ name: 'Other / Unclassified', value: (marketCap.other.percentage ?? 0) * 100 });
+  }
+
+  return items;
+}
+
+const ASSET_KEYS: Array<{ name: string; key: keyof NonNullable<XRayDashboardData['assetAllocation']> }> = [
+  { name: 'Equity', key: 'equity' },
+  { name: 'Debt', key: 'debt' },
+  { name: 'Cash', key: 'cash' },
+  { name: 'Gold', key: 'gold' },
+  { name: 'Arbitrage', key: 'arbitrage' },
+  { name: 'Other', key: 'other' },
+];
+
+function buildAssetItems(alloc: XRayDashboardData['assetAllocation']) {
+  if (!alloc) return [];
+  return ASSET_KEYS
+    .map(({ name, key }) => ({ name, value: alloc[key]?.percentage ?? 0 }))
+    .filter(a => a.value > 0);
+}
+
 export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => {
   const sectorData = data.sectors.map(s => ({
     name: s.name,
@@ -53,23 +90,8 @@ export const XRayDashboard: React.FC<XRayDashboardProps> = ({ data, title }) => 
     percentage: s.percentage,
   }));
 
-  const marketCapData = [
-    { name: 'Large Cap', value: (data.marketCap?.large?.percentage || 0) * 100 },
-    { name: 'Mid Cap', value: (data.marketCap?.mid?.percentage || 0) * 100 },
-    { name: 'Small Cap', value: (data.marketCap?.small?.percentage || 0) * 100 },
-    ...(data.marketCap?.other && data.marketCap.other.value > 0
-      ? [{ name: 'Other / Unclassified', value: (data.marketCap.other.percentage || 0) * 100 }]
-      : []),
-  ];
-
-  const assetData = [
-    { name: 'Equity', value: data.assetAllocation?.equity?.percentage || 0 },
-    { name: 'Debt', value: data.assetAllocation?.debt?.percentage || 0 },
-    { name: 'Cash', value: data.assetAllocation?.cash?.percentage || 0 },
-    { name: 'Gold', value: data.assetAllocation?.gold?.percentage || 0 },
-    { name: 'Arbitrage', value: data.assetAllocation?.arbitrage?.percentage || 0 },
-    { name: 'Other', value: data.assetAllocation?.other?.percentage || 0 },
-  ].filter(a => a.value > 0);
+  const marketCapData = buildMarketCapItems(data.marketCap);
+  const assetData = buildAssetItems(data.assetAllocation);
 
   return (
     <div className="xray-dashboard">

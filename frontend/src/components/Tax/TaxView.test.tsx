@@ -367,7 +367,7 @@ describe('TaxView', () => {
           grossConsideration: 1200,
           costOfAcquisition: 1000,
           gain: 200,
-          taxType: undefined as any, // missing taxType — real-world edge case
+          taxType: undefined as unknown as 'STCG' | 'LTCG', // missing taxType — real-world edge case
           taxRate: 0.10,
           taxBeforeCess: 0,
           cess: 0,

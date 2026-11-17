@@ -1,16 +1,37 @@
 import { X, Trash2 } from 'lucide-react';
 
+export interface PanelTransaction {
+  id?: string;
+  type: string;
+  date: string | Date;
+  amount: number;
+  units: number;
+  nav: number;
+}
+
+export interface PanelFolio {
+  id?: string;
+  number?: string;
+  pan?: string;
+  asset?: {
+    name?: string;
+  };
+  transactions?: PanelTransaction[];
+}
+
 interface TransactionSidePanelProps {
-  folio: any;
+  folio: PanelFolio | null;
   onClose: () => void;
-  onDeleteFolio?: (folio: any) => Promise<void>;
+  onDeleteFolio?: (folio: PanelFolio) => Promise<void>;
 }
 
 export function TransactionSidePanel({ folio, onClose, onDeleteFolio }: TransactionSidePanelProps) {
   if (!folio) return null;
 
   const sortedTransactions = folio.transactions
-    ? [...folio.transactions].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    ? [...folio.transactions].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      )
     : [];
 
   return (
@@ -45,7 +66,7 @@ export function TransactionSidePanel({ folio, onClose, onDeleteFolio }: Transact
 
           <h3>Transactions</h3>
           <div className="transaction-list">
-            {sortedTransactions.map((tx: any, idx: number) => (
+            {sortedTransactions.map((tx, idx: number) => (
               <div key={tx.id || idx} className="transaction-item">
                 <div>
                   <strong>{tx.type}</strong>
@@ -62,7 +83,9 @@ export function TransactionSidePanel({ folio, onClose, onDeleteFolio }: Transact
               </div>
             ))}
             {sortedTransactions.length === 0 && (
-              <p>No transactions found.</p>
+              <div style={{ textAlign: 'center', color: 'gray', padding: '2rem' }}>
+                No transactions recorded
+              </div>
             )}
           </div>
         </div>

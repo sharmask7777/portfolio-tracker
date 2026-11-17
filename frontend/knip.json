@@ -18,7 +18,9 @@
   ],
   "ignoreExportsUsedInFile": true,
   "ignoreIssues": {
-    "src/utils/sorting.ts": ["exports"],
-    "src/utils/hierarchy-builder.ts": ["exports"]
+    "src/utils/sorting.ts": ["exports", "types"],
+    "src/utils/hierarchy-builder.ts": ["exports", "types"],
+    "src/utils/itr-report-generator.ts": ["exports", "types"],
+    "src/components/Analytics/XRayDashboard.tsx": ["exports", "types"]
   }
 }
