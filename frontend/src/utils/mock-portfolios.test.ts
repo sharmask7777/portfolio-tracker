@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { consolidateFoliosIntoSchemes, type FolioInput } from './consolidation';
+import { consolidateFoliosIntoSchemes, type FolioInput, type ConsolidatedSchemeGroup } from './consolidation';
 import { sortSchemeGroups } from './sorting';
 
 /**
@@ -266,20 +266,20 @@ describe('Frontend Mock Portfolios Unit Test Suite (10 Use Cases)', () => {
     ];
 
     it('sorts correctly by current value descending and ascending', () => {
-      const desc = sortSchemeGroups(mixedGroups as any, 'value', 'desc', 'XIRR');
+      const desc = sortSchemeGroups(mixedGroups as unknown as ConsolidatedSchemeGroup[], 'value', 'desc', 'XIRR');
       expect(desc.map(g => g.schemeName)).toEqual(['Beta Fund', 'Gamma Fund', 'Alpha Fund']);
 
-      const asc = sortSchemeGroups(mixedGroups as any, 'value', 'asc', 'XIRR');
+      const asc = sortSchemeGroups(mixedGroups as unknown as ConsolidatedSchemeGroup[], 'value', 'asc', 'XIRR');
       expect(asc.map(g => g.schemeName)).toEqual(['Alpha Fund', 'Gamma Fund', 'Beta Fund']);
     });
 
     it('sorts correctly by XIRR performance descending', () => {
-      const sortedByXirr = sortSchemeGroups(mixedGroups as any, 'performance', 'desc', 'XIRR');
+      const sortedByXirr = sortSchemeGroups(mixedGroups as unknown as ConsolidatedSchemeGroup[], 'performance', 'desc', 'XIRR');
       expect(sortedByXirr.map(g => g.schemeName)).toEqual(['Gamma Fund', 'Alpha Fund', 'Beta Fund']);
     });
 
     it('sorts correctly by day change descending', () => {
-      const sortedByDayChange = sortSchemeGroups(mixedGroups as any, 'dayChange', 'desc', 'XIRR');
+      const sortedByDayChange = sortSchemeGroups(mixedGroups as unknown as ConsolidatedSchemeGroup[], 'dayChange', 'desc', 'XIRR');
       expect(sortedByDayChange.map(g => g.schemeName)).toEqual(['Gamma Fund', 'Alpha Fund', 'Beta Fund']);
     });
   });
