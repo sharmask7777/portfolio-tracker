@@ -5,6 +5,9 @@ import { Users, Plus, Check } from 'lucide-react';
 interface FamilyGroup {
   id: string;
   name: string;
+  _count?: {
+    members?: number;
+  };
 }
 
 interface FamilyManagerProps {
@@ -22,7 +25,7 @@ export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selected
       const res = await api.get(`${API_ENDPOINTS.FAMILY}/list`);
       setFamilies(res.data);
     } catch {
-      console.error('Failed to fetch families', e);
+      console.error('Failed to fetch families');
     }
   };
 
@@ -97,7 +100,7 @@ export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selected
             }}
             onClick={() => onSelect(f.id)}
           >
-            {f.name} ({f._count.members}) {selectedId === f.id && <Check size={14} />}
+            {f.name} {f._count?.members != null ? `(${f._count.members})` : ''} {selectedId === f.id && <Check size={14} />}
           </button>
         ))}
       </div>

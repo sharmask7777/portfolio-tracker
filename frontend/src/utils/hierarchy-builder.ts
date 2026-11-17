@@ -9,6 +9,7 @@
 
 import type {
   StockExposure,
+  StockContribution,
   XRayData,
   HierarchyNode,
   HierarchyOptions,
@@ -35,6 +36,7 @@ import {
 // Re-export public types and formatters
 export type {
   StockExposure,
+  StockContribution,
   XRayData,
   HierarchyNode,
   HierarchyOptions,

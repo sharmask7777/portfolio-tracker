@@ -15,23 +15,25 @@ import {
 } from 'recharts';
 
 export interface XRayDashboardData {
-  totalValue?: number;
+  totalValue?: number | undefined;
   assetAllocation?: {
-    equity?: { percentage: number; value: number };
-    debt?: { percentage: number; value: number };
-    cash?: { percentage: number; value: number };
-    gold?: { percentage: number; value: number };
-    arbitrage?: { percentage: number; value: number };
-    other?: { percentage: number; value: number };
-  };
+    equity?: { percentage: number; value: number } | undefined;
+    debt?: { percentage: number; value: number } | undefined;
+    cash?: { percentage: number; value: number } | undefined;
+    gold?: { percentage: number; value: number } | undefined;
+    arbitrage?: { percentage: number; value: number } | undefined;
+    other?: { percentage: number; value: number } | undefined;
+  } | undefined;
   sectors: { name: string; percentage: number; value: number }[];
   marketCap?: {
-    large?: { percentage: number; value: number };
-    mid?: { percentage: number; value: number };
-    small?: { percentage: number; value: number };
-    other?: { percentage: number; value: number };
-  };
+    large?: { percentage: number; value: number } | undefined;
+    mid?: { percentage: number; value: number } | undefined;
+    small?: { percentage: number; value: number } | undefined;
+    other?: { percentage: number; value: number } | undefined;
+  } | undefined;
 }
+
+export type { XRayDashboardData as DashboardData };
 
 interface XRayDashboardProps {
   data: XRayDashboardData;

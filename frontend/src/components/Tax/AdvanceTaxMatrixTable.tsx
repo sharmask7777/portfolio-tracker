@@ -1,10 +1,10 @@
 import React from 'react';
 import { AdvanceTaxQuarter } from '../../utils/itr-report-generator';
-import type { AdvanceTaxMatrixResult } from '../../utils/itr-report-generator';
+import type { AdvanceTaxAccrualMatrix } from '../../utils/itr-report-generator';
 
 interface AdvanceTaxMatrixTableProps {
   selectedFY: string;
-  advanceTaxMatrix: AdvanceTaxMatrixResult;
+  advanceTaxMatrix: AdvanceTaxAccrualMatrix;
   formatCurrency: (val: number) => string;
 }
 

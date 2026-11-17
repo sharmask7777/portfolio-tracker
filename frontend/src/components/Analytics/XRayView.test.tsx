@@ -89,8 +89,7 @@ describe('XRayView Component', () => {
   });
 
   it('renders loading state when data is null or missing sectors', () => {
-    // @ts-expect-error test invalid prop
-    render(<XRayView data={null} />);
+    render(<XRayView data={null as unknown as XRayData} />);
     expect(screen.getByText('Loading X-Ray data...')).toBeInTheDocument();
   });
 

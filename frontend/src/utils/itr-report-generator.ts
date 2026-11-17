@@ -12,6 +12,7 @@ import {
   type ITRGainDetail,
   type ITRSummary,
   type ITRReportParams,
+  type ITRVerificationTarget,
 } from './itr-report-types';
 import { verifyItrInvariants } from './itr-invariants';
 import {
@@ -28,6 +29,7 @@ export type {
   ITRGainDetail,
   ITRSummary,
   ITRReportParams,
+  ITRVerificationTarget,
 };
 
 /**
