@@ -33,12 +33,12 @@ cleanup() {
 trap cleanup EXIT
 
 echo "⏳ Waiting for backend API to be healthy..."
-timeout=45
+timeout=75
 while ! curl -s -f http://127.0.0.1:8082/api/health > /dev/null 2>&1; do
   sleep 1
   timeout=$((timeout - 1))
   if [ $timeout -le 0 ]; then
-    echo "❌ Backend failed to become healthy within 45s"
+    echo "❌ Backend failed to become healthy within 75s"
     docker compose -f docker-compose.yml logs backend
     exit 1
   fi
