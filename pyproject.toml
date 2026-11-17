@@ -1,0 +1,30 @@
+[project]
+name = "portfolio-tracker-tools"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "C90",  # mccabe cyclomatic complexity
+    "I",    # isort
+    "N",    # pep8-naming
+    "BLE",  # flake8-blind-except
+    "PLR",  # pylint refactor
+]
+ignore = [
+    "PLR0913", # too many arguments (permit up to 7 in scripts)
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.pylint]
+max-branches = 12
+max-statements = 50

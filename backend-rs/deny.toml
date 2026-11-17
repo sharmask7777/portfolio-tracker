@@ -12,6 +12,7 @@ unmaintained = "all"
 ignore = [
     { id = "RUSTSEC-2026-0382", reason = "transitive dependency in lockfile: rustls-webpki" },
     { id = "RUSTSEC-2026-0381", reason = "transitive dependency in lockfile: webpki-roots" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained advisory; ecosystem migration to jiff/time tracked" },
 ]
 
 [licenses]

@@ -105,8 +105,24 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/static-components': 'off',
       'react-refresh/only-export-components': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      // Maintainability sensors for coding agents (Martin Fowler / Böckeler)
+      'complexity': ['warn', { max: 15 }],
+      'max-lines': ['warn', { max: 600, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': [
+        'warn',
+        { max: 120, skipBlankLines: true, skipComments: true, IIFEs: true },
+      ],
+      'max-params': ['warn', { max: 4 }],
+    },
+  },
+  {
+    files: ['src/**/*.test.{ts,tsx}', 'src/utils/mock-portfolios.test.ts'],
+    rules: {
+      'max-lines': 'off',
+      'max-lines-per-function': 'off',
+      'complexity': 'off',
     },
   },
   {
