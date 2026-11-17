@@ -1,15 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
 import type { HistoryPoint } from '../../types/generated/HistoryPoint';
-import { 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer
-} from 'recharts';
+import { HistoryChartArea } from './HistoryChartArea';
 
 interface HistoryChartProps {
   portfolioId: string;
@@ -17,15 +9,36 @@ interface HistoryChartProps {
 
 type RangePreset = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
-interface TooltipPayloadItem {
-  payload: HistoryPoint;
+const RANGES: RangePreset[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y', 'ALL'];
+
+function filterByRange(historyData: HistoryPoint[], selectedRange: RangePreset): HistoryPoint[] {
+  if (!historyData.length) return [];
+  const now = new Date();
+  let startDate = new Date();
+
+  switch (selectedRange) {
+    case '1M': startDate.setMonth(now.getMonth() - 1); break;
+    case '3M': startDate.setMonth(now.getMonth() - 3); break;
+    case '6M': startDate.setMonth(now.getMonth() - 6); break;
+    case '1Y': startDate.setFullYear(now.getFullYear() - 1); break;
+    case '3Y': startDate.setFullYear(now.getFullYear() - 3); break;
+    case '5Y': startDate.setFullYear(now.getFullYear() - 5); break;
+    case 'ALL': startDate = new Date(0); break;
+  }
+
+  return historyData.filter(d => new Date(d.date) >= startDate);
 }
 
-interface CustomTooltipProps {
-  active?: boolean;
-  payload?: TooltipPayloadItem[];
-  label?: string;
+function sampleData(data: HistoryPoint[]): HistoryPoint[] {
+  const MAX_POINTS = 300;
+  if (data.length <= MAX_POINTS) return data;
+  const samplingInterval = Math.ceil(data.length / MAX_POINTS);
+  return data.filter((_, index) => index % samplingInterval === 0 || index === data.length - 1);
 }
+
+const formatDate = (str: string) => {
+  return new Date(str).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
+};
 
 export const HistoryChart: React.FC<HistoryChartProps> = ({ portfolioId }) => {
   const [selectedRange, setSelectedRange] = useState<RangePreset>('3M');
@@ -40,13 +53,10 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ portfolioId }) => {
         setLoading(false);
         return;
       }
-      
       try {
         setLoading(true);
         setError(null);
         const response = await api.get(`${API_ENDPOINTS.PORTFOLIO}/${portfolioId}/history`);
-        
-        // Ensure we always have an array
         setHistoryData(Array.isArray(response.data) ? response.data : []);
       } catch (err) {
         console.error('Failed to fetch history:', err);
@@ -56,93 +66,18 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ portfolioId }) => {
         setLoading(false);
       }
     };
-
     fetchHistory();
   }, [portfolioId]);
 
-  const ranges: RangePreset[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y', 'ALL'];
-
-  const getFilteredData = () => {
-    if (!historyData.length) return [];
-    
-    const now = new Date();
-    let startDate = new Date();
-
-    switch (selectedRange) {
-      case '1M': startDate.setMonth(now.getMonth() - 1); break;
-      case '3M': startDate.setMonth(now.getMonth() - 3); break;
-      case '6M': startDate.setMonth(now.getMonth() - 6); break;
-      case '1Y': startDate.setFullYear(now.getFullYear() - 1); break;
-      case '3Y': startDate.setFullYear(now.getFullYear() - 3); break;
-      case '5Y': startDate.setFullYear(now.getFullYear() - 5); break;
-      case 'ALL': startDate = new Date(0); break;
-    }
-
-    return historyData.filter(d => new Date(d.date) >= startDate);
-  };
-
-  const getSampledData = (data: HistoryPoint[]) => {
-    const MAX_POINTS = 300;
-    if (data.length <= MAX_POINTS) return data;
-    
-    const samplingInterval = Math.ceil(data.length / MAX_POINTS);
-    return data.filter((_, index) => index % samplingInterval === 0 || index === data.length - 1);
-  };
-
-  const filteredData = getFilteredData();
-  const sampledData = getSampledData(filteredData);
-
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(val);
-  };
-
-  const formatDate = (str: string) => {
-    return new Date(str).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
-  };
-
-  const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label }) => {
-    const firstItem = payload?.[0];
-    if (active && firstItem) {
-      const data = firstItem.payload;
-      const gain = data.value - data.investedAmount;
-      const gainPercent = data.investedAmount > 0 ? (gain / data.investedAmount) * 100 : 0;
-      const isPositive = gain >= 0;
-
-      return (
-        <div className="card" style={{ padding: '1rem', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)', minWidth: '220px' }}>
-          <p style={{ margin: '0 0 0.75rem 0', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>{label ? formatDate(label) : ''}</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
-              <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Current Value</span>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(data.value)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
-              <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Invested Amount</span>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(data.investedAmount)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', borderTop: '1px solid var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
-              <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Unrealized Gain</span>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: isPositive ? 'var(--success-color)' : 'var(--danger-color)' }}>
-                {formatCurrency(gain)} ({gainPercent.toFixed(2)}%)
-              </span>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
+  const filteredData = filterByRange(historyData, selectedRange);
+  const sampledData = sampleData(filteredData);
 
   return (
     <div className="card" style={{ marginBottom: '1.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h3 style={{ margin: 0 }}>Portfolio History</h3>
         <div className="segmented-control">
-          {ranges.map((range) => (
+          {RANGES.map((range) => (
             <button
               key={range}
               className={selectedRange === range ? 'active' : ''}
@@ -168,54 +103,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ portfolioId }) => {
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0 }}>Upload your portfolio to see growth over time.</p>
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={sampledData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--accent-color)" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="var(--accent-color)" stopOpacity={0}/>
-                </linearGradient>
-                <linearGradient id="colorInvested" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--text-secondary)" stopOpacity={0.1}/>
-                  <stop offset="95%" stopColor="var(--text-secondary)" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-              <XAxis 
-                dataKey="date" 
-                tickFormatter={formatDate} 
-                minTickGap={30}
-                stroke="var(--text-secondary)"
-                fontSize={12}
-              />
-              <YAxis 
-                hide 
-                domain={['auto', 'auto']}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Area 
-                type="monotone" 
-                dataKey="value" 
-                name="Current Value"
-                stroke="var(--accent-color)" 
-                strokeWidth={2}
-                fillOpacity={1} 
-                fill="url(#colorValue)" 
-                isAnimationActive={false}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="investedAmount" 
-                name="Invested Amount"
-                stroke="var(--text-secondary)" 
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                fillOpacity={1} 
-                fill="url(#colorInvested)" 
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <HistoryChartArea sampledData={sampledData} formatDate={formatDate} />
         )}
       </div>
     </div>
