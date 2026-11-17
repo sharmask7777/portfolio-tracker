@@ -21,7 +21,7 @@ export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selected
     try {
       const res = await api.get(`${API_ENDPOINTS.FAMILY}/list`);
       setFamilies(res.data);
-    } catch (_err) {
+    } catch {
       console.error('Failed to fetch families', e);
     }
   };
@@ -37,7 +37,7 @@ export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selected
       setName('');
       setShowCreate(false);
       fetchFamilies();
-    } catch (_err) {
+    } catch {
       alert('Failed to create group');
     }
   };

@@ -49,7 +49,7 @@ export const AddAssetModal: React.FC<AddAssetModalProps> = ({ onClose, onSuccess
       });
       onSuccess();
       onClose();
-    } catch (_err) {
+    } catch {
       alert('Failed to add asset');
     } finally {
       setLoading(false);
