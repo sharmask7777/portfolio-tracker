@@ -2,13 +2,18 @@ import React, { useState, useEffect } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
 import { Users, Plus, Check } from 'lucide-react';
 
+interface FamilyGroup {
+  id: string;
+  name: string;
+}
+
 interface FamilyManagerProps {
   onSelect: (groupId: string | null) => void;
   selectedId: string | null;
 }
 
 export const FamilyManager: React.FC<FamilyManagerProps> = ({ onSelect, selectedId }) => {
-  const [families, setFamilies] = useState<any[]>([]);
+  const [families, setFamilies] = useState<FamilyGroup[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
 

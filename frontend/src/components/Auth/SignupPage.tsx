@@ -25,8 +25,12 @@ const SignupPage = () => {
     try {
       await signup(email, password);
       navigate('/');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create account. Please try again.');
+    } catch (err: unknown) {
+      const errorMsg =
+        typeof err === 'object' && err !== null && 'response' in err
+          ? ((err as { response?: { data?: { error?: string } } }).response?.data?.error)
+          : undefined;
+      setError(errorMsg || 'Failed to create account. Please try again.');
     } finally {
       setLoading(false);
     }
