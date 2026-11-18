@@ -1,12 +1,13 @@
 //! Application state and router assembly.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::Router;
 use portfolio_db::InMemoryDatabase;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
+use uuid::Uuid;
 
 use crate::routes::{auth, family, fund_holdings, health, portfolio, stock_metadata, tax};
 
@@ -17,6 +18,17 @@ pub enum DbBackend {
     Postgres(sqlx::PgPool),
 }
 
+/// Active mobile device pairing session awaiting device claim.
+#[derive(Clone, Debug)]
+pub struct PairingSession {
+    /// Authenticated user identifier initiating pairing.
+    pub user_id: Uuid,
+    /// Authenticated user's email address.
+    pub email: String,
+    /// Absolute expiration timestamp (e.g. 5 minutes from generation).
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
 /// Shared application state injected into Axum route handlers.
 #[derive(Clone)]
 pub struct AppState {
@@ -25,6 +37,7 @@ pub struct AppState {
     pub jwt_secret: String,
     pub redis: Option<redis::Client>,
     pub nav_rate_limiter: Arc<RwLock<HashSet<(String, chrono::NaiveDate)>>>,
+    pub pairing_sessions: Arc<RwLock<HashMap<String, PairingSession>>>,
 }
 
 impl AppState {
@@ -36,6 +49,7 @@ impl AppState {
             jwt_secret: jwt_secret.into(),
             redis: None,
             nav_rate_limiter: Arc::new(RwLock::new(HashSet::new())),
+            pairing_sessions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -51,6 +65,7 @@ impl AppState {
             jwt_secret: jwt_secret.into(),
             redis: None,
             nav_rate_limiter: Arc::new(RwLock::new(HashSet::new())),
+            pairing_sessions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -74,6 +89,15 @@ impl AppState {
         self
     }
 
+    /// Attaches an explicit in-memory pairing sessions map (useful for hermetic tests).
+    pub fn with_pairing_sessions(
+        mut self,
+        sessions: Arc<RwLock<HashMap<String, PairingSession>>>,
+    ) -> Self {
+        self.pairing_sessions = sessions;
+        self
+    }
+
     /// Returns a reference to the in-memory database mock (or fallback instance).
     pub fn db(&self) -> Arc<InMemoryDatabase> {
         Arc::clone(&self.db)
@@ -82,6 +106,11 @@ impl AppState {
     /// Returns a clone of the in-memory NAV rate limiter shared set.
     pub fn nav_rate_limiter(&self) -> Arc<RwLock<HashSet<(String, chrono::NaiveDate)>>> {
         Arc::clone(&self.nav_rate_limiter)
+    }
+
+    /// Returns a clone of the active device pairing sessions shared map.
+    pub fn pairing_sessions(&self) -> Arc<RwLock<HashMap<String, PairingSession>>> {
+        Arc::clone(&self.pairing_sessions)
     }
 
     /// Returns an optional reference to the live PostgreSQL connection pool if configured.
@@ -99,6 +128,7 @@ pub fn create_app(state: AppState) -> Router {
         .nest("/api/health", health::routes())
         .nest("/health", health::routes())
         .nest("/api/auth", auth::routes())
+        .nest("/api/v1/auth", auth::routes())
         .nest("/api/portfolio", portfolio::routes())
         .nest("/api/tax", tax::routes())
         .nest("/api/family", family::routes())

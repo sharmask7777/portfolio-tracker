@@ -35,6 +35,12 @@ pub enum AuthError {
     #[error("User not found")]
     UserNotFound,
 
+    #[error("Invalid pairing secret")]
+    InvalidPairingSecret,
+
+    #[error("Pairing secret expired")]
+    PairingSecretExpired,
+
     #[error("Password hashing failed: {0}")]
     Bcrypt(String),
 
@@ -181,6 +187,18 @@ impl IntoResponse for ApiError {
                 StatusCode::NOT_FOUND,
                 "User not found".to_string(),
                 "USER_NOT_FOUND".to_string(),
+                None,
+            ),
+            ApiError::Auth(AuthError::InvalidPairingSecret) => (
+                StatusCode::UNAUTHORIZED,
+                "Invalid pairing secret".to_string(),
+                "AUTH_INVALID_PAIRING_SECRET".to_string(),
+                None,
+            ),
+            ApiError::Auth(AuthError::PairingSecretExpired) => (
+                StatusCode::UNAUTHORIZED,
+                "Pairing secret expired".to_string(),
+                "AUTH_PAIRING_SECRET_EXPIRED".to_string(),
                 None,
             ),
             ApiError::Auth(e) => (

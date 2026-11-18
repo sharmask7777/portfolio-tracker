@@ -5,10 +5,11 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::errors::{ApiError, AuthError};
-use crate::middleware::{AuthUser, create_jwt, hash_password, verify_password};
+use crate::middleware::{AuthUser, create_device_jwt, create_jwt, hash_password, verify_password};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -34,11 +35,51 @@ pub struct AuthResponse {
     pub user: MeResponse,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// User identity representation returned across auth and pairing endpoints.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-pub struct MeResponse {
+#[ts(rename_all = "camelCase")]
+pub struct UserResponse {
+    /// Unique user identifier.
     pub id: Uuid,
+    /// Verified email address.
     pub email: String,
+}
+
+/// Backwards-compatible alias for user profile responses.
+pub type MeResponse = UserResponse;
+
+/// Response returned upon generating a mobile pairing secret.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PairInitResponse {
+    /// Cryptographically secure random pairing secret code.
+    pub pairing_secret: String,
+    /// Absolute timestamp when the pairing secret expires.
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Request payload sent by mobile client to redeem a pairing secret.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PairClaimRequest {
+    /// One-time secret code obtained from web QR pairing code.
+    pub pairing_secret: String,
+    /// Human-readable identifier of the mobile device (e.g. "iPhone 15 Pro", "Pixel 8").
+    pub device_name: String,
+}
+
+/// Response returned upon successful pairing verification and token redemption.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PairClaimResponse {
+    /// Long-lived device JWT for API authentication.
+    pub token: String,
+    /// Authenticated user profile information.
+    pub user: UserResponse,
 }
 
 pub async fn register(
@@ -220,9 +261,127 @@ pub async fn me(
     }))
 }
 
+/// Generates a single-use device pairing secret valid for 5 minutes.
+///
+/// Requires an authenticated user session.
+pub async fn pair_init(
+    auth_user: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<PairInitResponse>, ApiError> {
+    let pairing_secret = format!("pair_{}", Uuid::new_v4().simple());
+    let now = chrono::Utc::now();
+    let expires_at = now + chrono::Duration::minutes(5);
+
+    let session = crate::state::PairingSession {
+        user_id: auth_user.user_id,
+        email: auth_user.email,
+        expires_at,
+    };
+
+    let mut sessions = state.pairing_sessions.write().await;
+    // Housekeeping: remove expired sessions
+    sessions.retain(|_, s| s.expires_at > now);
+    sessions.insert(pairing_secret.clone(), session);
+
+    Ok(Json(PairInitResponse {
+        pairing_secret,
+        expires_at,
+    }))
+}
+
+/// Redeems a device pairing secret and exchanges it for a long-lived mobile device JWT.
+///
+/// This is a public unauthenticated endpoint.
+pub async fn pair_claim(
+    State(state): State<AppState>,
+    Json(payload): Json<PairClaimRequest>,
+) -> Result<Json<PairClaimResponse>, ApiError> {
+    let secret = payload.pairing_secret.trim();
+    if secret.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Pairing secret is required".to_string(),
+        ));
+    }
+    let device_name = payload.device_name.trim();
+    if device_name.is_empty() {
+        return Err(ApiError::BadRequest("Device name is required".to_string()));
+    }
+
+    let now = chrono::Utc::now();
+    let maybe_session = {
+        let mut sessions = state.pairing_sessions.write().await;
+        // Housekeeping: retain only unexpired sessions
+        sessions.retain(|_, s| s.expires_at > now);
+        // Single-use redemption: remove session immediately
+        sessions.remove(secret)
+    };
+
+    let session = match maybe_session {
+        Some(s) if s.expires_at > now => s,
+        Some(_) => return Err(ApiError::Auth(AuthError::PairingSecretExpired)),
+        None => return Err(ApiError::Auth(AuthError::InvalidPairingSecret)),
+    };
+
+    // Verify user exists in database
+    if let Some(pool) = state.pool() {
+        #[derive(sqlx::FromRow)]
+        struct UserRow {
+            id: String,
+            email: String,
+        }
+
+        let user = sqlx::query_as::<_, UserRow>(r#"SELECT id, email FROM "User" WHERE id = $1"#)
+            .bind(session.user_id.to_string())
+            .fetch_optional(pool)
+            .await
+            .map_err(portfolio_db::error::DbError::from)?
+            .ok_or(ApiError::Auth(AuthError::UserNotFound))?;
+
+        let user_id = Uuid::parse_str(&user.id).unwrap_or(session.user_id);
+        let token = create_device_jwt(user_id, &user.email, &state.jwt_secret)?;
+
+        tracing::info!(
+            user_id = %user_id,
+            device_name = %device_name,
+            "Mobile device paired successfully"
+        );
+
+        Ok(Json(PairClaimResponse {
+            token,
+            user: UserResponse {
+                id: user_id,
+                email: user.email,
+            },
+        }))
+    } else {
+        let user = state
+            .db
+            .get_user(session.user_id)
+            .ok_or(ApiError::Auth(AuthError::UserNotFound))?;
+
+        let token = create_device_jwt(user.id, &user.email, &state.jwt_secret)?;
+
+        tracing::info!(
+            user_id = %user.id,
+            device_name = %device_name,
+            "Mobile device paired successfully"
+        );
+
+        Ok(Json(PairClaimResponse {
+            token,
+            user: UserResponse {
+                id: user.id,
+                email: user.email,
+            },
+        }))
+    }
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/register", post(register))
         .route("/login", post(login))
         .route("/me", get(me))
+        .route("/pair/init", post(pair_init))
+        .route("/pair/claim", post(pair_claim))
 }

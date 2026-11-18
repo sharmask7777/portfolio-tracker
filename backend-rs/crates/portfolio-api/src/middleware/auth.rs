@@ -29,12 +29,22 @@ pub struct Claims {
 
 /// Generates a signed JWT token valid for 7 days.
 pub fn create_jwt(user_id: Uuid, email: &str, secret: &str) -> Result<String, AuthError> {
+    create_jwt_with_expiry(user_id, email, secret, 7 * 24 * 3600)
+}
+
+/// Generates a signed JWT token with an explicit expiration period in seconds.
+pub fn create_jwt_with_expiry(
+    user_id: Uuid,
+    email: &str,
+    secret: &str,
+    valid_for_seconds: usize,
+) -> Result<String, AuthError> {
     let now = Utc::now().timestamp() as usize;
     let claims = Claims {
         sub: user_id.to_string(),
         email: email.to_string(),
         iat: now,
-        exp: now + 7 * 24 * 3600, // 7 days
+        exp: now + valid_for_seconds,
     };
     encode(
         &Header::default(),
@@ -42,6 +52,11 @@ pub fn create_jwt(user_id: Uuid, email: &str, secret: &str) -> Result<String, Au
         &EncodingKey::from_secret(secret.as_bytes()),
     )
     .map_err(|e| AuthError::Jwt(e.to_string()))
+}
+
+/// Generates a long-lived signed JWT token (valid for 365 days) for paired mobile devices.
+pub fn create_device_jwt(user_id: Uuid, email: &str, secret: &str) -> Result<String, AuthError> {
+    create_jwt_with_expiry(user_id, email, secret, 365 * 24 * 3600)
 }
 
 /// Validates a JWT token and extracts claims.
