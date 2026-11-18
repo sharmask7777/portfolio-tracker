@@ -26,7 +26,8 @@ import {
   ArrowUpDown,
   ChevronDown,
   ChevronRight,
-  Trash2
+  Trash2,
+  Smartphone
 } from 'lucide-react';
 import { XRayView } from './components/Analytics/XRayView';
 import { IntersectionView, type StockExposure } from './components/Analytics/IntersectionView';
@@ -34,6 +35,7 @@ import { TaxView } from './components/Tax/TaxView';
 import { SimulationModal } from './components/Tax/SimulationModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AddAssetModal } from './components/Dashboard/AddAssetModal';
+import { PairMobileModal } from './components/PairMobileModal';
 import { InsightsSidebar } from './components/Insights/InsightsSidebar';
 import { GoalTracker } from './components/Insights/GoalTracker';
 import { useSettings } from './contexts/SettingsContext';
@@ -90,6 +92,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [showAddAsset, setShowAddAsset] = useState(false);
+  const [showPairModal, setShowPairModal] = useState<boolean>(false);
   const [simFolio, setSimFolio] = useState<any>(null);
   const [simUnits, setSimUnits] = useState<number | null>(null);
   const [isRefetching, setIsRefetching] = useState(false);
@@ -439,6 +442,15 @@ export function Dashboard() {
           </div>
           <button onClick={toggleTheme} className="theme-toggle">
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          </button>
+          <button 
+            onClick={() => setShowPairModal(true)} 
+            className="theme-toggle"
+            title="Pair Mobile App"
+            aria-label="Pair Mobile App"
+            data-testid="pair-mobile-button"
+          >
+            <Smartphone size={20} />
           </button>
           <div style={{ height: '24px', width: '1px', backgroundColor: 'var(--border-color)', margin: '0 0.5rem' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1044,6 +1056,7 @@ export function Dashboard() {
       )}
 
       {showAddAsset && <AddAssetModal onClose={() => setShowAddAsset(false)} onSuccess={fetchSummary} profiles={profiles} selectedProfileId={selectedProfileId} />}
+      <PairMobileModal isOpen={showPairModal} onClose={() => setShowPairModal(false)} />
 
       {showUpload && (
         <div className="modal-overlay">

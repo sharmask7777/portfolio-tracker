@@ -420,4 +420,58 @@ describe('App Dashboard - Stock Intersection excludeArbitrage data flow', () => 
       expect(dot).toBeInTheDocument();
     });
   });
+
+  describe('Mobile Pairing Entry Point', () => {
+    it('opens PairMobileModal when the mobile pair button is clicked in header', async () => {
+      vi.mocked(api.get).mockImplementation((url: string) => {
+        if (url === `${API_ENDPOINTS.PORTFOLIO}/summary`) {
+          return Promise.resolve({
+            data: {
+              id: 'port-pair-1',
+              name: 'Synthetic Test Portfolio',
+              folios: [],
+              metrics: {
+                totalValue: 100000,
+                totalInvested: 80000,
+                totalGain: 20000,
+                absReturn: 25,
+                xirr: 15,
+              },
+            },
+          });
+        }
+        if (url === `${API_ENDPOINTS.FAMILY}/profiles`) {
+          return Promise.resolve({ data: [] });
+        }
+        return Promise.resolve({ data: {} });
+      });
+
+      vi.mocked(api.post).mockResolvedValue({
+        data: {
+          pairingSecret: 'test-secret-pair-modal',
+          expiresAt: new Date(Date.now() + 300 * 1000).toISOString(),
+        },
+      });
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('pair-mobile-button')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('pair-mobile-button'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(screen.getByText('Pair Mobile App')).toBeInTheDocument();
+      });
+
+      // Close modal
+      fireEvent.click(screen.getByTestId('close-pair-modal-button'));
+
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+    });
+  });
 });
