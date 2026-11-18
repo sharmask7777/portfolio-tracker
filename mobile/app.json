@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Portfolio Tracker",
+    "slug": "portfolio-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "portfolio",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.portfolio.mobile"
+    },
+    "android": {
+      "package": "com.portfolio.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-camera",
+      "expo-document-picker"
+    ]
+  }
+}

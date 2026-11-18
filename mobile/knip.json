@@ -1,0 +1,30 @@
+{
+  "$schema": "https://unpkg.com/knip@5/overview/configuration-schema.json",
+  "entry": [
+    "app/**/*.{ts,tsx}!"
+  ],
+  "project": [
+    "app/**/*.{ts,tsx}!",
+    "src/**/*.{ts,tsx}!"
+  ],
+  "ignore": [
+    "src/types/generated/**"
+  ],
+  "ignoreDependencies": [
+    "expo-updates",
+    "expo-system-ui",
+    "expo-sqlite",
+    "expo-secure-store",
+    "expo-local-authentication",
+    "expo-camera",
+    "expo-document-picker",
+    "expo-linking",
+    "expo-constants",
+    "lucide-react-native",
+    "react-native-svg",
+    "react-native-safe-area-context",
+    "react-native-screens",
+    "vitest"
+  ],
+  "ignoreExportsUsedInFile": true
+}
