@@ -507,15 +507,26 @@ async fn test_history_refresh_job_processing() {
 
     assert!(records.len() >= 2, "Should have at least 2 checkpoints");
 
-    // Verify Checkpoint 1
-    let cp1 = &records[0];
-    assert_eq!(cp1.date, NaiveDate::from_ymd_opt(2023, 1, 10).unwrap());
+    // Verify Checkpoint 1 (Transaction on 2023-01-10)
+    let cp1 = records
+        .iter()
+        .find(|r| r.date == NaiveDate::from_ymd_opt(2023, 1, 10).unwrap())
+        .expect("checkpoint 1 on 2023-01-10");
     assert_eq!(cp1.cost, dec("10000.00"));
     assert_eq!(cp1.value, dec("10000.000000"));
 
-    // Verify Checkpoint 2
-    let cp2 = &records[1];
-    assert_eq!(cp2.date, NaiveDate::from_ymd_opt(2023, 6, 15).unwrap());
+    // Verify intermediate granular checkpoints exist (e.g. month-end Jan 31, Fridays)
+    let jan_31 = records
+        .iter()
+        .find(|r| r.date == NaiveDate::from_ymd_opt(2023, 1, 31).unwrap())
+        .expect("month-end checkpoint on 2023-01-31");
+    assert_eq!(jan_31.cost, dec("10000.00"));
+
+    // Verify Checkpoint 2 (Transaction on 2023-06-15)
+    let cp2 = records
+        .iter()
+        .find(|r| r.date == NaiveDate::from_ymd_opt(2023, 6, 15).unwrap())
+        .expect("checkpoint 2 on 2023-06-15");
     assert_eq!(cp2.cost, dec("16000.00"));
     // 150 units * 120 NAV = 18,000
     assert_eq!(cp2.value, dec("18000.000000"));

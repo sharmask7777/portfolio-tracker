@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub mod cas_parser;
 pub mod history_refresh;
 pub mod nav_refresh;
+pub mod timeline_policy;
 
 pub use cas_parser::{
     normalize_tx_type, parse_cas_date, process_pdf_job, process_pdf_job_with_pool,
@@ -15,6 +16,7 @@ pub use cas_parser::{
 };
 pub use history_refresh::{process_history_refresh_job, process_history_refresh_job_with_pool};
 pub use nav_refresh::{process_nav_refresh_job, process_nav_refresh_job_with_pool};
+pub use timeline_policy::{is_checkpoint_date, is_first_day_of_month, is_last_day_of_month};
 
 /// Payload for processing uploaded CAS PDF / JSON statements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
