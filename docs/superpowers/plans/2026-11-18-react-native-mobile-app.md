@@ -31,74 +31,74 @@
 ## Implementation Tasks
 
 ### Task 1: Backend Pairing Endpoints & Contract Generation in `backend-rs`
-- [ ] Add device pairing token generation in `portfolio-api` (`POST /api/v1/auth/pair/init` returning pairing secret + expiration).
-- [ ] Add device pairing redemption in `portfolio-api` (`POST /api/v1/auth/pair/claim` exchanging pairing secret for long-lived device token).
-- [ ] Update `backend-rs/crates/portfolio-api/tests/export_bindings.rs` to export mobile-specific pairing contracts into `mobile/src/types/generated/`.
-- [ ] Run `(cd backend-rs && ./scripts/verify.sh)` to ensure Zero-I/O and hermetic backend verification pass.
+- [x] Add device pairing token generation in `portfolio-api` (`POST /api/v1/auth/pair/init` returning pairing secret + expiration).
+- [x] Add device pairing redemption in `portfolio-api` (`POST /api/v1/auth/pair/claim` exchanging pairing secret for long-lived device token).
+- [x] Update `backend-rs/crates/portfolio-api/tests/export_bindings.rs` to export mobile-specific pairing contracts into `mobile/src/types/generated/`.
+- [x] Run `(cd backend-rs && ./scripts/verify.sh)` to ensure Zero-I/O and hermetic backend verification pass.
 
 ### Task 2: Web Dashboard "Pair Mobile App" QR Code Modal
-- [ ] Create `PairMobileModal.tsx` in `frontend/src/components/` rendering a QR code containing `{ serverUrl, pairingSecret, expiresAt }`.
-- [ ] Add pairing trigger button in Web Settings / Profile page.
-- [ ] Add unit tests in `frontend/src/components/` verifying modal state and expiration countdown.
-- [ ] Verify `pnpm --filter frontend build:verify`.
+- [x] Create `PairMobileModal.tsx` in `frontend/src/components/` rendering a QR code containing `{ serverUrl, pairingSecret, expiresAt }`.
+- [x] Add pairing trigger button in Web Settings / Profile page.
+- [x] Add unit tests in `frontend/src/components/` verifying modal state and expiration countdown.
+- [x] Verify `pnpm --filter frontend build:verify`.
 
 ### Task 3: Expo Workspace Scaffolding with Fowler Maintainability Sensors
-- [ ] Initialize `mobile/` with Expo SDK, TypeScript, Expo Router, and NativeWind.
-- [ ] Configure `mobile/eslint.config.js` with maintainability sensors:
+- [x] Initialize `mobile/` with Expo SDK, TypeScript, Expo Router, and NativeWind.
+- [x] Configure `mobile/eslint.config.js` with maintainability sensors:
   - Cyclomatic complexity cap: 10
   - Max function lines: 50
   - Max parameters: 3
   - File line cap: 300
   - Architectural boundary rules (`eslint-plugin-boundaries`)
-- [ ] Configure `mobile/tsconfig.json` (`strict: true`, `noImplicitAny: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`).
-- [ ] Configure `mobile/knip.json` for production dead code checks.
-- [ ] Install packages: `expo-sqlite`, `expo-secure-store`, `expo-local-authentication`, `expo-camera`, `expo-document-picker`, `@tanstack/react-query`.
-- [ ] Verify `pnpm --filter mobile lint && pnpm --filter mobile typecheck && pnpm --filter mobile knip`.
+- [x] Configure `mobile/tsconfig.json` (`strict: true`, `noImplicitAny: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`).
+- [x] Configure `mobile/knip.json` for production dead code checks.
+- [x] Install packages: `expo-sqlite`, `expo-secure-store`, `expo-local-authentication`, `expo-camera`, `expo-document-picker`, `@tanstack/react-query`.
+- [x] Verify `pnpm --filter mobile lint && pnpm --filter mobile typecheck && pnpm --filter mobile knip`.
 
 ### Task 4: Local Storage Engine & SQLite Database Layer
-- [ ] Implement `mobile/src/db/schema.ts` with tables: `portfolios`, `folios`, `holdings`, `nav_history`, `transactions`, `sync_queue`.
-- [ ] Implement repository helpers (`mobile/src/db/repository.ts`) with small, focused functions adhering to complexity caps.
-- [ ] Write unit tests for local SQLite CRUD operations, holdings upsert, and offline fallback queries.
-- [ ] Ensure all code passes `eslint` maintainability sensors.
+- [x] Implement `mobile/src/db/schema.ts` with tables: `portfolios`, `folios`, `holdings`, `nav_history`, `transactions`, `sync_queue`.
+- [x] Implement repository helpers (`mobile/src/db/repository.ts`) with small, focused functions adhering to complexity caps.
+- [x] Write unit tests for local SQLite CRUD operations, holdings upsert, and offline fallback queries.
+- [x] Ensure all code passes `eslint` maintainability sensors.
 
 ### Task 5: Direct Public NAV Price Fetcher Service
-- [ ] Implement `mobile/src/feeds/nav-fetcher.ts` querying public endpoints (`api.mfapi.in/mf/<amfi_code>`).
-- [ ] Implement valuation calculator: `current_value = units * latest_nav`, calculating day's gain/loss against previous close.
-- [ ] Write unit tests with mock HTTP responses testing NAV updates, network retries, and offline caching.
-- [ ] Ensure sensor compliance (complexity $\le 10$, max function lines $\le 50$).
+- [x] Implement `mobile/src/feeds/nav-fetcher.ts` querying public endpoints (`api.mfapi.in/mf/<amfi_code>`).
+- [x] Implement valuation calculator: `current_value = units * latest_nav`, calculating day's gain/loss against previous close.
+- [x] Write unit tests with mock HTTP responses testing NAV updates, network retries, and offline caching.
+- [x] Ensure sensor compliance (complexity $\le 10$, max function lines $\le 50$).
 
 ### Task 6: Authentication & Pairing Flow (QR Scan + Biometric Lock)
-- [ ] Implement `mobile/src/services/auth-service.ts` using `expo-secure-store` to store server URL and device token.
-- [ ] Implement QR scanner screen `mobile/app/(auth)/pair.tsx` with camera permission handling.
-- [ ] Implement biometric lock screen `mobile/app/(auth)/lock.tsx` using `expo-local-authentication`.
-- [ ] Write unit tests testing token exchange, secure storage failure states, and biometric pass/fail flows.
+- [x] Implement `mobile/src/services/auth-service.ts` using `expo-secure-store` to store server URL and device token.
+- [x] Implement QR scanner screen `mobile/app/(auth)/pair.tsx` with camera permission handling.
+- [x] Implement biometric lock screen `mobile/app/(auth)/lock.tsx` using `expo-local-authentication`.
+- [x] Write unit tests testing token exchange, secure storage failure states, and biometric pass/fail flows.
 
 ### Task 7: Offline-First Portfolio Dashboard & Holdings Screens
-- [ ] Implement `mobile/app/(tabs)/index.tsx` (Dashboard): Net Worth card, Day's Gain/Loss, Asset Allocation summary.
-- [ ] Implement `mobile/app/(tabs)/holdings.tsx` (Holdings list): Scheme list grouped by asset class, units, current value, and day's return.
-- [ ] Implement pull-to-refresh: checks if server is reachable to sync full snapshot; if unreachable, refreshes public NAVs directly.
-- [ ] Write component tests for Dashboard and Holdings in both online and offline states using `@testing-library/react-native`.
+- [x] Implement `mobile/app/(tabs)/index.tsx` (Dashboard): Net Worth card, Day's Gain/Loss, Asset Allocation summary.
+- [x] Implement `mobile/app/(tabs)/holdings.tsx` (Holdings list): Scheme list grouped by asset class, units, current value, and day's return.
+- [x] Implement pull-to-refresh: checks if server is reachable to sync full snapshot; if unreachable, refreshes public NAVs directly.
+- [x] Write component tests for Dashboard and Holdings in both online and offline states using `@testing-library/react-native`.
 
 ### Task 8: Mobile CAS PDF Picker & Sync Outbox Queue
-- [ ] Implement `mobile/app/cas-upload.tsx` with `expo-document-picker` to select CAS PDF and securely capture PDF password.
-- [ ] Implement sync queue runner (`mobile/src/services/upload-queue.ts`):
+- [x] Implement `mobile/app/cas-upload.tsx` with `expo-document-picker` to select CAS PDF and securely capture PDF password.
+- [x] Implement sync queue runner (`mobile/src/services/upload-queue.ts`):
   - If online: dispatches multipart upload to `portfolio-api`.
   - If offline: stores file & encrypted password in queue table with status `PENDING_UPLOAD`.
-- [ ] Add status feedback UI showing upload progress and background worker ingestion results.
-- [ ] Write unit tests testing outbox queuing, online flush, and error retry handling.
+- [x] Add status feedback UI showing upload progress and background worker ingestion results.
+- [x] Write unit tests testing outbox queuing, online flush, and error retry handling.
 
 ### Task 9: Cross-Platform Mobile E2E Testing (Maestro for iOS & Android)
-- [ ] Create `mobile/e2e/config.yaml` configuring target application IDs for iOS (`com.portfolio.mobile`) and Android (`com.portfolio.mobile`).
-- [ ] Implement `mobile/e2e/flows/01-pair-device.yaml`:
+- [x] Create `mobile/e2e/config.yaml` configuring target application IDs for iOS (`com.portfolio.mobile`) and Android (`com.portfolio.mobile`).
+- [x] Implement `mobile/e2e/flows/01-pair-device.yaml`:
   - Launch app in unpaired state $\to$ verify QR scan prompt $\to$ simulate pairing token submission $\to$ assert dashboard visible.
-- [ ] Implement `mobile/e2e/flows/02-offline-navigation.yaml`:
+- [x] Implement `mobile/e2e/flows/02-offline-navigation.yaml`:
   - Simulate offline mode $\to$ launch app $\to$ assert local SQLite cached net worth and holdings render in $<100$ms without network error.
-- [ ] Implement `mobile/e2e/flows/03-cas-upload-queue.yaml`:
+- [x] Implement `mobile/e2e/flows/03-cas-upload-queue.yaml`:
   - Pick sample CAS PDF $\to$ enter password $\to$ verify queued status $\to$ simulate online transition $\to$ assert sync success toast.
-- [ ] Add `pnpm --filter mobile test:e2e` script and CI workflow integration in `.github/workflows/e2e.yml`.
+- [x] Add `pnpm --filter mobile test:e2e` script and CI workflow integration in `.github/workflows/e2e.yml`.
 
 ### Task 10: Hermetic Verification, Gate Checks & Documentation
-- [ ] Run backend verification: `(cd backend-rs && ./scripts/verify.sh)`.
-- [ ] Run web frontend verification: `pnpm --filter frontend build:verify && pnpm --filter frontend test:unit`.
-- [ ] Run mobile verification: `pnpm --filter mobile lint && pnpm --filter mobile typecheck && pnpm --filter mobile knip && pnpm --filter mobile test:unit`.
-- [ ] Write `mobile/README.md` documenting architecture, sensor thresholds, Maestro E2E test execution, and iOS/Android build steps.
+- [x] Run backend verification: `(cd backend-rs && ./scripts/verify.sh)`.
+- [x] Run web frontend verification: `pnpm --filter frontend build:verify && pnpm --filter frontend test:unit`.
+- [x] Run mobile verification: `pnpm --filter mobile lint && pnpm --filter mobile typecheck && pnpm --filter mobile knip && pnpm --filter mobile test:unit`.
+- [x] Write `mobile/README.md` documenting architecture, sensor thresholds, Maestro E2E test execution, and iOS/Android build steps.
