@@ -191,6 +191,8 @@ export default function LockScreen(): React.ReactElement {
           onPress={handleUnlock}
           disabled={isAuthenticating}
           activeOpacity={0.8}
+          testID="unlock-portfolio-btn"
+          accessibilityLabel="Unlock Portfolio"
         >
           {isAuthenticating ? (
             <ActivityIndicator color="#ffffff" size="small" />

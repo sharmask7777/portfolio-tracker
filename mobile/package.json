@@ -12,7 +12,10 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "knip": "knip --production",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e:maestro:ios": "maestro test e2e/flows/ --platform ios",
+    "test:e2e:maestro:android": "maestro test e2e/flows/ --platform android",
+    "test:e2e": "vitest run src/e2e"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.108.0",

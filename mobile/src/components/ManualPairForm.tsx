@@ -67,9 +67,16 @@ interface FormFieldProps {
   placeholder: string;
   value: string;
   onChangeText: (text: string) => void;
+  testID?: string;
 }
 
-function FormField({ label, placeholder, value, onChangeText }: FormFieldProps): React.ReactElement {
+function FormField({
+  label,
+  placeholder,
+  value,
+  onChangeText,
+  testID,
+}: FormFieldProps): React.ReactElement {
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
@@ -81,6 +88,8 @@ function FormField({ label, placeholder, value, onChangeText }: FormFieldProps):
         onChangeText={onChangeText}
         autoCapitalize="none"
         autoCorrect={false}
+        testID={testID}
+        accessibilityLabel={label}
       />
     </View>
   );
@@ -111,23 +120,27 @@ export function ManualPairForm({
         placeholder="https://portfolio.example.com"
         value={serverUrl}
         onChangeText={setServerUrl}
+        testID="server-url-input"
       />
       <FormField
         label="Pairing Secret"
         placeholder="pair_abc123..."
         value={secret}
         onChangeText={setSecret}
+        testID="pairing-secret-input"
       />
       <TouchableOpacity
         style={styles.primaryButton}
         onPress={handleSubmit}
         disabled={isPairing}
         activeOpacity={0.8}
+        testID="connect-pair-btn"
+        accessibilityLabel="Connect & Pair"
       >
         {isPairing ? (
           <ActivityIndicator color="#ffffff" size="small" />
         ) : (
-          <Text style={styles.primaryButtonText}>Connect Device</Text>
+          <Text style={styles.primaryButtonText}>Connect & Pair</Text>
         )}
       </TouchableOpacity>
       <TouchableOpacity style={styles.linkButton} onPress={onSwitchToCamera} disabled={isPairing}>

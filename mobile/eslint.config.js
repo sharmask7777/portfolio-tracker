@@ -112,6 +112,7 @@ export default defineConfig([
         { type: 'feeds', pattern: 'src/feeds' },
         { type: 'api', pattern: 'src/api' },
         { type: 'types', pattern: 'src/types' },
+        { type: 'e2e', pattern: 'src/e2e' },
       ],
     },
     rules: {

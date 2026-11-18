@@ -66,6 +66,40 @@ const styles = StyleSheet.create({
   },
 });
 
+interface PermissionPromptProps {
+  onRequestPermission: () => void;
+  onSwitchToManual: () => void;
+}
+
+function PermissionPrompt({
+  onRequestPermission,
+  onSwitchToManual,
+}: PermissionPromptProps): React.ReactElement {
+  return (
+    <View style={styles.scannerContainer}>
+      <View style={styles.permissionBox}>
+        <Text style={styles.permissionText}>Camera access is required to scan the pairing QR code.</Text>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={onRequestPermission}
+          testID="scan-qr-btn"
+          accessibilityLabel="Scan Web QR Code"
+        >
+          <Text style={styles.primaryButtonText}>Scan Web QR Code</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={onSwitchToManual}
+          testID="enter-manual-code-btn"
+          accessibilityLabel="Enter Pairing Code Manually"
+        >
+          <Text style={styles.linkButtonText}>Enter Pairing Code Manually</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 export interface ScannerViewProps {
   onScan: (scannedData: string) => void;
   isPairing: boolean;
@@ -90,17 +124,10 @@ export function ScannerView({
 
   if (!permission?.granted) {
     return (
-      <View style={styles.scannerContainer}>
-        <View style={styles.permissionBox}>
-          <Text style={styles.permissionText}>Camera access is required to scan the pairing QR code.</Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
-            <Text style={styles.primaryButtonText}>Enable Camera</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.linkButton} onPress={onSwitchToManual}>
-            <Text style={styles.linkButtonText}>Enter Code Manually</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <PermissionPrompt
+        onRequestPermission={requestPermission}
+        onSwitchToManual={onSwitchToManual}
+      />
     );
   }
 

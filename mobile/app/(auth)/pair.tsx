@@ -147,8 +147,10 @@ export default function PairScreen(): React.ReactElement {
             style={styles.linkButton}
             onPress={() => setMode('manual')}
             disabled={isPairing}
+            testID="enter-manual-code-btn"
+            accessibilityLabel="Enter Pairing Code Manually"
           >
-            <Text style={styles.linkButtonText}>Trouble scanning? Enter code manually</Text>
+            <Text style={styles.linkButtonText}>Enter Pairing Code Manually</Text>
           </TouchableOpacity>
         </>
       ) : (

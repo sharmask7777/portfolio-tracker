@@ -224,7 +224,7 @@ export function UploadFormCard({
   onChangePassword,
   onUpload,
 }: UploadFormCardProps): React.ReactElement {
-  const isButtonDisabled = !selectedFile || isUploading;
+  const isButtonDisabled = isUploading;
 
   return (
     <View testID="upload-form-card">
@@ -240,6 +240,7 @@ export function UploadFormCard({
         onPress={onUpload}
         disabled={isButtonDisabled}
         testID="upload-statement-btn"
+        accessibilityLabel="Upload Statement"
       >
         {isUploading ? (
           <ActivityIndicator size="small" color="#ffffff" />

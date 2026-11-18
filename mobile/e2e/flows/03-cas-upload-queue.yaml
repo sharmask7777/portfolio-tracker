@@ -1,0 +1,33 @@
+appId: com.portfolio.mobile
+---
+# Flow 03: CAS Upload Queue & Offline Outbox Sync
+- launchApp:
+    clearState: false
+
+# Handle unlock prompt if present
+- runFlow:
+    when:
+      visible: "Unlock Portfolio"
+    commands:
+      - tapOn: "Unlock Portfolio"
+
+# Switch to Upload tab
+- tapOn: "Upload"
+- assertVisible: "Upload CAS Statement"
+- assertVisible: "Choose CAS PDF File"
+
+# Enter synthetic PDF password
+- tapOn:
+    id: "password-input"
+- eraseText
+- inputText: "ABCDE1234F"
+
+# Tap Upload Statement to queue in offline outbox
+- tapOn: "Upload Statement"
+
+# Assert outbox status card shows queued statement
+- assertVisible: "Upload Outbox"
+- assertVisible: "Pending"
+
+# Assert Sync Now button presence and queue counter update
+- assertVisible: "Sync Now"

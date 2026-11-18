@@ -33,7 +33,9 @@ const styles = StyleSheet.create({
 function UploadHeader(): React.ReactElement {
   return (
     <View style={styles.header}>
-      <Text style={styles.title}>Upload CAS</Text>
+      <Text style={styles.title} accessibilityLabel="Upload CAS Statement">
+        Upload CAS Statement
+      </Text>
       <Text style={styles.subtitle}>
         Import Consolidated Account Statements
       </Text>
