@@ -31,3 +31,4 @@ coverage/
 target/
 parsed_cas.json
 *.cas.json
+.worktrees/

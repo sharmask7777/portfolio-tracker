@@ -1395,6 +1395,7 @@ dependencies = [
  "chrono",
  "portfolio-core",
  "portfolio-db",
+ "proptest",
  "redis",
  "reqwest",
  "rust_decimal",

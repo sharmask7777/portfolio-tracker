@@ -438,6 +438,66 @@ pub async fn upsert_portfolio_history(
     Ok(())
 }
 
+/// Fetches mapping of `folio_id` -> `Option<amfiCode>` for all folios in the given portfolio.
+pub async fn fetch_folio_amfi_codes_for_portfolio(
+    pool: &sqlx::PgPool,
+    portfolio_id: Uuid,
+) -> Result<std::collections::HashMap<Uuid, String>, DbError> {
+    let rows = sqlx::query_as::<_, (String, Option<String>)>(
+        r#"
+        SELECT f.id, a."amfiCode"
+        FROM "Folio" f
+        JOIN "Asset" a ON a.id = f."assetId"
+        WHERE f."portfolioId" = $1 AND a."amfiCode" IS NOT NULL
+        "#,
+    )
+    .bind(portfolio_id.to_string())
+    .fetch_all(pool)
+    .await?;
+
+    let mut map = std::collections::HashMap::with_capacity(rows.len());
+    for (folio_id_str, amfi_code_opt) in rows {
+        if let (Ok(folio_id), Some(amfi_code)) = (Uuid::parse_str(&folio_id_str), amfi_code_opt) {
+            map.insert(folio_id, amfi_code);
+        }
+    }
+
+    Ok(map)
+}
+
+/// Fetches the entire historical NAV series for all schemes in the portfolio from `HistoricalNAV`.
+///
+/// Returns a map of `amfiCode` -> `BTreeMap<NaiveDate, Decimal>` sorted chronologically.
+pub async fn fetch_historical_navs_for_portfolio(
+    pool: &sqlx::PgPool,
+    portfolio_id: Uuid,
+) -> Result<
+    std::collections::HashMap<String, std::collections::BTreeMap<NaiveDate, Decimal>>,
+    DbError,
+> {
+    let rows = sqlx::query_as::<_, (String, NaiveDate, Decimal)>(
+        r#"
+        SELECT a."amfiCode", h.date::date as dt, h.nav::numeric
+        FROM "Folio" f
+        JOIN "Asset" a ON a.id = f."assetId"
+        JOIN "HistoricalNAV" h ON h."amfiCode" = a."amfiCode"
+        WHERE f."portfolioId" = $1 AND h.nav > 0
+        ORDER BY a."amfiCode", dt ASC
+        "#,
+    )
+    .bind(portfolio_id.to_string())
+    .fetch_all(pool)
+    .await?;
+
+    let mut map: std::collections::HashMap<String, std::collections::BTreeMap<NaiveDate, Decimal>> =
+        std::collections::HashMap::new();
+    for (amfi_code, dt, nav) in rows {
+        map.entry(amfi_code).or_default().insert(dt, nav);
+    }
+
+    Ok(map)
+}
+
 /// Fetches the latest published market NAV for each active folio in the given portfolio from `HistoricalNAV`.
 pub async fn fetch_latest_navs_for_portfolio(
     pool: &sqlx::PgPool,
