@@ -3,7 +3,8 @@
   "entry": [
     "app/**/*.{ts,tsx}!",
     "src/db/index.ts!",
-    "src/feeds/index.ts!"
+    "src/feeds/index.ts!",
+    "src/services/index.ts!"
   ],
   "project": [
     "app/**/*.{ts,tsx}!",
