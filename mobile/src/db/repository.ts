@@ -224,6 +224,47 @@ export async function getQueueItemById(
   );
 }
 
+export interface QueueCounts {
+  pending: number;
+  completed: number;
+  failed: number;
+  total: number;
+}
+
+export async function getAllUploads(
+  db: SQLiteDatabase,
+  limit = 50,
+): Promise<SyncQueueItem[]> {
+  return db.getAllAsync<SyncQueueItem>(
+    `SELECT id, file_path, file_name, status, password_key, created_at, updated_at, retry_count
+     FROM sync_queue
+     ORDER BY created_at DESC, rowid DESC
+     LIMIT ?;`,
+    [limit],
+  );
+}
+
+export async function getQueueCounts(db: SQLiteDatabase): Promise<QueueCounts> {
+  const rows = await db.getAllAsync<{ status: SyncQueueStatus; count: number }>(
+    'SELECT status, COUNT(*) as count FROM sync_queue GROUP BY status;',
+  );
+  let pending = 0;
+  let completed = 0;
+  let failed = 0;
+  let total = 0;
+  for (const row of rows) {
+    total += row.count;
+    if (row.status === 'PENDING' || row.status === 'PROCESSING') {
+      pending += row.count;
+    } else if (row.status === 'COMPLETED') {
+      completed += row.count;
+    } else if (row.status === 'FAILED') {
+      failed += row.count;
+    }
+  }
+  return { pending, completed, failed, total };
+}
+
 export async function getPortfolioById(
   db: SQLiteDatabase,
   id: string,

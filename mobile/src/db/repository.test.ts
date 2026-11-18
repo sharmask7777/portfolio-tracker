@@ -15,6 +15,8 @@ import {
   enqueueUpload,
   updateQueueStatus,
   getQueueItemById,
+  getAllUploads,
+  getQueueCounts,
   getPortfolioById,
   getAllFolios,
   getNavHistory,
@@ -434,6 +436,39 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
       await updateQueueStatus(db, item.id, 'FAILED');
       current = await getQueueItemById(db, item.id);
       expect(current?.retry_count).toBe(2);
+    });
+
+    it('retrieves all uploads ordered by created_at DESC and aggregates queue counts', async () => {
+      const u1 = await enqueueUpload(db, {
+        filePath: '/data/cas1.pdf',
+        fileName: 'cas1.pdf',
+        createdAt: '2026-03-30T10:00:00Z',
+      });
+      const u2 = await enqueueUpload(db, {
+        filePath: '/data/cas2.pdf',
+        fileName: 'cas2.pdf',
+        createdAt: '2026-03-30T11:00:00Z',
+      });
+      const u3 = await enqueueUpload(db, {
+        filePath: '/data/cas3.pdf',
+        fileName: 'cas3.pdf',
+        createdAt: '2026-03-30T12:00:00Z',
+      });
+
+      await updateQueueStatus(db, u1.id, 'COMPLETED');
+      await updateQueueStatus(db, u2.id, 'FAILED');
+
+      const all = await getAllUploads(db);
+      expect(all).toHaveLength(3);
+      expect(all[0]?.id).toBe(u3.id);
+      expect(all[1]?.id).toBe(u2.id);
+      expect(all[2]?.id).toBe(u1.id);
+
+      const counts = await getQueueCounts(db);
+      expect(counts.total).toBe(3);
+      expect(counts.pending).toBe(1);
+      expect(counts.failed).toBe(1);
+      expect(counts.completed).toBe(1);
     });
   });
 

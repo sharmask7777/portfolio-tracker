@@ -75,10 +75,16 @@ vi.mock('expo-camera', () => ({
   CameraView: (props: Record<string, unknown>) => ({ type: 'CameraView', props }),
 }));
 
+vi.mock('expo-document-picker', () => ({
+  getDocumentAsync: vi.fn(),
+}));
+
 import { NetWorthCard } from '../../src/components/NetWorthCard';
 import { DayReturnBanner } from '../../src/components/DayReturnBanner';
 import { AssetAllocationCard } from '../../src/components/AssetAllocationCard';
 import { HoldingCard } from '../../src/components/HoldingCard';
+import { UploadFormCard } from '../../src/components/UploadFormCard';
+import { UploadQueueCard } from '../../src/components/UploadQueueCard';
 import {
   filterHoldings,
   groupHoldingsByAssetClass,
@@ -237,6 +243,45 @@ describe('Tabs Screens & Components', () => {
     it('renders UploadTabScreen tree without errors', () => {
       const screen = UploadTabScreen();
       expect(getProps(screen)['testID']).toBe('upload-screen');
+    });
+
+    it('renders UploadFormCard with picker, password field, and upload button', () => {
+      const form = UploadFormCard({
+        selectedFile: { name: 'cams_2026.pdf', uri: 'file:///cams_2026.pdf', size: 1048576 },
+        password: 'PAN',
+        isUploading: false,
+        statusMsg: { type: 'warning', text: 'Queued for upload when server reconnects' },
+        onPickDocument: vi.fn(),
+        onChangePassword: vi.fn(),
+        onUpload: vi.fn(),
+      });
+      expect(getProps(form)['testID']).toBe('upload-form-card');
+    });
+
+    it('renders UploadQueueCard with summary counts and sync button', () => {
+      const card = UploadQueueCard({
+        status: {
+          pendingCount: 2,
+          completedCount: 5,
+          failedCount: 1,
+          totalCount: 8,
+          history: [
+            {
+              id: 'q1',
+              file_path: '/cams.pdf',
+              file_name: 'cams.pdf',
+              status: 'PENDING',
+              password_key: 'KEY1',
+              created_at: '2026-04-01T10:00:00Z',
+              updated_at: '2026-04-01T10:00:00Z',
+              retry_count: 0,
+            },
+          ],
+        },
+        onSync: vi.fn(),
+        isSyncing: false,
+      });
+      expect(getProps(card)['testID']).toBe('upload-queue-card');
     });
   });
 });
