@@ -1,0 +1,35 @@
+appId: com.portfolio.mobile
+---
+# Flow 02: Offline Navigation & Biometric Security
+- launchApp:
+    clearState: false
+
+# Assert prompt for Biometric Unlock or direct dashboard render
+- runFlow:
+    when:
+      visible: "Unlock Portfolio"
+    commands:
+      - assertVisible: "Portfolio Tracker"
+      - tapOn: "Unlock Portfolio"
+
+# Verify Dashboard renders Net Worth, Asset Allocation, and Day Gain
+- assertVisible: "Dashboard"
+- assertVisible: "Total Net Worth"
+- assertVisible: "Asset Allocation"
+- assertVisible: "Day's Change"
+
+# Switch to Holdings tab and verify holdings list renders
+- tapOn: "Holdings"
+- assertVisible: "Holdings"
+- assertVisible:
+    id: "holdings-search-input"
+
+# Type into search input to filter holdings
+- tapOn:
+    id: "holdings-search-input"
+- inputText: "HDFC"
+
+# Switch to Settings tab and verify server status & offline badge
+- tapOn: "Settings"
+- assertVisible: "Server Connection"
+- assertVisible: "Offline / Standalone"

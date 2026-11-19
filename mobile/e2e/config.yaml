@@ -1,0 +1,9 @@
+# Maestro Cross-Platform E2E Configuration for Portfolio Tracker Mobile
+# Bundle Identifier for iOS and Package Name for Android
+appId: com.portfolio.mobile
+
+# Shared Environment Variables for Synthetic Verification
+env:
+  TEST_SERVER_URL: "http://localhost:8080"
+  TEST_PAIRING_SECRET: "pair_synthetic_test_secret"
+  TEST_PDF_PASSWORD: "ABCDE1234F"

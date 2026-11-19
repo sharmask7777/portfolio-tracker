@@ -1,0 +1,214 @@
+import React from 'react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  setupReactHookDispatcher,
+  resetHookState,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from './test-harness';
+import type { UploadQueueStatus } from '../services/upload-queue';
+
+const { mockStorage, mockRouter } = vi.hoisted(() => ({
+  mockStorage: new Map<string, string>(),
+  mockRouter: {
+    replace: vi.fn(),
+    push: vi.fn(),
+    back: vi.fn(),
+  },
+}));
+
+vi.mock('expo-router', () => ({
+  useRouter: () => mockRouter,
+  Tabs: Object.assign(
+    (props: Record<string, unknown>) => ({ type: 'Tabs', props }),
+    { Screen: (props: Record<string, unknown>) => ({ type: 'Tabs.Screen', props }) },
+  ),
+}));
+
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: vi.fn(async (key: string): Promise<string | null> => {
+    return mockStorage.get(key) ?? null;
+  }),
+  setItemAsync: vi.fn(async (key: string, value: string): Promise<void> => {
+    mockStorage.set(key, value);
+  }),
+  deleteItemAsync: vi.fn(async (key: string): Promise<void> => {
+    mockStorage.delete(key);
+  }),
+}));
+
+vi.mock('expo-sqlite', () => ({
+  openDatabaseAsync: vi.fn(),
+}));
+
+vi.mock('expo-document-picker', () => ({
+  getDocumentAsync: vi.fn(async () => ({
+    canceled: false,
+    assets: [
+      {
+        name: 'synthetic_cas_statement.pdf',
+        uri: 'file:///data/synthetic_cas_statement.pdf',
+        size: 204800,
+      },
+    ],
+  })),
+}));
+
+vi.mock('expo-local-authentication', () => ({
+  hasHardwareAsync: vi.fn().mockResolvedValue(true),
+  isEnrolledAsync: vi.fn().mockResolvedValue(true),
+  authenticateAsync: vi.fn().mockResolvedValue({ success: true }),
+}));
+
+vi.mock('expo-camera', () => ({
+  CameraView: (props: Record<string, unknown>) => ({ type: 'CameraView', props }),
+  useCameraPermissions: () => [{ granted: false }, vi.fn()],
+}));
+
+vi.mock('lucide-react-native', () => ({
+  LayoutDashboard: (props: Record<string, unknown>) => ({ type: 'LayoutDashboard', props }),
+  PieChart: (props: Record<string, unknown>) => ({ type: 'PieChart', props }),
+  UploadCloud: (props: Record<string, unknown>) => ({ type: 'UploadCloud', props }),
+  Settings: (props: Record<string, unknown>) => ({ type: 'Settings', props }),
+}));
+
+vi.mock('react-native', () => ({
+  StyleSheet: { create: (s: Record<string, unknown>) => s },
+  View: (props: Record<string, unknown>) => ({ type: 'View', props }),
+  Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
+  ScrollView: (props: Record<string, unknown>) => ({ type: 'ScrollView', props }),
+  TextInput: (props: Record<string, unknown>) => ({ type: 'TextInput', props }),
+  TouchableOpacity: (props: Record<string, unknown>) => ({ type: 'TouchableOpacity', props }),
+  ActivityIndicator: (props: Record<string, unknown>) => ({ type: 'ActivityIndicator', props }),
+  RefreshControl: (props: Record<string, unknown>) => ({ type: 'RefreshControl', props }),
+  Alert: { alert: vi.fn() },
+  Platform: { OS: 'ios', select: (s: Record<string, unknown>) => s['ios'] },
+}));
+
+let mockQueueStatusState: UploadQueueStatus = {
+  pendingCount: 0,
+  completedCount: 0,
+  failedCount: 0,
+  totalCount: 0,
+  history: [],
+};
+
+const mockEnqueueCasUpload = vi.fn(async () => {
+  mockQueueStatusState = {
+    pendingCount: 1,
+    completedCount: 0,
+    failedCount: 0,
+    totalCount: 1,
+    history: [
+      {
+        id: 'q_synthetic_01',
+        file_path: 'file:///data/synthetic_cas_statement.pdf',
+        file_name: 'synthetic_cas_statement.pdf',
+        status: 'PENDING',
+        password_key: 'ABCDE1234F',
+        created_at: '2026-11-18T10:00:00Z',
+        updated_at: '2026-11-18T10:00:00Z',
+        retry_count: 0,
+      },
+    ],
+  };
+  return 'q_synthetic_01';
+});
+
+const mockFlushUploadQueue = vi.fn(async () => {
+  mockQueueStatusState = {
+    pendingCount: 0,
+    completedCount: 1,
+    failedCount: 0,
+    totalCount: 1,
+    history: [
+      {
+        id: 'q_synthetic_01',
+        file_path: 'file:///data/synthetic_cas_statement.pdf',
+        file_name: 'synthetic_cas_statement.pdf',
+        status: 'COMPLETED',
+        password_key: 'ABCDE1234F',
+        created_at: '2026-11-18T10:00:00Z',
+        updated_at: '2026-11-18T10:05:00Z',
+        retry_count: 0,
+      },
+    ],
+  };
+  return { succeeded: 1, failed: 0 };
+});
+
+vi.mock('../../src/services/upload-queue', () => ({
+  enqueueCasUpload: vi.fn(async () => mockEnqueueCasUpload()),
+  flushUploadQueue: vi.fn(async () => mockFlushUploadQueue()),
+  getUploadQueueStatus: vi.fn(async () => mockQueueStatusState),
+  isServerReachable: vi.fn(async () => false),
+}));
+
+import UploadTabScreen from '../../app/(tabs)/upload';
+import { SECURE_STORE_KEYS } from '../services/auth-service';
+
+describe('Maestro Flow 03: CAS Upload Queue Simulation', () => {
+  beforeEach(() => {
+    mockStorage.clear();
+    vi.clearAllMocks();
+    resetHookState();
+    setupReactHookDispatcher();
+
+    mockQueueStatusState = {
+      pendingCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+      totalCount: 0,
+      history: [],
+    };
+
+    mockStorage.set(SECURE_STORE_KEYS.SERVER_URL, 'http://localhost:8080');
+    mockStorage.set(SECURE_STORE_KEYS.DEVICE_TOKEN, 'synthetic_device_token');
+  });
+
+  it('queues a CAS statement offline and reflects in Outbox queue with sync button', async () => {
+    // 1. Switch to Upload tab
+    render(() => <UploadTabScreen />);
+
+    // Assert "Upload CAS Statement" header and "Choose CAS PDF File" button
+    expect(screen.getByText('Upload CAS Statement')).toBeDefined();
+    expect(screen.getByText('Choose CAS PDF File')).toBeDefined();
+
+    // 2. Select document
+    const pickBtn = screen.getByText('Choose CAS PDF File');
+    fireEvent.press(pickBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('synthetic_cas_statement.pdf')).toBeDefined();
+    });
+
+    // 3. Enter synthetic PDF password (ABCDE1234F)
+    const pwdInput = screen.getByTestId('password-input');
+    fireEvent.changeText(pwdInput, 'ABCDE1234F');
+
+    // 4. Tap "Upload Statement"
+    const uploadBtn = screen.getByText('Upload Statement');
+    fireEvent.press(uploadBtn);
+
+    // 5. Assert outbox status card shows queued statement
+    await waitFor(() => {
+      expect(mockEnqueueCasUpload).toHaveBeenCalled();
+      expect(screen.getByText('Queued for upload when server reconnects')).toBeDefined();
+      expect(screen.getByText('Upload Outbox')).toBeDefined();
+      expect(screen.getByText('Pending')).toBeDefined();
+      expect(screen.getByText('PENDING')).toBeDefined();
+      expect(screen.getByText('Sync Now')).toBeDefined();
+      expect(screen.getByTestId('sync-outbox-btn')).toBeDefined();
+    });
+
+    // 6. Tap "Sync Now" to process outbox
+    const syncBtn = screen.getByTestId('sync-outbox-btn');
+    fireEvent.press(syncBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Queued for upload when server reconnects')).toBeDefined();
+    });
+  });
+});

@@ -1,0 +1,31 @@
+appId: com.portfolio.mobile
+---
+# Flow 01: Pair Device with Local / Synthetic Server
+- launchApp:
+    clearState: true
+
+# Assert initial unpaired state
+- assertVisible: "Pair with Server"
+- assertVisible: "Scan Web QR Code"
+- assertVisible: "Enter Pairing Code Manually"
+
+# Tap manual code entry
+- tapOn: "Enter Pairing Code Manually"
+
+# Enter test server URL and synthetic pairing secret
+- tapOn:
+    id: "server-url-input"
+- eraseText
+- inputText: "http://localhost:8080"
+
+- tapOn:
+    id: "pairing-secret-input"
+- eraseText
+- inputText: "pair_synthetic_test_secret"
+
+# Tap Connect & Pair
+- tapOn: "Connect & Pair"
+
+# Assert navigation to Dashboard with Net Worth Card visible
+- assertVisible: "Dashboard"
+- assertVisible: "Total Net Worth"

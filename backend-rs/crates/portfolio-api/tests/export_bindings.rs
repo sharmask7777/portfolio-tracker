@@ -5,6 +5,9 @@
     clippy::undocumented_unsafe_blocks
 )]
 
+use portfolio_api::routes::auth::{
+    PairClaimRequest, PairClaimResponse, PairInitResponse, UserResponse,
+};
 use portfolio_api::routes::holdings::HoldingsSummaryResponse;
 use portfolio_api::routes::portfolio::{DragDecompositionDto, SummaryMetrics};
 use portfolio_api::routes::tax::{
@@ -55,6 +58,16 @@ fn test_export_typescript_bindings() {
     PortfolioValuationSnapshot::export_to(output_dir.join("PortfolioValuationSnapshot.ts"))
         .expect("exported");
 
+    // Export mobile pairing bindings
+    PairInitResponse::export_all_to(&output_dir).expect("exported all deps for PairInitResponse");
+    PairClaimRequest::export_all_to(&output_dir).expect("exported all deps for PairClaimRequest");
+    PairClaimResponse::export_all_to(&output_dir).expect("exported all deps for PairClaimResponse");
+
+    PairInitResponse::export_to(output_dir.join("PairInitResponse.ts")).expect("exported");
+    PairClaimRequest::export_to(output_dir.join("PairClaimRequest.ts")).expect("exported");
+    PairClaimResponse::export_to(output_dir.join("PairClaimResponse.ts")).expect("exported");
+    UserResponse::export_to(output_dir.join("UserResponse.ts")).expect("exported");
+
     assert!(output_dir.join("SimulationSellRequest.ts").exists());
     assert!(output_dir.join("SimulationSellResponse.ts").exists());
     assert!(output_dir.join("TaxViewResponse.ts").exists());
@@ -67,4 +80,34 @@ fn test_export_typescript_bindings() {
     assert!(output_dir.join("UnrealizedLotGainDto.ts").exists());
     assert!(output_dir.join("HistoryPoint.ts").exists());
     assert!(output_dir.join("PortfolioValuationSnapshot.ts").exists());
+    assert!(output_dir.join("PairInitResponse.ts").exists());
+    assert!(output_dir.join("PairClaimRequest.ts").exists());
+    assert!(output_dir.join("PairClaimResponse.ts").exists());
+    assert!(output_dir.join("UserResponse.ts").exists());
+
+    // Stage and synchronize all generated TypeScript bindings for the mobile app
+    let mobile_output_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("mobile/src/types/generated");
+
+    fs::create_dir_all(&mobile_output_dir).expect("created mobile output dir");
+
+    for entry in fs::read_dir(&output_dir).expect("read frontend generated dir") {
+        let entry = entry.expect("valid entry");
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("ts") {
+            let dest = mobile_output_dir.join(entry.file_name());
+            fs::copy(&path, &dest).expect("copied to mobile");
+        }
+    }
+
+    assert!(mobile_output_dir.join("PairInitResponse.ts").exists());
+    assert!(mobile_output_dir.join("PairClaimRequest.ts").exists());
+    assert!(mobile_output_dir.join("PairClaimResponse.ts").exists());
+    assert!(mobile_output_dir.join("UserResponse.ts").exists());
 }

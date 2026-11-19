@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.expo/
 .env
 .DS_Store
 *.log
@@ -19,6 +20,15 @@ venv/
 !tsconfig.node.json
 !knip.json
 !frontend/knip.json
+!mobile/knip.json
+!app.json
+!mobile/app.json
+!eas.json
+!mobile/eas.json
+
+# Expo Native Prebuild Artifacts
+mobile/android/
+mobile/ios/
 !tests/fixtures/**
 !backend-rs/crates/portfolio-core/tests/fixtures/**
 !*.toml

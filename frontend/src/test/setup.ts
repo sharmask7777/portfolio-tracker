@@ -56,6 +56,8 @@ vi.mock('lucide-react', () => {
     Clock: Icon,
     Sparkles: Icon,
     ExternalLink: Icon,
+    Smartphone: Icon,
+    QrCode: Icon,
   };
 });
 

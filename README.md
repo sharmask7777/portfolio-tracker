@@ -342,6 +342,17 @@ Portfolio Tracker enforces a comprehensive, agent-native static verification par
   ```
 - **Quality Mandates:** Zero-tolerance for `NaN` displays in the UI.
 
+## 📱 Mobile App (iOS & Android)
+
+A cross-platform React Native / Expo native mobile client is located in `mobile/`. It features:
+- **Offline-First Resilience:** Instant sub-100ms startup from local SQLite (`expo-sqlite`), persisting holdings, folios, and valuations.
+- **Decoupled Public Market Feeds:** Fetches live AMFI mutual fund daily NAV updates directly on-device (`api.mfapi.in`) without requiring the self-hosted Docker server to be reachable.
+- **Hardware Biometric Lock & QR Pairing:** One-click pairing via web dashboard QR code (`/api/v1/auth/pair/init` & `claim`), secured via Keychain/KeyStore (`expo-secure-store`) and Face ID / Touch ID / Biometrics (`expo-local-authentication`).
+- **CAS Outbox Sync Queue:** Pick CAS statement PDFs on your phone (`expo-document-picker`) with encrypted password storage; uploads immediately when online or queues for upload when the server reconnects.
+- **Maintainability Sensors:** Strictly enforces Martin Fowler maintainability caps (cyclomatic complexity $\le 10$, function lines $\le 50$, parameters $\le 3$, Zero-Any rule, and architectural boundary isolation).
+
+For setup, running on simulators/emulators, and generating standalone `.apk` or iOS builds, refer to the [Mobile README](mobile/README.md).
+
 ## 📖 Maintenance
 
 - **Database Migrations:** The Rust backend features self-healing database initialization (`portfolio_db::init_schema`) executing automatically on startup—no manual `prisma migrate deploy` is needed.

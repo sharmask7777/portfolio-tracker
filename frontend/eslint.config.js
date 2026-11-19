@@ -5,6 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import boundaries from 'eslint-plugin-boundaries'
 import checkFile from 'eslint-plugin-check-file'
+import jsdoc from 'eslint-plugin-jsdoc'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 const boundaryPolicies = [
@@ -55,6 +56,7 @@ export default defineConfig([
     plugins: {
       boundaries,
       'check-file': checkFile,
+      jsdoc,
     },
     languageOptions: {
       globals: globals.browser,
@@ -115,6 +117,29 @@ export default defineConfig([
         { max: 120, skipBlankLines: true, skipComments: true, IIFEs: true },
       ],
       'max-params': ['warn', { max: 4 }],
+    },
+  },
+  {
+    files: ['src/components/PairMobileModal.tsx'],
+    rules: {
+      'jsdoc/require-jsdoc': [
+        'error',
+        {
+          publicOnly: true,
+          require: {
+            FunctionDeclaration: true,
+            FunctionExpression: true,
+            ArrowFunctionExpression: true,
+            ClassDeclaration: true,
+          },
+          contexts: [
+            'TSInterfaceDeclaration',
+            'TSTypeAliasDeclaration',
+            'ExportNamedDeclaration > VariableDeclaration',
+          ],
+        },
+      ],
+      'jsdoc/require-description': 'error',
     },
   },
   {

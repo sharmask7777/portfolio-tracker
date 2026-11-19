@@ -49,3 +49,23 @@ The annualized internal rate of return calculated from an irregular schedule of 
 *Avoid: CAGR, absolute return*
 
 XIRR treats purchases as capital outflows and redemptions along with terminal valuation as capital inflows. Duplicate or misplaced redemption entries artificially magnify early capital inflows, causing root-finding solvers to converge on severely distorted return figures.
+
+## Mobile & Distributed Client Concepts
+
+### Decoupled Daily Valuation
+A client-side evaluation pattern where a mobile or edge client recomputes asset valuations and day's returns directly from public financial feeds without requiring an active network connection to the self-hosted portfolio server.
+*Avoid: Remote valuation sync, server-dependent price refresh*
+
+Under Decoupled Daily Valuation, the mobile client holds immutable unit holdings in local SQLite storage and queries public market feeds (e.g. AMFI NAV API) to calculate `units * current_nav`, preserving offline visibility while keeping heavy historical computations anchored to the server.
+
+### Outbox Sync Queue
+A reliable, local-first transaction pattern where file uploads (such as CAS statement PDFs) and their encrypted access credentials are staged locally in an offline-durable database table before streaming to the server.
+*Avoid: Direct background upload, unbuffered file post*
+
+When the remote server is unreachable, the Outbox Sync Queue buffers statements with a `PENDING` status and auto-increments retry counts upon transient failures, guaranteeing zero lost user submissions during network transitions.
+
+### Hardware Biometric Pairing
+A two-tier authentication architecture combining short-lived, single-use cryptographically random pairing tokens (exchanged via visual QR code scanning) with long-lived device credentials stored in OS-level hardware keystores (iOS Keychain / Android KeyStore) gated by local biometric authentication.
+*Avoid: Plaintext token storage, password re-entry*
+
+Hardware Biometric Pairing allows seamless, passwordless app unlock on mobile clients while supporting self-hosted instances deployed on arbitrary local network IPs or hostnames.
