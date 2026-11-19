@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# build-local-apk.sh - Build standalone Android APK locally without cloud queue
+# build-local-apk.sh - Build standalone Android APK locally with network resilience
 # ==============================================================================
 set -euo pipefail
 
@@ -16,9 +16,24 @@ if [ ! -d "android" ]; then
     npx expo prebuild --platform android --clean
 fi
 
-# 2. Build Release APK via Gradle
+# 2. Increase Gradle wrapper network timeout and ensure stable distribution URL
+WRAPPER_PROPS="${MOBILE_DIR}/android/gradle/wrapper/gradle-wrapper.properties"
+if [ -f "${WRAPPER_PROPS}" ]; then
+    # Increase network timeout from 10000ms to 60000ms to prevent SocketTimeoutException
+    if grep -q "networkTimeout=" "${WRAPPER_PROPS}"; then
+        sed -i '' 's/networkTimeout=.*/networkTimeout=60000/' "${WRAPPER_PROPS}" || true
+    else
+        echo "networkTimeout=60000" >> "${WRAPPER_PROPS}"
+    fi
+fi
+
+# 3. Build Release APK via Gradle
 echo "==> Compiling Release APK via Gradle..."
 cd android
+
+# Pass Gradle JVM arguments with higher connection and read timeouts
+export GRADLE_OPTS="-Dorg.gradle.internal.http.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=120000 -Djava.net.preferIPv4Stack=true"
+
 ./gradlew assembleRelease --no-daemon
 
 APK_PATH="${MOBILE_DIR}/android/app/build/outputs/apk/release/app-release.apk"

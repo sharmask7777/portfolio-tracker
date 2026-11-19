@@ -82,6 +82,16 @@ describe('PairMobileModal Component', () => {
 
   it('ticks countdown timer correctly', async () => {
     vi.useFakeTimers();
+    const fixedNow = new Date('2026-01-01T12:00:00Z').getTime();
+    vi.setSystemTime(fixedNow);
+
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        pairingSecret: 'test-secret-1234567890abcdef',
+        expiresAt: new Date(fixedNow + 300 * 1000).toISOString(),
+      },
+    });
+
     render(<PairMobileModal isOpen={true} onClose={vi.fn()} />);
 
     // Let the initial promise resolve
