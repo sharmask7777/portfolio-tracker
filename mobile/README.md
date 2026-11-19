@@ -181,6 +181,50 @@ If the device camera is unavailable, tap **"Enter Pairing Code Manually"** on th
 
 ---
 
+## 🚀 Building & Publishing Standalone APKs
+
+For users who want a standalone, production-ready Android APK without app store registration:
+
+### 1. One-Command Cloud Build (EAS Build - Recommended)
+No 4GB+ Android SDK installation required locally:
+```bash
+cd mobile
+pnpm eas:build:android
+```
+EAS builds the release APK on Expo's infrastructure and returns a direct download link and terminal QR code to install on your phone.
+
+### 2. Automated GitHub Actions Release
+When PRs are merged to `main`, `.github/workflows/mobile-publish.yml` automatically compiles the standalone release APK on an Ubuntu runner with Android SDK pre-configured and attaches `portfolio-tracker-release.apk` directly to GitHub Releases.
+
+### 3. Local Native Build (macOS / Linux)
+If you have Android Studio / Android SDK installed (`ANDROID_HOME` configured):
+```bash
+cd mobile
+./scripts/build-local-apk.sh
+```
+
+---
+
+## 🔄 Silent Over-The-Air (OTA) Updates
+
+To continuously update the mobile app without manually distributing or reinstalling new APKs:
+
+### 1. Account Setup
+1. Create an Expo account at [expo.dev/signup](https://expo.dev/signup).
+2. Log in from terminal: `cd mobile && npx eas-cli login`.
+3. Initialize the project: `cd mobile && npx eas-cli project:init`.
+4. Create an Access Token at [expo.dev/settings/access-tokens](https://expo.dev/settings/access-tokens) and save it as `EXPO_TOKEN` in GitHub Repository Secrets.
+
+### 2. Publishing Silent Updates
+Pushing updates to all user devices is instant:
+```bash
+cd mobile
+pnpm eas:update
+```
+Devices running the installed APK will silently download the update bundle on launch and apply it on next launch, or check on demand via Settings.
+
+---
+
 ## 🧪 Testing & Verification
 
 The mobile application utilizes a comprehensive dual-tier testing strategy ensuring 100% verifiable correctness both in simulator-free CI environments and on real device emulators.
