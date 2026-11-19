@@ -30,6 +30,12 @@ const styles = StyleSheet.create({
   },
 });
 
+/**
+ * Initial splash and routing screen. Checks hardware-backed credential storage
+ * to redirect either to biometric lock screen (if paired) or to QR pairing (if unpaired).
+ *
+ * @returns React Native splash screen element
+ */
 export default function SplashScreen(): React.ReactElement {
   const router = useRouter();
 

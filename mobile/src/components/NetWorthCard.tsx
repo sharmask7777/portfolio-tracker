@@ -2,10 +2,17 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { formatInr, formatPct } from '../services/portfolio-service';
 
+/**
+ * Props for {@link NetWorthCard}.
+ */
 export interface NetWorthCardProps {
+  /** Total portfolio current market valuation amount in INR */
   totalCurrentValue: number;
+  /** Total invested principal cost amount in INR */
   totalInvestedCost: number;
+  /** Unrealized profit or loss in INR */
   unrealizedGain: number;
+  /** Unrealized return percentage */
   unrealizedGainPct: number;
 }
 
@@ -60,6 +67,12 @@ const styles = StyleSheet.create({
   },
 });
 
+/**
+ * Overview card showing total portfolio net worth, invested principal, and unrealized returns.
+ *
+ * @param props - Component properties {@link NetWorthCardProps}
+ * @returns React Native element
+ */
 export function NetWorthCard({
   totalCurrentValue,
   totalInvestedCost,

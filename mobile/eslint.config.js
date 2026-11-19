@@ -2,6 +2,7 @@ import js from '@eslint/js'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 import boundaries from 'eslint-plugin-boundaries'
+import jsdoc from 'eslint-plugin-jsdoc'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 const boundaryPolicies = [
@@ -88,6 +89,7 @@ export default defineConfig([
     ],
     plugins: {
       boundaries,
+      jsdoc,
     },
     languageOptions: {
       globals: {
@@ -136,6 +138,29 @@ export default defineConfig([
         { max: 50, skipBlankLines: true, skipComments: true },
       ],
       'max-params': ['error', 3],
+    },
+  },
+  {
+    files: ['src/components/**/*.{ts,tsx}'],
+    rules: {
+      'jsdoc/require-jsdoc': [
+        'error',
+        {
+          publicOnly: true,
+          require: {
+            FunctionDeclaration: true,
+            FunctionExpression: true,
+            ArrowFunctionExpression: true,
+            ClassDeclaration: true,
+          },
+          contexts: [
+            'TSInterfaceDeclaration',
+            'TSTypeAliasDeclaration',
+            'ExportNamedDeclaration > VariableDeclaration',
+          ],
+        },
+      ],
+      'jsdoc/require-description': 'error',
     },
   },
   {

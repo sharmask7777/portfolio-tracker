@@ -237,6 +237,12 @@ function renderSecurityCard(): React.ReactElement {
   );
 }
 
+/**
+ * Settings tab screen. Displays self-hosted server pairing details, online status indicator,
+ * OTA app update check, biometric preferences, and device unpairing controls.
+ *
+ * @returns React Native settings tab element
+ */
 export default function SettingsScreen(): React.ReactElement {
   const { state, handleDisconnect } = useSettingsState();
 

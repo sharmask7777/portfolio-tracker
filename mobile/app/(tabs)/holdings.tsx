@@ -248,6 +248,12 @@ function HoldingsLoadingView(): React.ReactElement {
   );
 }
 
+/**
+ * Holdings list screen. Displays individual fund holdings with live NAVs and values,
+ * searchable by scheme name and filterable by asset class.
+ *
+ * @returns React Native holdings tab element
+ */
 export default function HoldingsScreen(): React.ReactElement {
   const {
     holdings,

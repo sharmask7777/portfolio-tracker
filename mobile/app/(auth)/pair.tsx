@@ -117,6 +117,12 @@ function usePairingFlow() {
 /**
  * QR Scanner and Manual Pairing Screen for connecting the mobile app to portfolio-api.
  */
+/**
+ * Device pairing screen. Allows pairing the mobile device with the self-hosted backend
+ * either by scanning the Web Dashboard QR code or by entering credentials manually.
+ *
+ * @returns React Native pairing screen element
+ */
 export default function PairScreen(): React.ReactElement {
   const { mode, setMode, isPairing, errorMessage, handleScan, handleManualSubmit } =
     usePairingFlow();

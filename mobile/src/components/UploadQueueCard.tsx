@@ -8,9 +8,15 @@ import {
 } from 'react-native';
 import type { UploadQueueStatus, SyncQueueItem, SyncQueueStatus } from '../services/upload-queue';
 
+/**
+ * Props for {@link UploadQueueCard}.
+ */
 export interface UploadQueueCardProps {
+  /** Aggregated outbox queue counts and history list, or null if loading */
   status: UploadQueueStatus | null;
+  /** Callback fired to trigger immediate network flush of pending uploads */
   onSync: () => void;
+  /** Whether outbox network synchronization is currently running */
   isSyncing: boolean;
 }
 
@@ -186,6 +192,13 @@ function renderSummaryPills(status: UploadQueueStatus): React.ReactElement {
   );
 }
 
+/**
+ * Card displaying offline statement upload outbox status, pending count pills,
+ * manual "Sync Now" button, and recent upload history with status badges.
+ *
+ * @param props - Component properties {@link UploadQueueCardProps}
+ * @returns React Native element
+ */
 export function UploadQueueCard({
   status,
   onSync,

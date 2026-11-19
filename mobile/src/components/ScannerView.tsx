@@ -100,12 +100,25 @@ function PermissionPrompt({
   );
 }
 
+/**
+ * Props for {@link ScannerView}.
+ */
 export interface ScannerViewProps {
+  /** Callback invoked when a QR code barcode is scanned */
   onScan: (scannedData: string) => void;
+  /** Whether pairing HTTP request is actively in progress */
   isPairing: boolean;
+  /** Callback to switch to manual code input form */
   onSwitchToManual: () => void;
 }
 
+/**
+ * QR code scanner view backed by Expo Camera, displaying viewfinder overlay
+ * and fallback permission request prompt with manual pairing link.
+ *
+ * @param props - Component properties {@link ScannerViewProps}
+ * @returns React Native element
+ */
 export function ScannerView({
   onScan,
   isPairing,

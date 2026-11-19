@@ -2,9 +2,15 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { formatInr, formatPct } from '../services/portfolio-service';
 
+/**
+ * Props for {@link DayReturnBanner}.
+ */
 export interface DayReturnBannerProps {
+  /** Day's absolute gain or loss amount in INR */
   dayGain: number;
+  /** Day's gain or loss percentage */
   dayGainPct: number;
+  /** Whether the valuation was calculated via local AMFI feed offline */
   isOfflineFallback?: boolean;
 }
 
@@ -51,6 +57,13 @@ const styles = StyleSheet.create({
   },
 });
 
+/**
+ * Banner displaying today's gain or loss amount and percentage,
+ * with optional indicator when calculated using public AMFI feeds.
+ *
+ * @param props - Component properties {@link DayReturnBannerProps}
+ * @returns React Native element
+ */
 export function DayReturnBanner({
   dayGain,
   dayGainPct,

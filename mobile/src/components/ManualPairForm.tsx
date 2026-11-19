@@ -95,12 +95,25 @@ function FormField({
   );
 }
 
+/**
+ * Props for {@link ManualPairForm}.
+ */
 export interface ManualPairFormProps {
+  /** Callback fired with serverUrl and pairingSecret upon form submission */
   onSubmit: (serverUrl: string, secret: string) => void;
+  /** Whether pairing HTTP request is actively in progress */
   isPairing: boolean;
+  /** Callback to switch back to QR camera scanner view */
   onSwitchToCamera: () => void;
 }
 
+/**
+ * Fallback form allowing manual entry of server URL and pairing secret
+ * when camera is unavailable or QR scanning is not preferred.
+ *
+ * @param props - Component properties {@link ManualPairFormProps}
+ * @returns React Native element
+ */
 export function ManualPairForm({
   onSubmit,
   isPairing,

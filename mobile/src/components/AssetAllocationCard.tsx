@@ -2,8 +2,13 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { formatInr, type AssetAllocationItem } from '../services/portfolio-service';
 
+/**
+ * Props for {@link AssetAllocationCard}.
+ */
 export interface AssetAllocationCardProps {
+  /** Array of asset allocation breakdown items */
   allocation: AssetAllocationItem[];
+  /** Total portfolio current valuation amount in INR */
   totalValue: number;
 }
 
@@ -85,6 +90,13 @@ function renderAllocationRow(item: AssetAllocationItem): React.ReactElement {
   );
 }
 
+/**
+ * Card displaying portfolio asset class distribution (Equity, Debt, Hybrid, Commodities)
+ * as a horizontal segmented progress bar with legend.
+ *
+ * @param props - Component properties {@link AssetAllocationCardProps}
+ * @returns React Native element
+ */
 export function AssetAllocationCard({
   allocation,
   totalValue: _totalValue,

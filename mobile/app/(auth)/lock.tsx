@@ -160,6 +160,12 @@ function useBiometricLock() {
 /**
  * Biometric lock screen displayed when returning to the app with existing credentials.
  */
+/**
+ * Biometric lock screen protecting financial data. Prompts for Face ID / Touch ID / Fingerprint
+ * to access portfolio records, with option to unpair and wipe local device cache.
+ *
+ * @returns React Native lock screen element
+ */
 export default function LockScreen(): React.ReactElement {
   const { userEmail, isAuthenticating, errorMessage, handleUnlock, handleDisconnect } =
     useBiometricLock();

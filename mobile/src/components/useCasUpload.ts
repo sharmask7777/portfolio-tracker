@@ -11,19 +11,35 @@ import {
   type StatusMessage,
 } from '../services/upload-actions';
 
+/**
+ * Return interface for {@link useCasUpload}.
+ */
 export interface UseCasUploadReturn {
+  /** The currently selected CAS PDF file or null */
   selectedFile: SelectedFile | null;
+  /** State setter for selected CAS file */
   setSelectedFile: (file: SelectedFile | null) => void;
+  /** Plaintext password input for opening the statement PDF */
   password: string;
+  /** State setter for password input */
   setPassword: (pwd: string) => void;
+  /** Whether statement upload is actively executing */
   isUploading: boolean;
+  /** Whether outbox background sync is actively executing */
   isSyncing: boolean;
+  /** Current user-facing banner status message (info/success/error) */
   statusMsg: StatusMessage | null;
+  /** State setter for banner status message */
   setStatusMsg: (msg: StatusMessage | null) => void;
+  /** Aggregated outbox queue counts and item history */
   queueStatus: UploadQueueStatus | null;
+  /** Launches native system document picker to select a CAS PDF */
   handlePickDocument: () => Promise<void>;
+  /** Submits the selected statement with password (uploading online or queuing offline) */
   handleUpload: () => Promise<void>;
+  /** Manually triggers network flush of pending uploads in outbox */
   handleSyncOutbox: () => Promise<void>;
+  /** Refreshes outbox queue state from local SQLite */
   refreshQueue: () => Promise<void>;
 }
 
@@ -78,6 +94,12 @@ function useFileSelection(
   return { selectedFile, setSelectedFile, handlePickDocument };
 }
 
+/**
+ * Custom React hook encapsulating CAS statement document picking, password state,
+ * immediate online submission or offline outbox staging, and background sync polling.
+ *
+ * @returns State and actions conforming to {@link UseCasUploadReturn}
+ */
 export function useCasUpload(): UseCasUploadReturn {
   const [password, setPassword] = useState('');
   const [isUploading, setIsUploading] = useState(false);

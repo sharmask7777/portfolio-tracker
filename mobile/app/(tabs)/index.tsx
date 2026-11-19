@@ -140,6 +140,12 @@ function DashboardHeader(): React.ReactElement {
   );
 }
 
+/**
+ * Main mobile dashboard screen. Displays total net worth, today's returns banner,
+ * asset allocation breakdown, and pull-to-refresh sync against public AMFI feeds and server.
+ *
+ * @returns React Native dashboard tab element
+ */
 export default function DashboardScreen(): React.ReactElement {
   const { summary, isLoading, isRefreshing, handleRefresh } = useDashboardData();
 

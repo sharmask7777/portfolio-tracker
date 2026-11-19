@@ -11,13 +11,23 @@ import type { SelectedFile, StatusMessage } from '../services/upload-actions';
 
 export type { SelectedFile, StatusMessage };
 
+/**
+ * Props for {@link UploadFormCard}.
+ */
 export interface UploadFormCardProps {
+  /** Selected CAS PDF file metadata or null if no file selected */
   selectedFile: SelectedFile | null;
+  /** Encrypted PDF password string */
   password: string;
+  /** Whether statement upload is currently in progress */
   isUploading: boolean;
+  /** Feedback status message (success/error/info) */
   statusMsg: StatusMessage | null;
+  /** Callback fired to launch native document picker */
   onPickDocument: () => void;
+  /** Callback fired when password text changes */
   onChangePassword: (text: string) => void;
+  /** Callback fired to submit CAS PDF for processing */
   onUpload: () => void;
 }
 
@@ -215,6 +225,13 @@ function renderPasswordCard(
   );
 }
 
+/**
+ * Card containing file picker button, selected file display, encrypted password field,
+ * and submit button for uploading CAMS/KFintech CAS statement PDFs.
+ *
+ * @param props - Component properties {@link UploadFormCardProps}
+ * @returns React Native element
+ */
 export function UploadFormCard({
   selectedFile,
   password,

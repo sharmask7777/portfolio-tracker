@@ -6,7 +6,11 @@ import {
   type EnrichedHolding,
 } from '../services/portfolio-service';
 
+/**
+ * Props for {@link HoldingCard}.
+ */
 export interface HoldingCardProps {
+  /** Enriched holding entity with latest NAV, current value, and day change */
   holding: EnrichedHolding;
 }
 
@@ -66,6 +70,12 @@ const styles = StyleSheet.create({
   },
 });
 
+/**
+ * Card displaying a single mutual fund scheme holding with current value, units, NAV, and day change.
+ *
+ * @param props - Component properties {@link HoldingCardProps}
+ * @returns React Native element
+ */
 export function HoldingCard({ holding }: HoldingCardProps): React.ReactElement {
   const isDayPositive = holding.dayChange >= 0;
   const dayStyle = isDayPositive ? styles.positive : styles.negative;

@@ -4,15 +4,27 @@ import { X, RefreshCw, Smartphone, Clock, AlertCircle } from 'lucide-react';
 import api from '../api';
 import type { PairInitResponse } from '../types/generated/PairInitResponse';
 
+/**
+ * Props for the {@link PairMobileModal} component.
+ */
 export interface PairMobileModalProps {
+  /** Controls modal dialog visibility */
   isOpen: boolean;
+  /** Callback fired when the user closes or dismisses the modal */
   onClose: () => void;
+  /** Optional server endpoint override (defaults to current window.location.origin) */
   serverUrl?: string;
 }
 
+/**
+ * Payload encoded in the mobile pairing QR code.
+ */
 export interface MobilePairingPayload {
+  /** The accessible URL of the backend API server */
   serverUrl: string;
+  /** Single-use pairing secret token */
   pairingSecret: string;
+  /** ISO timestamp when the pairing secret expires */
   expiresAt: string;
 }
 
@@ -413,6 +425,14 @@ const ValidityTimerBar: React.FC<ValidityTimerBarProps> = ({
   </div>
 );
 
+/**
+ * Modal dialog displaying a cryptographically signed QR code to pair a mobile companion app.
+ *
+ * Implements WCAG 2.1 AA focus trap, Escape key closing, and live expiration timer.
+ *
+ * @param props - Component properties {@link PairMobileModalProps}
+ * @returns Accessible pairing modal dialog or null if closed
+ */
 export const PairMobileModal: React.FC<PairMobileModalProps> = ({
   isOpen,
   onClose,

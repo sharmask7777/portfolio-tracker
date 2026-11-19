@@ -43,6 +43,12 @@ function UploadHeader(): React.ReactElement {
   );
 }
 
+/**
+ * CAS PDF document upload tab screen. Features native document picking,
+ * encrypted password capture, immediate online submission, and offline outbox queuing.
+ *
+ * @returns React Native upload tab element
+ */
 export default function UploadTabScreen(): React.ReactElement {
   const {
     selectedFile,
