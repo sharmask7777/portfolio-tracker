@@ -23,6 +23,8 @@ venv/
 !mobile/knip.json
 !app.json
 !mobile/app.json
+!eas.json
+!mobile/eas.json
 !tests/fixtures/**
 !backend-rs/crates/portfolio-core/tests/fixtures/**
 !*.toml

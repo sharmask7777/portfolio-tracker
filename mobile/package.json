@@ -13,6 +13,11 @@
     "typecheck": "tsc --noEmit",
     "knip": "knip --production",
     "test": "vitest run",
+    "build:apk": "bash scripts/build-local-apk.sh",
+    "build:ios": "bash scripts/build-local-ios.sh",
+    "eas:build:android": "npx eas-cli build --platform android --profile preview",
+    "eas:build:ios": "npx eas-cli build --platform ios --profile preview",
+    "eas:build:all": "npx eas-cli build --platform all --profile preview",
     "test:e2e:maestro:ios": "maestro test e2e/flows/ --platform ios",
     "test:e2e:maestro:android": "maestro test e2e/flows/ --platform android",
     "test:e2e": "vitest run src/e2e"
