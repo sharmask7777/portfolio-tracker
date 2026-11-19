@@ -25,7 +25,11 @@ echo "⚡ [3/4] Running Frontend Sensors & Verification..."
 pnpm --filter frontend build:verify
 pnpm --filter frontend test:unit
 
-# 4. Summary
+# 4. Mobile Client Sensors & Coverage Enforcement
+echo "📱 [4/5] Running Mobile Sensors & Test Coverage Guardrail..."
+pnpm --filter mobile build:verify
+
+# 5. Summary
 echo "================================================================================"
 echo "🎉 All Multi-Language Maintainability Sensors & Verification Stages PASSED!"
 echo "================================================================================"
