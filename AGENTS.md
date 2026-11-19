@@ -51,6 +51,8 @@ For all non-trivial feature development or analytical enhancements, agents MUST 
    - Audits mathematical reconciliation, Value Conservation Law ($\Delta \le ₹0.01$), sum-of-parts completeness, tail holding reconciliation for undisclosed portfolios, denominator clarity (distinguishing `% of Portfolio`, `% of Asset Class`, `% of Parent`), and statutory/hedging segregation (such as cash-futures arbitrage funds).
 3. **Architecture & Code Quality Auditor (`code-quality-auditor`)**:
    - Enforces the Zero-Any rule, exact optional property safety (`exactOptionalPropertyTypes: true`), layer boundary isolation (`eslint-plugin-boundaries`), knip production zero-dead-code compliance, and self-documenting code.
+4. **Mobile & Offline Invariant Auditor (`mobile-offline-auditor`)**:
+   - Enforces offline-first resilience (cold startup $< 100$ms from SQLite without blocking network), Zero-Any and maintainability sensor compliance in `mobile/` (complexity $\le 10$, function length $\le 50$, parameters $\le 3$, file lines $\le 300$), contract parity with Rust (`mobile/src/types/generated/`), and secure hardware token storage (`expo-secure-store`).
 
 ### 7. Test Suite Catalogs & Invariant Documentation
 Comprehensive documentation of all backend and frontend test suites, financial invariants, and extension procedures is maintained in the following catalogs:
