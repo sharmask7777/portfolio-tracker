@@ -17,13 +17,28 @@
         "backgroundColor": "#ffffff"
       }
     },
+    "updates": {
+      "url": "https://u.expo.dev/default-project-id",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 3000
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "plugins": [
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",
       "expo-local-authentication",
       "expo-camera",
-      "expo-document-picker"
+      "expo-document-picker",
+      [
+        "expo-updates",
+        {
+          "username": "shaleen"
+        }
+      ]
     ]
   }
 }

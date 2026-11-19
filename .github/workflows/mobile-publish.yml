@@ -85,3 +85,32 @@ jobs:
           files: dist-apk/portfolio-tracker-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-ota-updates:
+    name: Publish Silent Over-The-Air (OTA) Update
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    needs: build-and-publish-apk
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js & pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish OTA Update to Devices (if EXPO_TOKEN configured)
+        working-directory: mobile
+        if: env.EXPO_TOKEN != ''
+        run: npx eas-cli update --auto --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
