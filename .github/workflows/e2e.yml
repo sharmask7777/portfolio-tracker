@@ -25,6 +25,14 @@ jobs:
     - name: Run Hermetic Unit Tests (Frontend)
       run: pnpm --filter frontend test:unit
 
+    - name: Run Mobile Maintainability Sensors & Tests
+      run: |
+        pnpm --filter mobile lint
+        pnpm --filter mobile typecheck
+        pnpm --filter mobile knip
+        pnpm --filter mobile test
+        pnpm --filter mobile test:e2e
+
     - name: Setup Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
