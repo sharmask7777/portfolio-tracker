@@ -9,7 +9,12 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.portfolio.mobile"
+      "bundleIdentifier": "com.portfolio.mobile",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "package": "com.portfolio.mobile",
@@ -34,7 +39,7 @@
       "policy": "appVersion"
     },
     "plugins": [
-      "./plugins/withCleartextTraffic",
+      "./plugins/withCleartextTraffic.cjs",
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",

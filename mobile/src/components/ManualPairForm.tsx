@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
+import { classifyTransportSecurity, TransportSecurityInfo } from '../services/transport-security';
 
 const styles = StyleSheet.create({
   manualCard: {
@@ -60,6 +61,36 @@ const styles = StyleSheet.create({
     color: '#60a5fa',
     fontSize: 14,
   },
+  warningBanner: {
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 14,
+    borderWidth: 1,
+  },
+  warningLocal: {
+    backgroundColor: '#2e2008',
+    borderColor: '#d97706',
+  },
+  warningPublic: {
+    backgroundColor: '#3b0d0c',
+    borderColor: '#dc2626',
+  },
+  warningText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  warningTextLocal: {
+    color: '#fbbf24',
+  },
+  warningTextPublic: {
+    color: '#f87171',
+  },
+  badgeSecure: {
+    fontSize: 11,
+    color: '#34d399',
+    marginTop: 4,
+    fontWeight: '500',
+  },
 });
 
 interface FormFieldProps {
@@ -95,6 +126,29 @@ function FormField({
   );
 }
 
+function SecurityBanner({ info }: { info: TransportSecurityInfo | null }): React.ReactElement | null {
+  if (!info) return null;
+  if (info.level === 'SECURE') {
+    return (
+      <Text style={styles.badgeSecure} testID="transport-secure-badge">
+        🔒 Secure TLS Connection
+      </Text>
+    );
+  }
+  const isLocal = info.level === 'LOCAL_INSECURE';
+  return (
+    <View
+      style={[styles.warningBanner, isLocal ? styles.warningLocal : styles.warningPublic]}
+      testID={isLocal ? 'transport-warning-local' : 'transport-warning-public'}
+    >
+      <Text style={[styles.warningText, isLocal ? styles.warningTextLocal : styles.warningTextPublic]}>
+        {isLocal ? '⚠️ ' : '🛑 '}
+        {info.warningMessage}
+      </Text>
+    </View>
+  );
+}
+
 /**
  * Props for {@link ManualPairForm}.
  */
@@ -110,9 +164,6 @@ export interface ManualPairFormProps {
 /**
  * Fallback form allowing manual entry of server URL and pairing secret
  * when camera is unavailable or QR scanning is not preferred.
- *
- * @param props - Component properties {@link ManualPairFormProps}
- * @returns React Native element
  */
 export function ManualPairForm({
   onSubmit,
@@ -121,6 +172,10 @@ export function ManualPairForm({
 }: ManualPairFormProps): React.ReactElement {
   const [serverUrl, setServerUrl] = useState('');
   const [secret, setSecret] = useState('');
+
+  const securityInfo = useMemo(() => {
+    return serverUrl.trim() ? classifyTransportSecurity(serverUrl) : null;
+  }, [serverUrl]);
 
   const handleSubmit = useCallback(() => {
     onSubmit(serverUrl, secret);
@@ -135,6 +190,7 @@ export function ManualPairForm({
         onChangeText={setServerUrl}
         testID="server-url-input"
       />
+      <SecurityBanner info={securityInfo} />
       <FormField
         label="Pairing Secret"
         placeholder="pair_abc123..."
