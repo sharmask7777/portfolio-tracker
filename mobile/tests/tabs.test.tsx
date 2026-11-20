@@ -69,6 +69,7 @@ vi.mock('lucide-react-native', () => ({
   PieChart: (props: Record<string, unknown>) => ({ type: 'PieChart', props }),
   UploadCloud: (props: Record<string, unknown>) => ({ type: 'UploadCloud', props }),
   Settings: (props: Record<string, unknown>) => ({ type: 'Settings', props }),
+  ReceiptIndianRupee: (props: Record<string, unknown>) => ({ type: 'ReceiptIndianRupee', props }),
 }));
 
 vi.mock('expo-camera', () => ({
