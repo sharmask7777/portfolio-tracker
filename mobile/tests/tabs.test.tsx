@@ -79,21 +79,21 @@ vi.mock('expo-document-picker', () => ({
   getDocumentAsync: vi.fn(),
 }));
 
-import { NetWorthCard } from '../../src/components/NetWorthCard';
-import { DayReturnBanner } from '../../src/components/DayReturnBanner';
-import { AssetAllocationCard } from '../../src/components/AssetAllocationCard';
-import { HoldingCard } from '../../src/components/HoldingCard';
-import { UploadFormCard } from '../../src/components/UploadFormCard';
-import { UploadQueueCard } from '../../src/components/UploadQueueCard';
+import { NetWorthCard } from '../src/components/NetWorthCard';
+import { DayReturnBanner } from '../src/components/DayReturnBanner';
+import { AssetAllocationCard } from '../src/components/AssetAllocationCard';
+import { HoldingCard } from '../src/components/HoldingCard';
+import { UploadFormCard } from '../src/components/UploadFormCard';
+import { UploadQueueCard } from '../src/components/UploadQueueCard';
 import {
   filterHoldings,
   groupHoldingsByAssetClass,
   type EnrichedHolding,
-} from '../../src/services/portfolio-service';
-import DashboardScreen from './index';
-import HoldingsScreen from './holdings';
-import SettingsScreen from './settings';
-import UploadTabScreen from './upload';
+} from '../src/services/portfolio-service';
+import DashboardScreen from '../app/(tabs)/index';
+import HoldingsScreen from '../app/(tabs)/holdings';
+import SettingsScreen from '../app/(tabs)/settings';
+import UploadTabScreen from '../app/(tabs)/upload';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
