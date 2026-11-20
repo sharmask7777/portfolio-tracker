@@ -8,3 +8,4 @@ export * from './portfolio-calculations';
 export * from './tax-harvesting';
 export * from './hierarchy-builder';
 export * from './consolidation';
+export * from './analytics-service';

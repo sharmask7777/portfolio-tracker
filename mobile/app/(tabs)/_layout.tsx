@@ -2,6 +2,7 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import {
   LayoutDashboard,
+  Briefcase,
   PieChart,
   ReceiptIndianRupee,
   UploadCloud,
@@ -27,7 +28,8 @@ const screenOptions = {
 
 const TAB_CONFIG = [
   { name: 'index', title: 'Dashboard', Icon: LayoutDashboard },
-  { name: 'holdings', title: 'Holdings', Icon: PieChart },
+  { name: 'holdings', title: 'Holdings', Icon: Briefcase },
+  { name: 'analytics', title: 'Analytics', Icon: PieChart },
   { name: 'tax', title: 'Tax', Icon: ReceiptIndianRupee },
   { name: 'upload', title: 'Upload', Icon: UploadCloud },
   { name: 'settings', title: 'Settings', Icon: Settings },
