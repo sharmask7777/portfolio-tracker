@@ -4,5 +4,7 @@ export * from './upload-queue';
 export * from './upload-actions';
 export * from './app-update-service';
 export * from './ota-update-service';
-
-
+export * from './portfolio-calculations';
+export * from './tax-harvesting';
+export * from './hierarchy-builder';
+export * from './consolidation';
