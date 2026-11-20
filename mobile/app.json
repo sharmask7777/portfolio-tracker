@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "com.portfolio.mobile",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
@@ -33,6 +34,7 @@
       "policy": "appVersion"
     },
     "plugins": [
+      "./plugins/withCleartextTraffic",
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",
