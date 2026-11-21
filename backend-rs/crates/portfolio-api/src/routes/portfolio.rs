@@ -24,12 +24,13 @@ use portfolio_core::xray::{
     classify_stock_sector, resolve_security_classification,
 };
 use portfolio_db::entities::{
-    AssetEntity, FolioEntity, PortfolioEntity, TransactionEntity, UploadJobEntity, UploadJobStatus,
+    AssetEntity, FolioEntity, ManagedProfileEntity, PortfolioEntity, TransactionEntity,
+    UploadJobEntity, UploadJobStatus,
 };
 use portfolio_db::error::DbError;
 use portfolio_db::repositories::{
-    FundHoldingsRepository, PortfolioRepository, SqlxFundHoldingsRepo, SqlxStockMetadataRepo,
-    StockMetadataRepository, TransactionRepository,
+    FamilyRepository, FundHoldingsRepository, PortfolioRepository, SqlxFundHoldingsRepo,
+    SqlxStockMetadataRepo, StockMetadataRepository, TransactionRepository,
 };
 
 use crate::errors::ApiError;
@@ -248,6 +249,39 @@ pub struct EnrichedFolio {
     pub metrics: FolioMetrics,
 }
 
+/// Display-ready summary metrics and attribution for an individual PAN.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PanBreakdownDto {
+    /// Permanent Account Number (PAN) identifier.
+    pub pan: String,
+    /// Friendly investor profile or member name.
+    pub member_name: String,
+    /// Total capital invested across folios linked to this PAN.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub invested_amount: Decimal,
+    /// Current gross valuation of positions held under this PAN.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub current_value: Decimal,
+    /// Aggregated 1-day nominal price change in Rupees.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub day_change: Decimal,
+    /// Day change percentage relative to previous close.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub day_change_percentage: Decimal,
+    /// Portfolio-weighted internal rate of return across all cash flows for this PAN.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub xirr: Decimal,
+    /// Total count of active folios belonging to this PAN.
+    pub folio_count: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsolidatedSummaryResponse {
@@ -255,6 +289,7 @@ pub struct ConsolidatedSummaryResponse {
     pub name: String,
     pub folios: Vec<EnrichedFolio>,
     pub closed_folios: Vec<EnrichedFolio>,
+    pub pan_breakdowns: Vec<PanBreakdownDto>,
     #[serde(with = "rust_decimal::serde::float")]
     pub tax_slab: Decimal,
     pub metrics: SummaryMetrics,
@@ -392,6 +427,69 @@ pub async fn fetch_user_portfolios(
         Ok(portfolios)
     } else {
         Ok(state.db.list_user_portfolios(user_id).await?)
+    }
+}
+
+/// Fetches all managed investor profiles associated with a user ID.
+///
+/// Dispatches to the active persistence layer (PostgreSQL or in-memory database).
+/// When querying the default synthetic mock user (`00000000-0000-0000-0000-000000000001`),
+/// if no profiles exist directly, falls back to the user with the most profile records.
+pub async fn fetch_user_managed_profiles(
+    state: &AppState,
+    user_id: Uuid,
+) -> Result<Vec<ManagedProfileEntity>, ApiError> {
+    if let Some(pool) = state.pool() {
+        let mut profiles = sqlx::query_as::<_, ManagedProfileEntity>(
+            r#"
+            SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
+                   "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                   "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
+            FROM "ManagedProfile"
+            WHERE "userId" = $1
+            ORDER BY "createdAt" ASC
+            "#,
+        )
+        .bind(user_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map_err(DbError::from)?;
+
+        if profiles.is_empty()
+            && user_id
+                == Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap_or_default()
+        {
+            let maybe_first_user = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT "userId" FROM "ManagedProfile" GROUP BY "userId" ORDER BY count(*) DESC LIMIT 1
+                "#,
+            )
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some(first_user_id) = maybe_first_user {
+                profiles = sqlx::query_as::<_, ManagedProfileEntity>(
+                    r#"
+                    SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
+                           "createdAt" AT TIME ZONE 'UTC' as "createdAt",
+                           "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
+                    FROM "ManagedProfile"
+                    WHERE "userId" = $1
+                    ORDER BY "createdAt" ASC
+                    "#,
+                )
+                .bind(first_user_id)
+                .fetch_all(pool)
+                .await
+                .map_err(DbError::from)?;
+            }
+        }
+
+        Ok(profiles)
+    } else {
+        Ok(state.db.list_profiles(user_id).await?)
     }
 }
 
@@ -1841,6 +1939,7 @@ pub async fn get_portfolio_summary(
             name: res_name,
             folios: Vec::new(),
             closed_folios: Vec::new(),
+            pan_breakdowns: Vec::new(),
             tax_slab: slab_value,
             metrics: SummaryMetrics {
                 total_invested: Decimal::ZERO,
@@ -2073,11 +2172,90 @@ pub async fn get_portfolio_summary(
     .ok()
     .map(DragDecompositionDto::from);
 
+    // Compute display-ready per-PAN breakdowns
+    let user_profiles = fetch_user_managed_profiles(&state, auth_user.user_id)
+        .await
+        .unwrap_or_default();
+
+    let mut pan_groups: std::collections::BTreeMap<String, Vec<&EnrichedFolio>> =
+        std::collections::BTreeMap::new();
+    for folio in &active_folios {
+        let pan_key = folio
+            .pan
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("PAN_NOT_SPECIFIED")
+            .to_uppercase();
+        pan_groups.entry(pan_key).or_default().push(folio);
+    }
+
+    let mut pan_breakdowns = Vec::with_capacity(pan_groups.len());
+    for (pan, group_folios) in pan_groups {
+        let member_name = user_profiles
+            .iter()
+            .find(|p| p.pan.trim().eq_ignore_ascii_case(&pan))
+            .map_or_else(
+                || {
+                    if pan == "PAN_NOT_SPECIFIED" {
+                        "Primary Investor".to_string()
+                    } else if !user_profiles.is_empty() {
+                        user_profiles[0].name.clone()
+                    } else {
+                        "Primary Investor".to_string()
+                    }
+                },
+                |p| p.name.clone(),
+            );
+
+        let mut pan_invested = Decimal::ZERO;
+        let mut pan_current_value = Decimal::ZERO;
+        let mut pan_day_change = Decimal::ZERO;
+        let mut pan_cash_flows = Vec::new();
+
+        for folio in &group_folios {
+            pan_invested += folio.metrics.invested_amount;
+            pan_current_value += folio.metrics.current_value;
+            pan_day_change += folio.metrics.day_change;
+            for tx in &folio.transactions {
+                if let Ok(core_tx) = tx.to_core_transaction() {
+                    pan_cash_flows.push(core_tx.to_cash_flow());
+                }
+            }
+        }
+
+        let pan_prev_val = pan_current_value - pan_day_change;
+        let pan_day_change_pct = if pan_prev_val > Decimal::ZERO {
+            (pan_day_change / pan_prev_val) * Decimal::from(100)
+        } else {
+            Decimal::ZERO
+        };
+
+        if pan_current_value > Decimal::ZERO {
+            pan_cash_flows.push(CashFlow::new(today, pan_current_value));
+        }
+        let pan_xirr = calculate_xirr(&pan_cash_flows)
+            .ok()
+            .unwrap_or(Decimal::ZERO);
+
+        pan_breakdowns.push(PanBreakdownDto {
+            pan,
+            member_name,
+            invested_amount: pan_invested,
+            current_value: pan_current_value,
+            day_change: pan_day_change,
+            day_change_percentage: pan_day_change_pct,
+            xirr: pan_xirr,
+            folio_count: group_folios.len(),
+        });
+    }
+
     Ok(Json(ConsolidatedSummaryResponse {
         id: res_id,
         name: res_name,
         folios: active_folios,
         closed_folios,
+        pan_breakdowns,
         tax_slab: slab_value,
         metrics: SummaryMetrics {
             total_invested,

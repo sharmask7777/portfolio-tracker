@@ -27,5 +27,6 @@ export * from './PairInitResponse';
 export * from './PairClaimRequest';
 export * from './PairClaimResponse';
 export * from './UserResponse';
+export * from './PanBreakdownDto';
 export type DragDecomposition = import('./DragDecompositionDto').DragDecompositionDto;
 export type HarvestTicket = import('./HarvestTicketResponse').HarvestTicketResponse;
