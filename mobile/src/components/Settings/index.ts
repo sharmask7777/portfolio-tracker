@@ -5,3 +5,4 @@
  */
 
 export * from './AppUpdateCard';
+export * from './FamilyProfilesCard';

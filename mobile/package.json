@@ -27,6 +27,7 @@
     "test:e2e": "vitest run src/e2e"
   },
   "dependencies": {
+    "@portfolio/core-view": "workspace:*",
     "@tanstack/react-query": "^5.108.0",
     "expo": "~58.0.26",
     "expo-camera": "~58.0.14",

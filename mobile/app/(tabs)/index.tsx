@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,11 +7,23 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
+import { usePortfolioScope } from '@portfolio/core-view';
 import {
-  getDashboardSummary,
+  getEnrichedHoldings,
   refreshPortfolio,
+  summarizeHoldings,
   type DashboardSummary,
+  type EnrichedHolding,
 } from '../../src/services/portfolio-service';
+import {
+  getStoredFamilyProfiles,
+  getStoredFolios,
+  filterHoldingsForProfile,
+  type FamilyProfile,
+  type FolioEntity,
+} from '../../src/services/family-service';
+import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
+import { ScopeSelectorHeader } from '../../src/components/Navigation';
 import {
   DEFAULT_ASSUMPTIONS,
   type RealityCheckAssumptions,
@@ -27,29 +39,11 @@ import {
 } from '../../src/components/Dashboard';
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#09090b',
-  },
-  content: {
-    padding: 20,
-    paddingTop: 56,
-  },
-  header: {
-    marginBottom: 16,
-  },
-  greeting: {
-    fontSize: 13,
-    color: '#a1a1aa',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#f4f4f5',
-  },
+  container: { flex: 1, backgroundColor: '#09090b' },
+  content: { padding: 20, paddingTop: 48 },
+  header: { marginBottom: 16 },
+  greeting: { fontSize: 13, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  title: { fontSize: 26, fontWeight: '800', color: '#f4f4f5' },
   emptyCard: {
     backgroundColor: '#18181b',
     borderRadius: 16,
@@ -60,37 +54,30 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 20,
   },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#f4f4f5',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#a1a1aa',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#09090b',
-  },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#f4f4f5', marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, color: '#a1a1aa', textAlign: 'center', lineHeight: 20 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#09090b' },
 });
 
 function useDashboardData() {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
+  const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
+  const [folios, setFolios] = useState<FolioEntity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const data = await getDashboardSummary();
-      setSummary(data);
+      const [enriched, storedProfiles, storedFolios] = await Promise.all([
+        getEnrichedHoldings(),
+        getStoredFamilyProfiles(),
+        getStoredFolios(),
+      ]);
+      setHoldings(enriched);
+      setProfiles(storedProfiles);
+      setFolios(storedFolios);
     } catch {
-      // Retain fallback summary on error
+      // Fallback
     } finally {
       setIsLoading(false);
     }
@@ -102,17 +89,14 @@ function useDashboardData() {
       await refreshPortfolio();
       await loadData();
     } catch {
-      // Retain existing state on refresh error
+      // Fallback
     } finally {
       setIsRefreshing(false);
     }
   }, [loadData]);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
-  return { summary, isLoading, isRefreshing, handleRefresh };
+  useEffect(() => { void loadData(); }, [loadData]);
+  return { holdings, profiles, folios, isLoading, isRefreshing, handleRefresh };
 }
 
 const defaultSummary: DashboardSummary = {
@@ -133,18 +117,8 @@ function renderEmptyState(): React.ReactElement {
     <View style={styles.emptyCard} testID="dashboard-empty-state">
       <Text style={styles.emptyTitle}>No Holdings Found</Text>
       <Text style={styles.emptySubtitle}>
-        Your portfolio is empty. Pair with a server or upload a CAS statement to
-        track your investments offline.
+        Your portfolio is empty. Pair with a server or upload a CAS statement to track your investments offline.
       </Text>
-    </View>
-  );
-}
-
-function DashboardHeader(): React.ReactElement {
-  return (
-    <View style={styles.header}>
-      <Text style={styles.greeting}>Offline Portfolio</Text>
-      <Text style={styles.title}>Dashboard</Text>
     </View>
   );
 }
@@ -159,38 +133,14 @@ interface RealityCheckSectionProps {
   data: DashboardSummary;
 }
 
-/**
- * Reality Check section rendering mode toggle, assumptions modal, and teardown banner.
- *
- * @param props Reality check configuration and data
- * @returns React Native element
- */
-function RealityCheckSection({
-  realityCheckMode,
-  setRealityCheckMode,
-  assumptions,
-  setAssumptions,
-  isAssumptionsOpen,
-  setIsAssumptionsOpen,
-  data,
-}: RealityCheckSectionProps): React.ReactElement {
-  const nominalReturnPct = data.totalInvestedCost > 0
-    ? (data.unrealizedGain / data.totalInvestedCost)
-    : 0;
+function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElement {
+  const { realityCheckMode, setRealityCheckMode, assumptions, setAssumptions, isAssumptionsOpen, setIsAssumptionsOpen, data } = props;
+  const nominalReturnPct = data.totalInvestedCost > 0 ? (data.unrealizedGain / data.totalInvestedCost) : 0;
 
   return (
     <>
-      <RealityCheckModeToggle
-        realityCheckMode={realityCheckMode}
-        onToggle={setRealityCheckMode}
-        onOpenAssumptions={() => setIsAssumptionsOpen(true)}
-      />
-      <AssumptionsModal
-        visible={isAssumptionsOpen}
-        onClose={() => setIsAssumptionsOpen(false)}
-        assumptions={assumptions}
-        onSaveAssumptions={setAssumptions}
-      />
+      <RealityCheckModeToggle realityCheckMode={realityCheckMode} onToggle={setRealityCheckMode} onOpenAssumptions={() => setIsAssumptionsOpen(true)} />
+      <AssumptionsModal visible={isAssumptionsOpen} onClose={() => setIsAssumptionsOpen(false)} assumptions={assumptions} onSaveAssumptions={setAssumptions} />
       {realityCheckMode && (
         <RealityCheckBanner
           nominalValue={data.totalCurrentValue}
@@ -214,76 +164,60 @@ interface DashboardCardsProps {
   setIsAssumptionsOpen: (open: boolean) => void;
 }
 
-/**
- * Renders the dashboard card sections inside the scroll container.
- *
- * @param props Dashboard state and data
- * @returns React Native element
- */
-function DashboardCards({
-  data,
-  realityCheckMode,
-  setRealityCheckMode,
-  assumptions,
-  setAssumptions,
-  isAssumptionsOpen,
-  setIsAssumptionsOpen,
-}: DashboardCardsProps): React.ReactElement {
+function DashboardCards(props: DashboardCardsProps): React.ReactElement {
+  const { data } = props;
   const hasHoldings = data.holdingsCount > 0;
 
   return (
     <>
-      <DashboardHeader />
-      <RealityCheckSection
-        realityCheckMode={realityCheckMode}
-        setRealityCheckMode={setRealityCheckMode}
-        assumptions={assumptions}
-        setAssumptions={setAssumptions}
-        isAssumptionsOpen={isAssumptionsOpen}
-        setIsAssumptionsOpen={setIsAssumptionsOpen}
-        data={data}
-      />
-      <NetWorthCard
-        totalCurrentValue={data.totalCurrentValue}
-        totalInvestedCost={data.totalInvestedCost}
-        unrealizedGain={data.unrealizedGain}
-        unrealizedGainPct={data.unrealizedGainPct}
-      />
-      <DayReturnBanner
-        dayGain={data.dayGain}
-        dayGainPct={data.dayGainPct}
-        isOfflineFallback={data.isOfflineFallback}
-      />
-      <HistoricalTrendChart
-        currentValue={data.totalCurrentValue}
-        investedCost={data.totalInvestedCost}
-      />
-      {hasHoldings ? (
-        <AssetAllocationCard
-          allocation={data.assetAllocation}
-          totalValue={data.totalCurrentValue}
-        />
-      ) : (
-        renderEmptyState()
-      )}
+      <View style={styles.header}>
+        <Text style={styles.greeting}>Offline Portfolio</Text>
+        <Text style={styles.title}>Dashboard</Text>
+      </View>
+      <RealityCheckSection {...props} />
+      <NetWorthCard totalCurrentValue={data.totalCurrentValue} totalInvestedCost={data.totalInvestedCost} unrealizedGain={data.unrealizedGain} unrealizedGainPct={data.unrealizedGainPct} />
+      <DayReturnBanner dayGain={data.dayGain} dayGainPct={data.dayGainPct} isOfflineFallback={data.isOfflineFallback} />
+      <HistoricalTrendChart currentValue={data.totalCurrentValue} investedCost={data.totalInvestedCost} />
+      {hasHoldings ? <AssetAllocationCard allocation={data.assetAllocation} totalValue={data.totalCurrentValue} /> : renderEmptyState()}
     </>
   );
 }
 
+function useFilteredSummary(holdings: EnrichedHolding[], profiles: FamilyProfile[], folios: FolioEntity[]) {
+  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+  const activeProfile = useMemo(() => {
+    if (!scopeState.activeProfileId) return null;
+    return profiles.find((p) => p.id === scopeState.activeProfileId) ?? null;
+  }, [scopeState.activeProfileId, profiles]);
+
+  const filteredHoldings = useMemo(
+    () => filterHoldingsForProfile(activeProfile, holdings, folios),
+    [activeProfile, holdings, folios]
+  );
+
+  const summary = useMemo(() => {
+    if (filteredHoldings.length === 0) return defaultSummary;
+    return { ...summarizeHoldings(filteredHoldings), isOfflineFallback: false };
+  }, [filteredHoldings]);
+
+  return { scopeState, summary };
+}
+
 /**
- * Main mobile dashboard screen. Displays total net worth, today's returns banner,
- * Reality Check mode toggle & waterfall teardown, Historical Valuation Trend chart,
- * asset allocation breakdown, and pull-to-refresh sync against public AMFI feeds and server.
+ * Main mobile dashboard screen. Displays top-level ScopeSelectorHeader,
+ * net worth, today's returns banner, Reality Check mode toggle & waterfall teardown,
+ * Historical Valuation Trend chart, and asset allocation breakdown.
  *
  * @returns React Native dashboard tab element
  */
 export default function DashboardScreen(): React.ReactElement {
-  const { summary, isLoading, isRefreshing, handleRefresh } = useDashboardData();
+  const { holdings, profiles, folios, isLoading, isRefreshing, handleRefresh } = useDashboardData();
+  const { scopeState, summary } = useFilteredSummary(holdings, profiles, folios);
   const [realityCheckMode, setRealityCheckMode] = useState(false);
   const [assumptions, setAssumptions] = useState<RealityCheckAssumptions>(DEFAULT_ASSUMPTIONS);
   const [isAssumptionsOpen, setIsAssumptionsOpen] = useState(false);
 
-  if (isLoading && !summary) {
+  if (isLoading && holdings.length === 0) {
     return (
       <View style={styles.center} testID="dashboard-loading">
         <ActivityIndicator size="large" color="#3b82f6" />
@@ -292,28 +226,29 @@ export default function DashboardScreen(): React.ReactElement {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      testID="dashboard-scroll"
-      refreshControl={
-        <RefreshControl
-          refreshing={isRefreshing}
-          onRefresh={handleRefresh}
-          tintColor="#3b82f6"
-          colors={['#3b82f6']}
-        />
-      }
-    >
-      <DashboardCards
-        data={summary ?? defaultSummary}
-        realityCheckMode={realityCheckMode}
-        setRealityCheckMode={setRealityCheckMode}
-        assumptions={assumptions}
-        setAssumptions={setAssumptions}
-        isAssumptionsOpen={isAssumptionsOpen}
-        setIsAssumptionsOpen={setIsAssumptionsOpen}
+    <View style={styles.container}>
+      <ScopeSelectorHeader
+        scope={scopeState.scope}
+        profiles={profiles}
+        onSelectConsolidated={scopeState.setConsolidated}
+        onSelectMember={scopeState.setMemberScope}
+        totalFolios={folios.length}
       />
-    </ScrollView>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        testID="dashboard-scroll"
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor="#3b82f6" colors={['#3b82f6']} />}
+      >
+        <DashboardCards
+          data={summary}
+          realityCheckMode={realityCheckMode}
+          setRealityCheckMode={setRealityCheckMode}
+          assumptions={assumptions}
+          setAssumptions={setAssumptions}
+          isAssumptionsOpen={isAssumptionsOpen}
+          setIsAssumptionsOpen={setIsAssumptionsOpen}
+        />
+      </ScrollView>
+    </View>
   );
 }

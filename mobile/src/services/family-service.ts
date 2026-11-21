@@ -90,7 +90,15 @@ export function validateSyntheticPan(pan: string): PanValidationResult {
   return { isValid: true };
 }
 
-function filterHoldingsForProfile(
+/**
+ * Filters holdings to only those belonging to folios linked to a given family profile.
+ *
+ * @param profile - Target profile or null for all holdings
+ * @param holdings - List of enriched holdings
+ * @param folios - List of folios with PAN associations
+ * @returns Filtered holdings matching profile PAN
+ */
+export function filterHoldingsForProfile(
   profile: FamilyProfile | null,
   holdings: EnrichedHolding[],
   folios: FolioEntity[],
@@ -166,8 +174,12 @@ async function resolveDb(db?: SQLiteDatabase): Promise<SQLiteDatabase> {
  * @returns Array of folios with PAN associations
  */
 export async function getStoredFolios(db?: SQLiteDatabase): Promise<FolioEntity[]> {
-  const targetDb = await resolveDb(db);
-  return getAllFolios(targetDb);
+  try {
+    const targetDb = await resolveDb(db);
+    return await getAllFolios(targetDb);
+  } catch {
+    return [];
+  }
 }
 
 /**

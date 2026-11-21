@@ -105,7 +105,8 @@ import {
   ProfileSwitcher,
 } from '../src/components/Family';
 import { AddMemberModal } from '../src/components/Family/AddMemberModal';
-import FamilyScreen from '../app/(tabs)/family';
+import { FamilyProfilesCard } from '../src/components/Settings/FamilyProfilesCard';
+import SettingsScreen from '../app/(tabs)/settings';
 import TabsLayout from '../app/(tabs)/_layout';
 import { Alert } from 'react-native';
 
@@ -516,13 +517,18 @@ describe('Family Profiles & Multi-PAN Management Suite', () => {
     });
   });
 
-  describe('Family Tab Screen Navigation & Layout', () => {
-    it('renders FamilyScreen tree with profile switcher, metrics, and member list', () => {
-      const screen = FamilyScreen();
-      expect(getProps(screen)['testID']).toBe('family-screen');
+  describe('Family Profiles Management in Settings & Tabs Layout', () => {
+    it('renders FamilyProfilesCard with member list and add member button', () => {
+      const card = FamilyProfilesCard();
+      expect(getProps(card)['testID']).toBe('settings-family-profiles-card');
     });
 
-    it('registers the Family tab with Users icon in TabsLayout', () => {
+    it('renders SettingsScreen tree including FamilyProfilesCard', () => {
+      const screen = SettingsScreen();
+      expect(screen).toBeDefined();
+    });
+
+    it('verifies TabsLayout does not contain retired family tab', () => {
       const layout = TabsLayout();
       expect(layout).toBeDefined();
       const props = getProps(layout);
@@ -531,9 +537,7 @@ describe('Family Profiles & Multi-PAN Management Suite', () => {
       const familyScreen = children.find(
         (c) => getProps(c)['name'] === 'family',
       );
-      expect(familyScreen).toBeDefined();
-      const options = getProps(familyScreen!)['options'] as Record<string, unknown>;
-      expect(options['title']).toBe('Family');
+      expect(familyScreen).toBeUndefined();
     });
   });
 });

@@ -6,6 +6,7 @@ import {
   ScrollView,
   RefreshControl,
 } from 'react-native';
+import { usePortfolioScope } from '@portfolio/core-view';
 import {
   SvgTreemap,
   StockOverlapTable,
@@ -16,6 +17,15 @@ import {
   type EnrichedHolding,
 } from '../../src/services/portfolio-service';
 import {
+  getStoredFamilyProfiles,
+  getStoredFolios,
+  filterHoldingsForProfile,
+  type FamilyProfile,
+  type FolioEntity,
+} from '../../src/services/family-service';
+import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
+import { ScopeSelectorHeader } from '../../src/components/Navigation';
+import {
   buildPortfolioHierarchy,
   type HierarchyNode,
   type StockExposure,
@@ -25,74 +35,20 @@ import { deriveAnalyticsFromHoldings } from '../../src/services/analytics-servic
 import { formatIndianRupee } from '../../src/services/hierarchy-formatters';
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#09090b',
-  },
-  content: {
-    padding: 20,
-    paddingTop: 56,
-  },
-  header: {
-    marginBottom: 20,
-  },
-  category: {
-    fontSize: 12,
-    color: '#a1a1aa',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#f4f4f5',
-  },
-  allocationSection: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#a1a1aa',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 10,
-  },
-  allocationGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  allocationCard: {
-    flex: 1,
-    minWidth: 100,
-    backgroundColor: '#18181b',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  allocationName: {
-    fontSize: 11,
-    color: '#a1a1aa',
-    marginBottom: 4,
-  },
-  allocationValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#f4f4f5',
-    marginBottom: 2,
-  },
-  allocationPct: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
+  container: { flex: 1, backgroundColor: '#09090b' },
+  content: { padding: 20, paddingTop: 48 },
+  header: { marginBottom: 20 },
+  category: { fontSize: 12, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  title: { fontSize: 26, fontWeight: '800', color: '#f4f4f5' },
+  allocationSection: { marginBottom: 20 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
+  allocationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  allocationCard: { flex: 1, minWidth: 100, backgroundColor: '#18181b', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#27272a' },
+  allocationName: { fontSize: 11, color: '#a1a1aa', marginBottom: 4 },
+  allocationValue: { fontSize: 14, fontWeight: '700', color: '#f4f4f5', marginBottom: 2 },
+  allocationPct: { fontSize: 12, fontWeight: '600' },
 });
 
-/**
- * Properties for allocation summary card.
- */
 export interface AllocationCardProps {
   name: string;
   value: number;
@@ -100,12 +56,6 @@ export interface AllocationCardProps {
   color: string;
 }
 
-/**
- * Single card showing metric for an asset class.
- *
- * @param props Card properties
- * @returns Card element
- */
 export function AllocationCard({ name, value, pct, color }: AllocationCardProps): React.ReactElement {
   return (
     <View style={styles.allocationCard} key={name}>
@@ -116,20 +66,7 @@ export function AllocationCard({ name, value, pct, color }: AllocationCardProps)
   );
 }
 
-/**
- * Properties for grid of allocation cards.
- */
-export interface AllocationGridProps {
-  xrayData: XRayData;
-}
-
-/**
- * Grid rendering cards for all macro asset allocations.
- *
- * @param props Grid properties
- * @returns Grid element
- */
-export function AllocationCardsGrid({ xrayData }: AllocationGridProps): React.ReactElement {
+export function AllocationCardsGrid({ xrayData }: { xrayData: XRayData }): React.ReactElement {
   const alloc = xrayData.assetAllocation;
   const items: AllocationCardProps[] = [
     { name: 'Equity', value: alloc.equity.value, pct: alloc.equity.percentage, color: '#38bdf8' },
@@ -150,11 +87,6 @@ export function AllocationCardsGrid({ xrayData }: AllocationGridProps): React.Re
   );
 }
 
-/**
- * Header section for analytics screen.
- *
- * @returns Header element
- */
 export function AnalyticsHeader(): React.ReactElement {
   return (
     <View style={styles.header}>
@@ -167,27 +99,63 @@ export function AnalyticsHeader(): React.ReactElement {
 function useAnalyticsData() {
   const [refreshing, setRefreshing] = useState(false);
   const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
+  const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
+  const [folios, setFolios] = useState<FolioEntity[]>([]);
 
   const loadData = useCallback(async () => {
     try {
-      const enriched = await getEnrichedHoldings();
+      const [enriched, storedProfiles, storedFolios] = await Promise.all([
+        getEnrichedHoldings(),
+        getStoredFamilyProfiles(),
+        getStoredFolios(),
+      ]);
       setHoldings(enriched);
+      setProfiles(storedProfiles);
+      setFolios(storedFolios);
     } catch {
-      // Retain existing state
+      // Retain state
     }
   }, []);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
+  useEffect(() => { void loadData(); }, [loadData]);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
   }, [loadData]);
 
-  return { refreshing, onRefresh, holdings };
+  return { refreshing, onRefresh, holdings, profiles, folios };
+}
+
+interface AnalyticsStateInput {
+  holdings: EnrichedHolding[];
+  profiles: FamilyProfile[];
+  folios: FolioEntity[];
+}
+
+function useAnalyticsDerivedData(input: AnalyticsStateInput, excludeArbitrage: boolean) {
+  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+  const activeProfile = useMemo(() => {
+    if (!scopeState.activeProfileId) return null;
+    return input.profiles.find((p) => p.id === scopeState.activeProfileId) ?? null;
+  }, [scopeState.activeProfileId, input.profiles]);
+
+  const filteredHoldings = useMemo(
+    () => filterHoldingsForProfile(activeProfile, input.holdings, input.folios),
+    [activeProfile, input.holdings, input.folios],
+  );
+
+  const { xrayData, exposures } = useMemo(
+    () => deriveAnalyticsFromHoldings(filteredHoldings),
+    [filteredHoldings],
+  );
+
+  const rootHierarchyNode = useMemo(
+    () => buildPortfolioHierarchy(xrayData, exposures, { excludeArbitrage }),
+    [xrayData, exposures, excludeArbitrage],
+  );
+
+  return { scopeState, xrayData, exposures, rootHierarchyNode };
 }
 
 /**
@@ -196,14 +164,13 @@ function useAnalyticsData() {
  * @returns React Native screen component element
  */
 export default function AnalyticsScreen(): React.ReactElement {
-  const { refreshing, onRefresh, holdings } = useAnalyticsData();
+  const { refreshing, onRefresh, holdings, profiles, folios } = useAnalyticsData();
   const [excludeArbitrage, setExcludeArbitrage] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockExposure | null>(null);
 
-  const { xrayData, exposures } = useMemo(() => deriveAnalyticsFromHoldings(holdings), [holdings]);
-  const rootHierarchyNode = useMemo(
-    () => buildPortfolioHierarchy(xrayData, exposures, { excludeArbitrage }),
-    [xrayData, exposures, excludeArbitrage],
+  const { scopeState, xrayData, exposures, rootHierarchyNode } = useAnalyticsDerivedData(
+    { holdings, profiles, folios },
+    excludeArbitrage,
   );
 
   const handleSelectFromTreemap = useCallback((node: HierarchyNode) => {
@@ -219,28 +186,21 @@ export default function AnalyticsScreen(): React.ReactElement {
 
   return (
     <View style={styles.container} testID="analytics-screen">
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38bdf8" />}
-      >
+      <ScopeSelectorHeader
+        scope={scopeState.scope}
+        profiles={profiles}
+        onSelectConsolidated={scopeState.setConsolidated}
+        onSelectMember={scopeState.setMemberScope}
+        totalFolios={folios.length}
+      />
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38bdf8" />}>
         <AnalyticsHeader />
         <AllocationCardsGrid xrayData={xrayData} />
         <Text style={styles.sectionTitle}>Visual Treemap</Text>
         <SvgTreemap rootNode={rootHierarchyNode} onSelectStock={handleSelectFromTreemap} />
-        <StockOverlapTable
-          exposures={exposures}
-          totalPortfolioValue={xrayData.totalValue}
-          excludeArbitrage={excludeArbitrage}
-          onToggleExcludeArbitrage={setExcludeArbitrage}
-          onSelectStock={setSelectedStock}
-        />
+        <StockOverlapTable exposures={exposures} totalPortfolioValue={xrayData.totalValue} excludeArbitrage={excludeArbitrage} onToggleExcludeArbitrage={setExcludeArbitrage} onSelectStock={setSelectedStock} />
       </ScrollView>
-      <StockDetailModal
-        visible={selectedStock !== null}
-        stock={selectedStock}
-        totalPortfolioValue={xrayData.totalValue}
-        onClose={() => setSelectedStock(null)}
-      />
+      <StockDetailModal visible={selectedStock !== null} stock={selectedStock} totalPortfolioValue={xrayData.totalValue} onClose={() => setSelectedStock(null)} />
     </View>
   );
 }

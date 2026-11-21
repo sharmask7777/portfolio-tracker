@@ -133,9 +133,10 @@ vi.mock('../services/family-service', async (importOriginal) => {
   };
 });
 
-import FamilyScreen from '../../app/(tabs)/family';
+import SettingsScreen from '../../app/(tabs)/settings';
+import DashboardScreen from '../../app/(tabs)/index';
 
-describe('Maestro Flow 06: Family Profiles & Multi-PAN Management Simulation', () => {
+describe('Maestro Flow 06: Family Profiles Management & Global Scope Simulation', () => {
   const initialProfiles: FamilyProfile[] = [
     {
       id: 'prof-primary-1',
@@ -167,37 +168,39 @@ describe('Maestro Flow 06: Family Profiles & Multi-PAN Management Simulation', (
     await saveFamilyProfiles(initialProfiles);
   });
 
-  it('validates consolidated vs individual member PAN switching', async () => {
-    render(() => <FamilyScreen />);
+  it('validates global top-level scope selector switching on dashboard', async () => {
+    render(() => <DashboardScreen />);
 
-    // 1. Verify Header and Screen Title
+    // 1. Verify ScopeSelectorHeader chips
     await waitFor(() => {
-      expect(screen.getByText('Family Wealth')).toBeDefined();
-      expect(screen.getByText('Multi-PAN Portfolios')).toBeDefined();
-      expect(screen.getByTestId('family-member-list')).toBeDefined();
-      expect(screen.getByText('All (Consolidated)')).toBeDefined();
+      expect(screen.getByTestId('scope-selector-header')).toBeDefined();
+      expect(screen.getByText('Consolidated')).toBeDefined();
       expect(screen.getByText('Aarav Sharma')).toBeDefined();
       expect(screen.getByText('Neha Sharma')).toBeDefined();
     });
 
-    // 3. Select Neha Sharma pill to switch to individual profile
-    const nehaPill = screen.getByText('Neha Sharma');
-    fireEvent.press(nehaPill);
+    // 2. Select Neha Sharma chip to switch to individual profile
+    const nehaChip = screen.getByText('Neha Sharma');
+    fireEvent.press(nehaChip);
 
-    // 4. Switch back to consolidated view
-    const allPill = screen.getByText('All (Consolidated)');
-    fireEvent.press(allPill);
+    // 3. Switch back to consolidated view
+    const consolidatedChip = screen.getByText('Consolidated');
+    fireEvent.press(consolidatedChip);
   });
 
-  it('validates adding family member with synthetic PAN validation', async () => {
-    render(() => <FamilyScreen />);
+  it('validates family profile management in Settings with synthetic PAN validation', async () => {
+    render(() => <SettingsScreen />);
 
     await waitFor(() => {
-      expect(screen.getByText('Family Wealth')).toBeDefined();
+      expect(screen.getByTestId('settings-family-profiles-card')).toBeDefined();
+      expect(screen.getByText('Family Profiles (2)')).toBeDefined();
+      expect(screen.getByTestId('family-member-list')).toBeDefined();
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+      expect(screen.getByText('Neha Sharma')).toBeDefined();
     });
 
-    // 1. Open Add Member Modal
-    const addMemberBtn = screen.getByText('Add Member');
+    // 1. Open Add Member Modal from Settings
+    const addMemberBtn = screen.getByTestId('settings-add-member-btn');
     fireEvent.press(addMemberBtn);
 
     await waitFor(() => {
@@ -213,7 +216,6 @@ describe('Maestro Flow 06: Family Profiles & Multi-PAN Management Simulation', (
     const panInput = screen.getByTestId('add-member-pan-input');
     fireEvent.changeText(panInput, 'INVALID999');
 
-    // Tap submit button to trigger validation
     const submitBtn = screen.getByTestId('submit-add-member-btn');
     fireEvent.press(submitBtn);
 

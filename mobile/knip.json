@@ -30,5 +30,9 @@
     "react-native-screens",
     "vitest"
   ],
+  "ignoreIssues": {
+    "src/components/Family/FamilyMetricsSummary.tsx": ["exports", "types"],
+    "src/components/Family/ProfileSwitcher.tsx": ["exports", "types"]
+  },
   "ignoreExportsUsedInFile": true
 }

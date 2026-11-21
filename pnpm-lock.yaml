@@ -141,6 +141,9 @@ importers:
 
   mobile:
     dependencies:
+      '@portfolio/core-view':
+        specifier: workspace:*
+        version: link:../packages/core-view
       '@tanstack/react-query':
         specifier: ^5.108.0
         version: 5.108.0(@types/react@19.3.0)(react@19.3.0)

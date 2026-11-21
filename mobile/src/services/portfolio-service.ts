@@ -13,8 +13,8 @@ import {
 } from '../feeds/nav-fetcher';
 import { getStoredCredentials } from './auth-service';
 import {
-  buildAssetAllocation,
   mapRawFolioToHolding,
+  summarizeHoldings,
   type AssetAllocationItem,
   type EnrichedHolding,
   type ServerFolioData,
@@ -92,34 +92,6 @@ export async function getEnrichedHoldings(
   return results;
 }
 
-interface Totals {
-  totalValue: number;
-  totalInvested: number;
-  totalDayGain: number;
-  prevTotalValue: number;
-  latestUpdate: string | null;
-}
-
-function computeTotals(holdings: EnrichedHolding[]): Totals {
-  let totalValue = 0;
-  let totalInvested = 0;
-  let totalDayGain = 0;
-  let prevTotalValue = 0;
-  let latestUpdate: string | null = null;
-
-  for (const h of holdings) {
-    totalValue += h.current_value;
-    totalInvested += h.invested_cost;
-    totalDayGain += h.dayChange;
-    prevTotalValue += h.current_value - h.dayChange;
-    if (!latestUpdate || h.updated_at > latestUpdate) {
-      latestUpdate = h.updated_at;
-    }
-  }
-
-  return { totalValue, totalInvested, totalDayGain, prevTotalValue, latestUpdate };
-}
-
 export async function getDashboardSummary(
   db?: SQLiteDatabase,
 ): Promise<DashboardSummary> {
@@ -139,28 +111,9 @@ export async function getDashboardSummary(
     };
   }
 
-  const totals = computeTotals(holdings);
-  const roundedValue = Math.round(totals.totalValue * 100) / 100;
-  const roundedInvested = Math.round(totals.totalInvested * 100) / 100;
-  const unrealizedGain = Math.round((roundedValue - roundedInvested) * 100) / 100;
-  const unrealizedGainPct = roundedInvested > 0
-    ? Math.round((unrealizedGain / roundedInvested) * 100 * 100) / 100
-    : 0;
-  const roundedDayGain = Math.round(totals.totalDayGain * 100) / 100;
-  const dayGainPct = totals.prevTotalValue > 0
-    ? Math.round((roundedDayGain / totals.prevTotalValue) * 100 * 100) / 100
-    : 0;
-
+  const summary = summarizeHoldings(holdings);
   return {
-    totalCurrentValue: roundedValue,
-    totalInvestedCost: roundedInvested,
-    unrealizedGain,
-    unrealizedGainPct,
-    dayGain: roundedDayGain,
-    dayGainPct,
-    assetAllocation: buildAssetAllocation(holdings, roundedValue),
-    holdingsCount: holdings.length,
-    lastUpdated: totals.latestUpdate,
+    ...summary,
     isOfflineFallback: false,
   };
 }
