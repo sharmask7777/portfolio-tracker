@@ -28,6 +28,8 @@ export async function savePortfolioHistory(
 
 /**
  * Retrieves stored historical valuation points for a portfolio in chronological order.
+ * If the provided portfolioId is 'default' and no explicit points match, falls back to the
+ * first available portfolio id in SQLite.
  *
  * @param db SQLite database instance
  * @param portfolioId Portfolio identifier
@@ -40,9 +42,20 @@ export async function getPortfolioHistory(
   const rows = await db.getAllAsync<PortfolioHistoryEntity>(
     `SELECT portfolio_id, date, value, invested_amount
      FROM portfolio_history
-     WHERE portfolio_id = ?
+     WHERE portfolio_id = (
+       CASE 
+         WHEN EXISTS (SELECT 1 FROM portfolio_history WHERE portfolio_id = ?) THEN ?
+         WHEN ? = 'default' OR ? = '' THEN (
+           COALESCE(
+             (SELECT id FROM portfolios LIMIT 1),
+             (SELECT portfolio_id FROM portfolio_history LIMIT 1)
+           )
+         )
+         ELSE ?
+       END
+     )
      ORDER BY date ASC;`,
-    [portfolioId],
+    [portfolioId, portfolioId, portfolioId, portfolioId, portfolioId],
   );
   return rows.map((r) => ({
     date: r.date,

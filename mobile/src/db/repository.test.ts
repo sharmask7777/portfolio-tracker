@@ -505,6 +505,9 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
 
       const empty = await getPortfolioHistory(db, 'port-unknown');
       expect(empty).toEqual([]);
+
+      const fallback = await getPortfolioHistory(db, 'default');
+      expect(fallback).toEqual(points);
     });
   });
 });
