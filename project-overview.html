@@ -1,0 +1,2166 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio Tracker — Institutional Architecture & System Overview</title>
+  <!-- Google Tailwind CDN with robust standalone fallback styling -->
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    /* Standalone & Fallback Design System */
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-card: rgba(17, 24, 39, 0.85);
+      --bg-card-hover: rgba(31, 41, 55, 0.95);
+      --border-color: rgba(75, 85, 99, 0.4);
+      --border-accent: rgba(99, 102, 241, 0.5);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --accent-rust: #f97316;
+      --accent-react: #06b6d4;
+      --accent-mobile: #a855f7;
+      --accent-green: #10b981;
+      --accent-blue: #3b82f6;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --glass-bg: rgba(17, 24, 39, 0.7);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --code-bg: #030712;
+    }
+
+    html.light {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #ffffff;
+      --bg-card: rgba(255, 255, 255, 0.9);
+      --bg-card-hover: rgba(241, 245, 249, 1);
+      --border-color: rgba(203, 213, 225, 0.8);
+      --border-accent: rgba(99, 102, 241, 0.6);
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent-rust: #ea580c;
+      --accent-react: #0891b2;
+      --accent-mobile: #9333ea;
+      --accent-green: #059669;
+      --accent-blue: #2563eb;
+      --accent-amber: #d97706;
+      --accent-rose: #e11d48;
+      --glass-bg: rgba(255, 255, 255, 0.8);
+      --glass-border: rgba(0, 0, 0, 0.08);
+      --code-bg: #f1f5f9;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      line-height: 1.6;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    /* Glassmorphism Cards */
+    .glass-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .glass-card:hover {
+      border-color: var(--border-accent);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-primary);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-dim);
+    }
+
+    /* Interactive Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.025em;
+    }
+    .badge-rust { background: rgba(249, 115, 22, 0.15); color: var(--accent-rust); border: 1px solid rgba(249, 115, 22, 0.3); }
+    .badge-react { background: rgba(6, 182, 212, 0.15); color: var(--accent-react); border: 1px solid rgba(6, 182, 212, 0.3); }
+    .badge-mobile { background: rgba(168, 85, 247, 0.15); color: var(--accent-mobile); border: 1px solid rgba(168, 85, 247, 0.3); }
+    .badge-green { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-blue { background: rgba(59, 130, 246, 0.15); color: var(--accent-blue); border: 1px solid rgba(59, 130, 246, 0.3); }
+    .badge-rose { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.3); }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    /* Code blocks */
+    pre, code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    .code-container {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      color: #38bdf8;
+    }
+
+    /* Math Formula Render */
+    .math-formula {
+      font-family: "Cambria Math", "Latin Modern Math", "STIX Two Math", Georgia, serif;
+      font-style: italic;
+      letter-spacing: 0.03em;
+    }
+
+    /* Active Tab Animation */
+    .tab-btn {
+      position: relative;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      color: var(--accent-blue);
+      font-weight: 600;
+    }
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent-blue);
+      border-radius: 2px;
+    }
+
+    /* Architecture diagram nodes */
+    .arch-node {
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .arch-node:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px -4px rgba(0,0,0,0.4);
+    }
+    .arch-node.selected {
+      border-color: #6366f1 !important;
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5);
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- TOP HEADER & BRANDING -->
+  <header class="sticky top-0 z-50 glass-card rounded-none border-t-0 border-x-0 border-b border-[var(--border-color)] px-6 py-3.5 shadow-md">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Logo & Title -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 font-bold text-xl">
+          ₹
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg font-bold tracking-tight text-[var(--text-main)]">Portfolio Tracker</h1>
+            <span class="badge badge-rust">100% Rust Backend</span>
+            <span class="badge badge-green">Budget 2024 Ready</span>
+          </div>
+          <p class="text-xs text-[var(--text-muted)]">Institutional Deep Analytics &bull; Zero-I/O Domain Core &bull; Offline-First Mobile &bull; Statutory Tax Engine</p>
+        </div>
+      </div>
+
+      <!-- Search & Controls -->
+      <div class="flex items-center gap-3">
+        <!-- Live Quick Search -->
+        <div class="relative">
+          <input id="globalSearch" type="text" placeholder="Search architecture, rules, crates..." 
+                 class="w-64 px-3 py-1.5 text-xs rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)] focus:outline-none focus:border-indigo-500 transition-all">
+          <span class="absolute right-2.5 top-2 text-xs text-[var(--text-dim)]">⌘K</span>
+        </div>
+
+        <!-- Theme Toggle -->
+        <button id="themeToggleBtn" title="Toggle Dark/Light Mode" class="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">
+          <svg id="moonIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+          <svg id="sunIcon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+        </button>
+
+        <!-- Quick Links -->
+        <a href="#codebase-explorer" class="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors shadow-sm">
+          Browse Codebase
+        </a>
+      </div>
+    </div>
+
+    <!-- NAVIGATION TABS -->
+    <nav class="max-w-7xl mx-auto mt-3 pt-2 border-t border-[var(--border-color)] overflow-x-auto flex items-center gap-6 text-xs text-[var(--text-muted)] scrollbar-none">
+      <button class="tab-btn active pb-2 flex items-center gap-1.5" onclick="switchTab('overview')">
+        <span>🌟</span> Executive Overview
+      </button>
+      <button class="tab-btn pb-2 flex items-center gap-1.5" onclick="switchTab('architecture')">
+        <span>🏛️</span> System Architecture & Flows
+      </button>
+      <button class="tab-btn pb-2 flex items-center gap-1.5" onclick="switchTab('ingestion')">
+        <span>🔄</span> Ingestion & Clean-Slate
+      </button>
+      <button class="tab-btn pb-2 flex items-center gap-1.5" onclick="switchTab('zero-io')">
+        <span>⚡</span> Zero-I/O Domain Core
+      </button>
+      <button class="tab-btn pb-2 flex items-center gap-1.5" onclick="switchTab('tax-engine')">
+        <span>💰</span> Tax Engine & Simulator
+      </button>
+      <button class="tab-btn pb-2 flex items-center gap-1.5" onclick="switchTab('xray-analytics')">
+        <span>🔬</span> X-Ray & Reality Check
+      </button>
+      <button class="tab-btn pb-2 flex items-center gap-1.5" onclick="switchTab('mobile-offline')">
+        <span>📱</span> Mobile & Edge Decoupling
+      </button>
+      <button class="tab-btn pb-2 flex items-center gap-1.5" onclick="switchTab('guardrails')">
+        <span>🛡️</span> 8 Agent Guardrails
+      </button>
+      <button class="tab-btn pb-2 flex items-center gap-1.5" onclick="switchTab('codebase')">
+        <span>📂</span> Codebase Navigator
+      </button>
+    </nav>
+  </header>
+
+  <!-- MAIN VIEWPORT CONTAINER -->
+  <main class="max-w-7xl mx-auto px-6 py-8">
+
+    <!-- ========================================================================= -->
+    <!-- TAB 1: EXECUTIVE OVERVIEW                                                  -->
+    <!-- ========================================================================= -->
+    <section id="tab-overview" class="tab-content space-y-8">
+      
+      <!-- HERO BANNER -->
+      <div class="glass-card p-8 relative overflow-hidden bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-950/50">
+        <div class="relative z-10 max-w-3xl space-y-4">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
+            <span>✨</span> Next-Generation Self-Hosted Wealth Intelligence
+          </div>
+          <h2 class="text-3xl font-extrabold tracking-tight text-[var(--text-main)] sm:text-4xl">
+            Why Portfolio Tracker was Built
+          </h2>
+          <p class="text-sm text-[var(--text-muted)] leading-relaxed">
+            Mainstream Indian investment apps (Zerodha Coin, Groww, Kuvera) treat mutual funds as black boxes. They suffer from 
+            <strong class="text-[var(--text-main)]">four fatal blind spots</strong>: zero multi-fund stock look-through, outdated capital gains tax engines that ignore the landmark Finance (No. 2) Act 2024, no multi-PAN family aggregation, and reliance on invasive cloud servers with zero offline resilience.
+          </p>
+          <div class="pt-2 flex flex-wrap gap-3">
+            <span class="badge badge-rust text-xs py-1 px-3">🦀 100% Rust Backend Workspace</span>
+            <span class="badge badge-green text-xs py-1 px-3">⚖️ Budget 2024 Bifurcated Tax Engine</span>
+            <span class="badge badge-react text-xs py-1 px-3">⚛️ React 19 + TypeScript Strict Guardrails</span>
+            <span class="badge badge-mobile text-xs py-1 px-3">📲 Offline-First SQLite Mobile Client</span>
+            <span class="badge badge-blue text-xs py-1 px-3">🔒 100% Hermetic & Self-Hosted</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- KEY PROBLEM VS SOLUTION COMPARISON -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Left: Commercial Platform Flaws -->
+        <div class="glass-card p-6 border-l-4 border-l-rose-500 space-y-4">
+          <div class="flex items-center gap-2">
+            <div class="p-2 rounded-lg bg-rose-500/10 text-rose-400 font-bold text-sm">❌</div>
+            <h3 class="text-base font-bold text-[var(--text-main)]">The Commercial App Shortcomings</h3>
+          </div>
+          <ul class="text-xs text-[var(--text-muted)] space-y-3">
+            <li class="flex items-start gap-2">
+              <span class="text-rose-500 font-bold">&bull;</span>
+              <div><strong class="text-[var(--text-main)]">The Hidden Overlap Trap:</strong> An investor holding 4 diversified equity funds often unknowingly concentrates 20%+ of their net worth in just 2 stocks (e.g. HDFC Bank & Reliance). Apps show fund returns, never aggregate stock exposure.</div>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-rose-500 font-bold">&bull;</span>
+              <div><strong class="text-[var(--text-main)]">Obsolete Tax Computations:</strong> Budget 2024 fundamentally bifurcated Indian taxes on July 23, 2024 (12.5% LTCG, 20% STCG, ₹1.25L exemption, grandfathering deemed costs, Section 50AA debt slab taxation). Most apps still compute outdated rates or lack Schedule CG Table F accrual tables.</div>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-rose-500 font-bold">&bull;</span>
+              <div><strong class="text-[var(--text-main)]">Siloed Investor PANs:</strong> Real Indian families invest across spouse, parents, and minor folios. Apps force multiple logins or blend taxes into a single unfiled entity.</div>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-rose-500 font-bold">&bull;</span>
+              <div><strong class="text-[var(--text-main)]">Privacy & Cloud Dependency:</strong> Requiring live broker passwords or uploading financial statements to 3rd-party commercial clouds with tracking. Zero offline capability when server is down.</div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Right: Portfolio Tracker Solution -->
+        <div class="glass-card p-6 border-l-4 border-l-emerald-500 space-y-4">
+          <div class="flex items-center gap-2">
+            <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold text-sm">✅</div>
+            <h3 class="text-base font-bold text-[var(--text-main)]">The Portfolio Tracker Architecture</h3>
+          </div>
+          <ul class="text-xs text-[var(--text-muted)] space-y-3">
+            <li class="flex items-start gap-2">
+              <span class="text-emerald-500 font-bold">&bull;</span>
+              <div><strong class="text-[var(--text-main)]">Institutional X-Ray Look-Through:</strong> Recomputes underlying equity weights across all mutual funds. Calculates Jaccard similarity, detects multi-fund stock overlaps, and computes true portfolio beta and sector dispersion.</div>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-emerald-500 font-bold">&bull;</span>
+              <div><strong class="text-[var(--text-main)]">Statutory CBDT Oracle:</strong> Fully compliant with Finance (No. 2) Act 2024. Exact calendar-day bifurcation, Section 55(2)(ac) grandfathering FMV lookup, loss set-off rules (Sec 70/71), advance tax accrual (Table F Q1-Q5), and 27-column CA audit export.</div>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-emerald-500 font-bold">&bull;</span>
+              <div><strong class="text-[var(--text-main)]">Family Aggregation & Scope Isolation:</strong> Multi-PAN switching with isolated tax exemptions (₹1.25L per PAN) while providing unified family net worth and asset class distribution.</div>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-emerald-500 font-bold">&bull;</span>
+              <div><strong class="text-[var(--text-main)]">Decoupled Offline-First Mobile:</strong> Sub-100ms cold startup via local SQLite (`expo-sqlite`). Queries public AMFI feeds (`api.mfapi.in`) directly on-device without needing the self-hosted Docker server!</div>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- SIX KEY PILLARS -->
+      <div class="space-y-4">
+        <h3 class="text-lg font-bold text-[var(--text-main)]">System Architecture Pillars</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          
+          <div class="glass-card p-5 space-y-2">
+            <div class="text-xl">🦀</div>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">Zero-I/O Pure Rust Core</h4>
+            <p class="text-xs text-[var(--text-muted)]">
+              `portfolio-core` enforces `#![forbid(unsafe_code)]` and contains zero network, database, or async calls. Financial calculations are purely deterministic, hermetic, and verifiable down to &Delta; &le; ₹0.01.
+            </p>
+          </div>
+
+          <div class="glass-card p-5 space-y-2">
+            <div class="text-xl">⚖️</div>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">CBDT Statutory Tax Oracle</h4>
+            <p class="text-xs text-[var(--text-muted)]">
+              Implements Section 112A, 111A, 50AA, Section 55(2)(ac) deemed cost bounding, grandfathering FMV lookup, 4% Health & Education cess, and Schedule CG Table F advance tax accrual matrices.
+            </p>
+          </div>
+
+          <div class="glass-card p-5 space-y-2">
+            <div class="text-xl">📈</div>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">Hybrid Brent-Dekker XIRR</h4>
+            <p class="text-xs text-[var(--text-muted)]">
+              High-precision numerical root-finding with logarithmic exponentiation $\exp(-w_i \ln(1+r))$, cash flow magnitude normalization, and damped Newton-Raphson fallbacks preventing numerical blowups.
+            </p>
+          </div>
+
+          <div class="glass-card p-5 space-y-2">
+            <div class="text-xl">🔄</div>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">Clean-Slate CAS Pipeline</h4>
+            <p class="text-xs text-[var(--text-muted)]">
+              Parses CAMS and KFintech CAS statements via sandboxed Python `casparser` + BullMQ Redis worker, re-anchoring portfolios with Clean-Slate Reconstruction to eliminate ghost lots and sign errors.
+            </p>
+          </div>
+
+          <div class="glass-card p-5 space-y-2">
+            <div class="text-xl">📲</div>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">Decoupled Mobile Client</h4>
+            <p class="text-xs text-[var(--text-muted)]">
+              React Native Expo app running on local SQLite. Fetches daily mutual fund NAVs directly from public AMFI endpoints, keeping daily valuation alive when self-hosted Docker is asleep.
+            </p>
+          </div>
+
+          <div class="glass-card p-5 space-y-2">
+            <div class="text-xl">🛡️</div>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">8 Static Build Guardrails</h4>
+            <p class="text-xs text-[var(--text-muted)]">
+              The Invariant Oracle Law, Zero-Any TypeScript mandate, ArchUnit dependency checks, cross-stack Rust-to-TS type code generation, differential parity harness, and knip zero dead-code.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 2: SYSTEM ARCHITECTURE & FLOWS                                         -->
+    <!-- ========================================================================= -->
+    <section id="tab-architecture" class="tab-content hidden space-y-8">
+      
+      <div>
+        <h2 class="text-2xl font-bold text-[var(--text-main)]">Hexagonal Multi-Tier System Architecture</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-1">
+          Click on any architectural node below to inspect its boundaries, responsibilities, code definitions, and invariant rules.
+        </p>
+      </div>
+
+      <!-- INTERACTIVE ARCHITECTURE CANVAS -->
+      <div class="glass-card p-6 space-y-6">
+        
+        <!-- TIER 1: CLIENT PRESENTATION LAYER -->
+        <div>
+          <div class="text-xs font-bold uppercase tracking-wider text-[var(--accent-blue)] mb-3 flex items-center gap-2">
+            <span>Tier 1 &bull; Presentation & Client Layer</span>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400">Zero-Any TypeScript &bull; React 19 &bull; React Native</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            <div id="node-frontend" class="arch-node glass-card p-4 border border-[var(--border-color)] bg-[var(--bg-secondary)]" onclick="inspectComponent('frontend')">
+              <div class="flex items-center justify-between mb-2">
+                <span class="badge badge-react">Web SPA</span>
+                <span class="text-[10px] font-mono text-[var(--text-dim)]">frontend/</span>
+              </div>
+              <h4 class="text-sm font-bold text-[var(--text-main)]">React 19 + TypeScript Web App</h4>
+              <p class="text-xs text-[var(--text-muted)] mt-1">
+                Domain isolation (`Analytics`, `Tax`, `Dashboard`, `Family`), Vite bundler, Recharts, Lucide, and `@t3-oss/env-core` schema-validated environment variables.
+              </p>
+            </div>
+
+            <div id="node-mobile" class="arch-node glass-card p-4 border border-[var(--border-color)] bg-[var(--bg-secondary)]" onclick="inspectComponent('mobile')">
+              <div class="flex items-center justify-between mb-2">
+                <span class="badge badge-mobile">Native Client</span>
+                <span class="text-[10px] font-mono text-[var(--text-dim)]">mobile/</span>
+              </div>
+              <h4 class="text-sm font-bold text-[var(--text-main)]">Expo / React Native Client</h4>
+              <p class="text-xs text-[var(--text-muted)] mt-1">
+                Offline-First architecture with `expo-sqlite`, Decoupled Daily Valuation directly from AMFI feeds, QR pairing, and Martin Fowler micro-maintainability sensors.
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- CONNECTOR 1 -->
+        <div class="flex justify-center items-center gap-4 text-xs text-[var(--text-dim)]">
+          <span>↓ Consumes Shared View Contracts & Presentation Helpers ↓</span>
+        </div>
+
+        <!-- TIER 2: SHARED CROSS-PLATFORM PACKAGE -->
+        <div>
+          <div class="text-xs font-bold uppercase tracking-wider text-[var(--accent-green)] mb-3 flex items-center gap-2">
+            <span>Tier 2 &bull; Shared Cross-Platform View Package</span>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-green-500/10 border border-green-500/20 text-green-400">@portfolio/core-view</span>
+          </div>
+          <div id="node-coreview" class="arch-node glass-card p-4 border border-[var(--border-color)] bg-[var(--bg-secondary)]" onclick="inspectComponent('coreview')">
+            <div class="flex items-center justify-between mb-2">
+              <span class="badge badge-green">Shared Package</span>
+              <span class="text-[10px] font-mono text-[var(--text-dim)]">packages/core-view/</span>
+            </div>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">@portfolio/core-view Monorepo Package</h4>
+            <p class="text-xs text-[var(--text-muted)] mt-1">
+              Houses unified presentation logic, currency and percentage formatters, multi-folio scheme grouping, family scope adapters, and consolidation algorithms shared across Web and Mobile.
+            </p>
+          </div>
+        </div>
+
+        <!-- CONNECTOR 2 -->
+        <div class="flex justify-center items-center gap-4 text-xs text-[var(--text-dim)]">
+          <span>↓ Strongly Typed REST API (CamelCase JSON Parity) + BullMQ Redis Queue ↓</span>
+        </div>
+
+        <!-- TIER 3: RUST BACKEND GATEWAY & BACKGROUND WORKER -->
+        <div>
+          <div class="text-xs font-bold uppercase tracking-wider text-[var(--accent-rust)] mb-3 flex items-center gap-2">
+            <span>Tier 3 &bull; Rust Backend Services (Cargo Workspace)</span>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-orange-500/10 border border-orange-500/20 text-orange-400">backend-rs &bull; Axum + Tokio + BullMQ</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            <div id="node-api" class="arch-node glass-card p-4 border border-[var(--border-color)] bg-[var(--bg-secondary)]" onclick="inspectComponent('api')">
+              <div class="flex items-center justify-between mb-2">
+                <span class="badge badge-rust">API Gateway</span>
+                <span class="text-[10px] font-mono text-[var(--text-dim)]">backend-rs/crates/portfolio-api/</span>
+              </div>
+              <h4 class="text-sm font-bold text-[var(--text-main)]">portfolio-api (Axum REST Gateway)</h4>
+              <p class="text-xs text-[var(--text-muted)] mt-1">
+                High-throughput asynchronous HTTP gateway with Tokio, Axum, JWT authentication middleware, QR code pairing tokens, camelCase serialization, and cross-stack contract export.
+              </p>
+            </div>
+
+            <div id="node-worker" class="arch-node glass-card p-4 border border-[var(--border-color)] bg-[var(--bg-secondary)]" onclick="inspectComponent('worker')">
+              <div class="flex items-center justify-between mb-2">
+                <span class="badge badge-amber">Job Worker</span>
+                <span class="text-[10px] font-mono text-[var(--text-dim)]">backend-rs/crates/portfolio-worker/</span>
+              </div>
+              <h4 class="text-sm font-bold text-[var(--text-main)]">portfolio-worker (BullMQ Background Worker)</h4>
+              <p class="text-xs text-[var(--text-muted)] mt-1">
+                Processes CAS statement uploads (`cas_parser`), invokes Python `casparser`, executes Clean-Slate folios rebuild, synchronizes AMFI daily NAVs, and recomputes historical valuation timelines.
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- CONNECTOR 3 -->
+        <div class="flex justify-center items-center gap-4 text-xs text-[var(--text-dim)]">
+          <span>↓ Zero-I/O Functional Boundary (Pure In-Memory Determinism) & Persistence ↓</span>
+        </div>
+
+        <!-- TIER 4: ZERO-I/O CORE DOMAIN & PERSISTENCE -->
+        <div>
+          <div class="text-xs font-bold uppercase tracking-wider text-[var(--accent-rose)] mb-3 flex items-center gap-2">
+            <span>Tier 4 &bull; Zero-I/O Calculation Core & Persistence Layer</span>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400">Strict Invariants &bull; #![forbid(unsafe_code)]</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            
+            <div id="node-core" class="arch-node glass-card p-4 border border-[var(--border-color)] bg-[var(--bg-secondary)] md:col-span-2" onclick="inspectComponent('core')">
+              <div class="flex items-center justify-between mb-2">
+                <span class="badge badge-rose">Zero-I/O Engine</span>
+                <span class="text-[10px] font-mono text-[var(--text-dim)]">backend-rs/crates/portfolio-core/</span>
+              </div>
+              <h4 class="text-sm font-bold text-[var(--text-main)]">portfolio-core (Deterministic Domain Engine)</h4>
+              <p class="text-xs text-[var(--text-muted)] mt-1">
+                Zero network, database, or async calls. Implements FIFO lot allocation, Brent-Dekker XIRR, Section 112A/111A/50AA tax rules, Section 55(2)(ac) grandfathering, and institutional X-Ray overlap.
+              </p>
+            </div>
+
+            <div id="node-db" class="arch-node glass-card p-4 border border-[var(--border-color)] bg-[var(--bg-secondary)]" onclick="inspectComponent('db')">
+              <div class="flex items-center justify-between mb-2">
+                <span class="badge badge-blue">Database</span>
+                <span class="text-[10px] font-mono text-[var(--text-dim)]">backend-rs/crates/portfolio-db/</span>
+              </div>
+              <h4 class="text-sm font-bold text-[var(--text-main)]">portfolio-db (SQLx + PostgreSQL)</h4>
+              <p class="text-xs text-[var(--text-muted)] mt-1">
+                Strongly-typed entity mappings, self-healing idempotent schema initialization, repository traits, and `InMemoryDatabase` for sub-millisecond Docker-free testing.
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- DYNAMIC COMPONENT INSPECTOR DRAWER -->
+      <div id="inspector-panel" class="glass-card p-6 border-l-4 border-l-indigo-500 space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span id="inspect-badge" class="badge badge-rust">Component</span>
+            <h3 id="inspect-title" class="text-base font-bold text-[var(--text-main)]">Select a node above to inspect</h3>
+          </div>
+          <span id="inspect-path" class="text-xs font-mono text-[var(--text-dim)]">filepath</span>
+        </div>
+        
+        <p id="inspect-desc" class="text-xs text-[var(--text-muted)] leading-relaxed">
+          Click any component card in the diagram to inspect its exact folder location, architectural mandates, exported contracts, and code implementation.
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          <div class="space-y-1">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-[var(--text-dim)]">Architectural Invariants</span>
+            <ul id="inspect-invariants" class="text-xs text-[var(--text-muted)] space-y-1 list-disc list-inside">
+              <li>Select a component to view invariants.</li>
+            </ul>
+          </div>
+          <div class="space-y-1">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-[var(--text-dim)]">Associated Test Suites</span>
+            <ul id="inspect-tests" class="text-xs text-[var(--text-muted)] space-y-1 list-disc list-inside">
+              <li>Select a component to view test suites.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="pt-2">
+          <span class="text-[10px] uppercase font-bold tracking-wider text-[var(--text-dim)]">Representative Code Signature</span>
+          <div id="inspect-code" class="code-container mt-1">// Click a component above to inspect its code</div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 3: INGESTION & CLEAN-SLATE PIPELINE                                    -->
+    <!-- ========================================================================= -->
+    <section id="tab-ingestion" class="tab-content hidden space-y-8">
+      
+      <div>
+        <h2 class="text-2xl font-bold text-[var(--text-main)]">The CAS Ingestion & Clean-Slate Pipeline</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-1">
+          How raw CAMS & KFintech PDF statements become authoritative, immutable portfolio ledgers without ghost lots or duplicate records.
+        </p>
+      </div>
+
+      <!-- INTERACTIVE PIPELINE STEPPER -->
+      <div class="glass-card p-6 space-y-6">
+        
+        <div class="flex items-center justify-between flex-wrap gap-4 border-b border-[var(--border-color)] pb-4">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-amber">Interactive Stepper</span>
+            <span id="step-indicator" class="text-xs font-mono font-bold text-[var(--text-main)]">Step 1 of 7</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="prevStepBtn" onclick="prevIngestStep()" class="px-3 py-1.5 text-xs rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)]">
+              &larr; Previous Step
+            </button>
+            <button id="nextStepBtn" onclick="nextIngestStep()" class="px-3 py-1.5 text-xs rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium">
+              Next Step &rarr;
+            </button>
+            <button id="autoStepBtn" onclick="toggleAutoStep()" class="px-3 py-1.5 text-xs rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-indigo-400">
+              ▶ Auto-Play
+            </button>
+          </div>
+        </div>
+
+        <!-- STEP CONTENT DISPLAY -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+          
+          <div class="md:col-span-2 space-y-4">
+            <div class="flex items-center gap-3">
+              <span id="step-number-badge" class="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">1</span>
+              <div>
+                <h3 id="step-title" class="text-base font-bold text-[var(--text-main)]">Statement Upload & Multi-Tier Transport</h3>
+                <span id="step-subtitle" class="text-xs font-mono text-[var(--text-dim)]">Client &rarr; portfolio-api (POST /api/v1/cas/upload)</span>
+              </div>
+            </div>
+
+            <p id="step-description" class="text-xs text-[var(--text-muted)] leading-relaxed">
+              The user selects a password-protected CAMS or KFintech CAS PDF on the React Web SPA or picks it on the Mobile App (`expo-document-picker`). The password is encrypted, and the file is streamed via multipart form data to the Axum API gateway.
+            </p>
+
+            <div class="glass-card p-4 bg-[var(--bg-secondary)] space-y-2">
+              <span class="text-[10px] uppercase font-bold tracking-wider text-[var(--accent-amber)]">Why this is unique:</span>
+              <p id="step-rationale" class="text-xs text-[var(--text-muted)]">
+                On mobile, if the self-hosted Docker server is unreachable, the statement is not lost. It enters the SQLite `sync_queue` outbox with encrypted credentials and auto-retries when connectivity resumes.
+              </p>
+            </div>
+          </div>
+
+          <!-- DIAGNOSTIC CONSOLE LOGS -->
+          <div class="glass-card p-4 bg-[var(--code-bg)] border border-[var(--border-color)] space-y-2 font-mono text-[11px]">
+            <div class="flex items-center justify-between text-[10px] text-[var(--text-dim)] pb-1 border-b border-gray-800">
+              <span>WORKER TELEMETRY</span>
+              <span class="text-emerald-400">● LIVE</span>
+            </div>
+            <div id="step-console" class="space-y-1 text-slate-300">
+              <div class="text-slate-500">// Upload received in shared_uploads</div>
+              <div class="text-indigo-400">&gt; POST /api/v1/cas/upload HTTP/1.1</div>
+              <div class="text-emerald-400">&gt; File staged: /app/uploads/cas_17192.pdf</div>
+              <div class="text-amber-400">&gt; BullMQ: Queued job 'bull:pdfUploadQueue:job_842'</div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- CLEAN-SLATE EXPLANATION CARD -->
+      <div class="glass-card p-6 border-l-4 border-l-amber-500 space-y-3">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">💡</span>
+          <h3 class="text-sm font-bold text-[var(--text-main)]">The Clean-Slate Reconstruction Invariant</h3>
+        </div>
+        <p class="text-xs text-[var(--text-muted)] leading-relaxed">
+          Because Indian Consolidated Account Statements (CAS) are <em>cumulative historical snapshots</em> rather than delta feeds, appending transactions into a database inevitably causes phantom duplicate purchases, broken running balances, or inverted signs during scheme mergers.
+          <br><br>
+          <strong class="text-[var(--text-main)]">The Rule:</strong> When a CAS statement touches a Folio, the worker executes Clean-Slate Reconstruction: all pre-existing ledger entries, cached valuation checkpoints, and intermediate lots for that specific folio are cleared in an atomic database transaction. The entire historical sequence is then streamed afresh and verified against the statement's authoritative <code>Running Balance</code>.
+        </p>
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 4: ZERO-I/O DOMAIN CORE & PERFORMANCE                                  -->
+    <!-- ========================================================================= -->
+    <section id="tab-zero-io" class="tab-content hidden space-y-8">
+      
+      <div>
+        <h2 class="text-2xl font-bold text-[var(--text-main)]">Zero-I/O Functional Engine & Numerical Rigor</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-1">
+          Why `portfolio-core` forbids unsafe code, contains zero I/O dependencies, and guarantees deterministic financial calculations.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Architectural ArchUnit Invariant -->
+        <div class="glass-card p-6 space-y-4">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-rose">Zero-I/O Invariant</span>
+            <h3 class="text-base font-bold text-[var(--text-main)]">ArchUnit Dependency Oracle</h3>
+          </div>
+          <p class="text-xs text-[var(--text-muted)] leading-relaxed">
+            In enterprise systems, financial business logic frequently gets contaminated with database queries (`sqlx`), network calls (`reqwest`), and asynchronous runtime handles (`tokio`), making unit testing slow, flaky, and non-deterministic.
+          </p>
+          <p class="text-xs text-[var(--text-muted)] leading-relaxed">
+            In Portfolio Tracker, <strong class="text-[var(--text-main)]">architecture is enforced programmatically by tests</strong>. `architecture_invariants_test.rs` reads `portfolio-core/Cargo.toml` at test-time and asserts:
+          </p>
+          <div class="code-container text-xs">
+// ArchUnit programmatic barrier in portfolio-core:
+let forbidden = ["tokio", "sqlx", "reqwest", "redis", "actix", "axum", "diesel", "postgres"];
+for &dep in &forbidden {
+    assert_ne!(dep_name, dep, "portfolio-core violates Zero-I/O!");
+}
+assert!(lib_rs.contains("#![forbid(unsafe_code)]"));
+          </div>
+          <p class="text-xs text-[var(--text-dim)]">
+            Result: All calculations in `portfolio-core` are pure functions: <code>f(holdings, market_navs) &rarr; PortfolioValuation</code> with 0ms execution time.
+          </p>
+        </div>
+
+        <!-- Mathematical XIRR Solver -->
+        <div class="glass-card p-6 space-y-4">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-rust">Numerical Analysis</span>
+            <h3 class="text-base font-bold text-[var(--text-main)]">Hybrid Brent-Dekker XIRR Solver</h3>
+          </div>
+          <p class="text-xs text-[var(--text-muted)] leading-relaxed">
+            The Extended Internal Rate of Return (XIRR) satisfies the Net Present Value polynomial equation:
+          </p>
+          
+          <div class="p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-center text-sm font-serif">
+            $$f(r) = \sum_{i=0}^{n} C_i (1 + r)^{-\frac{t_i - t_0}{365}} = 0$$
+          </div>
+
+          <div class="space-y-2 text-xs text-[var(--text-muted)]">
+            <div class="font-bold text-[var(--text-main)]">Four Numerical Safeguards:</div>
+            <ul class="list-disc list-inside space-y-1">
+              <li><strong class="text-[var(--text-main)]">Logarithmic Exponentiation:</strong> Evaluates $(1+r)^{-w_i} = \exp(-w_i \ln(1+r))$ to prevent overflow on long horizons.</li>
+              <li><strong class="text-[var(--text-main)]">Magnitude Normalization:</strong> Divides all cash flows by $\max |C_i|$ to avoid floating point saturation when analyzing ₹Crores.</li>
+              <li><strong class="text-[var(--text-main)]">30-Day Guardrail:</strong> Prevents mathematical distortions on short-duration investments by falling back to absolute returns.</li>
+              <li><strong class="text-[var(--text-main)]">Damped Newton-Raphson Fallback:</strong> Multi-guess fallback with singularity damping if bracket root search fails.</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- PRECISION BOUNDS TABLE -->
+      <div class="glass-card p-6 space-y-4">
+        <h3 class="text-base font-bold text-[var(--text-main)]">Financial Precision Invariant Bounds</h3>
+        <p class="text-xs text-[var(--text-muted)]">
+          Enforced across all differential parity tests, mock portfolio vectors, and backend-to-frontend bindings.
+        </p>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr class="border-b border-[var(--border-color)] text-[var(--text-dim)]">
+                <th class="py-2.5 px-3">Domain Quantity</th>
+                <th class="py-2.5 px-3">Data Primitive Type</th>
+                <th class="py-2.5 px-3">Max Permitted Delta (&Delta;)</th>
+                <th class="py-2.5 px-3">Rationale & Statutory Anchor</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[var(--border-color)] text-[var(--text-muted)]">
+              <tr>
+                <td class="py-2.5 px-3 font-semibold text-[var(--text-main)]">Financial Amounts / Money</td>
+                <td class="py-2.5 px-3 font-mono text-indigo-400">Decimal (2 decimal places)</td>
+                <td class="py-2.5 px-3 font-mono text-emerald-400">&Delta; &le; ₹0.01</td>
+                <td class="py-2.5 px-3">Statutory Indian Paisa rounding under Section 288A/288B.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-semibold text-[var(--text-main)]">Mutual Fund Units</td>
+                <td class="py-2.5 px-3 font-mono text-indigo-400">Decimal (4 decimal places)</td>
+                <td class="py-2.5 px-3 font-mono text-emerald-400">&Delta; &le; 0.0001 units</td>
+                <td class="py-2.5 px-3">Standard SEBI registrar (CAMS/KFintech) unit ledger precision.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-semibold text-[var(--text-main)]">XIRR & Percentage Returns</td>
+                <td class="py-2.5 px-3 font-mono text-indigo-400">f64 / Decimal</td>
+                <td class="py-2.5 px-3 font-mono text-emerald-400">&Delta; &le; 10⁻⁶ (0.0001%)</td>
+                <td class="py-2.5 px-3">Zero numerical drift between Rust Brent-Dekker and TypeScript solvers.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-semibold text-[var(--text-main)]">Statutory Health & Cess</td>
+                <td class="py-2.5 px-3 font-mono text-indigo-400">Decimal (Fixed 4.00%)</td>
+                <td class="py-2.5 px-3 font-mono text-emerald-400">Exact (0.04)</td>
+                <td class="py-2.5 px-3">Section 115JB mandatory 4% surcharge across all capital gains.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 5: INDIAN TAX ENGINE & LIVE SIMULATOR                                 -->
+    <!-- ========================================================================= -->
+    <section id="tab-tax-engine" class="tab-content hidden space-y-8">
+      
+      <div>
+        <h2 class="text-2xl font-bold text-[var(--text-main)]">Indian Statutory Capital Gains Tax Engine</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-1">
+          Fully codified in accordance with the <strong>Income Tax Act, 1961</strong>, amended by the <strong>Finance (No. 2) Act, 2024</strong> (Budget 2024 cutoff: 23 July 2024).
+        </p>
+      </div>
+
+      <!-- INTERACTIVE TAX SIMULATOR CARD -->
+      <div class="glass-card p-6 space-y-6 border border-emerald-500/30 bg-gradient-to-br from-emerald-950/20 via-[var(--bg-card)] to-[var(--bg-card)]">
+        
+        <div class="flex items-center justify-between flex-wrap gap-4 border-b border-[var(--border-color)] pb-3">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-green">Live Interactive Simulator</span>
+            <h3 class="text-base font-bold text-[var(--text-main)]">Finance Act 2024 Real-Time Tax Calculator</h3>
+          </div>
+          <span class="text-xs text-[var(--text-dim)]">Try changing the sell date across July 23, 2024!</span>
+        </div>
+
+        <!-- INPUTS GRID -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          
+          <div>
+            <label class="block font-medium text-[var(--text-muted)] mb-1">Asset Category</label>
+            <select id="calc-asset-type" class="w-full px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)]" onchange="runTaxSimulation()">
+              <option value="EQUITY_MF">Equity Mutual Fund (&ge;65% Equity)</option>
+              <option value="STOCK">Listed Direct Stock (STT Paid)</option>
+              <option value="DEBT_NEW">Debt MF (Purchased &ge; 01-Apr-2023 u/s 50AA)</option>
+              <option value="DEBT_OLD">Grandfathered Debt MF (Purchased &lt; 01-Apr-2023)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--text-muted)] mb-1">Acquisition (Buy) Date</label>
+            <input type="date" id="calc-buy-date" value="2017-06-15" class="w-full px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)]" onchange="runTaxSimulation()">
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--text-muted)] mb-1">Transfer (Sell) Date</label>
+            <input type="date" id="calc-sell-date" value="2024-08-10" class="w-full px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)]" onchange="runTaxSimulation()">
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--text-muted)] mb-1">Investor Tax Slab (for 50AA)</label>
+            <select id="calc-tax-slab" class="w-full px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)]" onchange="runTaxSimulation()">
+              <option value="0.30">30% Highest Tax Slab</option>
+              <option value="0.20">20% Slab</option>
+              <option value="0.10">10% Slab</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--text-muted)] mb-1">Quantity (Units)</label>
+            <input type="number" id="calc-units" value="1000" step="10" class="w-full px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)]" onchange="runTaxSimulation()">
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--text-muted)] mb-1">Actual Buy NAV (₹)</label>
+            <input type="number" id="calc-buy-nav" value="100.00" step="1" class="w-full px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)]" onchange="runTaxSimulation()">
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--text-muted)] mb-1">Sell NAV (₹)</label>
+            <input type="number" id="calc-sell-nav" value="350.00" step="1" class="w-full px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)]" onchange="runTaxSimulation()">
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--text-muted)] mb-1">31-Jan-2018 FMV NAV (₹)</label>
+            <input type="number" id="calc-fmv-nav" value="220.00" step="1" class="w-full px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)]" onchange="runTaxSimulation()">
+          </div>
+
+        </div>
+
+        <!-- SIMULATION RESULTS BOX -->
+        <div class="glass-card p-5 bg-[var(--bg-secondary)] border border-emerald-500/40 space-y-4">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <span class="text-xs font-bold text-[var(--accent-green)] uppercase tracking-wider">Statutory Calculation Breakdown</span>
+            <div id="result-status-badge" class="badge badge-green">LTCG u/s 112A (Post-Budget)</div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+            <div class="p-3 rounded-lg bg-[var(--bg-primary)]">
+              <span class="text-[10px] text-[var(--text-dim)] uppercase">Holding Period</span>
+              <div id="out-holding-days" class="text-sm font-bold text-[var(--text-main)] font-mono">2,613 Days</div>
+              <span id="out-holding-type" class="text-[10px] text-emerald-400 font-semibold">Long Term (&ge;365d)</span>
+            </div>
+
+            <div class="p-3 rounded-lg bg-[var(--bg-primary)]">
+              <span class="text-[10px] text-[var(--text-dim)] uppercase">Deemed Cost u/s 55(2)(ac)</span>
+              <div id="out-deemed-cost" class="text-sm font-bold text-[var(--text-main)] font-mono">₹2,20,000.00</div>
+              <span id="out-gf-status" class="text-[10px] text-amber-400 font-semibold">Grandfathered FMV</span>
+            </div>
+
+            <div class="p-3 rounded-lg bg-[var(--bg-primary)]">
+              <span class="text-[10px] text-[var(--text-dim)] uppercase">Taxable Capital Gain</span>
+              <div id="out-taxable-gain" class="text-sm font-bold text-[var(--text-main)] font-mono">₹1,30,000.00</div>
+              <span class="text-[10px] text-[var(--text-dim)]">Gross: ₹3,50,000</span>
+            </div>
+
+            <div class="p-3 rounded-lg bg-[var(--bg-primary)] border border-emerald-500/30">
+              <span class="text-[10px] text-[var(--text-dim)] uppercase">Total Tax Payable</span>
+              <div id="out-total-tax" class="text-base font-extrabold text-emerald-400 font-mono">₹16,900.00</div>
+              <span id="out-tax-rate" class="text-[10px] text-emerald-400 font-semibold">12.5% + 4% Cess (13.00%)</span>
+            </div>
+          </div>
+
+          <div class="pt-2 text-xs text-[var(--text-muted)] space-y-1 border-t border-[var(--border-color)]">
+            <div class="flex justify-between">
+              <span>Section 55(2)(ac) Formula Applied:</span>
+              <span id="out-formula-text" class="font-mono text-slate-300">max(₹100, min(₹220, ₹350)) = ₹220 Deemed NAV</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Schedule CG Table F Advance Tax Accrual:</span>
+              <span id="out-quarter-text" class="font-mono text-indigo-400 font-semibold">Quarter 2b (23-Jul to 15-Sep)</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- STATUTORY REGIME REFERENCE CARDS -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <div class="glass-card p-5 space-y-3">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-green">Section 112A</span>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">Equity LTCG (&gt;12 Mos)</h4>
+          </div>
+          <ul class="text-xs text-[var(--text-muted)] space-y-2">
+            <li><strong>Pre-23 July 2024:</strong> 10% base rate + 4% cess = <strong>10.40%</strong>.</li>
+            <li><strong>Post-23 July 2024:</strong> 12.5% base rate + 4% cess = <strong>13.00%</strong>.</li>
+            <li><strong>Exemption:</strong> ₹1.25 Lakh per financial year (raised from ₹1 Lakh).</li>
+            <li><strong>Sequencing Invariant:</strong> Exemption exhausts sequentially against 10% tranche first, then 12.5%.</li>
+          </ul>
+        </div>
+
+        <div class="glass-card p-5 space-y-3">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-amber">Section 111A</span>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">Equity STCG (&le;12 Mos)</h4>
+          </div>
+          <ul class="text-xs text-[var(--text-muted)] space-y-2">
+            <li><strong>Pre-23 July 2024:</strong> 15% base rate + 4% cess = <strong>15.60%</strong>.</li>
+            <li><strong>Post-23 July 2024:</strong> 20% base rate + 4% cess = <strong>20.80%</strong>.</li>
+            <li><strong>No Exemption:</strong> Taxed from rupee one of net positive short-term gains.</li>
+            <li><strong>Loss Set-Off:</strong> STCL can be set off against both STCG and LTCG under Section 70.</li>
+          </ul>
+        </div>
+
+        <div class="glass-card p-5 space-y-3">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-rose">Section 50AA</span>
+            <h4 class="text-sm font-bold text-[var(--text-main)]">Specified Debt Funds</h4>
+          </div>
+          <ul class="text-xs text-[var(--text-muted)] space-y-2">
+            <li><strong>Acquired &ge; 01-Apr-2023:</strong> Deemed STCG taxable at individual slab rate (up to 30% + cess).</li>
+            <li><strong>Zero Indexation:</strong> No Cost Inflation Index (CII) benefit allowed.</li>
+            <li><strong>Acquired &lt; 01-Apr-2023:</strong> Grandfathered; taxed at 20% with indexation (pre-Budget) or 12.5% without indexation (post-Budget).</li>
+          </ul>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 6: X-RAY ANALYTICS & REALITY CHECK                                    -->
+    <!-- ========================================================================= -->
+    <section id="tab-xray-analytics" class="tab-content hidden space-y-8">
+      
+      <div>
+        <h2 class="text-2xl font-bold text-[var(--text-main)]">Institutional Portfolio X-Ray & Reality Check</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-1">
+          Detecting hidden equity overlaps, calculating Jaccard similarity, and modeling inflation/tax drag over multi-decade horizons.
+        </p>
+      </div>
+
+      <!-- X-RAY OVERLAP DEMO -->
+      <div class="glass-card p-6 space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-2 border-b border-[var(--border-color)] pb-3">
+          <div>
+            <h3 class="text-base font-bold text-[var(--text-main)]">Multi-Fund Look-Through & Stock Intersection</h3>
+            <p class="text-xs text-[var(--text-muted)]">Showing overlap between Parag Parikh Flexi Cap and Mirae Asset Large Cap</p>
+          </div>
+          <span class="badge badge-react">Jaccard Overlap: 38.4%</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="space-y-3">
+            <div class="text-xs font-bold text-[var(--text-main)]">Selected Mutual Funds</div>
+            <div class="p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] space-y-1">
+              <div class="text-xs font-semibold text-indigo-400">Parag Parikh Flexi Cap Fund</div>
+              <div class="text-[11px] text-[var(--text-muted)]">Allocation: ₹5,00,000 (50.0%)</div>
+            </div>
+            <div class="p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] space-y-1">
+              <div class="text-xs font-semibold text-cyan-400">Mirae Asset Large Cap Fund</div>
+              <div class="text-[11px] text-[var(--text-muted)]">Allocation: ₹5,00,000 (50.0%)</div>
+            </div>
+            <div class="p-3 rounded-lg bg-[var(--bg-primary)] border border-amber-500/30 text-xs text-amber-300">
+              ⚠️ <strong>Look-Through Finding:</strong> Even though you hold 2 distinct AMCs, <strong>38.4%</strong> of your capital is invested in the exact same underlying companies!
+            </div>
+          </div>
+
+          <!-- COMMON STOCKS TABLE -->
+          <div class="md:col-span-2 overflow-x-auto">
+            <div class="text-xs font-bold text-[var(--text-main)] mb-2">Top Common Constituent Holdings</div>
+            <table class="w-full text-xs text-left border-collapse">
+              <thead>
+                <tr class="border-b border-[var(--border-color)] text-[var(--text-dim)]">
+                  <th class="py-2 px-3">Company</th>
+                  <th class="py-2 px-3">Fund A Weight</th>
+                  <th class="py-2 px-3">Fund B Weight</th>
+                  <th class="py-2 px-3">Effective Overlap</th>
+                  <th class="py-2 px-3">Total Portfolio Exposure</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[var(--border-color)] text-[var(--text-muted)]">
+                <tr>
+                  <td class="py-2 px-3 font-semibold text-[var(--text-main)]">HDFC Bank Ltd.</td>
+                  <td class="py-2 px-3 font-mono">8.2%</td>
+                  <td class="py-2 px-3 font-mono">9.8%</td>
+                  <td class="py-2 px-3 font-mono text-emerald-400">8.2%</td>
+                  <td class="py-2 px-3 font-mono font-bold text-indigo-400">₹90,000 (9.0%)</td>
+                </tr>
+                <tr>
+                  <td class="py-2 px-3 font-semibold text-[var(--text-main)]">ICICI Bank Ltd.</td>
+                  <td class="py-2 px-3 font-mono">6.5%</td>
+                  <td class="py-2 px-3 font-mono">8.4%</td>
+                  <td class="py-2 px-3 font-mono text-emerald-400">6.5%</td>
+                  <td class="py-2 px-3 font-mono font-bold text-indigo-400">₹74,500 (7.45%)</td>
+                </tr>
+                <tr>
+                  <td class="py-2 px-3 font-semibold text-[var(--text-main)]">Infosys Ltd.</td>
+                  <td class="py-2 px-3 font-mono">4.1%</td>
+                  <td class="py-2 px-3 font-mono">6.2%</td>
+                  <td class="py-2 px-3 font-mono text-emerald-400">4.1%</td>
+                  <td class="py-2 px-3 font-mono font-bold text-indigo-400">₹51,500 (5.15%)</td>
+                </tr>
+                <tr>
+                  <td class="py-2 px-3 font-semibold text-[var(--text-main)]">Reliance Industries</td>
+                  <td class="py-2 px-3 font-mono">3.8%</td>
+                  <td class="py-2 px-3 font-mono">7.5%</td>
+                  <td class="py-2 px-3 font-mono text-emerald-400">3.8%</td>
+                  <td class="py-2 px-3 font-mono font-bold text-indigo-400">₹56,500 (5.65%)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- REALITY CHECK INTERACTIVE DRAG CALCULATOR -->
+      <div class="glass-card p-6 space-y-6">
+        <div class="flex items-center justify-between flex-wrap gap-2 border-b border-[var(--border-color)] pb-3">
+          <div>
+            <h3 class="text-base font-bold text-[var(--text-main)]">Reality Check Mode — Inflation & Tax Drag Decomposition</h3>
+            <p class="text-xs text-[var(--text-muted)]">Model the true purchasing power of your investments after inflation, mutual fund TER, and capital gains tax</p>
+          </div>
+          <span class="badge badge-rose">Purchasing Power Preservation</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+          <div>
+            <label class="block text-[var(--text-muted)] mb-1">Initial Wealth (₹ Lakhs)</label>
+            <input id="rc-capital" type="number" value="25" class="w-full px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-main)]" oninput="runRealityCheck()">
+          </div>
+          <div>
+            <label class="block text-[var(--text-muted)] mb-1">Time Horizon (Years)</label>
+            <input id="rc-years" type="range" min="5" max="30" value="15" class="w-full accent-indigo-500" oninput="runRealityCheck()">
+            <div class="flex justify-between text-[10px] text-[var(--text-dim)]"><span>5y</span><span id="rc-years-val" class="font-bold text-indigo-400">15 Years</span><span>30y</span></div>
+          </div>
+          <div>
+            <label class="block text-[var(--text-muted)] mb-1">Nominal Return CAGR (%)</label>
+            <input id="rc-cagr" type="range" min="6" max="18" value="12" step="0.5" class="w-full accent-emerald-500" oninput="runRealityCheck()">
+            <div class="flex justify-between text-[10px] text-[var(--text-dim)]"><span>6%</span><span id="rc-cagr-val" class="font-bold text-emerald-400">12.0%</span><span>18%</span></div>
+          </div>
+          <div>
+            <label class="block text-[var(--text-muted)] mb-1">CPI Inflation Rate (%)</label>
+            <input id="rc-inflation" type="range" min="3" max="10" value="6" step="0.5" class="w-full accent-rose-500" oninput="runRealityCheck()">
+            <div class="flex justify-between text-[10px] text-[var(--text-dim)]"><span>3%</span><span id="rc-inflation-val" class="font-bold text-rose-400">6.0%</span><span>10%</span></div>
+          </div>
+        </div>
+
+        <!-- RESULTS COMPARISON TILES -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+          <div class="glass-card p-4 bg-[var(--bg-secondary)]">
+            <span class="text-[10px] uppercase font-bold text-[var(--text-dim)]">Nominal Future Portfolio</span>
+            <div id="rc-out-nominal" class="text-xl font-bold text-emerald-400 font-mono mt-1">₹1,36,83,890</div>
+            <span class="text-[10px] text-[var(--text-muted)]">Without inflation adjustment</span>
+          </div>
+
+          <div class="glass-card p-4 bg-[var(--bg-secondary)] border-2 border-indigo-500/40">
+            <span class="text-[10px] uppercase font-bold text-indigo-400">True Real Purchasing Power</span>
+            <div id="rc-out-real" class="text-xl font-bold text-indigo-300 font-mono mt-1">₹57,09,922</div>
+            <span class="text-[10px] text-[var(--text-muted)]">In today's actual purchasing money</span>
+          </div>
+
+          <div class="glass-card p-4 bg-[var(--bg-secondary)] border border-rose-500/30">
+            <span class="text-[10px] uppercase font-bold text-rose-400">Cumulative Drag Loss</span>
+            <div id="rc-out-drag" class="text-xl font-bold text-rose-400 font-mono mt-1">₹79,73,968 (58.3%)</div>
+            <span class="text-[10px] text-[var(--text-muted)]">Eaten by inflation and friction</span>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 7: MOBILE & EDGE DECOUPLING                                           -->
+    <!-- ========================================================================= -->
+    <section id="tab-mobile-offline" class="tab-content hidden space-y-8">
+      
+      <div>
+        <h2 class="text-2xl font-bold text-[var(--text-main)]">Mobile & Decoupled Offline-First Architecture</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-1">
+          A native React Native & Expo mobile companion built for zero-dependency portability and sub-100ms startup.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Offline Architecture -->
+        <div class="glass-card p-6 space-y-4">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-mobile">Decoupled Daily Valuation</span>
+            <h3 class="text-base font-bold text-[var(--text-main)]">Zero-Server Mobile Autonomy</h3>
+          </div>
+          <p class="text-xs text-[var(--text-muted)] leading-relaxed">
+            Most self-hosted mobile apps fail the moment you leave your home Wi-Fi because your home NAS / Docker server isn't exposed to the public internet.
+          </p>
+          <p class="text-xs text-[var(--text-muted)] leading-relaxed">
+            Portfolio Tracker solves this via <strong class="text-[var(--text-main)]">Decoupled Daily Valuation</strong>:
+          </p>
+          <ul class="text-xs text-[var(--text-muted)] space-y-2 list-disc list-inside">
+            <li>The phone holds your folios, asset quantities, and AMFI codes locally in <code>expo-sqlite</code>.</li>
+            <li>When opening the app on cellular data, it queries the public AMFI mutual fund feed (<code>api.mfapi.in/mf/&lt;amfi_code&gt;</code>) directly over HTTPS.</li>
+            <li>It computes <code>units &times; current_nav</code> on-device, updating today's valuation and daily change without needing your server to be reachable!</li>
+          </ul>
+        </div>
+
+        <!-- Biometrics & QR Pairing -->
+        <div class="glass-card p-6 space-y-4">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-green">Frictionless Security</span>
+            <h3 class="text-base font-bold text-[var(--text-main)]">Hardware Biometrics & QR Pairing</h3>
+          </div>
+          <p class="text-xs text-[var(--text-muted)] leading-relaxed">
+            No typing long JWT tokens or server URLs on mobile touchscreens:
+          </p>
+          <ul class="text-xs text-[var(--text-muted)] space-y-2 list-disc list-inside">
+            <li><strong>QR Handshake:</strong> Click "Pair Device" on the Web Dashboard. Axum emits a short-lived, single-use cryptographically random token via <code>/api/v1/auth/pair/init</code>.</li>
+            <li><strong>Camera Scan:</strong> Mobile camera scans QR code, calls <code>/api/v1/auth/pair/claim</code>, and obtains a long-lived device token.</li>
+            <li><strong>Hardware Keystore:</strong> Token is persisted inside the device hardware security module (iOS Keychain / Android KeyStore) via <code>expo-secure-store</code>.</li>
+            <li><strong>Biometric Gating:</strong> App launches are unlocked via Face ID / Touch ID / BiometricPrompt via <code>expo-local-authentication</code>.</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <!-- MARTIN FOWLER MAINTAINABILITY SENSORS TABLE -->
+      <div class="glass-card p-6 space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold text-[var(--text-main)]">Martin Fowler Maintainability Sensors (`mobile/eslint.config.js`)</h3>
+            <p class="text-xs text-[var(--text-muted)]">Automated ESLint code quality bounds preventing mobile codebase degradation</p>
+          </div>
+          <span class="badge badge-amber">Blocking CI Gate</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr class="border-b border-[var(--border-color)] text-[var(--text-dim)]">
+                <th class="py-2.5 px-3">Maintainability Metric</th>
+                <th class="py-2.5 px-3">Configured Rule</th>
+                <th class="py-2.5 px-3">Threshold Limit</th>
+                <th class="py-2.5 px-3">Architectural Purpose</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[var(--border-color)] text-[var(--text-muted)]">
+              <tr>
+                <td class="py-2.5 px-3 font-semibold text-[var(--text-main)]">Cyclomatic Complexity</td>
+                <td class="py-2.5 px-3 font-mono text-purple-400">complexity</td>
+                <td class="py-2.5 px-3 font-mono text-emerald-400">&le; 10 branches (error)</td>
+                <td class="py-2.5 px-3">Blocks deeply nested conditionals; forces pure calculation helper extraction.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-semibold text-[var(--text-main)]">Function Length</td>
+                <td class="py-2.5 px-3 font-mono text-purple-400">max-lines-per-function</td>
+                <td class="py-2.5 px-3 font-mono text-emerald-400">&le; 50 lines (error)</td>
+                <td class="py-2.5 px-3">Ensures single responsibility principle; eliminates monster React components.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-semibold text-[var(--text-main)]">Function Parameters</td>
+                <td class="py-2.5 px-3 font-mono text-purple-400">max-params</td>
+                <td class="py-2.5 px-3 font-mono text-emerald-400">&le; 3 params (error)</td>
+                <td class="py-2.5 px-3">Mandates cohesive options/input objects instead of parameter soup.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-semibold text-[var(--text-main)]">File Length</td>
+                <td class="py-2.5 px-3 font-mono text-purple-400">max-lines</td>
+                <td class="py-2.5 px-3 font-mono text-emerald-400">&le; 300 lines (error)</td>
+                <td class="py-2.5 px-3">Guarantees modular cohesion across UI widgets, hooks, and adapters.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 8: 8 AGENT GUARDRAILS                                                  -->
+    <!-- ========================================================================= -->
+    <section id="tab-guardrails" class="tab-content hidden space-y-8">
+      
+      <div>
+        <h2 class="text-2xl font-bold text-[var(--text-main)]">The 8 Static Build-Time Guardrails</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-1">
+          A zero-tolerance engineering discipline guaranteeing that defects, untyped code, dead exports, and architectural drift fail loudly at build time.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <div class="glass-card p-5 space-y-2 border-t-2 border-t-rose-500">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-rose">Guardrail 1</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">proptests.rs &bull; golden_tax</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)]">The Invariant Oracle Law</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Agents must NEVER "fix" a test failure by changing assertion numbers in property tests or golden fixtures. Tests mathematically codify ground-truth statutory law. If an oracle fails, the algorithm is defective. Fix the algorithm, never the oracle.
+          </p>
+        </div>
+
+        <div class="glass-card p-5 space-y-2 border-t-2 border-t-blue-500">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-blue">Guardrail 2</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">tsconfig.app.json</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)]">The Zero-Any & Compiler Strictness Mandate</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Zero `any` allowed in TypeScript. Enforces `strict: true`, `noImplicitAny: true`, `noUncheckedIndexedAccess: true` (array lookups evaluate to `T | undefined`), `exactOptionalPropertyTypes: true`, and isolated modules.
+          </p>
+        </div>
+
+        <div class="glass-card p-5 space-y-2 border-t-2 border-t-rust">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-rust">Guardrail 3</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">export_bindings.rs</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)]">Cross-Stack Type Contract Parity</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Frontend and Mobile types are auto-generated directly from Rust backend structs via `cargo test --package portfolio-api --test export_bindings`. Git diff check (`git diff --exit-code frontend/src/types/generated`) blocks PRs if types drift.
+          </p>
+        </div>
+
+        <div class="glass-card p-5 space-y-2 border-t-2 border-t-green">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-green">Guardrail 4</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">portfolio-parity</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)]">Differential Parity Engine</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            The differential parity runner continuously tests benchmark scenarios between Rust and TypeScript engines, validating: Units &Delta; &le; 0.0001, Money &Delta; &le; ₹0.01, and Returns &Delta; &le; 10⁻⁶.
+          </p>
+        </div>
+
+        <div class="glass-card p-5 space-y-2 border-t-2 border-t-purple">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-mobile">Guardrail 5</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">mock_portfolios.rs</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)]">10+ Hermetic Mock Portfolios</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Every edge case is codified: Scheme consolidation, zero-holding redemptions, partial FIFO redemptions, stock look-through, pure debt/liquid, alternative assets (SGBs, physical gold), multi-PAN family switching, grandfathering, and ELSS 3-year lock-ins.
+          </p>
+        </div>
+
+        <div class="glass-card p-5 space-y-2 border-t-2 border-t-rose-500">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-rose">Guardrail 6</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">check-privacy-and-pii.py</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)]">Static Anti-PII & Privacy Scanner</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Pre-commit hook scans all tracked repository files, barring real-world Indian PAN formats, real customer names, bank details, or CAS PDF/JSON statements from ever being committed. Synthetic test data only!
+          </p>
+        </div>
+
+        <div class="glass-card p-5 space-y-2 border-t-2 border-t-amber">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-amber">Guardrail 7</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">knip --production</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)]">Dead-Code & Dependency Auditing</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            `knip` runs during `pnpm build:verify`. Zero unused files, zero dead exports, and zero unreferenced dependencies permitted in production bundles. Keeps bundle size minimal.
+          </p>
+        </div>
+
+        <div class="glass-card p-5 space-y-2 border-t-2 border-t-blue">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-blue">Guardrail 8</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">eslint-plugin-boundaries</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)]">Architectural Boundary Isolation</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Layer isolation: Utility modules cannot import UI components; UI domains (`Analytics`, `Tax`, `Dashboard`, `Family`) cannot import private internals of sibling domains; circular dependencies are rejected.
+          </p>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 9: CODEBASE NAVIGATOR                                                 -->
+    <!-- ========================================================================= -->
+    <section id="tab-codebase" class="tab-content hidden space-y-8">
+      
+      <div id="codebase-explorer">
+        <h2 class="text-2xl font-bold text-[var(--text-main)]">Interactive Codebase Explorer</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-1">
+          Explore the directory tree, inspect modules, and understand how files map to architectural responsibilities.
+        </p>
+      </div>
+
+      <!-- FILTER BUTTONS -->
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium filter-btn" onclick="filterCodebase('all')">All Subsystems</button>
+        <button class="px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-muted)] filter-btn" onclick="filterCodebase('backend-rs')">backend-rs (Rust)</button>
+        <button class="px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-muted)] filter-btn" onclick="filterCodebase('frontend')">frontend (React 19)</button>
+        <button class="px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-muted)] filter-btn" onclick="filterCodebase('mobile')">mobile (Expo / SQLite)</button>
+        <button class="px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-muted)] filter-btn" onclick="filterCodebase('packages')">packages (Shared)</button>
+        <button class="px-3 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-muted)] filter-btn" onclick="filterCodebase('docs')">docs (Domain & Arch)</button>
+      </div>
+
+      <!-- CODEBASE TREE CARDS -->
+      <div id="codebase-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        
+        <!-- CARD: portfolio-core -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="backend-rs">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-rust">Rust Crate</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">backend-rs</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">portfolio-core</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Pure Zero-I/O domain math: FIFO lot matching, Brent XIRR solver, Budget 2024 tax engine, grandfathering, and portfolio look-through overlap.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            crates/portfolio-core/src/lib.rs
+          </div>
+        </div>
+
+        <!-- CARD: portfolio-api -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="backend-rs">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-rust">Rust Crate</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">backend-rs</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">portfolio-api</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            High-throughput Axum REST gateway with JWT authentication, QR device pairing endpoints, and automated TypeScript contract export.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            crates/portfolio-api/src/main.rs
+          </div>
+        </div>
+
+        <!-- CARD: portfolio-worker -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="backend-rs">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-rust">Rust Crate</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">backend-rs</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">portfolio-worker</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Background BullMQ worker handling CAS PDF parsing, Clean-Slate Reconstruction, AMFI NAV updates, and granular historical timelines.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            crates/portfolio-worker/src/main.rs
+          </div>
+        </div>
+
+        <!-- CARD: portfolio-db -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="backend-rs">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-rust">Rust Crate</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">backend-rs</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">portfolio-db</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            SQLx PostgreSQL persistence, self-healing idempotent migrations, repository traits, and sub-millisecond in-memory database mocks.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            crates/portfolio-db/src/lib.rs
+          </div>
+        </div>
+
+        <!-- CARD: frontend/Analytics -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="frontend">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-react">React Domain</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">frontend</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">src/components/Analytics/</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            X-Ray dashboard, multi-level treemap (`MultiLevelTreemap.tsx`), sunburst chart, fund overlap intersection table, and stock detail drawers.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            frontend/src/components/Analytics/
+          </div>
+        </div>
+
+        <!-- CARD: frontend/Tax -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="frontend">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-react">React Domain</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">frontend</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">src/components/Tax/</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Schedule CG advance tax table (`AdvanceTaxMatrixTable.tsx`), LTCG exemption tracker, realized gains summary, and tax harvesting simulator.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            frontend/src/components/Tax/
+          </div>
+        </div>
+
+        <!-- CARD: mobile/db -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="mobile">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-mobile">Mobile SQLite</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">mobile</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">mobile/src/db/</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Local SQLite client, relational schema (`schema.ts`), and repositories for instant offline launch and persisted sync queue outbox.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            mobile/src/db/repository.ts
+          </div>
+        </div>
+
+        <!-- CARD: mobile/feeds -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="mobile">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-mobile">Decoupled Feeds</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">mobile</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">mobile/src/feeds/</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Direct public AMFI NAV fetcher (`nav-fetcher.ts`) querying `api.mfapi.in` on-device without needing the self-hosted Docker server.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            mobile/src/feeds/nav-fetcher.ts
+          </div>
+        </div>
+
+        <!-- CARD: packages/core-view -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="packages">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-green">Shared Monorepo</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">packages</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">@portfolio/core-view</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Shared presentation helpers, scheme grouping consolidation (`consolidation/`), scope management, and currency/percent formatters.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            packages/core-view/src/index.ts
+          </div>
+        </div>
+
+        <!-- CARD: docs/domain/tax_engine_internals.md -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="docs">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-amber">Documentation</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">docs</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">tax_engine_internals.md</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Comprehensive statutory reference for Finance (No. 2) Act 2024, FIFO lot allocation, Section 55(2)(ac) grandfathering, and Schedule CG Table F.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            docs/domain/tax_engine_internals.md
+          </div>
+        </div>
+
+        <!-- CARD: AGENTS.md -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="docs">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-rose">Engineering Mandates</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">root</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">AGENTS.md</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            The authoritative agent rules: Invariant Oracle Law, Zero-Any TypeScript mandate, Hermetic Verification sequence, and Synthetic Mock Portfolios.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            AGENTS.md
+          </div>
+        </div>
+
+        <!-- CARD: CONCEPTS.md -->
+        <div class="glass-card p-4 space-y-2 code-card" data-subsystem="docs">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-blue">Domain Concepts</span>
+            <span class="text-[10px] font-mono text-[var(--text-dim)]">root</span>
+          </div>
+          <h4 class="text-sm font-bold text-[var(--text-main)] font-mono">CONCEPTS.md</h4>
+          <p class="text-xs text-[var(--text-muted)]">
+            Shared domain glossary: Clean-Slate Reconstruction, Running Balance, Portfolio vs Folio boundaries, Decoupled Daily Valuation, and Hardware Biometric Pairing.
+          </p>
+          <div class="text-[11px] font-mono text-indigo-400 pt-1">
+            CONCEPTS.md
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="mt-16 border-t border-[var(--border-color)] py-8 px-6 text-center text-xs text-[var(--text-dim)]">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <span class="font-bold text-[var(--text-main)]">Portfolio Tracker</span>
+        <span>&bull;</span>
+        <span>Institutional Financial Intelligence</span>
+      </div>
+      <div>
+        Created for Indian Investors &bull; 100% Rust Backend Workspace &bull; Zero-I/O Functional Architecture
+      </div>
+    </div>
+  </footer>
+
+  <!-- SCRIPT LOGIC: INTERACTIVITY, CALCULATORS, SEARCH, STEPPER -->
+  <script>
+    // --- THEME SWITCHER ---
+    const themeToggleBtn = document.getElementById('themeToggleBtn');
+    const moonIcon = document.getElementById('moonIcon');
+    const sunIcon = document.getElementById('sunIcon');
+
+    themeToggleBtn.addEventListener('click', () => {
+      const isDark = document.documentElement.classList.toggle('dark');
+      document.documentElement.classList.toggle('light', !isDark);
+      moonIcon.classList.toggle('hidden', !isDark);
+      sunIcon.classList.toggle('hidden', isDark);
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    });
+
+    // Restore saved theme
+    if (localStorage.getItem('theme') === 'light') {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.add('light');
+      moonIcon.classList.add('hidden');
+      sunIcon.classList.remove('hidden');
+    }
+
+    // --- TAB SWITCHER ---
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+      const activeContent = document.getElementById('tab-' + tabId);
+      if (activeContent) activeContent.classList.remove('hidden');
+
+      // Highlight active button
+      event.currentTarget.classList.add('active');
+    }
+
+    // --- GLOBAL SEARCH FILTER ---
+    const globalSearch = document.getElementById('globalSearch');
+    globalSearch.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase().trim();
+      if (!term) return;
+
+      // Check tab matches or switch to codebase tab
+      if (term.includes('tax') || term.includes('112a') || term.includes('111a') || term.includes('budget')) {
+        showTabDirect('tax-engine');
+      } else if (term.includes('xray') || term.includes('overlap') || term.includes('inflation') || term.includes('reality')) {
+        showTabDirect('xray-analytics');
+      } else if (term.includes('mobile') || term.includes('sqlite') || term.includes('amfi') || term.includes('offline')) {
+        showTabDirect('mobile-offline');
+      } else if (term.includes('ingest') || term.includes('cas') || term.includes('clean-slate')) {
+        showTabDirect('ingestion');
+      } else if (term.includes('guardrail') || term.includes('pii') || term.includes('oracle')) {
+        showTabDirect('guardrails');
+      } else if (term.includes('zero-io') || term.includes('archunit') || term.includes('xirr')) {
+        showTabDirect('zero-io');
+      } else {
+        showTabDirect('codebase');
+        filterCodebaseCards(term);
+      }
+    });
+
+    function showTabDirect(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      const activeContent = document.getElementById('tab-' + tabId);
+      if (activeContent) activeContent.classList.remove('hidden');
+      
+      // Update tab button active styling
+      const buttons = document.querySelectorAll('.tab-btn');
+      buttons.forEach(btn => {
+        if (btn.getAttribute('onclick')?.includes(tabId)) {
+          btn.classList.add('active');
+        }
+      });
+    }
+
+    // Keyboard shortcut CMD+K / CTRL+K
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        globalSearch.focus();
+      }
+    });
+
+    // --- ARCHITECTURE COMPONENT INSPECTOR DATA ---
+    const componentData = {
+      frontend: {
+        badge: 'React 19 SPA',
+        badgeClass: 'badge-react',
+        title: 'React 19 + TypeScript Strict Frontend',
+        path: 'frontend/src/',
+        desc: 'Production web application built with React 19, TypeScript, and Vite. Implements domain isolation across Analytics, Tax, Dashboard, Family, and Insights, with WCAG 2.1 AA accessibility and zero untyped code.',
+        invariants: [
+          'The Zero-Any Rule: strictly zero `any` types permitted.',
+          'Domain Boundary Isolation enforced via `eslint-plugin-boundaries`.',
+          'All environment variables validated at build time via `@t3-oss/env-core` and Zod.',
+          'Zero-Dead-Code certified via `knip --production` during builds.'
+        ],
+        tests: [
+          'Unit Tests: `pnpm --filter frontend test:unit` (Lines >= 88%, Statements >= 86%)',
+          'Playwright E2E: `pnpm --filter frontend test:e2e` across 16 test suites',
+          'Docker Deployment E2E: `pnpm --filter frontend test:e2e:docker`'
+        ],
+        code: `// frontend/src/env.ts - Schema-validated environment variables
+import { createEnv } from '@t3-oss/env-core';
+import { z } from 'zod';
+
+export const env = createEnv({
+  clientPrefix: 'VITE_',
+  client: {
+    VITE_API_URL: z.string().url().default('http://localhost:3001'),
+  },
+  runtimeEnv: import.meta.env,
+});`
+      },
+      mobile: {
+        badge: 'React Native / Expo',
+        badgeClass: 'badge-mobile',
+        title: 'Offline-First React Native Mobile Client',
+        path: 'mobile/src/',
+        desc: 'Native iOS & Android mobile client featuring sub-100ms cold startup from local SQLite, Decoupled Daily Valuation directly from public AMFI feeds, and OS Keychain biometric unlock.',
+        invariants: [
+          'Martin Fowler Maintainability Sensors: Cyclomatic complexity <= 10, lines <= 50, params <= 3, file <= 300.',
+          'Decoupled Daily Valuation: Computes daily returns on-device over HTTPS without needing self-hosted server.',
+          'Outbox Sync Queue: Staged offline uploads with retry backoff.',
+          'Hardware Biometric Security: Face ID / Touch ID gating OS KeyStore / Keychain tokens.'
+        ],
+        tests: [
+          'Hermetic E2E Runner: `pnpm --filter mobile test:e2e` (Simulator-free)',
+          'Maestro E2E Flows: `pnpm --filter mobile test:e2e:maestro:ios` / `android`',
+          'Coverage thresholds: Lines >= 85%, Statements >= 85%, Branches >= 70%'
+        ],
+        code: `// mobile/src/feeds/nav-fetcher.ts - Decoupled AMFI Daily NAV sync
+export async function fetchLatestSchemeNav(amfiCode: string): Promise<number | null> {
+  const url = \`https://api.mfapi.in/mf/\${encodeURIComponent(amfiCode)}\`;
+  const response = await fetch(url);
+  const data = await response.json();
+  const latest = data?.data?.[0];
+  return latest ? parseFloat(latest.nav) : null;
+}`
+      },
+      coreview: {
+        badge: 'Shared Package',
+        badgeClass: 'badge-green',
+        title: '@portfolio/core-view Cross-Platform View Package',
+        path: 'packages/core-view/',
+        desc: 'Shared TypeScript package providing consolidated presentation algorithms, scheme grouping, family profile scope adapters, and Indian currency/percent formatters across both Web and Mobile apps.',
+        invariants: [
+          'Zero platform-specific dependencies (no DOM, no React Native primitives).',
+          'Pure presentation algorithms and deterministic grouping.',
+          '100% test coverage for scheme consolidation and multi-folio PAN aggregation.'
+        ],
+        tests: [
+          'Vitest suite: `pnpm --filter @portfolio/core-view test`',
+          'Consolidation parity tests: `src/consolidation/consolidation.test.ts`'
+        ],
+        code: `// packages/core-view/src/formatters/currency.ts
+export function formatIndianCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2,
+  }).format(amount);
+}`
+      },
+      api: {
+        badge: 'Axum REST Gateway',
+        badgeClass: 'badge-rust',
+        title: 'portfolio-api (High-Throughput REST Gateway)',
+        path: 'backend-rs/crates/portfolio-api/',
+        desc: 'High-performance asynchronous HTTP gateway built on Tokio and Axum. Provides JWT authentication, QR device pairing endpoints, camelCase serialization matching frontend types, and cross-stack contract export.',
+        invariants: [
+          'Cross-Stack Contract Parity: Types exported to TS via `export_bindings.rs`.',
+          'Single-use ephemeral pairing tokens with cryptographic randomness.',
+          'Strict error mapping with centralized JSON responses.'
+        ],
+        tests: [
+          'Contract Export: `cargo test --package portfolio-api --test export_bindings`',
+          'Pairing Handshake Test: `cargo test --package portfolio-api --test pairing_test`',
+          'NAV Sync Test: `cargo test --package portfolio-api --test nav_sync_test`'
+        ],
+        code: `// backend-rs/crates/portfolio-api/src/routes/auth.rs - QR Pair Handshake
+pub async fn init_pairing(
+    State(state): State<Arc<AppState>>,
+    Extension(user_id): Extension<Uuid>,
+) -> Result<Json<PairInitResponse>, ApiError> {
+    let pairing_token = generate_secure_random_token();
+    state.cache_pairing_token(&pairing_token, user_id, Duration::from_secs(300)).await?;
+    Ok(Json(PairInitResponse { pairing_token, expires_in_seconds: 300 }))
+}`
+      },
+      worker: {
+        badge: 'BullMQ Background Worker',
+        badgeClass: 'badge-amber',
+        title: 'portfolio-worker (Background Worker & CAS Processor)',
+        path: 'backend-rs/crates/portfolio-worker/',
+        desc: 'Asynchronous background processor connecting to Redis BullMQ queues (`bull:pdfUploadQueue:*`) or in-memory queues. Sandboxes CAS PDF extraction, runs Python `casparser`, and rebuilds historical daily valuation timelines.',
+        invariants: [
+          'Filesystem Sandboxing: strictly rejects directory traversal (`..`) outside `uploads/`.',
+          'Clean-Slate Reconstruction: clears pre-existing touched folio records before re-streaming.',
+          'Granular timeline aggregation with gap-filled daily market valuations.'
+        ],
+        tests: [
+          'Worker Integration Tests: `cargo test --package portfolio-worker --test worker_tests`',
+          'Timeline Property Tests: `cargo test --package portfolio-worker --test timeline_proptest`'
+        ],
+        code: `// backend-rs/crates/portfolio-worker/src/jobs/cas_parser.rs - Path validation
+pub fn validate_file_path(path_str: &str) -> Result<PathBuf, WorkerError> {
+    let p = Path::new(path_str);
+    if path_str.contains("..") || p.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err(WorkerError::ValidationError("Path traversal detected".into()));
+    }
+    // ...
+}`
+      },
+      core: {
+        badge: 'Zero-I/O Domain Core',
+        badgeClass: 'badge-rose',
+        title: 'portfolio-core (Deterministic Financial Engine)',
+        path: 'backend-rs/crates/portfolio-core/',
+        desc: 'Pure, zero-I/O calculation engine forbidding unsafe code. Executes FIFO lot matching, Brent-Dekker XIRR numerical solving, Budget 2024 capital gains tax, and multi-fund institutional overlap.',
+        invariants: [
+          'Strict Zero-I/O Policy: 0 network, 0 database, 0 async runtime, 0 filesystem.',
+          'Safe Code Mandate: `#![forbid(unsafe_code)]` at domain crate root.',
+          'The Invariant Oracle Law: Tests are ground-truth oracles; precision bounds strictly enforced.'
+        ],
+        tests: [
+          'ArchUnit Tests: `tests/architecture_invariants_test.rs`',
+          'Statutory Tax Oracle: `tests/tax_oracle_test.rs` with 33 golden vectors',
+          '10+ Mock Portfolios Suite: `tests/mock_portfolios.rs`'
+        ],
+        code: `// backend-rs/crates/portfolio-core/src/tax/grandfathering.rs - Section 55(2)(ac)
+pub fn calculate_deemed_cost(actual_cost: Decimal, fmv_2018: Decimal, sale_price: Decimal) -> Decimal {
+    let lower_of_fmv_and_sale = fmv_2018.min(sale_price);
+    actual_cost.max(lower_of_fmv_and_sale)
+}`
+      },
+      db: {
+        badge: 'SQLx + PostgreSQL',
+        badgeClass: 'badge-blue',
+        title: 'portfolio-db (Persistence & Repository Layer)',
+        path: 'backend-rs/crates/portfolio-db/',
+        desc: 'Database persistence layer using SQLx for PostgreSQL. Includes self-healing idempotent schema initialization (`init_schema`) and `InMemoryDatabase` for sub-millisecond Docker-free testing.',
+        invariants: [
+          'Self-Healing Migrations: database schema auto-heals on boot without Prisma.',
+          'Sub-account normalization: handles `15161515 / 16` vs `15161515` to prevent duplicate folios.',
+          'Strongly typed entity mappings with zero runtime type coercion.'
+        ],
+        tests: [
+          'Live DB Ingest Tests: `cargo test --package portfolio-db --test live_db_ingest_test`',
+          'Schema Invariant Tests: `cargo test --package portfolio-db --test schema_test`'
+        ],
+        code: `// backend-rs/crates/portfolio-db/src/schema.rs - Idempotent self-healing schema
+pub async fn init_schema(pool: &PgPool) -> Result<(), DbError> {
+    sqlx::raw_sql(include_str!("../migrations/init.sql")).execute(pool).await?;
+    Ok(())
+}`
+      }
+    };
+
+    function inspectComponent(compId) {
+      const data = componentData[compId];
+      if (!data) return;
+
+      // Update selected state in DOM
+      document.querySelectorAll('.arch-node').forEach(n => n.classList.remove('selected'));
+      const activeNode = document.getElementById('node-' + compId);
+      if (activeNode) activeNode.classList.add('selected');
+
+      document.getElementById('inspect-badge').textContent = data.badge;
+      document.getElementById('inspect-badge').className = 'badge ' + data.badgeClass;
+      document.getElementById('inspect-title').textContent = data.title;
+      document.getElementById('inspect-path').textContent = data.path;
+      document.getElementById('inspect-desc').textContent = data.desc;
+
+      const invList = document.getElementById('inspect-invariants');
+      invList.innerHTML = '';
+      data.invariants.forEach(inv => {
+        const li = document.createElement('li');
+        li.textContent = inv;
+        invList.appendChild(li);
+      });
+
+      const testList = document.getElementById('inspect-tests');
+      testList.innerHTML = '';
+      data.tests.forEach(t => {
+        const li = document.createElement('li');
+        li.textContent = t;
+        testList.appendChild(li);
+      });
+
+      document.getElementById('inspect-code').textContent = data.code;
+    }
+
+    // Default select portfolio-core
+    inspectComponent('core');
+
+    // --- INGESTION PIPELINE STEPPER DATA ---
+    const ingestSteps = [
+      {
+        step: 1,
+        title: 'Statement Upload & Multi-Tier Transport',
+        subtitle: 'Client -> portfolio-api (POST /api/v1/cas/upload)',
+        desc: 'The user selects a password-protected CAMS or KFintech CAS PDF on the React Web SPA or picks it on the Mobile App (`expo-document-picker`). The password is encrypted, and the file is streamed via multipart form data to the Axum API gateway.',
+        rationale: 'On mobile, if the self-hosted Docker server is unreachable, the statement is not lost. It enters the SQLite `sync_queue` outbox with encrypted credentials and auto-retries when connectivity resumes.',
+        logs: [
+          '// Upload received in shared_uploads',
+          '> POST /api/v1/cas/upload HTTP/1.1',
+          '> File staged: /app/uploads/cas_17192.pdf',
+          '> BullMQ: Queued job \'bull:pdfUploadQueue:job_842\''
+        ]
+      },
+      {
+        step: 2,
+        title: 'Filesystem Sandboxing & Path Traversal Guard',
+        subtitle: 'portfolio-worker::jobs::cas_parser::validate_file_path',
+        desc: 'The background worker pops the job from Redis. Before processing, it statically validates that the target path does not contain parent path traversal characters (`..`) and resides strictly within `/app/uploads` or temporary scratch directories.',
+        rationale: 'Prevents arbitrary filesystem reads or malicious path injection if an attacker crafts an exploit header.',
+        logs: [
+          '> Worker popped job \'job_842\'',
+          '> Checking path traversal: validate_file_path("/app/uploads/cas_17192.pdf")',
+          '> Sandboxing check PASSED: valid upload boundary'
+        ]
+      },
+      {
+        step: 3,
+        title: 'Python Casparser Extraction Subprocess',
+        subtitle: 'Python 3 casparser utility & JSON serialization',
+        desc: 'The worker invokes the specialized Python `casparser` utility with the decrypted PDF password, extracting raw transaction ledgers, investor metadata, scheme names, AMFI codes, ISINs, and closing balances into structured JSON.',
+        rationale: 'Leverages the mature, battle-tested Python parser for obfuscated PDF layouts while keeping all downstream domain logic in 100% fast Rust.',
+        logs: [
+          '> Spawning: python3 -m casparser /app/uploads/cas_17192.pdf -p ****',
+          '> Extraction complete: 18 Folios, 245 Transactions identified',
+          '> Deleting temporary upload file: /app/uploads/cas_17192.pdf [Done]'
+        ]
+      },
+      {
+        step: 4,
+        title: 'Multi-PAN Isolation & Managed Profile Partitioning',
+        subtitle: 'portfolio_db::repositories::cas_ingest_repo::upsert_postgres_profile',
+        desc: 'The worker inspects the extracted investor demographic data, extracting the investor PAN. It checks if a `ManagedProfile` exists for this user and PAN. If multiple family members exist in the statement, folios are cleanly partitioned across profiles.',
+        rationale: 'Guarantees that individual family members get distinct tax exemption buckets (₹1.25L Section 112A per PAN) instead of blended totals.',
+        logs: [
+          '> Investor PAN resolved: ABCDE1234F ("Aarav Sharma")',
+          '> Upserting ManagedProfile: id=d3b07384d113 (taxSlab=0.30)',
+          '> Partitioning 18 Folios under Portfolio: id=a94f1c98e202'
+        ]
+      },
+      {
+        step: 5,
+        title: 'Clean-Slate Folio Reconstruction Invariant',
+        subtitle: 'Atomic Transaction: DELETE WHERE folioId = $1',
+        desc: 'Because CAS statements represent cumulative portfolio history from inception, appending records would create duplicate buys or phantom switch-ins. The worker executes Clean-Slate Reconstruction: clearing all pre-existing transactions for the touched folio before inserting.',
+        rationale: 'Completely eliminates ghost duplicate positions and sign errors when processing repeated statements or scheme mergers.',
+        logs: [
+          '> Folio: 15161515/16 ("Parag Parikh Flexi Cap Fund Direct-Growth")',
+          '> Clean-Slate triggered: Purging stale cached checkpoints for folio',
+          '> Inserting 32 fresh chronological transaction records'
+        ]
+      },
+      {
+        step: 6,
+        title: 'Running Balance Chronological Sequencing',
+        subtitle: 'portfolio_core::holdings::registry::reconcile_running_balance',
+        desc: 'CAS statements often list multiple transactions on the exact same date (e.g. SIP installment + switch-in + dividend reinvestment). The worker uses the statement\'s authoritative `balance` (Running Balance) to mathematically order same-day trades.',
+        rationale: 'Guarantees that FIFO lot exhaustion exhausts the exact units that existed at the second of redemption.',
+        logs: [
+          '> Same-day trade detected: 2023-04-10 (PURCHASE + SWITCH_IN)',
+          '> Sequencing via Running Balance: Balance 500.00 -> 650.00 -> 900.00',
+          '> Ordering verified: Zero negative unit anomalies'
+        ]
+      },
+      {
+        step: 7,
+        title: 'Timeline Reconstruction & Valuation Snapshots',
+        subtitle: 'portfolio-worker::jobs::history_refresh::reconstruct_timeline',
+        desc: 'With authoritative folios rebuilt, the worker schedules a `HistoryRefreshJobData` task. It cross-references AMFI historical NAVs to reconstruct daily point-in-time valuation and invested capital checkpoints for the portfolio history chart.',
+        rationale: 'Enables sub-millisecond historical dashboard rendering without on-the-fly multi-year historical math.',
+        logs: [
+          '> Scheduling HistoryRefreshJob: Portfolio=a94f1c98e202',
+          '> Merging daily AMFI historical NAVs (2018-present)',
+          '> Valuation timeline reconstructed: 1,825 daily snapshots recorded',
+          '> Ingestion Pipeline COMPLETE: SUCCESS'
+        ]
+      }
+    ];
+
+    let currentIngestStep = 0;
+    let autoStepTimer = null;
+
+    function renderIngestStep(index) {
+      currentIngestStep = index;
+      const data = ingestSteps[index];
+
+      document.getElementById('step-indicator').textContent = `Step ${data.step} of ${ingestSteps.length}`;
+      document.getElementById('step-number-badge').textContent = data.step;
+      document.getElementById('step-title').textContent = data.title;
+      document.getElementById('step-subtitle').textContent = data.subtitle;
+      document.getElementById('step-description').textContent = data.desc;
+      document.getElementById('step-rationale').textContent = data.rationale;
+
+      const consoleBox = document.getElementById('step-console');
+      consoleBox.innerHTML = '';
+      data.logs.forEach(log => {
+        const div = document.createElement('div');
+        if (log.startsWith('//')) div.className = 'text-slate-500';
+        else if (log.startsWith('>')) div.className = 'text-indigo-400';
+        else if (log.includes('COMPLETE') || log.includes('SUCCESS') || log.includes('PASSED')) div.className = 'text-emerald-400';
+        else div.className = 'text-slate-300';
+        div.textContent = log;
+        consoleBox.appendChild(div);
+      });
+
+      document.getElementById('prevStepBtn').disabled = (index === 0);
+      document.getElementById('nextStepBtn').disabled = (index === ingestSteps.length - 1);
+    }
+
+    function nextIngestStep() {
+      if (currentIngestStep < ingestSteps.length - 1) {
+        renderIngestStep(currentIngestStep + 1);
+      }
+    }
+
+    function prevIngestStep() {
+      if (currentIngestStep > 0) {
+        renderIngestStep(currentIngestStep - 1);
+      }
+    }
+
+    function toggleAutoStep() {
+      const btn = document.getElementById('autoStepBtn');
+      if (autoStepTimer) {
+        clearInterval(autoStepTimer);
+        autoStepTimer = null;
+        btn.textContent = '▶ Auto-Play';
+        btn.classList.remove('bg-indigo-600', 'text-white');
+      } else {
+        btn.textContent = '⏸ Pause';
+        btn.classList.add('bg-indigo-600', 'text-white');
+        autoStepTimer = setInterval(() => {
+          if (currentIngestStep < ingestSteps.length - 1) {
+            renderIngestStep(currentIngestStep + 1);
+          } else {
+            renderIngestStep(0);
+          }
+        }, 3000);
+      }
+    }
+
+    renderIngestStep(0);
+
+    // --- TAX SIMULATOR CALCULATION ENGINE ---
+    function runTaxSimulation() {
+      const assetType = document.getElementById('calc-asset-type').value;
+      const buyDateStr = document.getElementById('calc-buy-date').value;
+      const sellDateStr = document.getElementById('calc-sell-date').value;
+      const taxSlab = parseFloat(document.getElementById('calc-tax-slab').value) || 0.30;
+      const units = parseFloat(document.getElementById('calc-units').value) || 1000;
+      const buyNav = parseFloat(document.getElementById('calc-buy-nav').value) || 100;
+      const sellNav = parseFloat(document.getElementById('calc-sell-nav').value) || 350;
+      const fmvNav = parseFloat(document.getElementById('calc-fmv-nav').value) || 220;
+
+      const buyDate = new Date(buyDateStr);
+      const sellDate = new Date(sellDateStr);
+      const budget2024Date = new Date('2024-07-23');
+      const grandfatherDate = new Date('2018-01-31');
+      const debtNewRegimeDate = new Date('2023-04-01');
+
+      // Holding period calculation
+      const diffTime = Math.max(0, sellDate - buyDate);
+      const holdingDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      document.getElementById('out-holding-days').textContent = `${holdingDays.toLocaleString()} Days`;
+
+      const isPostBudget = sellDate >= budget2024Date;
+      const isGrandfathered = (assetType === 'EQUITY_MF' || assetType === 'STOCK') && buyDate <= grandfatherDate;
+
+      let holdingType = 'SHORT_TERM';
+      let section = '111A';
+      let baseTaxRate = 0.15;
+      let deemedBuyNav = buyNav;
+      let formulaText = `Actual Cost: ₹${buyNav.toFixed(2)}`;
+
+      // Asset Specific Rules
+      if (assetType === 'DEBT_NEW') {
+        // Section 50AA: All gains deemed STCG taxed at slab
+        holdingType = 'SHORT_TERM_DEEMED';
+        section = '50AA (Debt Slab)';
+        baseTaxRate = taxSlab;
+        deemedBuyNav = buyNav;
+        formulaText = `Section 50AA: All gains taxed at investor slab (${(taxSlab * 100).toFixed(0)}%)`;
+      } else if (assetType === 'DEBT_OLD') {
+        const threshold = isPostBudget ? 730 : 1095;
+        if (holdingDays >= threshold) {
+          holdingType = 'LONG_TERM';
+          section = isPostBudget ? '112 (Post-Budget 12.5% No Indexation)' : '112 (Pre-Budget 20% with CII)';
+          baseTaxRate = isPostBudget ? 0.125 : 0.20;
+          deemedBuyNav = buyNav;
+          formulaText = isPostBudget ? 'Section 112: 12.5% without indexation benefit' : 'Section 112: 20% with Cost Inflation Indexation';
+        } else {
+          holdingType = 'SHORT_TERM';
+          section = 'STCG (Slab Rate)';
+          baseTaxRate = taxSlab;
+          deemedBuyNav = buyNav;
+          formulaText = `Holding < ${threshold} days; taxed at slab rate`;
+        }
+      } else {
+        // Equity MF or Stock
+        if (holdingDays >= 365) {
+          holdingType = 'LONG_TERM';
+          section = isPostBudget ? '112A (Post-Budget 12.5%)' : '112A (Pre-Budget 10%)';
+          baseTaxRate = isPostBudget ? 0.125 : 0.10;
+
+          if (isGrandfathered) {
+            // Section 55(2)(ac) formula:
+            const v1 = Math.min(fmvNav, sellNav);
+            deemedBuyNav = Math.max(buyNav, v1);
+            formulaText = `max(Buy ₹${buyNav.toFixed(2)}, min(FMV ₹${fmvNav.toFixed(2)}, Sell ₹${sellNav.toFixed(2)})) = ₹${deemedBuyNav.toFixed(2)}`;
+          } else {
+            deemedBuyNav = buyNav;
+            formulaText = `Acquired post Jan-31-2018: Deemed Cost = Actual Cost ₹${buyNav.toFixed(2)}`;
+          }
+        } else {
+          holdingType = 'SHORT_TERM';
+          section = isPostBudget ? '111A (Post-Budget 20%)' : '111A (Pre-Budget 15%)';
+          baseTaxRate = isPostBudget ? 0.20 : 0.15;
+          deemedBuyNav = buyNav;
+          formulaText = `Holding < 365 days: Short-Term Capital Gains u/s 111A`;
+        }
+      }
+
+      // Calculations
+      const grossConsideration = units * sellNav;
+      const totalDeemedCost = units * deemedBuyNav;
+      const capitalGain = Math.max(0, grossConsideration - totalDeemedCost);
+      const taxBeforeCess = capitalGain * baseTaxRate;
+      const cess = taxBeforeCess * 0.04;
+      const totalTax = taxBeforeCess + cess;
+      const effectiveRate = baseTaxRate * 1.04;
+
+      // Advance Tax Quarter
+      let quarterText = 'Quarter 1 (01-Apr to 15-Jun)';
+      const month = sellDate.getMonth() + 1; // 1-12
+      const day = sellDate.getDate();
+
+      if (month === 4 || month === 5 || (month === 6 && day <= 15)) {
+        quarterText = 'Quarter 1 (01-Apr to 15-Jun)';
+      } else if (month === 6 && day > 15 || (month === 7 && day <= 22)) {
+        quarterText = 'Quarter 2a Pre-Budget (16-Jun to 22-Jul)';
+      } else if ((month === 7 && day >= 23) || month === 8 || (month === 9 && day <= 15)) {
+        quarterText = 'Quarter 2b Post-Budget (23-Jul to 15-Sep)';
+      } else if ((month === 9 && day > 15) || month === 10 || month === 11 || (month === 12 && day <= 15)) {
+        quarterText = 'Quarter 3 (16-Sep to 15-Dec)';
+      } else if ((month === 12 && day > 15) || month === 1 || month === 2 || (month === 3 && day <= 15)) {
+        quarterText = 'Quarter 4 (16-Dec to 15-Mar)';
+      } else {
+        quarterText = 'Quarter 5 (16-Mar to 31-Mar)';
+      }
+
+      // Update UI elements
+      document.getElementById('out-holding-type').textContent = holdingType === 'LONG_TERM' ? 'Long Term (>=365d)' : 'Short Term';
+      document.getElementById('out-holding-type').className = holdingType === 'LONG_TERM' ? 'text-[10px] text-emerald-400 font-semibold' : 'text-[10px] text-amber-400 font-semibold';
+
+      document.getElementById('out-deemed-cost').textContent = `₹${totalDeemedCost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+      document.getElementById('out-gf-status').textContent = isGrandfathered ? 'Grandfathered u/s 55(2)(ac)' : 'Standard Cost Basis';
+      document.getElementById('out-gf-status').className = isGrandfathered ? 'text-[10px] text-amber-400 font-semibold' : 'text-[10px] text-[var(--text-dim)]';
+
+      document.getElementById('out-taxable-gain').textContent = `₹${capitalGain.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+      document.getElementById('out-total-tax').textContent = `₹${totalTax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+      document.getElementById('out-tax-rate').textContent = `${(baseTaxRate * 100).toFixed(1)}% + 4% Cess = ${(effectiveRate * 100).toFixed(2)}%`;
+
+      document.getElementById('result-status-badge').textContent = `Statutory Regime: ${section}`;
+      document.getElementById('out-formula-text').textContent = formulaText;
+      document.getElementById('out-quarter-text').textContent = quarterText;
+    }
+
+    runTaxSimulation();
+
+    // --- REALITY CHECK CALCULATOR ---
+    function runRealityCheck() {
+      const capitalLakhs = parseFloat(document.getElementById('rc-capital').value) || 25;
+      const years = parseInt(document.getElementById('rc-years').value) || 15;
+      const cagr = parseFloat(document.getElementById('rc-cagr').value) / 100 || 0.12;
+      const inflation = parseFloat(document.getElementById('rc-inflation').value) / 100 || 0.06;
+
+      document.getElementById('rc-years-val').textContent = `${years} Years`;
+      document.getElementById('rc-cagr-val').textContent = `${(cagr * 100).toFixed(1)}%`;
+      document.getElementById('rc-inflation-val').textContent = `${(inflation * 100).toFixed(1)}%`;
+
+      const initialWealth = capitalLakhs * 100000;
+      
+      // Nominal value: initial * (1 + cagr)^years
+      const nominalWealth = initialWealth * Math.pow(1 + cagr, years);
+      
+      // Real inflation-adjusted wealth: nominal / (1 + inflation)^years
+      const realWealth = nominalWealth / Math.pow(1 + inflation, years);
+
+      const dragAmount = Math.max(0, nominalWealth - realWealth);
+      const dragPercent = (dragAmount / nominalWealth) * 100;
+
+      document.getElementById('rc-out-nominal').textContent = `₹${Math.round(nominalWealth).toLocaleString('en-IN')}`;
+      document.getElementById('rc-out-real').textContent = `₹${Math.round(realWealth).toLocaleString('en-IN')}`;
+      document.getElementById('rc-out-drag').textContent = `₹${Math.round(dragAmount).toLocaleString('en-IN')} (${dragPercent.toFixed(1)}%)`;
+    }
+
+    runRealityCheck();
+
+    // --- CODEBASE FILTER LOGIC ---
+    function filterCodebase(subsystem) {
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('bg-indigo-600', 'text-white');
+        btn.classList.add('bg-[var(--bg-secondary)]', 'text-[var(--text-muted)]');
+      });
+      event.currentTarget.classList.add('bg-indigo-600', 'text-white');
+      event.currentTarget.classList.remove('bg-[var(--bg-secondary)]', 'text-[var(--text-muted)]');
+
+      const cards = document.querySelectorAll('.code-card');
+      cards.forEach(card => {
+        if (subsystem === 'all' || card.getAttribute('data-subsystem') === subsystem) {
+          card.classList.remove('hidden');
+        } else {
+          card.classList.add('hidden');
+        }
+      });
+    }
+
+    function filterCodebaseCards(term) {
+      const cards = document.querySelectorAll('.code-card');
+      cards.forEach(card => {
+        const text = card.textContent.toLowerCase();
+        if (text.includes(term)) {
+          card.classList.remove('hidden');
+        } else {
+          card.classList.add('hidden');
+        }
+      });
+    }
+
+  </script>
+</body>
+</html>
