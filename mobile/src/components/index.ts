@@ -19,3 +19,4 @@ export * from './Family';
 export * from './Dashboard';
 export * from './Insights';
 export * from './Settings';
+export * from './Auth/CredentialLoginForm';

@@ -213,6 +213,76 @@ export async function claimPairingSecret(
   return claimResponse;
 }
 
+export const DEFAULT_SERVER_URL = 'http://10.0.2.2:8080';
+
+export interface LoginResponse {
+  token: string;
+  user: UserResponse;
+}
+
+function parseLoginResponse(data: unknown): LoginResponse {
+  if (typeof data !== 'object' || data === null) {
+    throw new Error('Invalid login response: expected object');
+  }
+  const record = data as Record<string, unknown>;
+  const token = record['token'];
+  if (typeof token !== 'string' || !token) {
+    throw new Error('Invalid login response: missing token');
+  }
+
+  const rawUser = record['user'];
+  let user: UserResponse | null = null;
+  if (isValidUser(rawUser)) {
+    user = rawUser;
+  } else if (typeof record['id'] === 'string' && typeof record['email'] === 'string') {
+    user = { id: record['id'], email: record['email'] };
+  }
+
+  if (!user) {
+    throw new Error('Invalid login response: invalid user profile');
+  }
+
+  return { token, user };
+}
+
+/**
+ * Logs in with email and password directly against the server,
+ * saves credentials in secure storage, and returns user identity.
+ *
+ * @param serverUrl - Backend API root URL (defaults to http://10.0.2.2:8080)
+ * @param email - User email address
+ * @param password - Account password
+ * @returns Login authentication response
+ */
+export async function loginWithCredentials(
+  serverUrl: string,
+  email: string,
+  password: string,
+): Promise<LoginResponse> {
+  const trimmedUrl = serverUrl.trim();
+  const normalizedUrl = normalizeServerUrl(trimmedUrl || DEFAULT_SERVER_URL);
+  const endpoint = `${normalizedUrl}/api/auth/login`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: email.trim(),
+      password,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await extractErrorDetail(response);
+    throw new Error(`Login failed: ${detail}`);
+  }
+
+  const rawJson: unknown = await response.json();
+  const loginRes = parseLoginResponse(rawJson);
+  await saveStoredCredentials(normalizedUrl, loginRes.token, loginRes.user);
+  return loginRes;
+}
+
 /**
  * Prompts user for biometric authentication (Face ID, Touch ID, Fingerprint, or PIN fallback).
  */

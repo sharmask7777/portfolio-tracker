@@ -6,6 +6,7 @@ import {
   clearCredentials,
   parseAndValidateQrPayload,
   claimPairingSecret,
+  loginWithCredentials,
   authenticateWithBiometrics,
 } from './auth-service';
 import type { UserResponse } from '../types/generated';
@@ -280,6 +281,82 @@ describe('auth-service', () => {
       await expect(
         claimPairingSecret('https://api.example.com', 'sec', 'Device'),
       ).rejects.toThrow('Network connection failed');
+    });
+  });
+
+  describe('loginWithCredentials', () => {
+    it('successfully logs in with email and password and stores credentials', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          token: 'jwt-cred-login-token-123',
+          user: sampleUser,
+        }),
+      });
+
+      const result = await loginWithCredentials(
+        'http://10.0.2.2:8080',
+        'admin@example.com',
+        'password123',
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://10.0.2.2:8080/api/auth/login',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: 'admin@example.com',
+            password: 'password123',
+          }),
+        },
+      );
+
+      expect(result).toEqual({
+        token: 'jwt-cred-login-token-123',
+        user: sampleUser,
+      });
+
+      const creds = await getStoredCredentials();
+      expect(creds.serverUrl).toBe('http://10.0.2.2:8080');
+      expect(creds.token).toBe('jwt-cred-login-token-123');
+      expect(creds.user).toEqual(sampleUser);
+    });
+
+    it('throws formatted error when server rejects credentials with 401', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          message: 'Invalid email or password',
+        }),
+      });
+
+      await expect(
+        loginWithCredentials('http://10.0.2.2:8080', 'wrong@example.com', 'badpass'),
+      ).rejects.toThrow('Login failed: Invalid email or password');
+
+      const creds = await getStoredCredentials();
+      expect(creds.token).toBeNull();
+    });
+
+    it('defaults server URL when empty string is passed', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          token: 'token-default-url',
+          user: sampleUser,
+        }),
+      });
+
+      await loginWithCredentials('', 'user@example.com', 'pass');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://10.0.2.2:8080/api/auth/login',
+        expect.objectContaining({ method: 'POST' }),
+      );
     });
   });
 
