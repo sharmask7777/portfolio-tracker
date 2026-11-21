@@ -66,9 +66,13 @@ vi.mock('react-native', () => ({
 
 vi.mock('lucide-react-native', () => ({
   LayoutDashboard: (props: Record<string, unknown>) => ({ type: 'LayoutDashboard', props }),
+  Briefcase: (props: Record<string, unknown>) => ({ type: 'Briefcase', props }),
   PieChart: (props: Record<string, unknown>) => ({ type: 'PieChart', props }),
   UploadCloud: (props: Record<string, unknown>) => ({ type: 'UploadCloud', props }),
   Settings: (props: Record<string, unknown>) => ({ type: 'Settings', props }),
+  ReceiptIndianRupee: (props: Record<string, unknown>) => ({ type: 'ReceiptIndianRupee', props }),
+  Target: (props: Record<string, unknown>) => ({ type: 'Target', props }),
+  Users: (props: Record<string, unknown>) => ({ type: 'Users', props }),
 }));
 
 vi.mock('expo-camera', () => ({

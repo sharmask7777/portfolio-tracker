@@ -1,15 +1,21 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { LayoutDashboard, PieChart, UploadCloud, Settings } from 'lucide-react-native';
+import {
+  LayoutDashboard,
+  Briefcase,
+  PieChart,
+  ReceiptIndianRupee,
+  Target,
+  Users,
+  UploadCloud,
+  Settings,
+} from 'lucide-react-native';
 
 const screenOptions = {
   headerShown: false,
   tabBarStyle: {
     backgroundColor: '#18181b',
     borderTopColor: '#27272a',
-    height: 60,
-    paddingBottom: 8,
-    paddingTop: 8,
   },
   tabBarActiveTintColor: '#3b82f6',
   tabBarInactiveTintColor: '#71717a',
@@ -19,45 +25,35 @@ const screenOptions = {
   },
 };
 
+const TAB_CONFIG = [
+  { name: 'index', title: 'Dashboard', Icon: LayoutDashboard },
+  { name: 'holdings', title: 'Holdings', Icon: Briefcase },
+  { name: 'analytics', title: 'Analytics', Icon: PieChart },
+  { name: 'tax', title: 'Tax', Icon: ReceiptIndianRupee },
+  { name: 'insights', title: 'Goals', Icon: Target },
+  { name: 'family', title: 'Family', Icon: Users },
+  { name: 'upload', title: 'Upload', Icon: UploadCloud },
+  { name: 'settings', title: 'Settings', Icon: Settings },
+] as const;
+
+/**
+ * Root tabs navigation layout.
+ *
+ * @returns React Native tab navigation element
+ */
 export default function TabsLayout(): React.ReactElement {
   return (
     <Tabs screenOptions={screenOptions}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => (
-            <LayoutDashboard size={size || 22} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="holdings"
-        options={{
-          title: 'Holdings',
-          tabBarIcon: ({ color, size }) => (
-            <PieChart size={size || 22} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="upload"
-        options={{
-          title: 'Upload',
-          tabBarIcon: ({ color, size }) => (
-            <UploadCloud size={size || 22} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color, size }) => (
-            <Settings size={size || 22} color={color} />
-          ),
-        }}
-      />
+      {TAB_CONFIG.map(({ name, title, Icon }) => (
+        <Tabs.Screen
+          key={name}
+          name={name}
+          options={{
+            title,
+            tabBarIcon: ({ color, size }) => <Icon size={size || 22} color={color} />,
+          }}
+        />
+      ))}
     </Tabs>
   );
 }

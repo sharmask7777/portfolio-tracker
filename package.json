@@ -13,6 +13,7 @@
     "start": "pnpm run docker:up && pnpm run docker:logs",
     "test": "(cd backend-rs && cargo test --workspace) && pnpm --filter frontend test:unit",
     "prepare": "husky",
+    "parity:check": "tsx scripts/verify-web-mobile-parity.ts",
     "test:coverage:backend": "(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex \"(main\\.rs|test_mocks\\.rs|repositories/)\" --fail-under-lines 80 --summary-only)",
     "test:coverage:frontend": "pnpm --filter frontend test:coverage",
     "test:coverage": "pnpm run test:coverage:backend && pnpm run test:coverage:frontend"
@@ -24,6 +25,7 @@
   "devDependencies": {
     "concurrently": "^9.2.1",
     "eslint-plugin-jsdoc": "^65.4.12",
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "tsx": "^4.23.15"
   }
 }
