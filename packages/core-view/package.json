@@ -1,0 +1,28 @@
+{
+  "name": "@portfolio/core-view",
+  "version": "1.0.0",
+  "description": "Shared cross-platform presentation, consolidation, and scope logic for portfolio tracker",
+  "main": "dist/index.js",
+  "module": "src/index.ts",
+  "types": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "react": "^19.2.6"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@vitest/coverage-v8": "^4.1.6",
+    "jsdom": "^29.1.1",
+    "react-dom": "^19.2.6",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.6"
+  }
+}

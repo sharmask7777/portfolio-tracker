@@ -1,6 +1,7 @@
 packages:
   - 'frontend'
   - 'mobile'
+  - 'packages/*'
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
