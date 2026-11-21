@@ -215,14 +215,15 @@ export async function updateQueueStatus(
   db: SQLiteDatabase,
   id: string,
   status: SyncQueueStatus,
+  incrementRetry = false,
 ): Promise<void> {
   const updatedAt = new Date().toISOString();
   await db.runAsync(
     `UPDATE sync_queue 
      SET status = ?, updated_at = ?,
-         retry_count = CASE WHEN ? = 'FAILED' THEN retry_count + 1 ELSE retry_count END
+         retry_count = CASE WHEN ? = 'FAILED' OR ? = 1 THEN retry_count + 1 ELSE retry_count END
      WHERE id = ?;`,
-    [status, updatedAt, status, id],
+    [status, updatedAt, status, incrementRetry ? 1 : 0, id],
   );
 }
 
