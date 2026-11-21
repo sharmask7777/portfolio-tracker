@@ -223,7 +223,7 @@ describe('Maestro Flow 06: Family Profiles & Multi-PAN Management Simulation', (
 
     // 3. Enter valid synthetic PAN format and submit
     const validPanInput = screen.getByTestId('add-member-pan-input');
-    fireEvent.changeText(validPanInput, 'BNZPS2002B');
+    fireEvent.changeText(validPanInput, 'BLPAC2002B');
     const validSubmitBtn = screen.getByTestId('submit-add-member-btn');
     fireEvent.press(validSubmitBtn);
 
