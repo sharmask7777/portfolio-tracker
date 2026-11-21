@@ -7,6 +7,7 @@ import {
   type PortfolioSnapshotInput,
 } from '../db/repository';
 import { syncPortfolioHistoryFromServer } from './history-service';
+import { flushUploadQueue } from './upload-queue';
 import type { FolioEntity, HoldingEntity } from '../db/schema';
 import {
   refreshSchemeNavs,
@@ -298,6 +299,7 @@ export async function refreshPortfolio(
     if (creds.serverUrl && creds.token) {
       const isReachable = await checkServerReachable(creds.serverUrl);
       if (isReachable) {
+        await flushUploadQueue(creds.serverUrl, creds.token, { db: targetDb }).catch(() => {});
         const synced = await syncWithServer(creds.serverUrl, creds.token, targetDb);
         if (synced) return { success: true, source: 'server' };
       }

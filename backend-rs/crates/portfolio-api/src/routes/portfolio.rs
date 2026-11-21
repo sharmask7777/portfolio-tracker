@@ -2459,13 +2459,13 @@ pub async fn get_xray(
 
             match category {
                 portfolio_core::classification::AssetCategory::Debt => {
-                    debt_val += holding_market_value
+                    debt_val += holding_market_value;
                 }
                 portfolio_core::classification::AssetCategory::Gold => {
-                    gold_val += holding_market_value
+                    gold_val += holding_market_value;
                 }
                 portfolio_core::classification::AssetCategory::Cash => {
-                    cash_val += holding_market_value
+                    cash_val += holding_market_value;
                 }
                 portfolio_core::classification::AssetCategory::Arbitrage => {
                     arbitrage_val += holding_market_value;
@@ -2473,10 +2473,10 @@ pub async fn get_xray(
                 }
                 portfolio_core::classification::AssetCategory::Equity
                 | portfolio_core::classification::AssetCategory::Hybrid => {
-                    equity_val += holding_market_value
+                    equity_val += holding_market_value;
                 }
                 portfolio_core::classification::AssetCategory::Other => {
-                    other_val += holding_market_value
+                    other_val += holding_market_value;
                 }
             }
 

@@ -211,12 +211,18 @@ export async function enqueueUpload(
   return item;
 }
 
+export interface QueueStatusOptions {
+  status: SyncQueueStatus;
+  incrementRetry?: boolean;
+}
+
 export async function updateQueueStatus(
   db: SQLiteDatabase,
   id: string,
-  status: SyncQueueStatus,
-  incrementRetry = false,
+  statusOrOptions: SyncQueueStatus | QueueStatusOptions,
 ): Promise<void> {
+  const status = typeof statusOrOptions === 'string' ? statusOrOptions : statusOrOptions.status;
+  const incrementRetry = typeof statusOrOptions === 'string' ? false : (statusOrOptions.incrementRetry ?? false);
   const updatedAt = new Date().toISOString();
   await db.runAsync(
     `UPDATE sync_queue 
