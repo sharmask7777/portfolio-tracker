@@ -69,7 +69,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'mobile/tests/tax-tab.test.tsx',
       'mobile/src/services/tax-harvesting.test.ts',
     ],
-    mobileE2eTests: ['mobile/src/e2e/04-tax-harvest-simulation.test.tsx'],
+    mobileE2eTests: ['mobile/src/e2e/tax-harvest-simulation.test.tsx'],
     keyCapabilities: [
       'Section 112A ₹1.25L exemption progress bar',
       'Advance Tax Table F quarterly matrix (Q1, Q2a, Q2b, Q3, Q4, Q5)',
@@ -96,7 +96,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'mobile/tests/analytics-tab.test.tsx',
       'mobile/src/services/hierarchy-builder.test.ts',
     ],
-    mobileE2eTests: ['mobile/src/e2e/05-analytics-treemap.test.tsx'],
+    mobileE2eTests: ['mobile/src/e2e/analytics-treemap.test.tsx'],
     keyCapabilities: [
       'Squarified SVG treemap multi-level drilldowns',
       'Stock overlap and company holding concentration',
@@ -120,7 +120,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'mobile/src/components/Family/AddMemberModal.tsx',
     ],
     mobileUnitTests: ['mobile/tests/family-tab.test.tsx'],
-    mobileE2eTests: ['mobile/src/e2e/06-family-management.test.tsx'],
+    mobileE2eTests: ['mobile/src/e2e/family-management.test.tsx'],
     keyCapabilities: [
       'Multi-member profile switching and consolidated views',
       'Adding family member with synthetic PAN validation',
@@ -145,7 +145,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'mobile/src/components/Dashboard/HistoricalTrendChart.tsx',
     ],
     mobileUnitTests: ['mobile/tests/overview-reality-check.test.tsx'],
-    mobileE2eTests: ['mobile/src/e2e/07-reality-check-overview.test.tsx'],
+    mobileE2eTests: ['mobile/src/e2e/reality-check-overview.test.tsx'],
     keyCapabilities: [
       'Reality Check mode toggle with persistent state',
       'Drag waterfall invariant (Real <= Post <= Nominal)',
@@ -169,7 +169,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'mobile/src/components/Insights/SmartInsightsList.tsx',
     ],
     mobileUnitTests: ['mobile/tests/insights-tab.test.tsx'],
-    mobileE2eTests: ['mobile/src/e2e/08-goals-insights.test.tsx'],
+    mobileE2eTests: ['mobile/src/e2e/goals-insights.test.tsx'],
     keyCapabilities: [
       'Goal progress tracking with target amount and date',
       'Monthly SIP compounding shortfall calculation',
@@ -200,7 +200,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'mobile/tests/tabs.test.tsx',
       'mobile/src/services/portfolio-service.test.ts',
     ],
-    mobileE2eTests: ['mobile/src/e2e/02-offline-navigation.test.tsx'],
+    mobileE2eTests: ['mobile/src/e2e/offline-navigation.test.tsx'],
     keyCapabilities: [
       'Net worth and invested capital metrics',
       'Asset allocation breakdown across categories',
@@ -221,7 +221,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'mobile/src/components/useCasUpload.ts',
     ],
     mobileUnitTests: ['mobile/src/services/upload-queue.test.ts'],
-    mobileE2eTests: ['mobile/src/e2e/03-cas-upload-queue.test.tsx'],
+    mobileE2eTests: ['mobile/src/e2e/cas-upload-queue.test.tsx'],
     keyCapabilities: [
       'CAS PDF / JSON document picker with password encryption',
       'Persistent background upload queue with retry policy',
@@ -247,7 +247,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'mobile/src/services/auth-service.test.ts',
       'mobile/src/services/transport-security.test.ts',
     ],
-    mobileE2eTests: ['mobile/src/e2e/01-pair-device.test.tsx'],
+    mobileE2eTests: ['mobile/src/e2e/pair-device.test.tsx'],
     keyCapabilities: [
       'QR code camera scanning for instant pairing payload',
       'Manual 6-digit pairing code fallback entry',
