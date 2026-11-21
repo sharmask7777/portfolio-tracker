@@ -15,3 +15,4 @@ export * from './UploadFormCard';
 export * from './useCasUpload';
 export * from './Tax';
 export * from './Family';
+export * from './Dashboard';

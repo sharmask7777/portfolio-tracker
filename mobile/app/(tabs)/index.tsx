@@ -13,10 +13,18 @@ import {
   type DashboardSummary,
 } from '../../src/services/portfolio-service';
 import {
-  NetWorthCard,
-  DayReturnBanner,
-  AssetAllocationCard,
-} from '../../src/components';
+  DEFAULT_ASSUMPTIONS,
+  type RealityCheckAssumptions,
+} from '../../src/services/reality-check-service';
+import { NetWorthCard } from '../../src/components/NetWorthCard';
+import { DayReturnBanner } from '../../src/components/DayReturnBanner';
+import { AssetAllocationCard } from '../../src/components/AssetAllocationCard';
+import {
+  RealityCheckModeToggle,
+  RealityCheckBanner,
+  AssumptionsModal,
+  HistoricalTrendChart,
+} from '../../src/components/Dashboard';
 
 const styles = StyleSheet.create({
   container: {
@@ -28,7 +36,7 @@ const styles = StyleSheet.create({
     paddingTop: 56,
   },
   header: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   greeting: {
     fontSize: 13,
@@ -49,7 +57,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#27272a',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 10,
+    marginBottom: 20,
   },
   emptyTitle: {
     fontSize: 18,
@@ -140,14 +149,139 @@ function DashboardHeader(): React.ReactElement {
   );
 }
 
+interface RealityCheckSectionProps {
+  realityCheckMode: boolean;
+  setRealityCheckMode: (m: boolean) => void;
+  assumptions: RealityCheckAssumptions;
+  setAssumptions: (a: RealityCheckAssumptions) => void;
+  isAssumptionsOpen: boolean;
+  setIsAssumptionsOpen: (open: boolean) => void;
+  data: DashboardSummary;
+}
+
+/**
+ * Reality Check section rendering mode toggle, assumptions modal, and teardown banner.
+ *
+ * @param props Reality check configuration and data
+ * @returns React Native element
+ */
+function RealityCheckSection({
+  realityCheckMode,
+  setRealityCheckMode,
+  assumptions,
+  setAssumptions,
+  isAssumptionsOpen,
+  setIsAssumptionsOpen,
+  data,
+}: RealityCheckSectionProps): React.ReactElement {
+  const nominalReturnPct = data.totalInvestedCost > 0
+    ? (data.unrealizedGain / data.totalInvestedCost)
+    : 0;
+
+  return (
+    <>
+      <RealityCheckModeToggle
+        realityCheckMode={realityCheckMode}
+        onToggle={setRealityCheckMode}
+        onOpenAssumptions={() => setIsAssumptionsOpen(true)}
+      />
+      <AssumptionsModal
+        visible={isAssumptionsOpen}
+        onClose={() => setIsAssumptionsOpen(false)}
+        assumptions={assumptions}
+        onSaveAssumptions={setAssumptions}
+      />
+      {realityCheckMode && (
+        <RealityCheckBanner
+          nominalValue={data.totalCurrentValue}
+          investedCost={data.totalInvestedCost}
+          nominalReturnPct={nominalReturnPct}
+          assumptions={assumptions}
+          onOpenAssumptions={() => setIsAssumptionsOpen(true)}
+        />
+      )}
+    </>
+  );
+}
+
+interface DashboardCardsProps {
+  data: DashboardSummary;
+  realityCheckMode: boolean;
+  setRealityCheckMode: (m: boolean) => void;
+  assumptions: RealityCheckAssumptions;
+  setAssumptions: (a: RealityCheckAssumptions) => void;
+  isAssumptionsOpen: boolean;
+  setIsAssumptionsOpen: (open: boolean) => void;
+}
+
+/**
+ * Renders the dashboard card sections inside the scroll container.
+ *
+ * @param props Dashboard state and data
+ * @returns React Native element
+ */
+function DashboardCards({
+  data,
+  realityCheckMode,
+  setRealityCheckMode,
+  assumptions,
+  setAssumptions,
+  isAssumptionsOpen,
+  setIsAssumptionsOpen,
+}: DashboardCardsProps): React.ReactElement {
+  const hasHoldings = data.holdingsCount > 0;
+
+  return (
+    <>
+      <DashboardHeader />
+      <RealityCheckSection
+        realityCheckMode={realityCheckMode}
+        setRealityCheckMode={setRealityCheckMode}
+        assumptions={assumptions}
+        setAssumptions={setAssumptions}
+        isAssumptionsOpen={isAssumptionsOpen}
+        setIsAssumptionsOpen={setIsAssumptionsOpen}
+        data={data}
+      />
+      <NetWorthCard
+        totalCurrentValue={data.totalCurrentValue}
+        totalInvestedCost={data.totalInvestedCost}
+        unrealizedGain={data.unrealizedGain}
+        unrealizedGainPct={data.unrealizedGainPct}
+      />
+      <DayReturnBanner
+        dayGain={data.dayGain}
+        dayGainPct={data.dayGainPct}
+        isOfflineFallback={data.isOfflineFallback}
+      />
+      <HistoricalTrendChart
+        currentValue={data.totalCurrentValue}
+        investedCost={data.totalInvestedCost}
+      />
+      {hasHoldings ? (
+        <AssetAllocationCard
+          allocation={data.assetAllocation}
+          totalValue={data.totalCurrentValue}
+        />
+      ) : (
+        renderEmptyState()
+      )}
+    </>
+  );
+}
+
 /**
  * Main mobile dashboard screen. Displays total net worth, today's returns banner,
+ * Reality Check mode toggle & waterfall teardown, Historical Valuation Trend chart,
  * asset allocation breakdown, and pull-to-refresh sync against public AMFI feeds and server.
  *
  * @returns React Native dashboard tab element
  */
 export default function DashboardScreen(): React.ReactElement {
   const { summary, isLoading, isRefreshing, handleRefresh } = useDashboardData();
+  const [realityCheckMode, setRealityCheckMode] = useState(false);
+  const [assumptions, setAssumptions] = useState<RealityCheckAssumptions>(DEFAULT_ASSUMPTIONS);
+  const [isAssumptionsOpen, setIsAssumptionsOpen] = useState(false);
 
   if (isLoading && !summary) {
     return (
@@ -156,9 +290,6 @@ export default function DashboardScreen(): React.ReactElement {
       </View>
     );
   }
-
-  const data = summary ?? defaultSummary;
-  const hasHoldings = data.holdingsCount > 0;
 
   return (
     <ScrollView
@@ -174,29 +305,15 @@ export default function DashboardScreen(): React.ReactElement {
         />
       }
     >
-      <DashboardHeader />
-
-      <NetWorthCard
-        totalCurrentValue={data.totalCurrentValue}
-        totalInvestedCost={data.totalInvestedCost}
-        unrealizedGain={data.unrealizedGain}
-        unrealizedGainPct={data.unrealizedGainPct}
+      <DashboardCards
+        data={summary ?? defaultSummary}
+        realityCheckMode={realityCheckMode}
+        setRealityCheckMode={setRealityCheckMode}
+        assumptions={assumptions}
+        setAssumptions={setAssumptions}
+        isAssumptionsOpen={isAssumptionsOpen}
+        setIsAssumptionsOpen={setIsAssumptionsOpen}
       />
-
-      <DayReturnBanner
-        dayGain={data.dayGain}
-        dayGainPct={data.dayGainPct}
-        isOfflineFallback={data.isOfflineFallback}
-      />
-
-      {hasHoldings ? (
-        <AssetAllocationCard
-          allocation={data.assetAllocation}
-          totalValue={data.totalCurrentValue}
-        />
-      ) : (
-        renderEmptyState()
-      )}
     </ScrollView>
   );
 }

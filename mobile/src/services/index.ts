@@ -10,3 +10,4 @@ export * from './hierarchy-builder';
 export * from './consolidation';
 export * from './analytics-service';
 export * from './family-service';
+export * from './reality-check-service';

@@ -311,7 +311,7 @@ describe('Family Profiles & Multi-PAN Management Suite', () => {
       const emptyProfile: FamilyProfile = {
         id: 'prof-empty',
         name: 'Empty Member',
-        pan: 'EMPTY1234Z',
+        pan: 'DELTD4004D',
         relationship: 'Sibling',
         isPrimary: false,
         createdAt: '2026-01-04T00:00:00Z',
@@ -420,12 +420,12 @@ describe('Family Profiles & Multi-PAN Management Suite', () => {
       await saveFamilyProfiles([mockProfiles[0]!]);
       const newProf = await addFamilyProfile({
         name: 'Grandparent',
-        pan: 'GRAND1234G',
+        pan: 'ZETAZ6006F',
         relationship: 'Parent',
         notes: 'Senior citizen',
       });
       expect(newProf.name).toBe('Grandparent');
-      expect(newProf.pan).toBe('GRAND1234G');
+      expect(newProf.pan).toBe('ZETAZ6006F');
       expect(newProf.isPrimary).toBe(false);
 
       await expect(
