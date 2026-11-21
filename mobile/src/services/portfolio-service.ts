@@ -6,6 +6,7 @@ import {
   savePortfolioSnapshot,
   type PortfolioSnapshotInput,
 } from '../db/repository';
+import { syncPortfolioHistoryFromServer } from './history-service';
 import type { FolioEntity, HoldingEntity } from '../db/schema';
 import {
   refreshSchemeNavs,
@@ -247,6 +248,13 @@ export async function syncWithServer(
     const snapshot = parseServerPayload(json);
     await savePortfolioSnapshot(targetDb, snapshot);
     await syncFamilyProfilesFromServer(profilesUrl, token);
+    const historyUrl = `${trimmed}/api/portfolio/${snapshot.portfolio.id}/history`;
+    await syncPortfolioHistoryFromServer({
+      historyUrl,
+      portfolioId: snapshot.portfolio.id,
+      token,
+      db: targetDb,
+    });
     return true;
   } catch {
     return false;

@@ -155,12 +155,21 @@ export const chartStyles = StyleSheet.create({
     fontSize: 11,
     color: '#a1a1aa',
   },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#71717a',
+  },
 });
 
 /**
  * Historical range preset buttons.
  */
-export const RANGES: HistoryRangePreset[] = ['1M', '3M', '6M', '1Y', 'ALL'];
+export const RANGES: HistoryRangePreset[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y', 'ALL'];
 
 /**
  * Renders the chart header with title and ATH badge.
@@ -204,7 +213,7 @@ export function RangeBar({
   onSelectRange: (r: HistoryRangePreset) => void;
 }): React.ReactElement {
   return (
-    <View style={chartStyles.rangeBar}>
+    <View style={chartStyles.rangeBar} testID="history-range-bar">
       {RANGES.map((r) => (
         <TouchableOpacity
           key={r}
@@ -218,6 +227,19 @@ export function RangeBar({
           </Text>
         </TouchableOpacity>
       ))}
+    </View>
+  );
+}
+
+/**
+ * Renders an empty placeholder when no historical data points are available.
+ *
+ * @returns React Native element
+ */
+export function ChartEmptyState(): React.ReactElement {
+  return (
+    <View style={chartStyles.emptyContainer} testID="chart-empty-state">
+      <Text style={chartStyles.emptyText}>No historical data available</Text>
     </View>
   );
 }

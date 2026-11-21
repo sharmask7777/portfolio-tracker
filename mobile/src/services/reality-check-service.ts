@@ -70,7 +70,7 @@ export interface HistoricalCheckpoint {
   drawdownPct: number;
 }
 
-export type HistoryRangePreset = '1M' | '3M' | '6M' | '1Y' | 'ALL';
+export type HistoryRangePreset = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
 interface ReturnsDecomposition {
   taxDrag: number;
@@ -253,6 +253,8 @@ function getCutoffDays(range: HistoryRangePreset): number {
     case '3M': return 90;
     case '6M': return 180;
     case '1Y': return 365;
+    case '3Y': return 365 * 3;
+    case '5Y': return 365 * 5;
     case 'ALL': return 0;
   }
 }

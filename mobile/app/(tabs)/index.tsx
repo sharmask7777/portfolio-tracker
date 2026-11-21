@@ -22,6 +22,8 @@ import {
   type FamilyProfile,
   type FolioEntity,
 } from '../../src/services/family-service';
+import { getCachedPortfolioHistory } from '../../src/services/history-service';
+import type { HistoryPoint } from '../../src/types/generated';
 import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
 import { ScopeSelectorHeader } from '../../src/components/Navigation';
 import {
@@ -63,19 +65,22 @@ function useDashboardData() {
   const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
   const [folios, setFolios] = useState<FolioEntity[]>([]);
+  const [historyPoints, setHistoryPoints] = useState<HistoryPoint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [enriched, storedProfiles, storedFolios] = await Promise.all([
+      const [enriched, storedProfiles, storedFolios, cachedHistory] = await Promise.all([
         getEnrichedHoldings(),
         getStoredFamilyProfiles(),
         getStoredFolios(),
+        getCachedPortfolioHistory(),
       ]);
       setHoldings(enriched);
       setProfiles(storedProfiles);
       setFolios(storedFolios);
+      setHistoryPoints(cachedHistory);
     } catch {
       // Fallback
     } finally {
@@ -96,7 +101,7 @@ function useDashboardData() {
   }, [loadData]);
 
   useEffect(() => { void loadData(); }, [loadData]);
-  return { holdings, profiles, folios, isLoading, isRefreshing, handleRefresh };
+  return { holdings, profiles, folios, historyPoints, isLoading, isRefreshing, handleRefresh };
 }
 
 const defaultSummary: DashboardSummary = {
@@ -156,6 +161,7 @@ function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElemen
 
 interface DashboardCardsProps {
   data: DashboardSummary;
+  historyPoints: HistoryPoint[];
   realityCheckMode: boolean;
   setRealityCheckMode: (m: boolean) => void;
   assumptions: RealityCheckAssumptions;
@@ -165,7 +171,7 @@ interface DashboardCardsProps {
 }
 
 function DashboardCards(props: DashboardCardsProps): React.ReactElement {
-  const { data } = props;
+  const { data, historyPoints } = props;
   const hasHoldings = data.holdingsCount > 0;
 
   return (
@@ -177,7 +183,11 @@ function DashboardCards(props: DashboardCardsProps): React.ReactElement {
       <RealityCheckSection {...props} />
       <NetWorthCard totalCurrentValue={data.totalCurrentValue} totalInvestedCost={data.totalInvestedCost} unrealizedGain={data.unrealizedGain} unrealizedGainPct={data.unrealizedGainPct} />
       <DayReturnBanner dayGain={data.dayGain} dayGainPct={data.dayGainPct} isOfflineFallback={data.isOfflineFallback} />
-      <HistoricalTrendChart currentValue={data.totalCurrentValue} investedCost={data.totalInvestedCost} />
+      <HistoricalTrendChart
+        currentValue={data.totalCurrentValue}
+        investedCost={data.totalInvestedCost}
+        historyPoints={historyPoints}
+      />
       {hasHoldings ? <AssetAllocationCard allocation={data.assetAllocation} totalValue={data.totalCurrentValue} /> : renderEmptyState()}
     </>
   );
@@ -211,7 +221,7 @@ function useFilteredSummary(holdings: EnrichedHolding[], profiles: FamilyProfile
  * @returns React Native dashboard tab element
  */
 export default function DashboardScreen(): React.ReactElement {
-  const { holdings, profiles, folios, isLoading, isRefreshing, handleRefresh } = useDashboardData();
+  const { holdings, profiles, folios, historyPoints, isLoading, isRefreshing, handleRefresh } = useDashboardData();
   const { scopeState, summary } = useFilteredSummary(holdings, profiles, folios);
   const [realityCheckMode, setRealityCheckMode] = useState(false);
   const [assumptions, setAssumptions] = useState<RealityCheckAssumptions>(DEFAULT_ASSUMPTIONS);
@@ -241,6 +251,7 @@ export default function DashboardScreen(): React.ReactElement {
       >
         <DashboardCards
           data={summary}
+          historyPoints={historyPoints}
           realityCheckMode={realityCheckMode}
           setRealityCheckMode={setRealityCheckMode}
           assumptions={assumptions}

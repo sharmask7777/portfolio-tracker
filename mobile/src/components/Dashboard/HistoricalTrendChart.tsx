@@ -6,10 +6,8 @@ import {
   type HistoricalCheckpoint,
   type HistoryRangePreset,
 } from '../../services/reality-check-service';
-import {
-  computeChartGeometry,
-  createSyntheticPoints,
-} from './chart-geometry';
+import type { HistoryPoint } from '../../types/generated';
+import { computeChartGeometry } from './chart-geometry';
 import {
   chartStyles,
   ChartHeader,
@@ -17,6 +15,7 @@ import {
   CheckpointTooltip,
   ChartSvgCanvas,
   ChartLegend,
+  ChartEmptyState,
 } from './chart-components';
 
 /**
@@ -24,6 +23,7 @@ import {
  */
 export interface HistoricalTrendChartProps {
   checkpoints?: HistoricalCheckpoint[] | undefined;
+  historyPoints?: HistoryPoint[] | undefined;
   currentValue?: number | undefined;
   investedCost?: number | undefined;
   height?: number | undefined;
@@ -31,23 +31,39 @@ export interface HistoricalTrendChartProps {
 }
 
 /**
- * Resolves source checkpoints from provided list or generates synthetic baseline.
+ * Downsamples dense history points so SVG chart performance remains smooth.
  *
- * @param provided Checkpoint array if already loaded
- * @param val Current valuation
- * @param cost Invested capital cost
+ * @param data Array of checkpoints
+ * @param maxPoints Maximum target points
+ * @returns Sampled checkpoints
+ */
+function sampleCheckpoints(
+  data: HistoricalCheckpoint[],
+  maxPoints: number = 300,
+): HistoricalCheckpoint[] {
+  if (data.length <= maxPoints) return data;
+  const interval = Math.ceil(data.length / maxPoints);
+  return data.filter((_, idx) => idx % interval === 0 || idx === data.length - 1);
+}
+
+/**
+ * Resolves source checkpoints from provided checkpoints or history points.
+ *
+ * @param checkpoints Checkpoint array if already converted
+ * @param historyPoints History points from API / SQLite cache
  * @returns Array of historical checkpoints
  */
 function resolveCheckpoints(
-  provided: HistoricalCheckpoint[] | undefined,
-  val: number,
-  cost: number,
+  checkpoints: HistoricalCheckpoint[] | undefined,
+  historyPoints: HistoryPoint[] | undefined,
 ): HistoricalCheckpoint[] {
-  if (provided && provided.length > 0) {
-    return provided;
+  if (checkpoints && checkpoints.length > 0) {
+    return checkpoints;
   }
-  const raw = createSyntheticPoints(val, cost);
-  return deriveHistoricalCheckpoints(raw);
+  if (historyPoints && historyPoints.length > 0) {
+    return deriveHistoricalCheckpoints(historyPoints);
+  }
+  return [];
 }
 
 /**
@@ -83,12 +99,10 @@ function getAthMetrics(cp: HistoricalCheckpoint | undefined): { isAth: boolean; 
  * Historical valuation trend chart with SVG curves, mark-to-market checkpoint dots,
  * and All-Time High / drawdown indicators.
  *
- * @param props Chart checkpoints, dimensions, and overrides
+ * @param props Chart checkpoints, history points, dimensions, and overrides
  * @returns React Native SVG historical trend chart
  */
 export function HistoricalTrendChart(props: HistoricalTrendChartProps): React.ReactElement {
-  const currentValue = props.currentValue ?? 0;
-  const investedCost = props.investedCost ?? 0;
   const height = props.height ?? 200;
   const width = props.width ?? 330;
 
@@ -96,12 +110,12 @@ export function HistoricalTrendChart(props: HistoricalTrendChartProps): React.Re
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
   const allCheckpoints = useMemo(
-    () => resolveCheckpoints(props.checkpoints, currentValue, investedCost),
-    [props.checkpoints, currentValue, investedCost],
+    () => resolveCheckpoints(props.checkpoints, props.historyPoints),
+    [props.checkpoints, props.historyPoints],
   );
 
   const filtered = useMemo(
-    () => filterCheckpointsByRange(allCheckpoints, selectedRange),
+    () => sampleCheckpoints(filterCheckpointsByRange(allCheckpoints, selectedRange)),
     [allCheckpoints, selectedRange],
   );
 
@@ -111,6 +125,7 @@ export function HistoricalTrendChart(props: HistoricalTrendChartProps): React.Re
     [filtered, width, height],
   );
   const { isAth, drawdown } = getAthMetrics(activeCheckpoint);
+  const hasData = filtered.length > 0;
 
   return (
     <View style={chartStyles.card} testID="historical-trend-chart">
@@ -122,15 +137,21 @@ export function HistoricalTrendChart(props: HistoricalTrendChartProps): React.Re
           setSelectedIdx(null);
         }}
       />
-      {activeCheckpoint && <CheckpointTooltip cp={activeCheckpoint} />}
-      <ChartSvgCanvas
-        width={width}
-        height={height}
-        geometry={geometry}
-        selectedIdx={selectedIdx}
-        onSelectIdx={setSelectedIdx}
-      />
-      <ChartLegend />
+      {hasData ? (
+        <>
+          {activeCheckpoint && <CheckpointTooltip cp={activeCheckpoint} />}
+          <ChartSvgCanvas
+            width={width}
+            height={height}
+            geometry={geometry}
+            selectedIdx={selectedIdx}
+            onSelectIdx={setSelectedIdx}
+          />
+          <ChartLegend />
+        </>
+      ) : (
+        <ChartEmptyState />
+      )}
     </View>
   );
 }
