@@ -24,7 +24,9 @@
     "eas:build:all": "npx eas-cli build --platform all --profile preview",
     "test:e2e:maestro:ios": "maestro test e2e/flows/ --platform ios",
     "test:e2e:maestro:android": "maestro test e2e/flows/ --platform android",
-    "test:e2e": "vitest run src/e2e"
+    "test:e2e": "vitest run src/e2e",
+    "test:e2e:native": "bash scripts/run-native-e2e.sh",
+    "emulate": "bash scripts/emulate-android.sh"
   },
   "dependencies": {
     "@portfolio/core-view": "workspace:*",
