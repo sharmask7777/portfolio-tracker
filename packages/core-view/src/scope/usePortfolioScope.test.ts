@@ -5,6 +5,7 @@ import {
   serializeScope,
   deserializeScope,
   InMemoryScopeStorageAdapter,
+  LocalStorageScopeStorageAdapter,
   DEFAULT_SCOPE_STORAGE_KEY,
 } from './usePortfolioScope';
 import type { PortfolioScope } from './usePortfolioScope';
@@ -66,6 +67,19 @@ describe('usePortfolioScope', () => {
 
       adapter.removeItem('key1');
       expect(adapter.getItem('key1')).toBeNull();
+    });
+  });
+
+  describe('LocalStorageScopeStorageAdapter', () => {
+    it('stores, retrieves, and removes items via localStorage', () => {
+      const adapter = new LocalStorageScopeStorageAdapter();
+      expect(adapter.getItem('test_scope')).toBeNull();
+
+      adapter.setItem('test_scope', 'val_test');
+      expect(adapter.getItem('test_scope')).toBe('val_test');
+
+      adapter.removeItem('test_scope');
+      expect(adapter.getItem('test_scope')).toBeNull();
     });
   });
 
@@ -172,7 +186,7 @@ describe('usePortfolioScope', () => {
           JSON.stringify({
             type: 'member',
             profileId: 'p-async',
-            pan: 'ASYNC1234A',
+            pan: 'ALPAC1001A',
           })
         ),
         setItem: vi.fn().mockResolvedValue(undefined),

@@ -16,6 +16,45 @@ export interface ScopeStorageAdapter {
 }
 
 /**
+ * Web browser localStorage scope storage adapter.
+ */
+export class LocalStorageScopeStorageAdapter implements ScopeStorageAdapter {
+  getItem(key: string): string | null {
+    try {
+      const storage = typeof window !== 'undefined' ? window.localStorage : globalThis.localStorage;
+      if (storage) {
+        return storage.getItem(key);
+      }
+    } catch {
+      // Fallback for security errors or sandbox restrictions
+    }
+    return null;
+  }
+
+  setItem(key: string, value: string): void {
+    try {
+      const storage = typeof window !== 'undefined' ? window.localStorage : globalThis.localStorage;
+      if (storage) {
+        storage.setItem(key, value);
+      }
+    } catch {
+      // Fallback for quota exceeded or sandbox restrictions
+    }
+  }
+
+  removeItem(key: string): void {
+    try {
+      const storage = typeof window !== 'undefined' ? window.localStorage : globalThis.localStorage;
+      if (storage) {
+        storage.removeItem(key);
+      }
+    } catch {
+      // Fallback
+    }
+  }
+}
+
+/**
  * Default in-memory storage adapter for environments without persistent storage.
  */
 export class InMemoryScopeStorageAdapter implements ScopeStorageAdapter {
@@ -87,6 +126,7 @@ export function serializeScope(scope: PortfolioScope): string {
 
 /**
  * Deserializes JSON into a valid PortfolioScope with fallback to consolidated.
+ * Supports parsing JSON objects or legacy plain profile ID strings.
  */
 export function deserializeScope(raw: string | null): PortfolioScope {
   if (!raw) return { type: 'consolidated' };
@@ -101,7 +141,13 @@ export function deserializeScope(raw: string | null): PortfolioScope {
       };
     }
   } catch {
-    // Return default on syntax error
+    // If not JSON, but a valid legacy raw ID string (e.g. 'prof-alpha'), support it
+    if (typeof raw === 'string' && raw.trim().length > 0 && !raw.startsWith('{')) {
+      return {
+        type: 'member',
+        profileId: raw.trim(),
+      };
+    }
   }
   return { type: 'consolidated' };
 }

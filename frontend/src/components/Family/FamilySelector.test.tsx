@@ -1,12 +1,12 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FamilySelector } from './FamilySelector';
 import { describe, it, expect, vi } from 'vitest';
-
+import type { PanBreakdownDto } from '../../types/generated/PanBreakdownDto';
 
 describe('FamilySelector', () => {
   const profiles = [
-    { id: '1', name: 'Self', pan: 'PAN1' },
-    { id: '2', name: 'Spouse', pan: 'PAN2' }
+    { id: '1', name: 'Self', pan: 'ABCDE1234F' },
+    { id: '2', name: 'Spouse', pan: 'WXYZP9876Q' }
   ];
 
   it('renders consolidated and individual profiles', () => {
@@ -14,6 +14,52 @@ describe('FamilySelector', () => {
     expect(screen.getByText(/Consolidated Family/)).toBeDefined();
     expect(screen.getByText(/Self/)).toBeDefined();
     expect(screen.getByText(/Spouse/)).toBeDefined();
+  });
+
+  it('renders member PAN badge and corpus share badge when panBreakdowns are supplied', () => {
+    const panBreakdowns: PanBreakdownDto[] = [
+      {
+        pan: 'ABCDE1234F',
+        memberName: 'Self',
+        investedAmount: 60000,
+        currentValue: 600000,
+        dayChange: 1000,
+        dayChangePercentage: 0.17,
+        xirr: 0.15,
+        folioCount: 3,
+      },
+      {
+        pan: 'WXYZP9876Q',
+        memberName: 'Spouse',
+        investedAmount: 40000,
+        currentValue: 400000,
+        dayChange: 500,
+        dayChangePercentage: 0.12,
+        xirr: 0.12,
+        folioCount: 2,
+      },
+    ];
+
+    render(
+      <FamilySelector
+        profiles={profiles}
+        selectedProfileId={null}
+        onSelect={() => {}}
+        onRename={() => {}}
+        panBreakdowns={panBreakdowns}
+      />
+    );
+
+    // Verify PAN badges rendered
+    expect(screen.getByText('ABCDE1234F')).toBeDefined();
+    expect(screen.getByText('WXYZP9876Q')).toBeDefined();
+
+    // Verify corpus share badges rendered (60% and 40%)
+    expect(screen.getByText('60% of corpus')).toBeDefined();
+    expect(screen.getByText('40% of corpus')).toBeDefined();
+
+    // Verify aggregate total count on Consolidated chip (2 PANs • 5 Folios)
+    expect(screen.getByText('2 PANs • 5 Folios')).toBeDefined();
   });
 
   it('calls onSelect when a profile is clicked', () => {

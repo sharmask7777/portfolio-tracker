@@ -5,11 +5,11 @@
 
 export interface IndianRupeeFormatOptions {
   /** Whether to format numbers >= 1 Lakh into compact representations ('L' or 'Cr'). Default: true */
-  readonly compact?: boolean;
+  readonly compact?: boolean | undefined;
   /** Decimal places to show in compact form. Default: 2 */
-  readonly decimals?: number;
+  readonly decimals?: number | undefined;
   /** Whether to prefix with ₹ symbol. Default: true */
-  readonly includeSymbol?: boolean;
+  readonly includeSymbol?: boolean | undefined;
 }
 
 /**

@@ -18,6 +18,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@portfolio/core-view": "workspace:*",
     "@t3-oss/env-core": "^0.13.11",
     "axios": "^1.16.1",
     "lucide-react": "^1.16.0",
