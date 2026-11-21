@@ -210,6 +210,12 @@ function nodeMatchesText(node: RenderNode, text: string): boolean {
   if (typeof children === 'string' && children.includes(text)) {
     return true;
   }
+  if (Array.isArray(children)) {
+    const joined = children.filter((c) => typeof c === 'string' || typeof c === 'number').join('');
+    if (joined.includes(text)) {
+      return true;
+    }
+  }
   const label = node.props['accessibilityLabel'];
   if (typeof label === 'string' && label.includes(text)) {
     return true;

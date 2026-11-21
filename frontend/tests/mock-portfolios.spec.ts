@@ -229,8 +229,17 @@ test.describe('Mock Portfolios E2E Suite (Multi-Member, Zero Holdings & Lifecycl
     await expect(alphaChip).toBeVisible();
     await alphaChip.click();
 
-    // Verify localStorage has persisted the selected profile
-    const storedId = await page.evaluate(() => localStorage.getItem('portfolio_selected_profile_id'));
+    // Verify localStorage has persisted the selected profile (structured scope or profileId)
+    const storedRaw = await page.evaluate(() => localStorage.getItem('portfolio_selected_profile_id'));
+    let storedId = storedRaw;
+    try {
+      const parsed = JSON.parse(storedRaw || '{}');
+      if (parsed && parsed.profileId) {
+        storedId = parsed.profileId;
+      }
+    } catch {
+      // plain string
+    }
     expect(storedId).toBe('prof-alpha');
 
     // In Alpha's isolated view, only 1 folio exists (not 2 Folios)

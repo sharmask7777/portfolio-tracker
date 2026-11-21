@@ -9,7 +9,7 @@ use portfolio_api::routes::auth::{
     PairClaimRequest, PairClaimResponse, PairInitResponse, UserResponse,
 };
 use portfolio_api::routes::holdings::HoldingsSummaryResponse;
-use portfolio_api::routes::portfolio::{DragDecompositionDto, SummaryMetrics};
+use portfolio_api::routes::portfolio::{DragDecompositionDto, PanBreakdownDto, SummaryMetrics};
 use portfolio_api::routes::tax::{
     HarvestOpportunityDto, HarvestTicketResponse, SimulationSellRequest, SimulationSellResponse,
     TaxViewResponse, TsExportExt, UnrealizedLotGainDto, UnrealizedSummaryDto,
@@ -47,6 +47,7 @@ fn test_export_typescript_bindings() {
     HoldingsSummaryResponse::export_to(output_dir.join("HoldingsSummaryResponse.ts"))
         .expect("exported");
     SummaryMetrics::export_to(output_dir.join("SummaryMetrics.ts")).expect("exported");
+    PanBreakdownDto::export_to(output_dir.join("PanBreakdownDto.ts")).expect("exported");
     DragDecompositionDto::export_to(output_dir.join("DragDecompositionDto.ts")).expect("exported");
     HarvestTicketResponse::export_to(output_dir.join("HarvestTicketResponse.ts"))
         .expect("exported");
@@ -73,6 +74,7 @@ fn test_export_typescript_bindings() {
     assert!(output_dir.join("TaxViewResponse.ts").exists());
     assert!(output_dir.join("HoldingsSummaryResponse.ts").exists());
     assert!(output_dir.join("SummaryMetrics.ts").exists());
+    assert!(output_dir.join("PanBreakdownDto.ts").exists());
     assert!(output_dir.join("DragDecompositionDto.ts").exists());
     assert!(output_dir.join("HarvestTicketResponse.ts").exists());
     assert!(output_dir.join("HarvestOpportunityDto.ts").exists());
@@ -110,4 +112,5 @@ fn test_export_typescript_bindings() {
     assert!(mobile_output_dir.join("PairClaimRequest.ts").exists());
     assert!(mobile_output_dir.join("PairClaimResponse.ts").exists());
     assert!(mobile_output_dir.join("UserResponse.ts").exists());
+    assert!(mobile_output_dir.join("PanBreakdownDto.ts").exists());
 }

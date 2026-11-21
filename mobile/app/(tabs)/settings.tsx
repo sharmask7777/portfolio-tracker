@@ -15,7 +15,7 @@ import {
   authenticateWithBiometrics,
 } from '../../src/services/auth-service';
 import { checkServerReachable } from '../../src/services/portfolio-service';
-import { AppUpdateCard } from '../../src/components/Settings';
+import { AppUpdateCard, FamilyProfilesCard } from '../../src/components/Settings';
 
 const styles = StyleSheet.create({
   container: {
@@ -240,7 +240,7 @@ function renderSecurityCard(): React.ReactElement {
 
 /**
  * Settings tab screen. Displays self-hosted server pairing details, online status indicator,
- * OTA app update check, biometric preferences, and device unpairing controls.
+ * family profiles management, OTA app update check, biometric preferences, and device unpairing controls.
  *
  * @returns React Native settings tab element
  */
@@ -268,6 +268,7 @@ export default function SettingsScreen(): React.ReactElement {
 
       {renderConnectionCard(state)}
       {renderSecurityCard()}
+      <FamilyProfilesCard />
       <AppUpdateCard />
 
       <TouchableOpacity

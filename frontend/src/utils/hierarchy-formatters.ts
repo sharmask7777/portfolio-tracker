@@ -1,3 +1,4 @@
+import { formatIndianRupee as coreFormatIndianRupee } from '@portfolio/core-view';
 import type { IndianRupeeFormatOptions, PaletteColor } from './hierarchy-types';
 
 export const SECTOR_PALETTE: Record<string, PaletteColor> = {
@@ -181,37 +182,6 @@ export function formatPercentagesWithParity(weights: number[]): string[] {
   return bps.map(bp => `${(bp / 100).toFixed(2)}%`);
 }
 
-function formatCompactRupee(absValue: number, decimals: number): string | null {
-  if (absValue >= 10000000) {
-    return `${(absValue / 10000000).toFixed(decimals)} Cr`;
-  }
-  if (absValue >= 100000) {
-    return `${(absValue / 100000).toFixed(decimals)} L`;
-  }
-  return null;
-}
-
 export function formatIndianRupee(value: number, options?: IndianRupeeFormatOptions): string {
-  const compact = options?.compact ?? true;
-  const decimals = options?.decimals ?? 2;
-  const includeSymbol = options?.includeSymbol ?? true;
-
-  if (!Number.isFinite(value)) return includeSymbol ? '₹0' : '0';
-
-  const isNegative = value < 0;
-  const absValue = Math.abs(value);
-  const symbol = includeSymbol ? '₹' : '';
-  const sign = isNegative ? '-' : '';
-
-  if (compact) {
-    const compactStr = formatCompactRupee(absValue, decimals);
-    if (compactStr) return `${sign}${symbol}${compactStr}`;
-  }
-
-  const formattedNumber = new Intl.NumberFormat('en-IN', {
-    maximumFractionDigits: compact ? 0 : decimals,
-    minimumFractionDigits: 0,
-  }).format(absValue);
-
-  return `${sign}${symbol}${formattedNumber}`;
+  return coreFormatIndianRupee(value, options);
 }

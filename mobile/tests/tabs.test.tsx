@@ -98,6 +98,7 @@ import DashboardScreen from '../app/(tabs)/index';
 import HoldingsScreen from '../app/(tabs)/holdings';
 import SettingsScreen from '../app/(tabs)/settings';
 import UploadTabScreen from '../app/(tabs)/upload';
+import TabsLayout from '../app/(tabs)/_layout';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -286,6 +287,29 @@ describe('Tabs Screens & Components', () => {
         isSyncing: false,
       });
       expect(getProps(card)['testID']).toBe('upload-queue-card');
+    });
+  });
+
+  describe('TabsLayout 7 Core Navigation Tabs', () => {
+    it('registers exactly 7 core tabs excluding retired family tab', () => {
+      const layout = TabsLayout();
+      expect(layout).toBeDefined();
+      const props = getProps(layout);
+      const children = props['children'] as Array<React.ReactElement<{ name: string; options: { title: string } }>>;
+      expect(Array.isArray(children)).toBe(true);
+      expect(children).toHaveLength(7);
+
+      const tabNames = children.map((c) => c.props.name);
+      expect(tabNames).toEqual([
+        'index',
+        'holdings',
+        'analytics',
+        'tax',
+        'insights',
+        'upload',
+        'settings',
+      ]);
+      expect(tabNames).not.toContain('family');
     });
   });
 });

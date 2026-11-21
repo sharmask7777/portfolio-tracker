@@ -254,7 +254,6 @@ import DashboardScreen from '../../app/(tabs)/index';
 import HoldingsScreen from '../../app/(tabs)/holdings';
 import TaxScreen from '../../app/(tabs)/tax';
 import AnalyticsScreen from '../../app/(tabs)/analytics';
-import FamilyScreen from '../../app/(tabs)/family';
 import InsightsScreen from '../../app/(tabs)/insights';
 import UploadTabScreen from '../../app/(tabs)/upload';
 import SettingsScreen from '../../app/(tabs)/settings';
@@ -379,6 +378,8 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
       expect(screen.getByTestId('holdings-search-input')).toBeDefined();
       expect(screen.getByTestId('holding-card-h1')).toBeDefined();
       expect(screen.getByTestId('holding-card-h2')).toBeDefined();
+      expect(screen.getByTestId('scheme-group-card-h1')).toBeDefined();
+      expect(screen.getByTestId('scheme-group-card-h2')).toBeDefined();
     });
 
     fireEvent.changeText(screen.getByTestId('holdings-search-input'), 'HDFC');
@@ -417,12 +418,11 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
 
     // Stage 8: Family Profiles & Multi-PAN Management
     resetHookState();
-    render(() => <FamilyScreen />);
+    render(() => <DashboardScreen />);
     await waitFor(() => {
-      expect(screen.getByText('Family Wealth')).toBeDefined();
-      expect(screen.getByText('All (Consolidated)')).toBeDefined();
+      expect(screen.getByTestId('scope-selector-header')).toBeDefined();
+      expect(screen.getByText('Consolidated')).toBeDefined();
       expect(screen.getByText('Aarav Sharma')).toBeDefined();
-      expect(screen.getByTestId('family-member-list')).toBeDefined();
     });
 
     // Stage 9: Goals & Smart Financial Insights
@@ -456,12 +456,13 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
       expect(screen.getByText('Sync Now')).toBeDefined();
     });
 
-    // Stage 11: Settings screen server configuration and status
+    // Stage 11: Settings screen server configuration, family profiles, and status
     resetHookState();
     render(() => <SettingsScreen />);
     await waitFor(() => {
       expect(screen.getByTestId('settings-connection-card')).toBeDefined();
       expect(screen.getByText('Server Connection')).toBeDefined();
+      expect(screen.getByTestId('settings-family-profiles-card')).toBeDefined();
       expect(screen.getByText('Offline / Standalone')).toBeDefined();
       expect(screen.getByText('http://localhost:8080')).toBeDefined();
       expect(screen.getByText('Disconnect / Unpair Device')).toBeDefined();

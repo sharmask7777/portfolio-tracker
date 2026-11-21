@@ -40,8 +40,11 @@ import { InsightsSidebar } from './components/Insights/InsightsSidebar';
 import { GoalTracker } from './components/Insights/GoalTracker';
 import { useSettings } from './contexts/SettingsContext';
 import { useAuth } from './contexts/AuthContext';
-import { sortSchemeGroups } from './utils/sorting';
-import { consolidateFoliosIntoSchemes } from './utils/consolidation';
+import {
+  usePortfolioScope,
+  useConsolidatedHoldings,
+  LocalStorageScopeStorageAdapter,
+} from '@portfolio/core-view';
 import type { SortField, SortDirection } from './utils/sorting';
 import './App.css';
 
@@ -53,6 +56,8 @@ import { TransactionSidePanel } from './components/Dashboard/TransactionSidePane
 import api, { API_ENDPOINTS } from './api';
 import type { HarvestTicketResponse } from './types/generated/HarvestTicketResponse';
 import axios from 'axios';
+
+const localStorageAdapter = new LocalStorageScopeStorageAdapter();
 
 export function Dashboard() {
   const {
@@ -68,17 +73,29 @@ export function Dashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'xray' | 'intersection' | 'tax' | 'insights'>('overview');
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(() => {
-    return localStorage.getItem('portfolio_selected_profile_id') || null;
+
+  const {
+    scope,
+    activeProfileId: selectedProfileId,
+    setConsolidated,
+    setMemberScope,
+    resetScope,
+  } = usePortfolioScope({
+    storageAdapter: localStorageAdapter,
+    storageKey: 'portfolio_selected_profile_id',
   });
 
   const handleProfileSelect = (id: string | null) => {
-    setSelectedProfileId(id);
     setSelectedFamilyId(null);
     if (id) {
-      localStorage.setItem('portfolio_selected_profile_id', id);
+      const matchedProfile = profiles.find((p) => p.id === id);
+      setMemberScope({
+        profileId: id,
+        pan: matchedProfile?.pan,
+        name: matchedProfile?.name,
+      });
     } else {
-      localStorage.removeItem('portfolio_selected_profile_id');
+      setConsolidated();
     }
   };
   const [portfolio, setPortfolio] = useState<any>(null);
@@ -107,26 +124,25 @@ export function Dashboard() {
 
   const [sortField, setSortField] = useState<SortField | null>('value');
   const [sortDirection, setSortDirection] = useState<SortDirection | null>('desc');
-  const [expandedSchemeIds, setExpandedSchemeIds] = useState<Set<string>>(new Set());
   const [showClosedFolios, setShowClosedFolios] = useState<boolean>(false);
+
+  const {
+    allSchemes: schemeGroups,
+    sortedSchemes: sortedSchemeGroups,
+    expandedSchemeIds,
+    toggleExpanded,
+  } = useConsolidatedHoldings({
+    folios: portfolio?.folios,
+    scope,
+    performanceMode,
+    sortField,
+    sortDirection,
+  });
 
   const toggleSchemeExpanded = (schemeId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setExpandedSchemeIds(prev => {
-      const next = new Set(prev);
-      if (next.has(schemeId)) next.delete(schemeId);
-      else next.add(schemeId);
-      return next;
-    });
+    toggleExpanded(schemeId);
   };
-
-  const schemeGroups = React.useMemo(() => {
-    return consolidateFoliosIntoSchemes(portfolio?.folios || []);
-  }, [portfolio?.folios]);
-
-  const sortedSchemeGroups = React.useMemo(() => {
-    return sortSchemeGroups(schemeGroups, sortField, sortDirection, performanceMode);
-  }, [schemeGroups, sortField, sortDirection, performanceMode]);
 
   const handleSort = (field: SortField) => {
     if (sortField !== field) {
@@ -200,8 +216,7 @@ export function Dashboard() {
       setProfiles(profilesRes.data);
 
       if (selectedProfileId && Array.isArray(profilesRes.data) && profilesRes.data.length > 0 && !profilesRes.data.some((p: any) => p.id === selectedProfileId)) {
-        setSelectedProfileId(null);
-        localStorage.removeItem('portfolio_selected_profile_id');
+        setConsolidated();
       }
       if (summaryRes?.data?.id) {
         const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.allSettled([
@@ -226,7 +241,7 @@ export function Dashboard() {
       setLoading(false);
       setIsRefetching(false);
     }
-  }, [selectedFamilyId, selectedProfileId, excludeArbitrage, cpiInflationRate, marginalTaxBracket]);
+  }, [selectedFamilyId, selectedProfileId, excludeArbitrage, cpiInflationRate, marginalTaxBracket, setConsolidated]);
 
   const handleToggleExcludeArbitrage = async (val: boolean) => {
     setExcludeArbitrage(val);
@@ -306,8 +321,7 @@ export function Dashboard() {
       setLoading(true);
       await api.delete(`${API_ENDPOINTS.FAMILY}/profile/${profile.id}`);
       if (selectedProfileId === profile.id) {
-        setSelectedProfileId(null);
-        localStorage.removeItem('portfolio_selected_profile_id');
+        setConsolidated();
       }
       await fetchSummary();
     } catch (error: any) {
@@ -351,9 +365,8 @@ export function Dashboard() {
       setExposures([]);
       setTaxSummary(null);
       setHarvesting(null);
-      setSelectedProfileId(null);
       setSelectedFamilyId(null);
-      localStorage.removeItem('portfolio_selected_profile_id');
+      resetScope();
       alert('Environment has been reset successfully.');
     } catch (error) {
       console.error('Failed to purge data:', error);
@@ -483,6 +496,8 @@ export function Dashboard() {
             profiles={profiles}
             selectedProfileId={selectedProfileId}
             onSelect={handleProfileSelect}
+            panBreakdowns={portfolio?.panBreakdowns}
+            totalFolios={portfolio?.metrics?.totalFolios || undefined}
             onRename={(p) => {
               setProfileToEdit(p);
               setEditName(p.name);

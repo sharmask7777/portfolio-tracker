@@ -2430,3 +2430,182 @@ async fn test_portfolio_history_terminal_parity_with_live_summary() {
     assert_eq!(stats_json["ath"]["value"], 15000.0);
     assert_eq!(stats_json["maxInvested"]["value"], 10000.0);
 }
+
+#[tokio::test]
+async fn test_portfolio_summary_display_ready_pan_breakdowns_contract() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    // 1. Create User
+    let user = db.create_user("family_investor@example.com", "hash123");
+    let token = portfolio_api::middleware::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
+
+    // 2. Create Two Managed Profiles: Primary and Spouse
+    let primary_profile = db
+        .create_managed_profile(user.id, "Aarav Sharma", "ABCDE1234F", Decimal::new(3, 1))
+        .await
+        .unwrap();
+
+    let spouse_profile = db
+        .create_managed_profile(user.id, "Neha Patel", "ALPAC1001A", Decimal::new(2, 1))
+        .await
+        .unwrap();
+
+    // 3. Create Two Portfolios, one for each profile
+    let primary_portfolio = db
+        .create_portfolio(user.id, "Aarav Primary Portfolio", Some(primary_profile.id))
+        .await
+        .unwrap();
+
+    let spouse_portfolio = db
+        .create_portfolio(user.id, "Neha Spouse Portfolio", Some(spouse_profile.id))
+        .await
+        .unwrap();
+
+    // 4. Create Asset & Folios
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "Parag Parikh Flexi Cap Fund - Direct Growth",
+        Some("INF879O01027"),
+        Some("122639"),
+        Some("PPFAS"),
+        None,
+    );
+
+    let folio_primary = db
+        .create_folio(
+            primary_portfolio.id,
+            asset.id,
+            "1001/A",
+            Some("PPFAS"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+
+    let folio_spouse = db
+        .create_folio(
+            spouse_portfolio.id,
+            asset.id,
+            "1002/B",
+            Some("PPFAS"),
+            Some("ALPAC1001A"),
+        )
+        .unwrap();
+
+    let today = Utc::now().date_naive();
+    let buy_date = today - chrono::Duration::days(180);
+
+    // Primary: 100 units purchased at 50, now at 60 (Invested 5000, Value 6000)
+    db.create_transaction(
+        folio_primary.id,
+        buy_date,
+        "PURCHASE",
+        Decimal::from(5000),
+        Decimal::from(100),
+        Decimal::from(50),
+        Decimal::from(100),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Spouse: 50 units purchased at 50, now at 60 (Invested 2500, Value 3000)
+    db.create_transaction(
+        folio_spouse.id,
+        buy_date,
+        "PURCHASE",
+        Decimal::from(2500),
+        Decimal::from(50),
+        Decimal::from(50),
+        Decimal::from(50),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Store historical NAV: yesterday 58, today 60
+    let amfi_code = "122639";
+    db.store_nav(
+        amfi_code,
+        today - chrono::Duration::days(1),
+        Decimal::from(58),
+    );
+    db.store_nav(amfi_code, today, Decimal::from(60));
+
+    // 5. Query Consolidated Summary: GET /api/portfolio/summary
+    let cons_req = Request::builder()
+        .uri("/api/portfolio/summary")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let cons_res = app.clone().oneshot(cons_req).await.unwrap();
+    assert_eq!(cons_res.status(), StatusCode::OK);
+    let cons_json = parse_json(cons_res.into_body()).await;
+
+    let pan_breakdowns = cons_json["panBreakdowns"]
+        .as_array()
+        .expect("panBreakdowns must be an array");
+    assert_eq!(
+        pan_breakdowns.len(),
+        2,
+        "Consolidated should return breakdowns for both PANs"
+    );
+
+    // Primary breakdown assertions
+    let primary_item = pan_breakdowns
+        .iter()
+        .find(|b| b["pan"] == "ABCDE1234F")
+        .expect("Primary PAN breakdown present");
+    assert_eq!(primary_item["memberName"], "Aarav Sharma");
+    assert_eq!(primary_item["investedAmount"], 5000.0);
+    assert_eq!(primary_item["currentValue"], 6000.0);
+    assert_eq!(primary_item["folioCount"], 1);
+    // Day change: 100 units * (60 - 58) = 200.0
+    assert_eq!(primary_item["dayChange"], 200.0);
+    assert!(primary_item["xirr"].is_number());
+    assert!(primary_item["xirr"].as_f64().unwrap() > 0.0);
+
+    // Spouse breakdown assertions
+    let spouse_item = pan_breakdowns
+        .iter()
+        .find(|b| b["pan"] == "ALPAC1001A")
+        .expect("Spouse PAN breakdown present");
+    assert_eq!(spouse_item["memberName"], "Neha Patel");
+    assert_eq!(spouse_item["investedAmount"], 2500.0);
+    assert_eq!(spouse_item["currentValue"], 3000.0);
+    assert_eq!(spouse_item["folioCount"], 1);
+    // Day change: 50 units * (60 - 58) = 100.0
+    assert_eq!(spouse_item["dayChange"], 100.0);
+    assert!(spouse_item["xirr"].is_number());
+    assert!(spouse_item["xirr"].as_f64().unwrap() > 0.0);
+
+    // 6. Query Filtered Summary by profileId for Spouse: GET /api/portfolio/summary?profileId={spouse_profile.id}
+    let filtered_req = Request::builder()
+        .uri(format!(
+            "/api/portfolio/summary?profileId={}",
+            spouse_profile.id
+        ))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let filtered_res = app.clone().oneshot(filtered_req).await.unwrap();
+    assert_eq!(filtered_res.status(), StatusCode::OK);
+    let filtered_json = parse_json(filtered_res.into_body()).await;
+
+    let filtered_pan_breakdowns = filtered_json["panBreakdowns"]
+        .as_array()
+        .expect("panBreakdowns array");
+    assert_eq!(
+        filtered_pan_breakdowns.len(),
+        1,
+        "Filtered query must contain exactly 1 PAN breakdown"
+    );
+    assert_eq!(filtered_pan_breakdowns[0]["pan"], "ALPAC1001A");
+    assert_eq!(filtered_pan_breakdowns[0]["memberName"], "Neha Patel");
+    assert_eq!(filtered_pan_breakdowns[0]["investedAmount"], 2500.0);
+    assert_eq!(filtered_pan_breakdowns[0]["currentValue"], 3000.0);
+    assert_eq!(filtered_pan_breakdowns[0]["folioCount"], 1);
+}

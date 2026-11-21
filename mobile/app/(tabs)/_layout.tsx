@@ -6,7 +6,6 @@ import {
   PieChart,
   ReceiptIndianRupee,
   Target,
-  Users,
   UploadCloud,
   Settings,
 } from 'lucide-react-native';
@@ -31,7 +30,6 @@ const TAB_CONFIG = [
   { name: 'analytics', title: 'Analytics', Icon: PieChart },
   { name: 'tax', title: 'Tax', Icon: ReceiptIndianRupee },
   { name: 'insights', title: 'Goals', Icon: Target },
-  { name: 'family', title: 'Family', Icon: Users },
   { name: 'upload', title: 'Upload', Icon: UploadCloud },
   { name: 'settings', title: 'Settings', Icon: Settings },
 ] as const;

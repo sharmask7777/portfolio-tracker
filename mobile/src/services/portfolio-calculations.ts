@@ -218,3 +218,57 @@ export function mapRawFolioToHolding(
     updated_at: now,
   };
 }
+
+/**
+ * Computes dashboard summary metrics from a given list of enriched holdings.
+ *
+ * @param holdings - List of enriched holdings (filtered or consolidated)
+ * @returns Dashboard summary metrics object
+ */
+export function summarizeHoldings(holdings: EnrichedHolding[]): {
+  totalCurrentValue: number;
+  totalInvestedCost: number;
+  unrealizedGain: number;
+  unrealizedGainPct: number;
+  dayGain: number;
+  dayGainPct: number;
+  assetAllocation: AssetAllocationItem[];
+  holdingsCount: number;
+  lastUpdated: string | null;
+} {
+  let totalValue = 0;
+  let totalInvested = 0;
+  let totalDayGain = 0;
+  let prevTotalValue = 0;
+  let latestUpdate: string | null = null;
+
+  for (const h of holdings) {
+    totalValue += h.current_value;
+    totalInvested += h.invested_cost;
+    totalDayGain += h.dayChange;
+    prevTotalValue += h.current_value - h.dayChange;
+    if (!latestUpdate || h.updated_at > latestUpdate) latestUpdate = h.updated_at;
+  }
+
+  const roundedValue = Math.round(totalValue * 100) / 100;
+  const roundedInvested = Math.round(totalInvested * 100) / 100;
+  const unrealizedGain = Math.round((roundedValue - roundedInvested) * 100) / 100;
+  const unrealizedGainPct = roundedInvested > 0
+    ? Math.round((unrealizedGain / roundedInvested) * 100 * 100) / 100 : 0;
+  const roundedDayGain = Math.round(totalDayGain * 100) / 100;
+  const dayGainPct = prevTotalValue > 0
+    ? Math.round((roundedDayGain / prevTotalValue) * 100 * 100) / 100 : 0;
+
+  return {
+    totalCurrentValue: roundedValue,
+    totalInvestedCost: roundedInvested,
+    unrealizedGain,
+    unrealizedGainPct,
+    dayGain: roundedDayGain,
+    dayGainPct,
+    assetAllocation: buildAssetAllocation(holdings, roundedValue),
+    holdingsCount: holdings.length,
+    lastUpdated: latestUpdate,
+  };
+}
+

@@ -13,6 +13,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as ts from 'typescript';
 
 /**
  * Domain specification contract defining required assets across platforms.
@@ -111,12 +112,12 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'frontend/src/components/Family/FamilyManager.tsx',
       'frontend/src/components/Family/FamilySelector.tsx',
     ],
-    mobileScreens: ['mobile/app/(tabs)/family.tsx'],
+    mobileScreens: ['mobile/app/(tabs)/settings.tsx'],
     mobileComponents: [
-      'mobile/src/components/Family/ProfileSwitcher.tsx',
+      'mobile/src/components/Navigation/ScopeSelectorHeader.tsx',
+      'mobile/src/components/Settings/FamilyProfilesCard.tsx',
       'mobile/src/components/Family/FamilyMemberList.tsx',
       'mobile/src/components/Family/MemberCard.tsx',
-      'mobile/src/components/Family/FamilyMetricsSummary.tsx',
       'mobile/src/components/Family/AddMemberModal.tsx',
     ],
     mobileUnitTests: ['mobile/tests/family-tab.test.tsx'],
@@ -191,6 +192,8 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'mobile/app/(tabs)/index.tsx',
     ],
     mobileComponents: [
+      'mobile/src/components/Holdings/SchemeGroupCard.tsx',
+      'mobile/src/components/Holdings/FolioChildRow.tsx',
       'mobile/src/components/HoldingCard.tsx',
       'mobile/src/components/NetWorthCard.tsx',
       'mobile/src/components/AssetAllocationCard.tsx',
@@ -198,6 +201,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
     ],
     mobileUnitTests: [
       'mobile/tests/tabs.test.tsx',
+      'mobile/tests/holdings-breakdown.test.tsx',
       'mobile/src/services/portfolio-service.test.ts',
     ],
     mobileE2eTests: ['mobile/src/e2e/offline-navigation.test.tsx'],
@@ -205,6 +209,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
       'Net worth and invested capital metrics',
       'Asset allocation breakdown across categories',
       'Scheme holding cards with gains and units',
+      'Expandable multi-folio scheme groups with member PAN breakdown',
       'Day return tracking and offline cached navigation',
     ],
   },
@@ -341,8 +346,210 @@ function verifyMasterRunner(baseDir: string): readonly string[] {
 }
 
 /**
- * Pretty-prints a formatted verification table to standard output.
+ * Parses a TypeScript or TSX file and returns its source file and contents.
  */
+function parseAst(baseDir: string, relPath: string): { sf: ts.SourceFile; content: string } | null {
+  const full = path.resolve(baseDir, relPath);
+  if (!fs.existsSync(full)) {
+    return null;
+  }
+  const content = fs.readFileSync(full, 'utf8');
+  const sf = ts.createSourceFile(full, content, ts.ScriptTarget.Latest, true);
+  return { sf, content };
+}
+
+/**
+ * Extracts exported identifier names from a module source file.
+ */
+function extractExportsFromFile(filePath: string): readonly string[] {
+  if (!fs.existsSync(filePath)) return [];
+  const fileContent = fs.readFileSync(filePath, 'utf8');
+  const fileSf = ts.createSourceFile(filePath, fileContent, ts.ScriptTarget.Latest, true);
+  const names: string[] = [];
+
+  fileSf.forEachChild((node) => {
+    const isExported = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+    if (!isExported) return;
+
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      names.push(node.name.text);
+    } else if (ts.isVariableStatement(node)) {
+      for (const d of node.declarationList.declarations) {
+        if (ts.isIdentifier(d.name)) names.push(d.name.text);
+      }
+    }
+  });
+
+  return names;
+}
+
+/**
+ * Resolves all top-level exported names from an index file and its re-exported modules.
+ */
+function resolveExports(baseDir: string, indexRelPath: string): readonly string[] {
+  const fullIndex = path.resolve(baseDir, indexRelPath);
+  if (!fs.existsSync(fullIndex)) return [];
+  const content = fs.readFileSync(fullIndex, 'utf8');
+  const sf = ts.createSourceFile(fullIndex, content, ts.ScriptTarget.Latest, true);
+  const names: string[] = [];
+  const dir = path.dirname(fullIndex);
+
+  sf.forEachChild((node) => {
+    if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      const modulePath = path.resolve(dir, `${node.moduleSpecifier.text}.ts`);
+      names.push(...extractExportsFromFile(modulePath));
+    }
+  });
+
+  return names;
+}
+
+/**
+ * Recursively inspects AST to verify JSX tag presence.
+ */
+function findJsxElement(sf: ts.SourceFile, tag: string): boolean {
+  let found = false;
+  function visit(node: ts.Node): void {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      if (node.tagName.getText(sf) === tag) found = true;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+  return found;
+}
+
+/**
+ * Recursively inspects AST for property access (e.g. group.pans).
+ */
+function hasPropertyAccess(sf: ts.SourceFile, obj: string, prop: string): boolean {
+  let found = false;
+  function visit(node: ts.Node): void {
+    if (ts.isPropertyAccessExpression(node)) {
+      if (node.name.text === prop && (!obj || node.expression.getText(sf) === obj)) {
+        found = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+  return found;
+}
+
+/**
+ * Verifies that packages/core-view exports all required contracts.
+ */
+function verifyCorePackageExports(baseDir: string): readonly string[] {
+  const violations: string[] = [];
+  const pkgJsonPath = path.resolve(baseDir, 'packages/core-view/package.json');
+  if (!fs.existsSync(pkgJsonPath)) {
+    violations.push('packages/core-view/package.json missing');
+  }
+
+  const exports = resolveExports(baseDir, 'packages/core-view/src/index.ts');
+  const required = [
+    'usePortfolioScope',
+    'useConsolidatedHoldings',
+    'formatIndianRupee',
+    'consolidateFoliosIntoSchemes',
+  ];
+  for (const exp of required) {
+    if (!exports.includes(exp)) {
+      violations.push(`@portfolio/core-view missing required export: ${exp}`);
+    }
+  }
+  return violations;
+}
+
+/**
+ * Verifies that Web and Mobile views consume @portfolio/core-view.
+ */
+function verifyClientCoreViewConsumption(baseDir: string): readonly string[] {
+  const violations: string[] = [];
+  const webApp = parseAst(baseDir, 'frontend/src/App.tsx');
+  if (!webApp || !webApp.content.includes('@portfolio/core-view')) {
+    violations.push('frontend/src/App.tsx must import from @portfolio/core-view');
+  } else {
+    if (!webApp.content.includes('usePortfolioScope')) {
+      violations.push('frontend/src/App.tsx must consume usePortfolioScope');
+    }
+    if (!webApp.content.includes('useConsolidatedHoldings')) {
+      violations.push('frontend/src/App.tsx must consume useConsolidatedHoldings');
+    }
+  }
+
+  const mobileHoldings = parseAst(baseDir, 'mobile/app/(tabs)/holdings.tsx');
+  if (!mobileHoldings || !mobileHoldings.content.includes('@portfolio/core-view')) {
+    violations.push('mobile/app/(tabs)/holdings.tsx must import from @portfolio/core-view');
+  } else {
+    if (!mobileHoldings.content.includes('usePortfolioScope')) {
+      violations.push('mobile/app/(tabs)/holdings.tsx must consume usePortfolioScope');
+    }
+    if (!mobileHoldings.content.includes('useConsolidatedHoldings')) {
+      violations.push('mobile/app/(tabs)/holdings.tsx must consume useConsolidatedHoldings');
+    }
+  }
+  return violations;
+}
+
+/**
+ * Verifies ScopeSelector / FamilySelector mounting across platforms.
+ */
+function verifyScopeSelectorMounting(baseDir: string): readonly string[] {
+  const violations: string[] = [];
+  const webApp = parseAst(baseDir, 'frontend/src/App.tsx');
+  if (webApp && !findJsxElement(webApp.sf, 'FamilySelector')) {
+    violations.push('frontend/src/App.tsx must mount ScopeSelector (FamilySelector)');
+  }
+
+  const mobileScopeScreens = [
+    'mobile/app/(tabs)/index.tsx',
+    'mobile/app/(tabs)/holdings.tsx',
+    'mobile/app/(tabs)/analytics.tsx',
+    'mobile/app/(tabs)/tax.tsx',
+  ];
+  for (const screenPath of mobileScopeScreens) {
+    const screenAst = parseAst(baseDir, screenPath);
+    if (screenAst && !findJsxElement(screenAst.sf, 'ScopeSelectorHeader')) {
+      violations.push(`${screenPath} must mount ScopeSelectorHeader`);
+    }
+  }
+  return violations;
+}
+
+/**
+ * Verifies expandable multi-folio components and member PAN badge rendering.
+ */
+function verifyMultiFolioExpandableBreakdown(baseDir: string): readonly string[] {
+  const violations: string[] = [];
+  const webApp = parseAst(baseDir, 'frontend/src/App.tsx');
+  if (webApp && !hasPropertyAccess(webApp.sf, 'group', 'pans')) {
+    violations.push('frontend/src/App.tsx must render member PAN badges via group.pans');
+  }
+
+  const schemeCard = parseAst(baseDir, 'mobile/src/components/Holdings/SchemeGroupCard.tsx');
+  if (schemeCard) {
+    if (!hasPropertyAccess(schemeCard.sf, 'group', 'pans') && !schemeCard.content.includes('group.pans')) {
+      violations.push('mobile/src/components/Holdings/SchemeGroupCard.tsx must access group.pans for PAN badges');
+    }
+    if (!findJsxElement(schemeCard.sf, 'FolioChildRow')) {
+      violations.push('mobile/src/components/Holdings/SchemeGroupCard.tsx must mount FolioChildRow in expanded view');
+    }
+  }
+  return violations;
+}
+
+/**
+ * Aggregates all AST and static architecture checks.
+ */
+export function verifyCrossPlatformArchitecture(baseDir: string): readonly string[] {
+  return [
+    ...verifyCorePackageExports(baseDir),
+    ...verifyClientCoreViewConsumption(baseDir),
+    ...verifyScopeSelectorMounting(baseDir),
+    ...verifyMultiFolioExpandableBreakdown(baseDir),
+  ];
+}
 function printParityReport(results: readonly DomainVerificationResult[]): void {
   console.log('\n================================================================================');
   console.log('📱 WEB-MOBILE CROSS-PLATFORM FEATURE PARITY VERIFICATION REPORT');
@@ -382,10 +589,14 @@ export function main(): void {
   printParityReport(results);
 
   const runnerMissing = verifyMasterRunner(baseDir);
-  const totalFailed = results.filter((r) => !r.passed).length + (runnerMissing.length > 0 ? 1 : 0);
+  const archViolations = verifyCrossPlatformArchitecture(baseDir);
+  const totalFailed =
+    results.filter((r) => !r.passed).length +
+    (runnerMissing.length > 0 ? 1 : 0) +
+    (archViolations.length > 0 ? 1 : 0);
 
   if (totalFailed > 0) {
-    console.error('\n❌ Parity Verification FAILED! The following required files are missing or invalid:');
+    console.error('\n❌ Parity Verification FAILED! The following required files or architecture checks failed:');
     for (const res of results) {
       if (!res.passed) {
         console.error(`\nDomain: ${res.name}`);
@@ -396,6 +607,9 @@ export function main(): void {
     }
     for (const missing of runnerMissing) {
       console.error(`  - ${missing}`);
+    }
+    for (const violation of archViolations) {
+      console.error(`  - [Architecture Invariant] ${violation}`);
     }
     process.exit(1);
   }

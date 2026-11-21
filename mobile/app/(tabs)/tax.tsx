@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Calculator } from 'lucide-react-native';
+import { usePortfolioScope } from '@portfolio/core-view';
 import {
   TaxSummaryCard,
   AdvanceTaxMatrixCard,
@@ -28,50 +29,24 @@ import {
   getEnrichedHoldings,
   type EnrichedHolding,
 } from '../../src/services/portfolio-service';
+import {
+  getStoredFamilyProfiles,
+  getStoredFolios,
+  filterHoldingsForProfile,
+  type FamilyProfile,
+  type FolioEntity,
+} from '../../src/services/family-service';
+import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
+import { ScopeSelectorHeader } from '../../src/components/Navigation';
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#09090b',
-  },
-  content: {
-    padding: 20,
-    paddingTop: 56,
-  },
-  header: {
-    marginBottom: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  category: {
-    fontSize: 12,
-    color: '#a1a1aa',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#f4f4f5',
-  },
-  simBtn: {
-    backgroundColor: '#27272a',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#3f3f46',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  simBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#f4f4f5',
-  },
+  container: { flex: 1, backgroundColor: '#09090b' },
+  content: { padding: 20, paddingTop: 48 },
+  header: { marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  category: { fontSize: 12, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  title: { fontSize: 26, fontWeight: '800', color: '#f4f4f5' },
+  simBtn: { backgroundColor: '#27272a', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: '#3f3f46', flexDirection: 'row', alignItems: 'center', gap: 6 },
+  simBtnText: { fontSize: 12, fontWeight: '600', color: '#f4f4f5' },
 });
 
 function mapHoldingsToHarvestInputs(holdings: EnrichedHolding[]): HoldingHarvestInput[] {
@@ -102,11 +77,7 @@ interface ActiveSimulationTarget {
   isElss: boolean;
 }
 
-interface TaxHeaderProps {
-  onSimulate: () => void;
-}
-
-function TaxHeader({ onSimulate }: TaxHeaderProps): React.ReactElement {
+function TaxHeader({ onSimulate }: { onSimulate: () => void }): React.ReactElement {
   return (
     <View style={styles.header}>
       <View>
@@ -127,48 +98,58 @@ function TaxHeader({ onSimulate }: TaxHeaderProps): React.ReactElement {
   );
 }
 
-function useTaxData(selectedFY: string) {
+function useTaxData() {
   const [refreshing, setRefreshing] = useState(false);
-  const [taxResult, setTaxResult] = useState<TaxCalculationsResult>(() =>
-    computeTaxBreakdowns([], selectedFY)
-  );
-  const [advanceMatrix, setAdvanceMatrix] = useState<AdvanceTaxAccrualMatrix>(() =>
-    buildAdvanceTaxMatrix([])
-  );
-  const [harvestPlan, setHarvestPlan] = useState<HarvestPlan>(() =>
-    buildTaxHarvestPlan([], 0)
-  );
+  const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
+  const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
+  const [folios, setFolios] = useState<FolioEntity[]>([]);
 
   const loadData = useCallback(async () => {
     try {
-      const holdings = await getEnrichedHoldings();
-      const harvestInputs = mapHoldingsToHarvestInputs(holdings);
-      setHarvestPlan(buildTaxHarvestPlan(harvestInputs, 0));
-      setTaxResult(computeTaxBreakdowns([], selectedFY));
-      setAdvanceMatrix(buildAdvanceTaxMatrix([]));
+      const [enriched, storedProfiles, storedFolios] = await Promise.all([
+        getEnrichedHoldings(),
+        getStoredFamilyProfiles(),
+        getStoredFolios(),
+      ]);
+      setHoldings(enriched);
+      setProfiles(storedProfiles);
+      setFolios(storedFolios);
     } catch {
-      // Retain existing state
+      // Retain state
     }
-  }, [selectedFY]);
+  }, []);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
+  useEffect(() => { void loadData(); }, [loadData]);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
   }, [loadData]);
 
-  return { refreshing, onRefresh, taxResult, advanceMatrix, harvestPlan };
+  return { refreshing, onRefresh, holdings, profiles, folios };
+}
+
+interface TaxDerivedCalculations {
+  taxResult: TaxCalculationsResult;
+  advanceMatrix: AdvanceTaxAccrualMatrix;
+  harvestPlan: HarvestPlan;
+}
+
+function useTaxCalculations(filteredHoldings: EnrichedHolding[], selectedFY: string): TaxDerivedCalculations {
+  const harvestPlan = useMemo(() => {
+    const harvestInputs = mapHoldingsToHarvestInputs(filteredHoldings);
+    return buildTaxHarvestPlan(harvestInputs, 0);
+  }, [filteredHoldings]);
+
+  const taxResult = useMemo(() => computeTaxBreakdowns([], selectedFY), [selectedFY]);
+  const advanceMatrix = useMemo(() => buildAdvanceTaxMatrix([]), []);
+
+  return { taxResult, advanceMatrix, harvestPlan };
 }
 
 interface MainContentProps {
   selectedFY: string;
-  taxResult: TaxCalculationsResult;
-  advanceMatrix: AdvanceTaxAccrualMatrix;
-  harvestPlan: HarvestPlan;
+  calcs: TaxDerivedCalculations;
   refreshing: boolean;
   onRefresh: () => void;
   onSelectFY: (fy: string) => void;
@@ -176,33 +157,36 @@ interface MainContentProps {
   onOpenSimulate: () => void;
 }
 
-function MainContent({
-  selectedFY,
-  taxResult,
-  advanceMatrix,
-  harvestPlan,
-  refreshing,
-  onRefresh,
-  onSelectFY,
-  onSimulateHarvest,
-  onOpenSimulate,
-}: MainContentProps): React.ReactElement {
+function MainContent(props: MainContentProps): React.ReactElement {
+  const { selectedFY, calcs, refreshing, onRefresh, onSelectFY, onSimulateHarvest, onOpenSimulate } = props;
   return (
-    <ScrollView
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
+    <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
       <TaxHeader onSimulate={onOpenSimulate} />
       <TaxSummaryCard
         selectedFY={selectedFY}
-        taxResult={taxResult}
-        remainingExemption={harvestPlan.remainingExemption}
+        taxResult={calcs.taxResult}
+        remainingExemption={calcs.harvestPlan.remainingExemption}
         onFYChange={onSelectFY}
       />
-      <AdvanceTaxMatrixCard selectedFY={selectedFY} matrix={advanceMatrix} />
-      <HarvestOpportunitiesList plan={harvestPlan} onSimulateHarvest={onSimulateHarvest} />
+      <AdvanceTaxMatrixCard selectedFY={selectedFY} matrix={calcs.advanceMatrix} />
+      <HarvestOpportunitiesList plan={calcs.harvestPlan} onSimulateHarvest={onSimulateHarvest} />
     </ScrollView>
   );
+}
+
+function useTaxScopeFilter(holdings: EnrichedHolding[], profiles: FamilyProfile[], folios: FolioEntity[]) {
+  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+  const activeProfile = useMemo(() => {
+    if (!scopeState.activeProfileId) return null;
+    return profiles.find((p) => p.id === scopeState.activeProfileId) ?? null;
+  }, [scopeState.activeProfileId, profiles]);
+
+  const filteredHoldings = useMemo(
+    () => filterHoldingsForProfile(activeProfile, holdings, folios),
+    [activeProfile, holdings, folios],
+  );
+
+  return { scopeState, filteredHoldings };
 }
 
 /**
@@ -215,7 +199,9 @@ export default function TaxScreen(): React.ReactElement {
   const [simModalOpen, setSimModalOpen] = useState<boolean>(false);
   const [simTarget, setSimTarget] = useState<ActiveSimulationTarget | null>(null);
 
-  const { refreshing, onRefresh, taxResult, advanceMatrix, harvestPlan } = useTaxData(selectedFY);
+  const { refreshing, onRefresh, holdings, profiles, folios } = useTaxData();
+  const { scopeState, filteredHoldings } = useTaxScopeFilter(holdings, profiles, folios);
+  const calcs = useTaxCalculations(filteredHoldings, selectedFY);
 
   const handleSimulateHarvest = (opportunity: HarvestOpportunity) => {
     setSimTarget({
@@ -230,11 +216,16 @@ export default function TaxScreen(): React.ReactElement {
 
   return (
     <View style={styles.container}>
+      <ScopeSelectorHeader
+        scope={scopeState.scope}
+        profiles={profiles}
+        onSelectConsolidated={scopeState.setConsolidated}
+        onSelectMember={scopeState.setMemberScope}
+        totalFolios={folios.length}
+      />
       <MainContent
         selectedFY={selectedFY}
-        taxResult={taxResult}
-        advanceMatrix={advanceMatrix}
-        harvestPlan={harvestPlan}
+        calcs={calcs}
         refreshing={refreshing}
         onRefresh={onRefresh}
         onSelectFY={setSelectedFY}
