@@ -244,7 +244,13 @@ export function SvgTreemap({
   testID = 'svg-treemap',
 }: SvgTreemapProps): React.ReactElement {
   const [navPath, setNavPath] = useState<HierarchyNode[]>([rootNode]);
-  const activeNode = navPath[navPath.length - 1] ?? rootNode;
+  const effectiveNavPath = useMemo(() => {
+    if (navPath.length === 1 && navPath[0]?.id === rootNode.id && navPath[0] !== rootNode) {
+      return [rootNode];
+    }
+    return navPath;
+  }, [navPath, rootNode]);
+  const activeNode = effectiveNavPath[effectiveNavPath.length - 1] ?? rootNode;
 
   const rects = useMemo(() => {
     return computeTreemapLayout(activeNode, width, height);

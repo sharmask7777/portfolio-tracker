@@ -1,6 +1,8 @@
 packages:
   - 'frontend'
   - 'mobile'
+allowBuilds:
+  esbuild: true
 minimumReleaseAgeExclude:
   - '@tanstack/query-core@5.108.0'
   - '@tanstack/react-query@5.108.0'

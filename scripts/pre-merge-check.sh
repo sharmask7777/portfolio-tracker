@@ -29,7 +29,11 @@ pnpm --filter frontend test:unit
 echo "📱 [4/5] Running Mobile Sensors & Test Coverage Guardrail..."
 pnpm --filter mobile build:verify
 
-# 5. Summary
+# 5. Cross-Platform Feature Parity Gate
+echo "🔄 [5/5] Running Web-Mobile Domain Parity Verification Gate..."
+pnpm parity:check
+
+# 6. Summary
 echo "================================================================================"
 echo "🎉 All Multi-Language Maintainability Sensors & Verification Stages PASSED!"
 echo "================================================================================"

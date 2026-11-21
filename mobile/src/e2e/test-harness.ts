@@ -19,28 +19,16 @@ export function extractParams(args: unknown[]): SqlInput[] {
 export function createInMemoryDatabase(): SQLiteDatabase {
   const nodeDb = new DatabaseSync(':memory:');
   return {
-    execAsync: async (sql: string) => {
-      nodeDb.exec(sql);
-    },
+    execAsync: async (sql: string) => { nodeDb.exec(sql); },
     runAsync: async (sql: string, ...args: unknown[]) => {
-      const params = extractParams(args);
-      const stmt = nodeDb.prepare(sql);
-      const res = stmt.run(...params);
-      return {
-        lastInsertRowId: Number(res.lastInsertRowid),
-        changes: Number(res.changes),
-      };
+      const res = nodeDb.prepare(sql).run(...extractParams(args));
+      return { lastInsertRowId: Number(res.lastInsertRowid), changes: Number(res.changes) };
     },
     getAllAsync: async <T>(sql: string, ...args: unknown[]): Promise<T[]> => {
-      const params = extractParams(args);
-      const stmt = nodeDb.prepare(sql);
-      return stmt.all(...params) as unknown as T[];
+      return nodeDb.prepare(sql).all(...extractParams(args)) as unknown as T[];
     },
     getFirstAsync: async <T>(sql: string, ...args: unknown[]): Promise<T | null> => {
-      const params = extractParams(args);
-      const stmt = nodeDb.prepare(sql);
-      const res = stmt.get(...params);
-      return (res ?? null) as unknown as T | null;
+      return (nodeDb.prepare(sql).get(...extractParams(args)) ?? null) as unknown as T | null;
     },
     withTransactionAsync: async <T>(task: () => Promise<T>): Promise<T> => {
       nodeDb.exec('BEGIN TRANSACTION;');
@@ -53,9 +41,7 @@ export function createInMemoryDatabase(): SQLiteDatabase {
         throw err;
       }
     },
-    closeAsync: async () => {
-      nodeDb.close();
-    },
+    closeAsync: async () => { nodeDb.close(); },
   } as unknown as SQLiteDatabase;
 }
 
@@ -228,6 +214,10 @@ function nodeMatchesText(node: RenderNode, text: string): boolean {
   if (typeof label === 'string' && label.includes(text)) {
     return true;
   }
+  const placeholder = node.props['placeholder'];
+  if (typeof placeholder === 'string' && placeholder.includes(text)) {
+    return true;
+  }
   return false;
 }
 
@@ -270,29 +260,22 @@ export const screen = {
   },
 };
 
+function triggerHandler(node: RenderNode, prop: string, ...args: unknown[]): void {
+  let curr: RenderNode | null = node;
+  while (curr) {
+    const handler = curr.props[prop];
+    if (typeof handler === 'function') {
+      (handler as (...a: unknown[]) => void)(...args);
+      return;
+    }
+    curr = (curr as { parent?: RenderNode }).parent ?? null;
+  }
+}
+
 export const fireEvent = {
-  press(node: RenderNode): void {
-    let curr: RenderNode | null = node;
-    while (curr) {
-      const onPress = curr.props['onPress'];
-      if (typeof onPress === 'function') {
-        (onPress as () => void)();
-        return;
-      }
-      curr = (curr as { parent?: RenderNode }).parent ?? null;
-    }
-  },
-  changeText(node: RenderNode, text: string): void {
-    let curr: RenderNode | null = node;
-    while (curr) {
-      const onChangeText = curr.props['onChangeText'];
-      if (typeof onChangeText === 'function') {
-        (onChangeText as (t: string) => void)(text);
-        return;
-      }
-      curr = (curr as { parent?: RenderNode }).parent ?? null;
-    }
-  },
+  press: (node: RenderNode): void => triggerHandler(node, 'onPress'),
+  changeText: (node: RenderNode, text: string): void => triggerHandler(node, 'onChangeText', text),
+  valueChange: (node: RenderNode, val: boolean): void => triggerHandler(node, 'onValueChange', val),
 };
 
 export async function waitFor(

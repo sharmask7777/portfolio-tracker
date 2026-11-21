@@ -192,11 +192,11 @@ function FormFields(props: FormFieldsProps): React.ReactElement {
     <ScrollView keyboardShouldPersistTaps="handled">
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Full Name</Text>
-        <TextInput style={styles.input} placeholder="e.g. Neha Sharma" placeholderTextColor="#71717a" value={name} onChangeText={setName} />
+        <TextInput testID="add-member-name-input" style={styles.input} placeholder="e.g. Neha Sharma" placeholderTextColor="#71717a" value={name} onChangeText={setName} />
       </View>
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Permanent Account Number (PAN)</Text>
-        <TextInput style={[styles.input, panError ? styles.inputError : null]} placeholder="e.g. ALPAC1001A" placeholderTextColor="#71717a" value={pan} onChangeText={(t) => { setPan(t.toUpperCase()); setPanError(null); }} autoCapitalize="characters" maxLength={10} />
+        <TextInput testID="add-member-pan-input" style={[styles.input, panError ? styles.inputError : null]} placeholder="e.g. ALPAC1001A" placeholderTextColor="#71717a" value={pan} onChangeText={(t) => { setPan(t.toUpperCase()); setPanError(null); }} autoCapitalize="characters" maxLength={10} />
         {panError ? <Text style={styles.errorText}>{panError}</Text> : null}
       </View>
       <View style={styles.fieldGroup}>
@@ -259,7 +259,7 @@ export function AddMemberModal(props: AddMemberModalProps): React.ReactElement {
           <FormFields name={name} setName={setName} pan={pan} setPan={setPan} panError={panError} setPanError={setPanError} relationship={relationship} setRelationship={setRelationship} notes={notes} setNotes={setNotes} />
           <View style={styles.btnRow}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}><Text style={styles.cancelBtnText}>Cancel</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}><Text style={styles.submitBtnText}>Add Member</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} testID="submit-add-member-btn"><Text style={styles.submitBtnText}>Add Member</Text></TouchableOpacity>
           </View>
         </View>
       </View>

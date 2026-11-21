@@ -10,6 +10,8 @@ import {
 } from './test-harness';
 import type { EnrichedHolding, DashboardSummary } from '../services/portfolio-service';
 import type { UploadQueueStatus } from '../services/upload-queue';
+import { saveFamilyProfiles, type FamilyProfile } from '../services/family-service';
+import { saveGoals, type FinancialGoal } from '../services/goals-service';
 
 const { mockStorage, mockRouter } = vi.hoisted(() => ({
   mockStorage: new Map<string, string>(),
@@ -68,15 +70,59 @@ vi.mock('expo-camera', () => ({
   useCameraPermissions: () => [{ granted: false }, vi.fn()],
 }));
 
+vi.mock('react-native-svg', () => {
+  const SvgMock = (props: Record<string, unknown>) => ({ type: 'Svg', props });
+  return {
+    __esModule: true,
+    default: SvgMock,
+    Svg: SvgMock,
+    Rect: (props: Record<string, unknown>) => ({ type: 'Rect', props }),
+    Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
+    TSpan: (props: Record<string, unknown>) => ({ type: 'TSpan', props }),
+    G: (props: Record<string, unknown>) => ({ type: 'G', props }),
+    Path: (props: Record<string, unknown>) => ({ type: 'Path', props }),
+  };
+});
+
 vi.mock('lucide-react-native', () => ({
   LayoutDashboard: (props: Record<string, unknown>) => ({ type: 'LayoutDashboard', props }),
+  Briefcase: (props: Record<string, unknown>) => ({ type: 'Briefcase', props }),
   PieChart: (props: Record<string, unknown>) => ({ type: 'PieChart', props }),
   UploadCloud: (props: Record<string, unknown>) => ({ type: 'UploadCloud', props }),
   Settings: (props: Record<string, unknown>) => ({ type: 'Settings', props }),
+  ReceiptIndianRupee: (props: Record<string, unknown>) => ({ type: 'ReceiptIndianRupee', props }),
+  Target: (props: Record<string, unknown>) => ({ type: 'Target', props }),
+  Users: (props: Record<string, unknown>) => ({ type: 'Users', props }),
+  User: (props: Record<string, unknown>) => ({ type: 'User', props }),
+  UserPlus: (props: Record<string, unknown>) => ({ type: 'UserPlus', props }),
+  Trash2: (props: Record<string, unknown>) => ({ type: 'Trash2', props }),
+  Check: (props: Record<string, unknown>) => ({ type: 'Check', props }),
+  Plus: (props: Record<string, unknown>) => ({ type: 'Plus', props }),
+  X: (props: Record<string, unknown>) => ({ type: 'X', props }),
+  ShieldCheck: (props: Record<string, unknown>) => ({ type: 'ShieldCheck', props }),
+  Edit3: (props: Record<string, unknown>) => ({ type: 'Edit3', props }),
+  Calendar: (props: Record<string, unknown>) => ({ type: 'Calendar', props }),
+  AlertTriangle: (props: Record<string, unknown>) => ({ type: 'AlertTriangle', props }),
+  AlertCircle: (props: Record<string, unknown>) => ({ type: 'AlertCircle', props }),
+  Info: (props: Record<string, unknown>) => ({ type: 'Info', props }),
+  CheckCircle2: (props: Record<string, unknown>) => ({ type: 'CheckCircle2', props }),
+  Sparkles: (props: Record<string, unknown>) => ({ type: 'Sparkles', props }),
+  Calculator: (props: Record<string, unknown>) => ({ type: 'Calculator', props }),
+  TrendingDown: (props: Record<string, unknown>) => ({ type: 'TrendingDown', props }),
+  TrendingUp: (props: Record<string, unknown>) => ({ type: 'TrendingUp', props }),
+  Copy: (props: Record<string, unknown>) => ({ type: 'Copy', props }),
+  ChevronRight: (props: Record<string, unknown>) => ({ type: 'ChevronRight', props }),
+  FileText: (props: Record<string, unknown>) => ({ type: 'FileText', props }),
+  Search: (props: Record<string, unknown>) => ({ type: 'Search', props }),
+  Layers: (props: Record<string, unknown>) => ({ type: 'Layers', props }),
+  Zap: (props: Record<string, unknown>) => ({ type: 'Zap', props }),
+  SlidersHorizontal: (props: Record<string, unknown>) => ({ type: 'SlidersHorizontal', props }),
+  ShieldAlert: (props: Record<string, unknown>) => ({ type: 'ShieldAlert', props }),
+  BarChart2: (props: Record<string, unknown>) => ({ type: 'BarChart2', props }),
 }));
 
 vi.mock('react-native', () => ({
-  StyleSheet: { create: (s: Record<string, unknown>) => s },
+  StyleSheet: { create: (s: Record<string, unknown>) => s, hairlineWidth: 1 },
   View: (props: Record<string, unknown>) => ({ type: 'View', props }),
   Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
   ScrollView: (props: Record<string, unknown>) => ({ type: 'ScrollView', props }),
@@ -84,6 +130,8 @@ vi.mock('react-native', () => ({
   TouchableOpacity: (props: Record<string, unknown>) => ({ type: 'TouchableOpacity', props }),
   ActivityIndicator: (props: Record<string, unknown>) => ({ type: 'ActivityIndicator', props }),
   RefreshControl: (props: Record<string, unknown>) => ({ type: 'RefreshControl', props }),
+  Modal: (props: Record<string, unknown>) => ({ type: 'Modal', props }),
+  Switch: (props: Record<string, unknown>) => ({ type: 'Switch', props }),
   Alert: { alert: vi.fn() },
   Platform: { OS: 'ios', select: (s: Record<string, unknown>) => s['ios'] },
 }));
@@ -191,17 +239,55 @@ vi.mock('../../src/services/upload-queue', () => ({
   isServerReachable: vi.fn(async () => false),
 }));
 
+vi.mock('../services/family-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/family-service')>();
+  return {
+    ...actual,
+    getStoredFolios: vi.fn(async () => []),
+  };
+});
+
 import SplashScreen from '../../app/index';
 import PairScreen from '../../app/(auth)/pair';
 import LockScreen from '../../app/(auth)/lock';
 import DashboardScreen from '../../app/(tabs)/index';
 import HoldingsScreen from '../../app/(tabs)/holdings';
+import TaxScreen from '../../app/(tabs)/tax';
+import AnalyticsScreen from '../../app/(tabs)/analytics';
+import FamilyScreen from '../../app/(tabs)/family';
+import InsightsScreen from '../../app/(tabs)/insights';
 import UploadTabScreen from '../../app/(tabs)/upload';
 import SettingsScreen from '../../app/(tabs)/settings';
 import { SECURE_STORE_KEYS } from '../services/auth-service';
 
 describe('Hermetic Mobile E2E Integration Runner', () => {
-  beforeEach(() => {
+  const initialProfiles: FamilyProfile[] = [
+    {
+      id: 'prof-e2e-1',
+      name: 'Aarav Sharma',
+      pan: 'ABCDE1234F',
+      relationship: 'Self',
+      isPrimary: true,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    },
+  ];
+
+  const initialGoals: FinancialGoal[] = [
+    {
+      id: 'goal-e2e-1',
+      name: 'Retirement 2045',
+      category: 'Retirement',
+      priority: 'High',
+      targetAmount: 10000000,
+      targetDate: '2045-12-31',
+      allocatedPercentage: 50,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    },
+  ];
+
+  beforeEach(async () => {
     mockStorage.clear();
     mockFetch.mockReset();
     vi.clearAllMocks();
@@ -215,9 +301,12 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
       totalCount: 0,
       history: [],
     };
+
+    await saveFamilyProfiles(initialProfiles);
+    await saveGoals(initialGoals);
   });
 
-  it('runs the complete cross-platform user journey hermetically', async () => {
+  it('runs the complete cross-platform user journey hermetically across all 8 core domains', async () => {
     // Stage 1: Splash screen routes to Pair screen when no credentials exist
     render(() => <SplashScreen />);
     await waitFor(() => {
@@ -231,7 +320,6 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
     expect(screen.getByText('Scan Web QR Code')).toBeDefined();
     expect(screen.getByText('Enter Pairing Code Manually')).toBeDefined();
 
-    // Switch to manual mode and enter server info
     fireEvent.press(screen.getByText('Enter Pairing Code Manually'));
     fireEvent.changeText(screen.getByTestId('server-url-input'), 'http://localhost:8080');
     fireEvent.changeText(screen.getByTestId('pairing-secret-input'), 'pair_synthetic_test_secret');
@@ -263,7 +351,7 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
       expect(mockRouter.replace).toHaveBeenCalledWith('/(tabs)');
     });
 
-    // Stage 4: Dashboard view rendering
+    // Stage 4: Dashboard view rendering, Reality Check toggle, and Historical Trend chart
     resetHookState();
     render(() => <DashboardScreen />);
     await waitFor(() => {
@@ -272,8 +360,15 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
       expect(screen.getByText('Total Net Worth')).toBeDefined();
       expect(screen.getByTestId('asset-allocation-card')).toBeDefined();
       expect(screen.getByText('Asset Allocation')).toBeDefined();
-      expect(screen.getByTestId('day-return-banner')).toBeDefined();
-      expect(screen.getByText("Day's Change")).toBeDefined();
+      expect(screen.getByTestId('reality-check-mode-toggle-card')).toBeDefined();
+      expect(screen.getByTestId('historical-trend-chart')).toBeDefined();
+    });
+
+    // Toggle Reality Check mode ON
+    fireEvent.press(screen.getByTestId('reality-check-toggle-reality'));
+    await waitFor(() => {
+      expect(screen.getByTestId('reality-check-banner')).toBeDefined();
+      expect(screen.getByText('Reality Check Teardown')).toBeDefined();
     });
 
     // Stage 5: Holdings exploration and scheme search filter
@@ -292,7 +387,55 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
       expect(screen.queryByTestId('holding-card-h2')).toBeNull();
     });
 
-    // Stage 6: CAS Upload form and Outbox queuing
+    // Stage 6: Tax & Statutory Compliance (Section 112A exemption, Table F matrix, Sell simulation)
+    resetHookState();
+    render(() => <TaxScreen />);
+    await waitFor(() => {
+      expect(screen.getByText('Tax & ITR')).toBeDefined();
+      expect(screen.getByTestId('tax-summary-card')).toBeDefined();
+      expect(screen.getByText('Sec 112A ₹1.25L Exemption')).toBeDefined();
+      expect(screen.getByTestId('advance-tax-matrix-card')).toBeDefined();
+      expect(screen.getByTestId('harvest-opportunities-list')).toBeDefined();
+    });
+
+    fireEvent.press(screen.getByTestId('open-sell-simulation-btn'));
+    await waitFor(() => {
+      expect(screen.getByTestId('simulation-modal')).toBeDefined();
+      expect(screen.getByText('Simulate Redemption')).toBeDefined();
+    });
+    fireEvent.press(screen.getByTestId('close-simulation-modal-btn'));
+
+    // Stage 7: Analytics & Stock X-Ray (Asset allocation, Treemap, Stock Overlap)
+    resetHookState();
+    render(() => <AnalyticsScreen />);
+    await waitFor(() => {
+      expect(screen.getByText('Portfolio X-Ray')).toBeDefined();
+      expect(screen.getByText('Asset Allocation')).toBeDefined();
+      expect(screen.getByTestId('svg-treemap')).toBeDefined();
+      expect(screen.getByTestId('stock-overlap-table')).toBeDefined();
+    });
+
+    // Stage 8: Family Profiles & Multi-PAN Management
+    resetHookState();
+    render(() => <FamilyScreen />);
+    await waitFor(() => {
+      expect(screen.getByText('Family Wealth')).toBeDefined();
+      expect(screen.getByText('All (Consolidated)')).toBeDefined();
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+      expect(screen.getByTestId('family-member-list')).toBeDefined();
+    });
+
+    // Stage 9: Goals & Smart Financial Insights
+    resetHookState();
+    render(() => <InsightsScreen />);
+    await waitFor(() => {
+      expect(screen.getByText('Goals & Insights')).toBeDefined();
+      expect(screen.getByText('Total Goals Target')).toBeDefined();
+      expect(screen.getByText('Smart Portfolio Insights')).toBeDefined();
+      expect(screen.getByText('Retirement 2045')).toBeDefined();
+    });
+
+    // Stage 10: CAS Upload form and Outbox queuing
     resetHookState();
     render(() => <UploadTabScreen />);
     expect(screen.getByText('Upload CAS Statement')).toBeDefined();
@@ -313,7 +456,7 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
       expect(screen.getByText('Sync Now')).toBeDefined();
     });
 
-    // Stage 7: Settings screen server configuration and status
+    // Stage 11: Settings screen server configuration and status
     resetHookState();
     render(() => <SettingsScreen />);
     await waitFor(() => {
