@@ -378,6 +378,8 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
       expect(screen.getByTestId('holdings-search-input')).toBeDefined();
       expect(screen.getByTestId('holding-card-h1')).toBeDefined();
       expect(screen.getByTestId('holding-card-h2')).toBeDefined();
+      expect(screen.getByTestId('scheme-group-card-h1')).toBeDefined();
+      expect(screen.getByTestId('scheme-group-card-h2')).toBeDefined();
     });
 
     fireEvent.changeText(screen.getByTestId('holdings-search-input'), 'HDFC');

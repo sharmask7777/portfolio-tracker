@@ -31,6 +31,7 @@
     "vitest"
   ],
   "ignoreIssues": {
+    "src/components/HoldingCard.tsx": ["exports", "types"],
     "src/components/Family/FamilyMetricsSummary.tsx": ["exports", "types"],
     "src/components/Family/ProfileSwitcher.tsx": ["exports", "types"]
   },

@@ -31,6 +31,10 @@ export interface FolioInput {
   readonly id: string;
   readonly number?: string | undefined;
   readonly folioNumber?: string | undefined;
+  readonly amcName?: string | undefined;
+  readonly amc?: string | undefined;
+  readonly units?: number | undefined;
+  readonly currentNav?: number | undefined;
   readonly pan?: string | undefined;
   readonly asset?: AssetInput | undefined;
   readonly metrics?: FolioMetricsInput | undefined;

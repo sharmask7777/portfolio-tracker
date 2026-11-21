@@ -1,24 +1,43 @@
+/**
+ * @file holdings.tsx
+ * @description Mobile holdings screen. Uses ScopeSelectorHeader and useConsolidatedHoldings from
+ * @portfolio/core-view to provide parity with Web: expandable multi-folio scheme groups,
+ * member PAN breakdown, search, asset-class filtering, and sorting.
+ */
+
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
-  TextInput,
-  TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
 import {
+  usePortfolioScope,
+  useConsolidatedHoldings,
+  type SchemeSortField,
+  type PortfolioScope,
+} from '@portfolio/core-view';
+import {
   getEnrichedHoldings,
-  filterHoldings,
-  groupHoldingsByAssetClass,
   refreshPortfolio,
-  formatInr,
   type EnrichedHolding,
-  type GroupedHoldings,
 } from '../../src/services/portfolio-service';
-import { HoldingCard } from '../../src/components';
+import {
+  getStoredFamilyProfiles,
+  getStoredFolios,
+  type FamilyProfile,
+  type FolioEntity,
+} from '../../src/services/family-service';
+import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
+import { ScopeSelectorHeader } from '../../src/components/Navigation';
+import {
+  SchemeGroupCard,
+  HoldingsFilterControls,
+  adaptHoldingsToFolioInputs,
+} from '../../src/components/Holdings';
 
 const styles = StyleSheet.create({
   container: {
@@ -27,72 +46,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    paddingTop: 56,
-  },
-  header: {
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#f4f4f5',
-    marginBottom: 12,
-  },
-  searchBar: {
-    backgroundColor: '#18181b',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    color: '#f4f4f5',
-    fontSize: 14,
-    marginBottom: 14,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  toggleButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#18181b',
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  toggleButtonActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#3b82f6',
-  },
-  toggleText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#a1a1aa',
-  },
-  toggleTextActive: {
-    color: '#ffffff',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 10,
-    paddingHorizontal: 4,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#93c5fd',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  sectionTotal: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#d4d4d8',
+    paddingTop: 16,
   },
   emptyText: {
     fontSize: 14,
@@ -108,17 +62,23 @@ const styles = StyleSheet.create({
   },
 });
 
-function useHoldingsList() {
+function useHoldingsData() {
   const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
+  const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
+  const [folios, setFolios] = useState<FolioEntity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [groupByAsset, setGroupByAsset] = useState(true);
 
   const loadData = useCallback(async () => {
     try {
-      const data = await getEnrichedHoldings();
-      setHoldings(data);
+      const [enriched, storedProfiles, storedFolios] = await Promise.all([
+        getEnrichedHoldings(),
+        getStoredFamilyProfiles(),
+        getStoredFolios(),
+      ]);
+      setHoldings(enriched);
+      setProfiles(storedProfiles);
+      setFolios(storedFolios);
     } catch {
       // Retain existing state
     } finally {
@@ -142,145 +102,103 @@ function useHoldingsList() {
     void loadData();
   }, [loadData]);
 
-  return {
-    holdings,
-    isLoading,
-    isRefreshing,
-    searchQuery,
-    setSearchQuery,
-    groupByAsset,
-    setGroupByAsset,
-    handleRefresh,
-  };
+  return { holdings, profiles, folios, isLoading, isRefreshing, handleRefresh };
 }
 
-function renderGroup(group: GroupedHoldings): React.ReactElement {
-  return (
-    <View key={group.assetClass}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>
-          {group.assetClass} ({group.holdings.length})
-        </Text>
-        <Text style={styles.sectionTotal}>{formatInr(group.totalValue)}</Text>
-      </View>
-      {group.holdings.map((h) => (
-        <HoldingCard key={h.id} holding={h} />
-      ))}
-    </View>
-  );
-}
-
-interface HeaderControlsProps {
+interface FilteredHoldingsOptions {
+  holdings: readonly EnrichedHolding[];
+  folios: readonly FolioEntity[];
+  scope: PortfolioScope;
   searchQuery: string;
-  setSearchQuery: (val: string) => void;
-  groupByAsset: boolean;
-  setGroupByAsset: (val: boolean) => void;
-  count: number;
+  selectedAsset: string;
+  selectedSort: SchemeSortField;
 }
 
-function HoldingsHeaderControls(props: HeaderControlsProps): React.ReactElement {
-  return (
-    <View style={styles.header}>
-      <Text style={styles.title}>Holdings</Text>
-      <TextInput
-        style={styles.searchBar}
-        placeholder="Search schemes or folios..."
-        placeholderTextColor="#71717a"
-        value={props.searchQuery}
-        onChangeText={props.setSearchQuery}
-        testID="holdings-search-input"
-      />
-      <View style={styles.toggleRow}>
-        <TouchableOpacity
-          style={[styles.toggleButton, props.groupByAsset && styles.toggleButtonActive]}
-          onPress={() => props.setGroupByAsset(true)}
-          testID="toggle-group-asset"
-        >
-          <Text style={[styles.toggleText, props.groupByAsset && styles.toggleTextActive]}>
-            By Asset Class
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.toggleButton, !props.groupByAsset && styles.toggleButtonActive]}
-          onPress={() => props.setGroupByAsset(false)}
-          testID="toggle-group-all"
-        >
-          <Text style={[styles.toggleText, !props.groupByAsset && styles.toggleTextActive]}>
-            All Schemes ({props.count})
-          </Text>
-        </TouchableOpacity>
+function useFilteredHoldings(opts: FilteredHoldingsOptions) {
+  const { holdings, folios, scope, searchQuery, selectedAsset, selectedSort } = opts;
+  const folioInputs = useMemo(() => {
+    return adaptHoldingsToFolioInputs(holdings, folios);
+  }, [holdings, folios]);
+
+  return useConsolidatedHoldings({
+    folios: folioInputs,
+    scope,
+    searchQuery,
+    assetTypeFilter: selectedAsset,
+    sortField: selectedSort,
+    sortDirection: selectedSort === 'name' ? 'asc' : 'desc',
+  });
+}
+
+interface HoldingsListProps {
+  isLoading: boolean;
+  schemes: ReturnType<typeof useConsolidatedHoldings>['sortedSchemes'];
+  isExpanded: (id: string) => boolean;
+  onToggleExpand: (id: string) => void;
+  isConsolidatedScope: boolean;
+}
+
+function HoldingsList(props: HoldingsListProps): React.ReactElement {
+  const { isLoading, schemes, isExpanded, onToggleExpand, isConsolidatedScope } = props;
+
+  if (isLoading && schemes.length === 0) {
+    return (
+      <View style={styles.center} testID="holdings-loading">
+        <ActivityIndicator size="large" color="#3b82f6" />
       </View>
-    </View>
-  );
-}
+    );
+  }
 
-interface ListBodyProps {
-  filtered: EnrichedHolding[];
-  groups: GroupedHoldings[];
-  groupByAsset: boolean;
-}
-
-function HoldingsListBody(props: ListBodyProps): React.ReactElement {
-  if (props.filtered.length === 0) {
+  if (schemes.length === 0) {
     return (
       <Text style={styles.emptyText} testID="holdings-empty">
         No holdings match your search criteria.
       </Text>
     );
   }
-  if (props.groupByAsset) {
-    return <>{props.groups.map((g) => renderGroup(g))}</>;
-  }
+
   return (
     <>
-      {props.filtered.map((h) => (
-        <HoldingCard key={h.id} holding={h} />
+      {schemes.map((group) => (
+        <SchemeGroupCard
+          key={group.id}
+          group={group}
+          isExpanded={isExpanded(group.id)}
+          onToggleExpand={onToggleExpand}
+          showPanBadges={isConsolidatedScope}
+        />
       ))}
     </>
   );
 }
 
-function HoldingsLoadingView(): React.ReactElement {
-  return (
-    <View style={styles.center} testID="holdings-loading">
-      <ActivityIndicator size="large" color="#3b82f6" />
-    </View>
-  );
+interface HoldingsScreenContentProps {
+  isRefreshing: boolean;
+  handleRefresh: () => Promise<void>;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  selectedAsset: string;
+  setSelectedAsset: (a: string) => void;
+  selectedSort: SchemeSortField;
+  setSelectedSort: (s: SchemeSortField) => void;
+  listProps: HoldingsListProps;
 }
 
-/**
- * Holdings list screen. Displays individual fund holdings with live NAVs and values,
- * searchable by scheme name and filterable by asset class.
- *
- * @returns React Native holdings tab element
- */
-export default function HoldingsScreen(): React.ReactElement {
+function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactElement {
   const {
-    holdings,
-    isLoading,
     isRefreshing,
+    handleRefresh,
     searchQuery,
     setSearchQuery,
-    groupByAsset,
-    setGroupByAsset,
-    handleRefresh,
-  } = useHoldingsList();
-
-  const filtered = useMemo(() => {
-    return filterHoldings(holdings, searchQuery);
-  }, [holdings, searchQuery]);
-
-  const groups = useMemo(() => {
-    return groupByAsset ? groupHoldingsByAssetClass(filtered) : [];
-  }, [groupByAsset, filtered]);
-
-  if (isLoading && holdings.length === 0) {
-    return <HoldingsLoadingView />;
-  }
+    selectedAsset,
+    setSelectedAsset,
+    selectedSort,
+    setSelectedSort,
+    listProps,
+  } = props;
 
   return (
     <ScrollView
-      style={styles.container}
       contentContainerStyle={styles.content}
       testID="holdings-scroll"
       refreshControl={
@@ -292,18 +210,69 @@ export default function HoldingsScreen(): React.ReactElement {
         />
       }
     >
-      <HoldingsHeaderControls
+      <HoldingsFilterControls
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        selectedAsset={selectedAsset}
+        onSelectAsset={setSelectedAsset}
+        selectedSort={selectedSort}
+        onSelectSort={setSelectedSort}
+      />
+      <HoldingsList {...listProps} />
+    </ScrollView>
+  );
+}
+
+/**
+ * Holdings list screen with ScopeSelector, search, asset-class filtering, and expandable schemes.
+ *
+ * @returns React Native holdings tab element.
+ */
+export default function HoldingsScreen(): React.ReactElement {
+  const { holdings, profiles, folios, isLoading, isRefreshing, handleRefresh } = useHoldingsData();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedAsset, setSelectedAsset] = useState('ALL');
+  const [selectedSort, setSelectedSort] = useState<SchemeSortField>('value');
+
+  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+
+  const { sortedSchemes, isExpanded, toggleExpanded } = useFilteredHoldings({
+    holdings,
+    folios,
+    scope: scopeState.scope,
+    searchQuery,
+    selectedAsset,
+    selectedSort,
+  });
+
+  const listProps: HoldingsListProps = {
+    isLoading,
+    schemes: sortedSchemes,
+    isExpanded,
+    onToggleExpand: toggleExpanded,
+    isConsolidatedScope: scopeState.scope.type === 'consolidated',
+  };
+
+  return (
+    <View style={styles.container}>
+      <ScopeSelectorHeader
+        scope={scopeState.scope}
+        profiles={profiles}
+        onSelectConsolidated={scopeState.setConsolidated}
+        onSelectMember={scopeState.setMemberScope}
+        totalFolios={folios.length}
+      />
+      <HoldingsScreenContent
+        isRefreshing={isRefreshing}
+        handleRefresh={handleRefresh}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        groupByAsset={groupByAsset}
-        setGroupByAsset={setGroupByAsset}
-        count={filtered.length}
+        selectedAsset={selectedAsset}
+        setSelectedAsset={setSelectedAsset}
+        selectedSort={selectedSort}
+        setSelectedSort={setSelectedSort}
+        listProps={listProps}
       />
-      <HoldingsListBody
-        filtered={filtered}
-        groups={groups}
-        groupByAsset={groupByAsset}
-      />
-    </ScrollView>
+    </View>
   );
 }
