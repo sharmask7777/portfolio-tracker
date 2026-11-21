@@ -29,5 +29,7 @@ export * from './PairClaimResponse';
 export * from './UserResponse';
 export * from './PanBreakdownDto';
 export * from './HistoryPoint';
+export * from './AssetCategory';
+export * from './AssetAllocationDto';
 export type DragDecomposition = import('./DragDecompositionDto').DragDecompositionDto;
 export type HarvestTicket = import('./HarvestTicketResponse').HarvestTicketResponse;

@@ -6,6 +6,8 @@
 #![deny(clippy::too_many_arguments)]
 #![deny(clippy::fn_params_excessive_bools)]
 
+/// Centralized asset classification and category representation.
+pub mod classification;
 /// Central domain error types.
 pub mod error;
 /// Holdings consolidation, FIFO lot matching, and portfolio registry.
@@ -21,6 +23,7 @@ pub mod types;
 /// Portfolio X-Ray analysis, asset allocation, and multi-fund overlap.
 pub mod xray;
 
+pub use classification::*;
 pub use error::PortfolioError;
 pub use holdings::*;
 pub use performance::*;

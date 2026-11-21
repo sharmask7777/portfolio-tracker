@@ -8,6 +8,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use ts_rs::TS;
@@ -114,6 +115,21 @@ impl SummaryParams {
 
         Ok(())
     }
+}
+
+/// Standardized asset category breakdown item for consolidated portfolio views.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct AssetAllocationDto {
+    /// Human-readable category label (e.g. "Equity", "Debt", "Gold").
+    pub name: String,
+    /// Total monetary valuation in INR.
+    pub amount: f64,
+    /// Portfolio share percentage (0.0 to 100.0).
+    pub percentage: f64,
+    /// Standardized visualization color hex code.
+    pub color: String,
 }
 
 /// Detailed sequential teardown of return drag from nominal returns down to real purchasing power.
@@ -245,6 +261,7 @@ pub struct EnrichedFolio {
     #[serde(with = "rust_decimal::serde::float")]
     pub units: Decimal,
     pub asset: Option<portfolio_db::entities::AssetEntity>,
+    pub asset_category: String,
     pub transactions: Vec<portfolio_db::entities::TransactionEntity>,
     pub metrics: FolioMetrics,
 }
@@ -290,6 +307,7 @@ pub struct ConsolidatedSummaryResponse {
     pub folios: Vec<EnrichedFolio>,
     pub closed_folios: Vec<EnrichedFolio>,
     pub pan_breakdowns: Vec<PanBreakdownDto>,
+    pub asset_allocation: Vec<AssetAllocationDto>,
     #[serde(with = "rust_decimal::serde::float")]
     pub tax_slab: Decimal,
     pub metrics: SummaryMetrics,
@@ -328,6 +346,7 @@ pub struct FolioSummary {
     pub folio_number: String,
     pub scheme_name: String,
     pub asset_type: String,
+    pub asset_category: String,
     #[ts(type = "number")]
     pub units: Decimal,
     #[ts(type = "number")]
@@ -925,11 +944,17 @@ pub async fn get_summary(
             };
         }
 
+        let asset_category =
+            portfolio_core::classification::classify_asset(&asset_type, &scheme_name)
+                .display_name()
+                .to_string();
+
         folio_summaries.push(FolioSummary {
             folio_id: folio.id,
             folio_number: folio.number.clone(),
             scheme_name,
             asset_type,
+            asset_category,
             units: units.to_decimal(),
             current_price: latest_nav.to_decimal(),
             invested_amount: invested_amount_decimal,
@@ -1537,19 +1562,16 @@ pub async fn compute_portfolio_exposures(
                 continue;
             }
 
-            let lower = asset.name.to_lowercase();
-            let is_debt = lower.contains("debt")
-                || lower.contains("liquid")
-                || lower.contains("bond")
-                || lower.contains("gilt");
-            let is_gold = lower.contains("gold") || asset.asset_type == "GOLD";
-            let is_cash = lower.contains("cash") || asset.asset_type == "CASH";
+            let category =
+                portfolio_core::classification::classify_asset(&asset.asset_type, &asset.name);
+            let is_equity_eligible = match category {
+                portfolio_core::classification::AssetCategory::Equity
+                | portfolio_core::classification::AssetCategory::Hybrid => true,
+                portfolio_core::classification::AssetCategory::Arbitrage => !exclude_arbitrage,
+                _ => false,
+            };
 
-            if is_debt || is_gold || is_cash {
-                continue;
-            }
-
-            if exclude_arbitrage && lower.contains("arbitrage") {
+            if !is_equity_eligible {
                 continue;
             }
 
@@ -1940,6 +1962,7 @@ pub async fn get_portfolio_summary(
             folios: Vec::new(),
             closed_folios: Vec::new(),
             pan_breakdowns: Vec::new(),
+            asset_allocation: Vec::new(),
             tax_slab: slab_value,
             metrics: SummaryMetrics {
                 total_invested: Decimal::ZERO,
@@ -2060,6 +2083,13 @@ pub async fn get_portfolio_summary(
                 )
             };
 
+            let (asset_type_str, asset_name_str) = match &asset {
+                Some(a) => (a.asset_type.as_str(), a.name.as_str()),
+                None => ("UNKNOWN", "Unknown Asset"),
+            };
+            let category =
+                portfolio_core::classification::classify_asset(asset_type_str, asset_name_str);
+
             let enriched = EnrichedFolio {
                 id: folio.id,
                 number: folio.number.clone(),
@@ -2069,6 +2099,7 @@ pub async fn get_portfolio_summary(
                 asset_id: folio.asset_id,
                 units: enriched_units,
                 asset,
+                asset_category: category.display_name().to_string(),
                 transactions: tx_entities,
                 metrics: final_metrics,
             };
@@ -2250,12 +2281,64 @@ pub async fn get_portfolio_summary(
         });
     }
 
+    // Build unified asset allocation breakdown directly on the backend
+    let mut cat_amounts: std::collections::HashMap<
+        portfolio_core::classification::AssetCategory,
+        Decimal,
+    > = std::collections::HashMap::new();
+
+    for f in &active_folios {
+        let (asset_type_str, asset_name_str) = match &f.asset {
+            Some(a) => (a.asset_type.as_str(), a.name.as_str()),
+            None => ("UNKNOWN", "Unknown Asset"),
+        };
+        let cat = portfolio_core::classification::classify_asset(asset_type_str, asset_name_str);
+        *cat_amounts.entry(cat).or_insert(Decimal::ZERO) += f.metrics.current_value;
+    }
+
+    let mut asset_allocation: Vec<AssetAllocationDto> = Vec::new();
+    let categories = [
+        portfolio_core::classification::AssetCategory::Equity,
+        portfolio_core::classification::AssetCategory::Debt,
+        portfolio_core::classification::AssetCategory::Hybrid,
+        portfolio_core::classification::AssetCategory::Gold,
+        portfolio_core::classification::AssetCategory::Cash,
+        portfolio_core::classification::AssetCategory::Arbitrage,
+        portfolio_core::classification::AssetCategory::Other,
+    ];
+
+    for cat in categories {
+        let amount_dec = cat_amounts.get(&cat).copied().unwrap_or(Decimal::ZERO);
+        let amount = amount_dec.round_dp(2).to_f64().unwrap_or(0.0);
+        let percentage = if total_current_value > Decimal::ZERO {
+            ((amount_dec / total_current_value) * Decimal::from(100))
+                .round_dp(2)
+                .to_f64()
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+
+        if amount > 0.0
+            || cat == portfolio_core::classification::AssetCategory::Equity
+            || cat == portfolio_core::classification::AssetCategory::Debt
+        {
+            asset_allocation.push(AssetAllocationDto {
+                name: cat.display_name().to_string(),
+                amount,
+                percentage,
+                color: cat.color().to_string(),
+            });
+        }
+    }
+
     Ok(Json(ConsolidatedSummaryResponse {
         id: res_id,
         name: res_name,
         folios: active_folios,
         closed_folios,
         pan_breakdowns,
+        asset_allocation,
         tax_slab: slab_value,
         metrics: SummaryMetrics {
             total_invested,
@@ -2350,15 +2433,13 @@ pub async fn get_xray(
 
             let annualized_fee = (holding_market_value * (ter / Decimal::from(100))).round_dp(2);
 
-            let is_debt = lower.contains("debt")
-                || lower.contains("liquid")
-                || lower.contains("bond")
-                || lower.contains("gilt")
-                || lower.contains("overnight")
-                || asset_type == "DEBT";
-            let is_gold = lower.contains("gold") || asset_type == "GOLD";
-            let is_cash = lower.contains("cash") || asset_type == "CASH";
-            let is_arbitrage = lower.contains("arbitrage");
+            let category = portfolio_core::classification::classify_asset(asset_type, asset_name);
+            let category_label = category.display_name();
+
+            let is_debt = category == portfolio_core::classification::AssetCategory::Debt;
+            let is_gold = category == portfolio_core::classification::AssetCategory::Gold;
+            let is_cash = category == portfolio_core::classification::AssetCategory::Cash;
+            let is_arbitrage = category == portfolio_core::classification::AssetCategory::Arbitrage;
             let is_index = lower.contains("index")
                 || lower.contains("nifty")
                 || lower.contains("sensex")
@@ -2366,18 +2447,6 @@ pub async fn get_xray(
                 || lower.contains("s&p")
                 || lower.contains("nasdaq")
                 || lower.contains("passive");
-
-            let category_label = if is_debt {
-                "Debt"
-            } else if is_gold {
-                "Gold"
-            } else if is_cash {
-                "Cash"
-            } else if is_arbitrage {
-                "Arbitrage"
-            } else {
-                "Equity"
-            };
 
             fund_breakdowns.push(json!({
                 "name": asset_name,
@@ -2388,19 +2457,27 @@ pub async fn get_xray(
                 "value": holding_market_value.to_f64().unwrap_or(0.0)
             }));
 
-            if is_debt {
-                debt_val += holding_market_value;
-            } else if is_gold {
-                gold_val += holding_market_value;
-            } else if is_cash {
-                cash_val += holding_market_value;
-            } else if is_arbitrage {
-                arbitrage_val += holding_market_value;
-                equity_val += holding_market_value; // In standard view, arbitrage is included under equity/hybrid
-            } else if asset_type == "EQUITY" || asset_type == "MUTUAL_FUND" {
-                equity_val += holding_market_value;
-            } else {
-                other_val += holding_market_value;
+            match category {
+                portfolio_core::classification::AssetCategory::Debt => {
+                    debt_val += holding_market_value
+                }
+                portfolio_core::classification::AssetCategory::Gold => {
+                    gold_val += holding_market_value
+                }
+                portfolio_core::classification::AssetCategory::Cash => {
+                    cash_val += holding_market_value
+                }
+                portfolio_core::classification::AssetCategory::Arbitrage => {
+                    arbitrage_val += holding_market_value;
+                    equity_val += holding_market_value;
+                }
+                portfolio_core::classification::AssetCategory::Equity
+                | portfolio_core::classification::AssetCategory::Hybrid => {
+                    equity_val += holding_market_value
+                }
+                portfolio_core::classification::AssetCategory::Other => {
+                    other_val += holding_market_value
+                }
             }
 
             if is_arbitrage {
