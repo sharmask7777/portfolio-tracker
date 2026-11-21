@@ -11,6 +11,7 @@ export default defineConfig({
   resolve: {
     alias: {
       'react-native-svg': path.resolve(__dirname, 'tests/mocks/react-native-svg.ts'),
+      'expo-constants': path.resolve(__dirname, 'tests/mocks/expo-constants.ts'),
     },
   },
   test: {

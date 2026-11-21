@@ -15,6 +15,7 @@ import {
   authenticateWithBiometrics,
 } from '../../src/services/auth-service';
 import { checkServerReachable } from '../../src/services/portfolio-service';
+import { AppUpdateCard } from '../../src/components/Settings';
 
 const styles = StyleSheet.create({
   container: {
@@ -267,6 +268,7 @@ export default function SettingsScreen(): React.ReactElement {
 
       {renderConnectionCard(state)}
       {renderSecurityCard()}
+      <AppUpdateCard />
 
       <TouchableOpacity
         style={styles.disconnectButton}
