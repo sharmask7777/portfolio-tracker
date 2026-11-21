@@ -343,7 +343,7 @@ function processGainLot(item: ITRGainDetail, acc: GainLotAccumulator): void {
 export function generateITRReportCSV(params: ITRReportParams): string {
   const {
     assesseeName = 'Portfolio Investor',
-    pan = 'ABCDE1234F',
+    pan = '',
     fy,
     ay = computeAY(fy),
     details = [],
