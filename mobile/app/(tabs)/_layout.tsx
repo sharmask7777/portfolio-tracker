@@ -5,6 +5,7 @@ import {
   Briefcase,
   PieChart,
   ReceiptIndianRupee,
+  Users,
   UploadCloud,
   Settings,
 } from 'lucide-react-native';
@@ -14,9 +15,6 @@ const screenOptions = {
   tabBarStyle: {
     backgroundColor: '#18181b',
     borderTopColor: '#27272a',
-    height: 60,
-    paddingBottom: 8,
-    paddingTop: 8,
   },
   tabBarActiveTintColor: '#3b82f6',
   tabBarInactiveTintColor: '#71717a',
@@ -31,6 +29,7 @@ const TAB_CONFIG = [
   { name: 'holdings', title: 'Holdings', Icon: Briefcase },
   { name: 'analytics', title: 'Analytics', Icon: PieChart },
   { name: 'tax', title: 'Tax', Icon: ReceiptIndianRupee },
+  { name: 'family', title: 'Family', Icon: Users },
   { name: 'upload', title: 'Upload', Icon: UploadCloud },
   { name: 'settings', title: 'Settings', Icon: Settings },
 ] as const;

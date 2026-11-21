@@ -72,6 +72,7 @@ vi.mock('lucide-react-native', () => ({
   UploadCloud: (props: Record<string, unknown>) => ({ type: 'UploadCloud', props }),
   Settings: (props: Record<string, unknown>) => ({ type: 'Settings', props }),
   ReceiptIndianRupee: (props: Record<string, unknown>) => ({ type: 'ReceiptIndianRupee', props }),
+  Users: (props: Record<string, unknown>) => ({ type: 'Users', props }),
   ReceiptText: (props: Record<string, unknown>) => ({ type: 'ReceiptText', props }),
   Calculator: (props: Record<string, unknown>) => ({ type: 'Calculator', props }),
   TrendingDown: (props: Record<string, unknown>) => ({ type: 'TrendingDown', props }),

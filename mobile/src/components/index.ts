@@ -14,5 +14,4 @@ export * from './UploadQueueCard';
 export * from './UploadFormCard';
 export * from './useCasUpload';
 export * from './Tax';
-
-
+export * from './Family';

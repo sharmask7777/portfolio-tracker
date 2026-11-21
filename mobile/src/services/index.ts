@@ -9,3 +9,4 @@ export * from './tax-harvesting';
 export * from './hierarchy-builder';
 export * from './consolidation';
 export * from './analytics-service';
+export * from './family-service';
