@@ -411,7 +411,8 @@ describe('Family Profiles & Multi-PAN Management Suite', () => {
 
     it('loads and saves family profiles', async () => {
       const initial = await getStoredFamilyProfiles();
-      expect(initial.length).toBeGreaterThanOrEqual(1);
+      expect(initial).toEqual([]);
+      expect(initial.some((p) => p.pan === 'ABCDE1234F')).toBe(false);
 
       await saveFamilyProfiles(mockProfiles);
       const loaded = await getStoredFamilyProfiles();

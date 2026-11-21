@@ -13,6 +13,10 @@ import {
 } from '../feeds/nav-fetcher';
 import { getStoredCredentials } from './auth-service';
 import {
+  saveFamilyProfiles,
+  type FamilyProfile,
+} from './family-service';
+import {
   mapRawFolioToHolding,
   summarizeHoldings,
   type AssetAllocationItem,
@@ -179,6 +183,47 @@ function parseServerPayload(
   };
 }
 
+async function syncFamilyProfilesFromServer(
+  profilesUrl: string,
+  token: string,
+): Promise<void> {
+  try {
+    const profRes = await fetch(profilesUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+    });
+    if (!profRes.ok) return;
+    const rawProfiles = (await profRes.json()) as Array<{
+      id: string;
+      name: string;
+      pan: string;
+      relationship?: string;
+      isPrimary?: boolean;
+      notes?: string;
+      createdAt?: string;
+      updatedAt?: string;
+    }>;
+    if (Array.isArray(rawProfiles)) {
+      const mapped: FamilyProfile[] = rawProfiles.map((p, idx) => ({
+        id: p.id,
+        name: p.name,
+        pan: p.pan,
+        relationship: p.relationship || (idx === 0 ? 'Self' : 'Member'),
+        isPrimary: p.isPrimary ?? idx === 0,
+        notes: p.notes,
+        createdAt: p.createdAt || new Date().toISOString(),
+        updatedAt: p.updatedAt || new Date().toISOString(),
+      }));
+      await saveFamilyProfiles(mapped);
+    }
+  } catch {
+    // Retain existing profiles if family profiles endpoint fails
+  }
+}
+
 export async function syncWithServer(
   serverUrl: string,
   token: string,
@@ -187,6 +232,7 @@ export async function syncWithServer(
   const targetDb = await resolveDb(db);
   const trimmed = serverUrl.trim().replace(/\/+$/, '');
   const url = `${trimmed}/api/portfolio/summary`;
+  const profilesUrl = `${trimmed}/api/family/profiles`;
 
   try {
     const res = await fetch(url, {
@@ -200,6 +246,7 @@ export async function syncWithServer(
     const json = (await res.json()) as Record<string, unknown>;
     const snapshot = parseServerPayload(json);
     await savePortfolioSnapshot(targetDb, snapshot);
+    await syncFamilyProfilesFromServer(profilesUrl, token);
     return true;
   } catch {
     return false;

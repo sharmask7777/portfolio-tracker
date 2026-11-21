@@ -191,15 +191,15 @@ export async function getStoredFamilyProfiles(): Promise<FamilyProfile[]> {
   try {
     const raw = await SecureStore.getItemAsync(SECURE_STORE_FAMILY_PROFILES_KEY);
     if (!raw) {
-      return [DEFAULT_PRIMARY_PROFILE];
+      return [];
     }
     const parsed: unknown = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed as FamilyProfile[];
     }
-    return [DEFAULT_PRIMARY_PROFILE];
+    return [];
   } catch {
-    return [DEFAULT_PRIMARY_PROFILE];
+    return [];
   }
 }
 
