@@ -11,3 +11,4 @@ export * from './consolidation';
 export * from './analytics-service';
 export * from './family-service';
 export * from './reality-check-service';
+export * from './goals-service';

@@ -16,3 +16,4 @@ export * from './useCasUpload';
 export * from './Tax';
 export * from './Family';
 export * from './Dashboard';
+export * from './Insights';
