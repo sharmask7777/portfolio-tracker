@@ -60,7 +60,11 @@ export const FamilySelector: React.FC<FamilySelectorProps> = ({
     if (panBreakdowns && panBreakdowns.length > 0) {
       return panBreakdowns.length;
     }
-    const pans = new Set(profiles.map(p => p.pan.trim().toUpperCase()).filter(Boolean));
+    const pans = new Set(
+      profiles
+        .map(p => (p.pan ? p.pan.trim().toUpperCase() : ''))
+        .filter(Boolean)
+    );
     return pans.size;
   }, [panBreakdowns, profiles]);
 
@@ -103,8 +107,8 @@ export const FamilySelector: React.FC<FamilySelectorProps> = ({
       </button>
 
       {profiles.map((profile) => {
-        const panKey = profile.pan.trim().toUpperCase();
-        const breakdown = breakdownByPan.get(panKey);
+        const panKey = profile.pan ? profile.pan.trim().toUpperCase() : '';
+        const breakdown = panKey ? breakdownByPan.get(panKey) : undefined;
         const corpusShare = totalValuation > 0 && breakdown && breakdown.currentValue > 0
           ? Math.round((breakdown.currentValue / totalValuation) * 100)
           : null;
