@@ -52,6 +52,12 @@ XIRR treats purchases as capital outflows and redemptions along with terminal va
 
 ## Mobile & Distributed Client Concepts
 
+### Active Portfolio Scope
+The active viewing boundary determining whether portfolio metrics, valuation cards, and asset lists reflect the aggregated family corpus (`consolidated`) or are filtered strictly to a single tax-identity profile (`member`).
+*Avoid: Active profile, selected account*
+
+Under Active Portfolio Scope, selection state is managed uniformly across client platforms and persisted via platform-specific storage adapters. In consolidated scope, member PAN badges reflect percentage corpus contributions derived from backend PAN breakdowns; in member scope, positions and realized gain schedules isolate to the selected member.
+
 ### Decoupled Daily Valuation
 A client-side evaluation pattern where a mobile or edge client recomputes asset valuations and day's returns directly from public financial feeds without requiring an active network connection to the self-hosted portfolio server.
 *Avoid: Remote valuation sync, server-dependent price refresh*
