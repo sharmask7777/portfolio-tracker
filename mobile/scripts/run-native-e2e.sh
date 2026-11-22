@@ -60,14 +60,18 @@ curl -sf -X POST http://localhost:8080/api/auth/register \
 
 echo "✅ Backend API server is active on port 8080."
 
-# 4. Ensure APK exists and install
+# 4. Ensure native Android project and APK exist
 APK_PATH="${MOBILE_DIR}/android/app/build/outputs/apk/release/app-release.apk"
 if [ ! -f "${APK_PATH}" ]; then
     APK_PATH="${MOBILE_DIR}/android/app/build/outputs/apk/debug/app-debug.apk"
 fi
 
 if [ ! -f "${APK_PATH}" ]; then
-    echo "==> APK not found. Compiling native release build..."
+    if [ ! -d "${MOBILE_DIR}/android" ]; then
+        echo "==> Native Android project directory not found. Generating via Expo prebuild..."
+        (cd "${MOBILE_DIR}" && npx expo prebuild --platform android --clean)
+    fi
+    echo "==> Compiling native release APK with bundled assets..."
     (cd "${MOBILE_DIR}/android" && ./gradlew assembleRelease --no-daemon)
     APK_PATH="${MOBILE_DIR}/android/app/build/outputs/apk/release/app-release.apk"
 fi
