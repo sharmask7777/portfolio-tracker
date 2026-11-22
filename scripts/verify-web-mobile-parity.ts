@@ -217,7 +217,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
     id: 'cas-upload',
     name: 'CAS Statement Upload & Sync Queue',
     webComponents: [
-      'frontend/src/components/Dashboard/TransactionSidePanel.tsx',
+      'frontend/src/App.tsx',
     ],
     mobileScreens: ['mobile/app/(tabs)/upload.tsx'],
     mobileComponents: [
@@ -507,6 +507,10 @@ function verifyScopeSelectorMounting(baseDir: string): readonly string[] {
     'mobile/app/(tabs)/holdings.tsx',
     'mobile/app/(tabs)/analytics.tsx',
     'mobile/app/(tabs)/tax.tsx',
+    ...(fs.existsSync(path.resolve(baseDir, 'mobile/app/(tabs)/insights.tsx')) &&
+    fs.readFileSync(path.resolve(baseDir, 'mobile/app/(tabs)/insights.tsx'), 'utf8').includes('ScopeSelectorHeader')
+      ? ['mobile/app/(tabs)/insights.tsx']
+      : []),
   ];
   for (const screenPath of mobileScopeScreens) {
     const screenAst = parseAst(baseDir, screenPath);
