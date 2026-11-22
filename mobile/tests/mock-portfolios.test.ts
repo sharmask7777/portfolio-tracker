@@ -491,13 +491,13 @@ describe('Mobile Canonical 10 Mock Portfolios Suite', () => {
         {
           folio_number: 'LC-ACTIVE-101',
           amc_name: 'Lifecycle Growth AMC',
-          pan: 'KAPPA1001K',
+          pan: 'ALPAC1001A',
           updated_at: '2024-01-01',
         },
         {
           folio_number: 'LC-CLOSED-102',
           amc_name: 'Lifecycle Closed AMC',
-          pan: 'KAPPA1001K',
+          pan: 'ALPAC1001A',
           updated_at: '2024-01-01',
         },
       ];
