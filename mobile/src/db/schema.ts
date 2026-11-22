@@ -26,6 +26,17 @@ export interface HoldingEntity {
   updated_at: string;
 }
 
+export interface TransactionEntity {
+  id: string;
+  folio_number: string;
+  date: string;
+  type: string;
+  units: number;
+  nav: number;
+  amount: number;
+  created_at: string;
+}
+
 export interface NavHistoryEntity {
   amfi_code: string;
   date: string;
@@ -138,11 +149,26 @@ CREATE TABLE IF NOT EXISTS portfolio_analytics (
 );
 `.trim();
 
+export const CREATE_TRANSACTIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS transactions (
+  id TEXT PRIMARY KEY,
+  folio_number TEXT NOT NULL,
+  date TEXT NOT NULL,
+  type TEXT NOT NULL,
+  units REAL NOT NULL,
+  nav REAL NOT NULL,
+  amount REAL NOT NULL,
+  created_at TEXT NOT NULL
+);
+`.trim();
+
 export const CREATE_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_holdings_folio ON holdings (folio_number);
 CREATE INDEX IF NOT EXISTS idx_holdings_amfi ON holdings (amfi_code);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue (status);
 CREATE INDEX IF NOT EXISTS idx_portfolio_history_id ON portfolio_history (portfolio_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_folio ON transactions (folio_number);
+CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions (date);
 `.trim();
 
 export const MIGRATION_STATEMENTS = [
@@ -153,6 +179,7 @@ export const MIGRATION_STATEMENTS = [
   CREATE_SYNC_QUEUE_TABLE,
   CREATE_PORTFOLIO_HISTORY_TABLE,
   CREATE_PORTFOLIO_ANALYTICS_TABLE,
+  CREATE_TRANSACTIONS_TABLE,
   CREATE_INDEXES,
 ] as const;
 

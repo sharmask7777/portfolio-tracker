@@ -63,6 +63,19 @@ vi.mock('lucide-react-native', () => ({
   PieChart: (props: Record<string, unknown>) => ({ type: 'PieChart', props }),
   UploadCloud: (props: Record<string, unknown>) => ({ type: 'UploadCloud', props }),
   Settings: (props: Record<string, unknown>) => ({ type: 'Settings', props }),
+  Search: (props: Record<string, unknown>) => ({ type: 'Search', props }),
+  Plus: (props: Record<string, unknown>) => ({ type: 'Plus', props }),
+  Users: (props: Record<string, unknown>) => ({ type: 'Users', props }),
+  User: (props: Record<string, unknown>) => ({ type: 'User', props }),
+  ChevronDown: (props: Record<string, unknown>) => ({ type: 'ChevronDown', props }),
+  ChevronUp: (props: Record<string, unknown>) => ({ type: 'ChevronUp', props }),
+  ChevronRight: (props: Record<string, unknown>) => ({ type: 'ChevronRight', props }),
+  SlidersHorizontal: (props: Record<string, unknown>) => ({ type: 'SlidersHorizontal', props }),
+  ArrowUpDown: (props: Record<string, unknown>) => ({ type: 'ArrowUpDown', props }),
+  History: (props: Record<string, unknown>) => ({ type: 'History', props }),
+  Archive: (props: Record<string, unknown>) => ({ type: 'Archive', props }),
+  Trash2: (props: Record<string, unknown>) => ({ type: 'Trash2', props }),
+  X: (props: Record<string, unknown>) => ({ type: 'X', props }),
 }));
 
 vi.mock('react-native', () => ({

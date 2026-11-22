@@ -2,31 +2,27 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { getDatabaseInstance, initDatabase } from '../db/client';
 import {
   getPortfolioHoldings,
+  getClosedHoldings,
+  getTransactionsByFolio,
+  deleteFolioAndTransactions,
   getNavHistory,
-  savePortfolioSnapshot,
-  type PortfolioSnapshotInput,
 } from '../db/repository';
-import { syncPortfolioHistoryFromServer } from './history-service';
-import { syncPortfolioAnalyticsFromServer } from './analytics-sync-service';
 import { flushUploadQueue } from './upload-queue';
-import type { FolioEntity, HoldingEntity } from '../db/schema';
+import type { HoldingEntity, TransactionEntity } from '../db/schema';
 import {
   refreshSchemeNavs,
   calculateDayValuationChange,
 } from '../feeds/nav-fetcher';
 import { getStoredCredentials } from './auth-service';
 import {
-  saveFamilyProfiles,
-  type FamilyProfile,
-} from './family-service';
-import {
-  mapRawFolioToHolding,
   summarizeHoldings,
   type AssetAllocationItem,
   type EnrichedHolding,
-  type ServerFolioData,
 } from './portfolio-calculations';
+import { syncWithServer } from './portfolio-sync-service';
+export { syncWithServer, parseServerPayload } from './portfolio-sync-service';
 
+export type { TransactionEntity } from '../db/schema';
 export * from './portfolio-calculations';
 
 export interface DashboardSummary {
@@ -102,6 +98,45 @@ export async function getEnrichedHoldings(
   return results;
 }
 
+export async function getEnrichedClosedHoldings(
+  db?: SQLiteDatabase,
+): Promise<EnrichedHolding[]> {
+  const targetDb = await resolveDb(db);
+  if (!targetDb || typeof targetDb.getAllAsync !== 'function') {
+    return [];
+  }
+  const rawClosed = await getClosedHoldings(targetDb);
+  return rawClosed.map((h) => {
+    const gainLoss = Math.round((h.current_value - h.invested_cost) * 100) / 100;
+    const gainLossPct = h.invested_cost > 0
+      ? Math.round((gainLoss / h.invested_cost) * 100 * 100) / 100
+      : 0;
+    return { ...h, dayChange: 0, dayChangePct: 0, gainLoss, gainLossPct };
+  });
+}
+
+export async function getTransactionsForFolio(
+  folioNumber: string,
+  db?: SQLiteDatabase,
+): Promise<TransactionEntity[]> {
+  const targetDb = await resolveDb(db);
+  if (!targetDb || typeof targetDb.getAllAsync !== 'function') {
+    return [];
+  }
+  return getTransactionsByFolio(targetDb, folioNumber);
+}
+
+export async function deleteFolio(
+  folioNumber: string,
+  db?: SQLiteDatabase,
+): Promise<void> {
+  const targetDb = await resolveDb(db);
+  if (!targetDb || typeof targetDb.runAsync !== 'function') {
+    return;
+  }
+  return deleteFolioAndTransactions(targetDb, folioNumber);
+}
+
 export async function getDashboardSummary(
   db?: SQLiteDatabase,
 ): Promise<DashboardSummary> {
@@ -147,99 +182,6 @@ export async function checkServerReachable(
     return false;
   } finally {
     clearTimeout(timer);
-  }
-}
-
-function extractFolioEntities(foliosList: ServerFolioData[], now: string): FolioEntity[] {
-  return foliosList.map((f) => ({
-    folio_number: f.number || f.folioNumber || 'UNKNOWN',
-    amc_name: f.amc || f.amcName || 'Unknown AMC',
-    pan: f.pan || 'NA',
-    updated_at: now,
-  }));
-}
-
-function extractHoldingEntities(foliosList: ServerFolioData[], now: string): HoldingEntity[] {
-  return foliosList
-    .map((f) => mapRawFolioToHolding(f, now))
-    .filter((h): h is HoldingEntity => h !== null);
-}
-
-function parseServerPayload(data: Record<string, unknown>): PortfolioSnapshotInput {
-  const foliosList = (data['folios'] as ServerFolioData[]) || [];
-  const now = new Date().toISOString();
-  return {
-    portfolio: {
-      id: typeof data['id'] === 'string' ? data['id'] : 'consolidated',
-      name: typeof data['name'] === 'string' ? data['name'] : 'Consolidated Portfolio',
-      updated_at: now,
-    },
-    folios: extractFolioEntities(foliosList, now),
-    holdings: extractHoldingEntities(foliosList, now),
-  };
-}
-
-async function syncFamilyProfilesFromServer(profilesUrl: string, token: string): Promise<void> {
-  try {
-    const profRes = await fetch(profilesUrl, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    });
-    if (!profRes.ok) return;
-    const rawProfiles = (await profRes.json()) as Array<{
-      id: string;
-      name: string;
-      pan: string;
-      relationship?: string;
-      isPrimary?: boolean;
-      notes?: string;
-      createdAt?: string;
-      updatedAt?: string;
-    }>;
-    if (Array.isArray(rawProfiles)) {
-      const mapped: FamilyProfile[] = rawProfiles.map((p, idx) => ({
-        id: p.id,
-        name: p.name,
-        pan: p.pan,
-        relationship: p.relationship || (idx === 0 ? 'Self' : 'Member'),
-        isPrimary: p.isPrimary ?? idx === 0,
-        notes: p.notes,
-        createdAt: p.createdAt || new Date().toISOString(),
-        updatedAt: p.updatedAt || new Date().toISOString(),
-      }));
-      await saveFamilyProfiles(mapped);
-    }
-  } catch {
-    // Retain existing profiles if family profiles endpoint fails
-  }
-}
-
-export async function syncWithServer(
-  serverUrl: string,
-  token: string,
-  db?: SQLiteDatabase,
-): Promise<boolean> {
-  const targetDb = await resolveDb(db);
-  const trimmed = serverUrl.trim().replace(/\/+$/, '');
-  const url = `${trimmed}/api/portfolio/summary`;
-  const profilesUrl = `${trimmed}/api/family/profiles`;
-
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    });
-    if (!res.ok) return false;
-    const json = (await res.json()) as Record<string, unknown>;
-    const snapshot = parseServerPayload(json);
-    await savePortfolioSnapshot(targetDb, snapshot);
-    await syncFamilyProfilesFromServer(profilesUrl, token);
-    const historyUrl = `${trimmed}/api/portfolio/${snapshot.portfolio.id}/history`;
-    await syncPortfolioHistoryFromServer({ historyUrl, portfolioId: snapshot.portfolio.id, token, db: targetDb });
-    await syncPortfolioAnalyticsFromServer({ serverUrl: trimmed, portfolioId: snapshot.portfolio.id, token, db: targetDb });
-    return true;
-  } catch {
-    return false;
   }
 }
 

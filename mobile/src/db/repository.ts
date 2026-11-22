@@ -4,14 +4,25 @@ import type {
   HoldingEntity,
   NavHistoryEntity,
   PortfolioEntity,
-  SyncQueueItem,
-  SyncQueueStatus,
+  TransactionEntity,
 } from './schema';
+import {
+  upsertTransaction,
+  getTransactionsByFolio,
+  deleteFolioAndTransactions,
+} from './transaction-repository';
+
+export {
+  upsertTransaction,
+  getTransactionsByFolio,
+  deleteFolioAndTransactions,
+};
 
 export interface PortfolioSnapshotInput {
   portfolio: PortfolioEntity;
   folios: FolioEntity[];
   holdings: HoldingEntity[];
+  transactions?: TransactionEntity[];
 }
 
 export interface UpdateNavInput {
@@ -20,39 +31,18 @@ export interface UpdateNavInput {
   updatedAt?: string;
 }
 
-export interface EnqueueUploadInput {
-  id?: string;
-  filePath: string;
-  fileName: string;
-  passwordKey?: string | null;
-  status?: SyncQueueStatus;
-  createdAt?: string;
-  updatedAt?: string;
-  retryCount?: number;
-}
-
-function formatUuid(bytes: Uint8Array): string {
-  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
-  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
-    .join('')
-    .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
-}
-
-export function generateUuid(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  const bytes = new Uint8Array(16);
-  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
-    crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < 16; i++) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  return formatUuid(bytes);
-}
+export {
+  generateUuid,
+  type EnqueueUploadInput,
+  type QueueStatusOptions,
+  type QueueCounts,
+  getPendingUploads,
+  enqueueUpload,
+  updateQueueStatus,
+  getQueueItemById,
+  getAllUploads,
+  getQueueCounts,
+} from './upload-repository';
 
 async function upsertPortfolio(db: SQLiteDatabase, portfolio: PortfolioEntity): Promise<void> {
   await db.runAsync(
@@ -126,6 +116,11 @@ export async function savePortfolioSnapshot(
     for (const holding of snapshot.holdings) {
       await upsertHolding(db, holding);
     }
+    if (snapshot.transactions) {
+      for (const tx of snapshot.transactions) {
+        await upsertTransaction(db, tx);
+      }
+    }
   });
 }
 
@@ -141,6 +136,14 @@ export async function getPortfolioHoldings(
   }
   return db.getAllAsync<HoldingEntity>(
     'SELECT * FROM holdings WHERE units > 0 ORDER BY scheme_name ASC;',
+  );
+}
+
+export async function getClosedHoldings(
+  db: SQLiteDatabase,
+): Promise<HoldingEntity[]> {
+  return db.getAllAsync<HoldingEntity>(
+    'SELECT * FROM holdings WHERE units = 0 ORDER BY scheme_name ASC;',
   );
 }
 
@@ -164,124 +167,6 @@ export async function updateHoldingNav(
       [amfiCode, update.navDate, update.nav],
     );
   });
-}
-
-export async function getPendingUploads(
-  db: SQLiteDatabase,
-): Promise<SyncQueueItem[]> {
-  return db.getAllAsync<SyncQueueItem>(
-    `SELECT id, file_path, file_name, status, password_key, created_at, updated_at, retry_count
-     FROM sync_queue
-     WHERE status = 'PENDING'
-     ORDER BY created_at ASC;`,
-  );
-}
-
-export async function enqueueUpload(
-  db: SQLiteDatabase,
-  input: EnqueueUploadInput,
-): Promise<SyncQueueItem> {
-  const now = new Date().toISOString();
-  const item: SyncQueueItem = {
-    id: input.id ?? generateUuid(),
-    file_path: input.filePath,
-    file_name: input.fileName,
-    status: input.status ?? 'PENDING',
-    password_key: input.passwordKey ?? null,
-    created_at: input.createdAt ?? now,
-    updated_at: input.updatedAt ?? now,
-    retry_count: input.retryCount ?? 0,
-  };
-
-  await db.runAsync(
-    `INSERT INTO sync_queue (id, file_path, file_name, status, password_key, created_at, updated_at, retry_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-    [
-      item.id,
-      item.file_path,
-      item.file_name,
-      item.status,
-      item.password_key,
-      item.created_at,
-      item.updated_at,
-      item.retry_count,
-    ],
-  );
-
-  return item;
-}
-
-export interface QueueStatusOptions {
-  status: SyncQueueStatus;
-  incrementRetry?: boolean;
-}
-
-export async function updateQueueStatus(
-  db: SQLiteDatabase,
-  id: string,
-  statusOrOptions: SyncQueueStatus | QueueStatusOptions,
-): Promise<void> {
-  const status = typeof statusOrOptions === 'string' ? statusOrOptions : statusOrOptions.status;
-  const incrementRetry = typeof statusOrOptions === 'string' ? false : (statusOrOptions.incrementRetry ?? false);
-  const updatedAt = new Date().toISOString();
-  await db.runAsync(
-    `UPDATE sync_queue 
-     SET status = ?, updated_at = ?,
-         retry_count = CASE WHEN ? = 'FAILED' OR ? = 1 THEN retry_count + 1 ELSE retry_count END
-     WHERE id = ?;`,
-    [status, updatedAt, status, incrementRetry ? 1 : 0, id],
-  );
-}
-
-export async function getQueueItemById(
-  db: SQLiteDatabase,
-  id: string,
-): Promise<SyncQueueItem | null> {
-  return db.getFirstAsync<SyncQueueItem>(
-    'SELECT * FROM sync_queue WHERE id = ?;',
-    [id],
-  );
-}
-
-export interface QueueCounts {
-  pending: number;
-  completed: number;
-  failed: number;
-  total: number;
-}
-
-export async function getAllUploads(
-  db: SQLiteDatabase,
-  limit = 50,
-): Promise<SyncQueueItem[]> {
-  return db.getAllAsync<SyncQueueItem>(
-    `SELECT id, file_path, file_name, status, password_key, created_at, updated_at, retry_count
-     FROM sync_queue
-     ORDER BY created_at DESC, rowid DESC
-     LIMIT ?;`,
-    [limit],
-  );
-}
-
-export async function getQueueCounts(db: SQLiteDatabase): Promise<QueueCounts> {
-  const rows = await db.getAllAsync<{ status: SyncQueueStatus; count: number }>(
-    'SELECT status, COUNT(*) as count FROM sync_queue GROUP BY status;',
-  );
-  let pending = 0;
-  let completed = 0;
-  let failed = 0;
-  let total = 0;
-  for (const row of rows) {
-    total += row.count;
-    if (row.status === 'PENDING' || row.status === 'PROCESSING') {
-      pending += row.count;
-    } else if (row.status === 'COMPLETED') {
-      completed += row.count;
-    } else if (row.status === 'FAILED') {
-      failed += row.count;
-    }
-  }
-  return { pending, completed, failed, total };
 }
 
 export async function getPortfolioById(

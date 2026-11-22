@@ -1,0 +1,125 @@
+import type { SQLiteDatabase } from 'expo-sqlite';
+import { getDatabaseInstance, initDatabase } from '../db/client';
+import {
+  savePortfolioSnapshot,
+  type PortfolioSnapshotInput,
+} from '../db/repository';
+import type { HoldingEntity, TransactionEntity } from '../db/schema';
+import { getStoredCredentials } from './auth-service';
+
+/**
+ * Input parameters for creating a manual asset.
+ */
+export interface AddManualAssetPayload {
+  type: 'EPF' | 'PPF' | 'SGB' | 'PHYSICAL_GOLD' | 'REAL_ESTATE';
+  name: string;
+  units: number;
+  balanceDate: string;
+  pan?: string | undefined;
+}
+
+function resolveAssetClass(type: string): string {
+  if (type === 'SGB' || type === 'PHYSICAL_GOLD') return 'GOLD';
+  if (type === 'REAL_ESTATE') return 'REAL_ESTATE';
+  return 'DEBT';
+}
+
+function buildManualHolding(
+  folioNumber: string,
+  payload: AddManualAssetPayload,
+  now: string,
+): HoldingEntity {
+  const isGold = payload.type === 'SGB' || payload.type === 'PHYSICAL_GOLD';
+  const nav = isGold ? 7000 : 1;
+  const val = isGold ? payload.units * 7000 : payload.units;
+
+  return {
+    id: `holding-${folioNumber}`,
+    folio_number: folioNumber,
+    amfi_code: null,
+    scheme_name: payload.name,
+    isin: null,
+    units: payload.units,
+    invested_cost: val,
+    current_nav: nav,
+    current_value: val,
+    asset_class: resolveAssetClass(payload.type),
+    nav_date: payload.balanceDate,
+    updated_at: now,
+  };
+}
+
+function buildManualTransaction(
+  folioNumber: string,
+  payload: AddManualAssetPayload,
+  holding: HoldingEntity,
+): TransactionEntity {
+  return {
+    id: `tx-${folioNumber}`,
+    folio_number: folioNumber,
+    date: payload.balanceDate,
+    type: 'PURCHASE',
+    units: payload.units,
+    nav: holding.current_nav,
+    amount: holding.current_value,
+    created_at: holding.updated_at,
+  };
+}
+
+async function postToServerIfReachable(payload: AddManualAssetPayload): Promise<void> {
+  const creds = await getStoredCredentials();
+  if (!creds.serverUrl || !creds.token) return;
+  const trimmed = creds.serverUrl.trim().replace(/\/+$/, '');
+  await fetch(`${trimmed}/api/portfolio/manual-asset`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${creds.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      type: payload.type,
+      name: payload.name,
+      units: payload.units,
+      balanceDate: payload.balanceDate,
+    }),
+  }).catch(() => {});
+}
+
+/**
+ * Onboards an alternative asset into local SQLite holdings and syncs to server if reachable.
+ *
+ * @param payload Manual asset details
+ * @param db Optional SQLite database
+ */
+export async function addManualAsset(
+  payload: AddManualAssetPayload,
+  db?: SQLiteDatabase,
+): Promise<void> {
+  const targetDb = db ?? getDatabaseInstance() ?? (await initDatabase());
+  const now = new Date().toISOString();
+  const nowTs = Date.now();
+  const folioNumber = `MANUAL_${payload.type}_${nowTs}`;
+  const pan = payload.pan || 'NA';
+
+  const holding = buildManualHolding(folioNumber, payload, now);
+  const tx = buildManualTransaction(folioNumber, payload, holding);
+
+  const snapshot: PortfolioSnapshotInput = {
+    portfolio: {
+      id: 'consolidated',
+      name: 'Consolidated Portfolio',
+      updated_at: now,
+    },
+    folios: [{
+      folio_number: folioNumber,
+      amc_name: payload.type,
+      pan,
+      updated_at: now,
+    }],
+    holdings: [holding],
+    transactions: [tx],
+  };
+
+  await savePortfolioSnapshot(targetDb, snapshot);
+  await postToServerIfReachable(payload);
+}

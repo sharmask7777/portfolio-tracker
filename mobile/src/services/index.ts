@@ -14,3 +14,6 @@ export * from './reality-check-service';
 export * from './history-service';
 export * from './goals-service';
 export * from './scope-storage-adapter';
+export * from './manual-asset-service';
+export * from './itr-csv-service';
+export * from './expense-calculation-service';

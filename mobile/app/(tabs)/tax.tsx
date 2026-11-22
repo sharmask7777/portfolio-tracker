@@ -15,6 +15,7 @@ import {
   HarvestOpportunitiesList,
   SimulationModal,
 } from '../../src/components/Tax';
+import { exportScheduleCgCsv } from '../../src/services/itr-csv-service';
 import {
   buildTaxHarvestPlan,
   computeTaxBreakdowns,
@@ -198,10 +199,20 @@ interface MainContentProps {
   onSelectFY: (fy: string) => void;
   onSimulateHarvest: (opp: HarvestOpportunity) => void;
   onOpenSimulate: () => void;
+  onExportScheduleCg: () => void;
 }
 
 function MainContent(props: MainContentProps): React.ReactElement {
-  const { selectedFY, calcs, refreshing, onRefresh, onSelectFY, onSimulateHarvest, onOpenSimulate } = props;
+  const {
+    selectedFY,
+    calcs,
+    refreshing,
+    onRefresh,
+    onSelectFY,
+    onSimulateHarvest,
+    onOpenSimulate,
+    onExportScheduleCg,
+  } = props;
   return (
     <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
       <TaxHeader onSimulate={onOpenSimulate} />
@@ -210,6 +221,7 @@ function MainContent(props: MainContentProps): React.ReactElement {
         taxResult={calcs.taxResult}
         remainingExemption={calcs.harvestPlan.remainingExemption}
         onFYChange={onSelectFY}
+        onExportScheduleCg={onExportScheduleCg}
       />
       <AdvanceTaxMatrixCard selectedFY={selectedFY} matrix={calcs.advanceMatrix} />
       <HarvestOpportunitiesList plan={calcs.harvestPlan} onSimulateHarvest={onSimulateHarvest} />
@@ -232,21 +244,11 @@ function useTaxScopeFilter(holdings: EnrichedHolding[], profiles: FamilyProfile[
   return { scopeState, filteredHoldings };
 }
 
-/**
- * Tax & Statutory Compliance Tab screen.
- *
- * @returns React Native tax tab screen component
- */
-export default function TaxScreen(): React.ReactElement {
-  const [selectedFY, setSelectedFY] = useState<string>('2024-25');
+function useTaxSimulation() {
   const [simModalOpen, setSimModalOpen] = useState<boolean>(false);
   const [simTarget, setSimTarget] = useState<ActiveSimulationTarget | null>(null);
 
-  const { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics } = useTaxData();
-  const { scopeState, filteredHoldings } = useTaxScopeFilter(holdings, profiles, folios);
-  const calcs = useTaxCalculations(filteredHoldings, selectedFY, cachedAnalytics);
-
-  const handleSimulateHarvest = (opportunity: HarvestOpportunity) => {
+  const handleSimulateHarvest = useCallback((opportunity: HarvestOpportunity) => {
     setSimTarget({
       schemeName: opportunity.schemeName,
       folioId: opportunity.folioId,
@@ -255,7 +257,31 @@ export default function TaxScreen(): React.ReactElement {
       isElss: opportunity.schemeName.toLowerCase().includes('elss'),
     });
     setSimModalOpen(true);
-  };
+  }, []);
+
+  const openBlankSimulate = useCallback(() => {
+    setSimTarget(null);
+    setSimModalOpen(true);
+  }, []);
+
+  return { simModalOpen, setSimModalOpen, simTarget, handleSimulateHarvest, openBlankSimulate };
+}
+
+/**
+ * Tax & Statutory Compliance Tab screen.
+ *
+ * @returns React Native tax tab screen component
+ */
+export default function TaxScreen(): React.ReactElement {
+  const [selectedFY, setSelectedFY] = useState<string>('2024-25');
+  const { simModalOpen, setSimModalOpen, simTarget, handleSimulateHarvest, openBlankSimulate } = useTaxSimulation();
+  const { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics } = useTaxData();
+  const { scopeState, filteredHoldings } = useTaxScopeFilter(holdings, profiles, folios);
+  const calcs = useTaxCalculations(filteredHoldings, selectedFY, cachedAnalytics);
+
+  const handleExportScheduleCg = useCallback(() => {
+    void exportScheduleCgCsv(selectedFY, calcs.taxResult, calcs.advanceMatrix);
+  }, [selectedFY, calcs.taxResult, calcs.advanceMatrix]);
 
   return (
     <View style={styles.container}>
@@ -273,7 +299,8 @@ export default function TaxScreen(): React.ReactElement {
         onRefresh={onRefresh}
         onSelectFY={setSelectedFY}
         onSimulateHarvest={handleSimulateHarvest}
-        onOpenSimulate={() => { setSimTarget(null); setSimModalOpen(true); }}
+        onOpenSimulate={openBlankSimulate}
+        onExportScheduleCg={handleExportScheduleCg}
       />
       <SimulationModal
         visible={simModalOpen}

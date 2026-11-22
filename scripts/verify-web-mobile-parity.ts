@@ -540,11 +540,13 @@ function verifyMultiFolioExpandableBreakdown(baseDir: string): readonly string[]
   }
 
   const schemeCard = parseAst(baseDir, 'mobile/src/components/Holdings/SchemeGroupCard.tsx');
+  const cardRows = parseAst(baseDir, 'mobile/src/components/Holdings/scheme-card-rows.tsx');
   if (schemeCard) {
     if (!hasPropertyAccess(schemeCard.sf, 'group', 'pans') && !schemeCard.content.includes('group.pans')) {
       violations.push('mobile/src/components/Holdings/SchemeGroupCard.tsx must access group.pans for PAN badges');
     }
-    if (!findJsxElement(schemeCard.sf, 'FolioChildRow')) {
+    const mountsFolioChild = findJsxElement(schemeCard.sf, 'FolioChildRow') || (cardRows && findJsxElement(cardRows.sf, 'FolioChildRow'));
+    if (!mountsFolioChild) {
       violations.push('mobile/src/components/Holdings/SchemeGroupCard.tsx must mount FolioChildRow in expanded view');
     }
   }

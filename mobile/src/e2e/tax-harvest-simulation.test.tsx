@@ -71,6 +71,7 @@ vi.mock('lucide-react-native', () => ({
   ReceiptIndianRupee: (props: Record<string, unknown>) => ({ type: 'ReceiptIndianRupee', props }),
   Target: (props: Record<string, unknown>) => ({ type: 'Target', props }),
   Users: (props: Record<string, unknown>) => ({ type: 'Users', props }),
+  User: (props: Record<string, unknown>) => ({ type: 'User', props }),
   ReceiptText: (props: Record<string, unknown>) => ({ type: 'ReceiptText', props }),
   Calculator: (props: Record<string, unknown>) => ({ type: 'Calculator', props }),
   TrendingDown: (props: Record<string, unknown>) => ({ type: 'TrendingDown', props }),
@@ -80,8 +81,10 @@ vi.mock('lucide-react-native', () => ({
   Copy: (props: Record<string, unknown>) => ({ type: 'Copy', props }),
   X: (props: Record<string, unknown>) => ({ type: 'X', props }),
   ChevronRight: (props: Record<string, unknown>) => ({ type: 'ChevronRight', props }),
+  ChevronDown: (props: Record<string, unknown>) => ({ type: 'ChevronDown', props }),
   ShieldCheck: (props: Record<string, unknown>) => ({ type: 'ShieldCheck', props }),
   FileText: (props: Record<string, unknown>) => ({ type: 'FileText', props }),
+  Share2: (props: Record<string, unknown>) => ({ type: 'Share2', props }),
 }));
 
 vi.mock('react-native', () => ({

@@ -11,7 +11,12 @@ import {
   SvgTreemap,
   StockOverlapTable,
   StockDetailModal,
+  ExpenseAnalysisCard,
 } from '../../src/components/Analytics';
+import {
+  calculateExpenseAnalysis,
+  type ExpenseAnalysisResult,
+} from '../../src/services/expense-calculation-service';
 import {
   getEnrichedHoldings,
   refreshPortfolio,
@@ -176,7 +181,14 @@ function useAnalyticsDerivedData(input: AnalyticsStateInput, excludeArbitrage: b
     [xrayData, exposures, excludeArbitrage],
   );
 
-  return { scopeState, xrayData, exposures, rootHierarchyNode };
+  const expenseAnalysis: ExpenseAnalysisResult = useMemo(() => {
+    if (xrayData.expenseAnalysis) {
+      return xrayData.expenseAnalysis;
+    }
+    return calculateExpenseAnalysis(filteredHoldings);
+  }, [xrayData.expenseAnalysis, filteredHoldings]);
+
+  return { scopeState, xrayData, exposures, rootHierarchyNode, expenseAnalysis };
 }
 
 /**
@@ -189,7 +201,7 @@ export default function AnalyticsScreen(): React.ReactElement {
   const [excludeArbitrage, setExcludeArbitrage] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockExposure | null>(null);
 
-  const { scopeState, xrayData, exposures, rootHierarchyNode } = useAnalyticsDerivedData(
+  const { scopeState, xrayData, exposures, rootHierarchyNode, expenseAnalysis } = useAnalyticsDerivedData(
     { holdings, profiles, folios, cachedAnalytics },
     excludeArbitrage,
   );
@@ -217,6 +229,7 @@ export default function AnalyticsScreen(): React.ReactElement {
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38bdf8" />}>
         <AnalyticsHeader />
         <AllocationCardsGrid xrayData={xrayData} />
+        <ExpenseAnalysisCard {...expenseAnalysis} />
         <Text style={styles.sectionTitle}>Visual Treemap</Text>
         <SvgTreemap rootNode={rootHierarchyNode} onSelectStock={handleSelectFromTreemap} />
         <StockOverlapTable exposures={exposures} totalPortfolioValue={xrayData.totalValue} excludeArbitrage={excludeArbitrage} onToggleExcludeArbitrage={setExcludeArbitrage} onSelectStock={setSelectedStock} />

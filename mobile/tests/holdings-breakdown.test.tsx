@@ -17,6 +17,29 @@ React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.H = {
 };
 
 import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('expo-sqlite', () => ({
+  openDatabaseAsync: vi.fn(),
+}));
+
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+  deleteItemAsync: vi.fn(),
+}));
+
+vi.mock('expo-local-authentication', () => ({
+  hasHardwareAsync: vi.fn(),
+  isEnrolledAsync: vi.fn(),
+  authenticateAsync: vi.fn(),
+}));
+
+vi.mock('expo-router', () => ({
+  useRouter: vi.fn(() => ({
+    replace: vi.fn(),
+    push: vi.fn(),
+  })),
+}));
 import type { ConsolidatedSchemeGroup, FolioInput } from '@portfolio/core-view';
 import { FolioChildRow } from '../src/components/Holdings/FolioChildRow';
 import { SchemeGroupCard } from '../src/components/Holdings/SchemeGroupCard';
@@ -39,6 +62,7 @@ vi.mock('react-native', () => ({
   TextInput: (props: Record<string, unknown>) => ({ type: 'TextInput', props }),
   ScrollView: (props: Record<string, unknown>) => ({ type: 'ScrollView', props }),
   TouchableOpacity: (props: Record<string, unknown>) => ({ type: 'TouchableOpacity', props }),
+  Platform: { OS: 'ios', select: (s: Record<string, unknown>) => s['ios'] },
 }));
 
 vi.mock('lucide-react-native', () => ({
@@ -47,7 +71,12 @@ vi.mock('lucide-react-native', () => ({
 }));
 
 function getProps(element: React.ReactElement): Record<string, unknown> {
-  return (element.props || {}) as Record<string, unknown>;
+  const p = (element.props || {}) as Record<string, unknown>;
+  // FolioChildRow returns a Fragment <>...</> whose first child is the TouchableOpacity
+  if (element.type === React.Fragment && Array.isArray(p['children']) && p['children'][0]) {
+    return (p['children'][0] as React.ReactElement).props as Record<string, unknown>;
+  }
+  return p;
 }
 
 describe('Mobile Holdings Breakdown Components', () => {

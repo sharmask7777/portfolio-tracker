@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { Plus } from 'lucide-react-native';
 import type { SchemeSortField } from '@portfolio/core-view';
 
 /** Available asset class filter options */
@@ -28,11 +29,32 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 16,
   },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   title: {
     fontSize: 26,
     fontWeight: '800',
     color: '#f4f4f5',
-    marginBottom: 12,
+  },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1e3a8a',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+  },
+  addBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#93c5fd',
   },
   searchBar: {
     backgroundColor: '#18181b',
@@ -118,6 +140,8 @@ export interface HoldingsFilterControlsProps {
   selectedSort: SchemeSortField;
   /** Callback on sort field selection */
   onSelectSort: (sort: SchemeSortField) => void;
+  /** Optional callback to open add asset modal */
+  onOpenAddAsset?: (() => void) | undefined;
 }
 
 interface AssetPillsProps {
@@ -189,11 +213,25 @@ export function HoldingsFilterControls(
     onSelectAsset,
     selectedSort,
     onSelectSort,
+    onOpenAddAsset,
   } = props;
 
   return (
     <View style={styles.header}>
-      <Text style={styles.title}>Holdings</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>Holdings</Text>
+        {onOpenAddAsset ? (
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={onOpenAddAsset}
+            testID="open-add-asset-btn"
+            accessibilityLabel="Add asset"
+          >
+            <Plus size={14} color="#93c5fd" />
+            <Text style={styles.addBtnText}>Add Asset</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
       <TextInput
         style={styles.searchBar}
         placeholder="Search schemes or folios..."
