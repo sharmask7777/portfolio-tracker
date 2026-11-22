@@ -64,13 +64,27 @@ Comprehensive documentation of all backend and frontend test suites, financial i
 - **Documented Solutions:** [`docs/solutions/`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/docs/solutions/) — documented solutions to past problems (bugs, database issues, tax compliance, performance patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 - **Shared Domain Vocabulary:** [`CONCEPTS.md`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/CONCEPTS.md) — shared domain vocabulary (entities, named processes, status concepts) — relevant when orienting to the codebase or discussing domain concepts.
 
-### 7. Universal Generality Mandate (No Portfolio-Specific Hacks)
+### 8. Mandatory Agent Inner Dev Loop & Multimodal Visual Verification Gate
+- **The Autonomous Inner Dev Loop**:
+  - For every UI, mobile, frontend, or full-stack change, agents must operate an autonomous inner development loop before closing out or claiming completion.
+  - Changes must NEVER be deemed complete based merely on static compilation, linting, or isolated unit tests.
+- **Multimodal Visual Analysis of Rendered Screenshots**:
+  - Agents must capture visual UI state across target platforms (Playwright browser captures on Web, `adb exec-out screencap -p` or Maestro flow screenshots on Android/iOS emulators).
+  - Agents must execute multimodal inspection of the generated screenshots, verifying layout ergonomics, touch target padding, modal sheet behaviors, typography hierarchy, contrast, status bar safe areas, clipping thresholds, and data point alignments.
+  - Any visual regression, clipping anomaly, or presentation defect detected during multimodal analysis must trigger an immediate self-correction loop (iterating up to 5 passes) until visual and functional fidelity is achieved.
+- **Mandatory E2E Validation Wherever Applicable**:
+  - All user-facing workflows (authentication, tab navigation, filtering, modals, tax calculations, and analytics lookups) must be backed by automated E2E validation:
+    - Web: Automated Playwright spec suites executing against the frontend.
+    - Mobile: Native Maestro E2E test flows (`mobile/e2e/flows/`) verified live on the running simulator/emulator, complemented by `mobile/src/e2e/` simulation test suites.
+  - Assertions must verify actual runtime UI elements, server data synchronization, and user interaction states, rather than shallow mocked renders.
+
+### 9. Universal Generality Mandate (No Portfolio-Specific Hacks)
 - **Zero Portfolio-Specific Hacks**: Agents must NEVER introduce fixes, heuristics, conditional branches, or hardcoded overrides tailored to a single specific portfolio, account, user, or single statement instance.
 - **Generic Across All Portfolios**: All fixes, parsers, calculations, classification algorithms, and data representations MUST be inherently generic and apply uniformly across all portfolios.
 - **Permissible Broad Overrides**: Non-standard representations, parser quirks, or data anomalies that are generic across all portfolios encountering that provider/format (e.g., CAMS vs. KFintech statement quirks, AMC disclosure formats, statutory scheme naming anomalies) are acceptable overrides, provided they are structured generically rather than keyed to specific users or portfolios.
 - **Mandatory Validation Gate**: All review and validation agents (`review`, `research` auditors, task reviewers) MUST critically evaluate any proposed change for portfolio-specific logic and block any non-generic workarounds.
 
-### 8. Self-Documenting Code & Comprehensive Documentation Mandate
+### 10. Self-Documenting Code & Comprehensive Documentation Mandate
 - **Self-Documenting Names**: All function names, method names, variables, and type names must be clear, descriptive, and self-documenting. Cryptic abbreviations or ambiguous single-letter variables that obscure financial, mathematical, or domain meaning must be avoided or refactored.
 - **Comprehensive Rust Docs (`///`) & TypeScript JSDoc (`/** */`)**: All structs, enums, traits, methods, and functions across the codebase must have helpful doc comments explaining their purpose, arguments, invariants, and return values to provide instant context for human reviewers.
 - **Explanatory Comments on Complex Logic**: Any non-trivial, domain-dense, or mathematically complex logic (such as FIFO lot allocation, Section 55(2)(ac) grandfathering adjustments, Section 112A/111A/50AA tax computations, XIRR root-finding fallbacks, portfolio look-through normalization, and SQL CTE batch queries) MUST include clear explanatory comments detailing the statutory intent, mathematical formulation, or algorithm rationale.

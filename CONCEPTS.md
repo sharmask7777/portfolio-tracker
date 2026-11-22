@@ -75,3 +75,16 @@ A two-tier authentication architecture combining short-lived, single-use cryptog
 *Avoid: Plaintext token storage, password re-entry*
 
 Hardware Biometric Pairing allows seamless, passwordless app unlock on mobile clients while supporting self-hosted instances deployed on arbitrary local network IPs or hostnames.
+
+### Analytics SSoT Synchronization
+The synchronization pattern where derived cross-fund analytics (such as company exposures, sector allocations, and stock overlap) are computed exclusively by the backend domain engine (`/api/portfolio/:id/exposures`, `/api/portfolio/:id/xray`) and persisted in local client storage, avoiding client-side approximation drift.
+*Avoid: Client blueprint calculation, local mock exposure*
+
+Analytics SSoT Synchronization guarantees that portfolio look-through metrics remain numerically identical across web and mobile surfaces while preserving offline caching.
+
+### Multimodal Visual Verification Loop
+The autonomous verification pattern where agents capture actual UI rendering screenshots from emulators or browsers during test runs and perform multimodal visual analysis to check for layout clipping, contrast, typography, and responsive padding before signing off on a change.
+*Avoid: Headless-only assertion, blind DOM check*
+
+The Multimodal Visual Verification Loop prevents silent visual regressions that pass headless unit tests from reaching production.
+
