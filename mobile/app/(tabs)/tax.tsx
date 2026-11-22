@@ -59,23 +59,31 @@ const styles = StyleSheet.create({
 });
 
 function mapHoldingsToHarvestInputs(holdings: EnrichedHolding[]): HoldingHarvestInput[] {
-  return holdings.map((h) => ({
-    folioId: h.folio_number,
-    schemeName: h.scheme_name,
-    isin: h.isin ?? undefined,
-    isElss: h.scheme_name.toLowerCase().includes('elss'),
-    currentUnits: h.units,
-    currentNav: h.current_nav,
-    lots: [
-      {
-        lotId: `LOT-${h.id}`,
-        buyDate: '2023-04-01',
-        units: h.units,
-        buyPrice: h.invested_cost > 0 && h.units > 0 ? h.invested_cost / h.units : h.current_nav * 0.8,
-        isElss: h.scheme_name.toLowerCase().includes('elss'),
-      },
-    ],
-  }));
+  return holdings.map((h) => {
+    const buyPrice = h.invested_cost > 0 && h.units > 0 ? h.invested_cost / h.units : h.current_nav * 0.8;
+    const buyDate = h.nav_date && !isNaN(Date.parse(h.nav_date))
+      ? h.nav_date
+      : new Date().toISOString().split('T')[0] ?? '2024-04-01';
+    const isElss = h.scheme_name.toLowerCase().includes('elss');
+
+    return {
+      folioId: h.folio_number,
+      schemeName: h.scheme_name,
+      isin: h.isin ?? undefined,
+      isElss,
+      currentUnits: h.units,
+      currentNav: h.current_nav,
+      lots: [
+        {
+          lotId: `LOT-${h.id}`,
+          buyDate,
+          units: h.units,
+          buyPrice,
+          isElss,
+        },
+      ],
+    };
+  });
 }
 
 interface ActiveSimulationTarget {
@@ -158,17 +166,18 @@ function useTaxCalculations(
   selectedFY: string,
   cachedAnalytics: CachedAnalyticsResult | null,
 ): TaxDerivedCalculations {
-  const harvestPlan = useMemo(() => {
-    const harvestInputs = mapHoldingsToHarvestInputs(filteredHoldings);
-    return buildTaxHarvestPlan(harvestInputs, 0);
-  }, [filteredHoldings]);
-
   const taxResult = useMemo(() => {
     if (cachedAnalytics?.taxSummary) {
       return mapServerSummaryToResult(cachedAnalytics.taxSummary, selectedFY);
     }
     return computeTaxBreakdowns([], selectedFY);
   }, [cachedAnalytics, selectedFY]);
+
+  const harvestPlan = useMemo(() => {
+    const harvestInputs = mapHoldingsToHarvestInputs(filteredHoldings);
+    const realizedLtcg = Math.max(0, taxResult.totalEquityLTCG);
+    return buildTaxHarvestPlan(harvestInputs, realizedLtcg);
+  }, [filteredHoldings, taxResult.totalEquityLTCG]);
 
   const advanceMatrix = useMemo(() => {
     if (cachedAnalytics?.taxSummary) {

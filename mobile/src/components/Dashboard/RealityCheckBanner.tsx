@@ -192,8 +192,8 @@ export interface RealityCheckBannerProps {
  */
 function WaterfallRow({ item }: { item: DragWaterfallStage }): React.ReactElement {
   const isDrag = item.drag < 0;
-  const isReal = item.step === 5;
-  const isNominal = item.step === 1 || item.step === 3;
+  const isReal = item.step === 6;
+  const isNominal = item.step === 1;
 
   return (
     <View key={item.step} style={styles.waterfallRow}>

@@ -21,6 +21,7 @@ import {
   getAdvanceTaxQuarter,
   classifyTaxSection,
   calculate112AExemption,
+  applyCapitalLossSetOffWithSlab,
   computeTaxBreakdowns,
   buildAdvanceTaxMatrix,
 } from './tax-calculations';
@@ -35,6 +36,7 @@ export {
   getAdvanceTaxQuarter,
   classifyTaxSection,
   calculate112AExemption,
+  applyCapitalLossSetOffWithSlab,
   computeTaxBreakdowns,
   buildAdvanceTaxMatrix,
   hasOpeningBalanceHistory,

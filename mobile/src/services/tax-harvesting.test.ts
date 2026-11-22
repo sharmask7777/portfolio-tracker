@@ -6,6 +6,7 @@ import {
   getAdvanceTaxQuarter,
   classifyTaxSection,
   calculate112AExemption,
+  applyCapitalLossSetOffWithSlab,
   buildTaxHarvestPlan,
   formatHarvestInstructions,
   hasOpeningBalanceHistory,
@@ -347,6 +348,25 @@ describe('Tax Harvesting & Statutory Compliance Engine', () => {
       expect(res.stcgTotalTax).toBe(10400);
       expect(res.debtTotalTax).toBe(5460); // (4000 + 1250) * 1.04
       expect(res.grandTotalTax).toBe(15860);
+    });
+
+    it('applies statutory Section 70 loss set-offs before exemptions and clamps properly', () => {
+      // LTCL offsets LTCG
+      const [stcg1, ltcg1, slab1] = applyCapitalLossSetOffWithSlab(10000, -20000, 5000);
+      expect(stcg1).toBe(10000);
+      expect(ltcg1).toBe(0);
+      expect(slab1).toBe(5000);
+
+      // STCL offsets slab, stcg, then ltcg
+      const [stcg2, ltcg2, slab2] = applyCapitalLossSetOffWithSlab(-15000, 30000, 5000);
+      expect(slab2).toBe(0); // 5000 wiped by STCL
+      expect(stcg2).toBe(0);
+      expect(ltcg2).toBe(20000); // 30000 - remaining 10000 STCL
+
+      // In computeTaxBreakdowns with mixed positive and negative LTCG
+      const exemptionRes = calculate112AExemption(-10000, 50000, '2024-25');
+      expect(exemptionRes.totalExemption).toBe(40000);
+      expect(exemptionRes.taxable12_5).toBe(0);
     });
   });
 });
