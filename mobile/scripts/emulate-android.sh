@@ -17,19 +17,29 @@ echo "📱 =====================================================================
 echo "   Portfolio Tracker - Interactive Local Android Emulation"
 echo "=========================================================================="
 
-# 1. Check or start Android Emulator
+# 1. Check or start Android Emulator (GUI Mode for interactive testing)
+if ps aux | grep -i "[q]emu.*headless" >/dev/null 2>&1; then
+    echo "==> Detected headless emulator. Restarting with interactive GUI window..."
+    adb -s emulator-5554 emu kill 2>/dev/null || true
+    sleep 3
+fi
+
 if ! adb devices | grep -q "emulator"; then
-    echo "==> Starting Android Studio Emulator (Medium Phone API 37)..."
-    "${ANDROID_HOME}/emulator/emulator" -avd Medium_Phone_API_37.0 &
+    echo "==> Starting Android Studio Emulator with GUI window (Medium Phone API 37)..."
+    nohup "${ANDROID_HOME}/emulator/emulator" -avd Medium_Phone_API_37.0 > /tmp/emulator-gui.log 2>&1 &
+    disown
     echo "==> Waiting for Android Emulator to finish booting..."
     adb wait-for-device
     while [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]; do
         sleep 2
     done
-    echo "✅ Android Emulator booted and ready."
+    echo "✅ Android Emulator booted with visible GUI window."
 else
-    echo "✅ Android Emulator is already running."
+    echo "✅ Android Emulator GUI is already running."
 fi
+
+# Bring emulator window to front
+osascript -e 'tell application "System Events" to set frontmost of (first process whose name contains "qemu") to true' 2>/dev/null || true
 
 # 2. Check or start Backend Server (port 8080)
 if ! curl -sf http://localhost:8080/health >/dev/null 2>&1 && ! curl -sf http://localhost:8080/api/health >/dev/null 2>&1; then
