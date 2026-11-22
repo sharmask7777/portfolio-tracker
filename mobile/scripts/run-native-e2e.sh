@@ -40,8 +40,10 @@ if ! adb devices | grep -q "emulator"; then
 fi
 echo "✅ Android Emulator connected and ready."
 
-# 3. Ensure Backend REST API is running on port 8080
-if ! curl -sf http://localhost:8080/health >/dev/null 2>&1 && ! curl -sf http://localhost:8080/api/health >/dev/null 2>&1; then
+# 3. Ensure Backend REST API is running (Docker on 8082 or local dev on 8080)
+if curl -sf http://localhost:8082/api/health >/dev/null 2>&1; then
+    echo "✅ Backend API server is active on Docker port 8082."
+elif ! curl -sf http://localhost:8080/health >/dev/null 2>&1 && ! curl -sf http://localhost:8080/api/health >/dev/null 2>&1; then
     echo "==> Starting backend-rs REST API server on port 8080..."
     (cd "${REPO_ROOT}/backend-rs" && PORT=8080 cargo run --package portfolio-api) > /tmp/portfolio-api.log 2>&1 &
     # Wait for server readiness
@@ -51,14 +53,11 @@ if ! curl -sf http://localhost:8080/health >/dev/null 2>&1 && ! curl -sf http://
         fi
         sleep 1
     done
+    curl -sf -X POST http://localhost:8080/api/auth/register \
+      -H "Content-Type: application/json" \
+      -d '{"email":"admin@example.com","password":"password123"}' >/dev/null 2>&1 || true
+    echo "✅ Backend API server is active on port 8080."
 fi
-
-# Seed test account
-curl -sf -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"password123"}' >/dev/null 2>&1 || true
-
-echo "✅ Backend API server is active on port 8080."
 
 # 4. Ensure native Android project and APK exist
 APK_PATH="${MOBILE_DIR}/android/app/build/outputs/apk/release/app-release.apk"
@@ -93,6 +92,13 @@ maestro test "${MOBILE_DIR}/e2e/flows/02-dashboard-parity.yaml"
 # Capture Mobile Chart and Asset Allocation Screenshots
 adb exec-out screencap -p > "${SCREENSHOTS_DIR}/mobile-historical-chart.png"
 adb exec-out screencap -p > "${SCREENSHOTS_DIR}/mobile-asset-allocation.png"
+
+echo "==> Executing Flow 04: SSoT Analytics & Tax Dropdown..."
+maestro test "${MOBILE_DIR}/e2e/flows/04-analytics-tax-ssot.yaml"
+
+# Capture Mobile SSoT Analytics and Tax Dropdown Screenshots
+adb exec-out screencap -p > "${SCREENSHOTS_DIR}/mobile-analytics-ssot.png"
+adb exec-out screencap -p > "${SCREENSHOTS_DIR}/mobile-tax-dropdown.png"
 
 echo "=========================================================================="
 echo "🎉 Native Maestro UI Tests PASSED on live Android Emulator!"

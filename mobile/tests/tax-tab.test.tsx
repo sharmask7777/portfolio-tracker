@@ -83,11 +83,13 @@ vi.mock('lucide-react-native', () => ({
   Copy: (props: Record<string, unknown>) => ({ type: 'Copy', props }),
   X: (props: Record<string, unknown>) => ({ type: 'X', props }),
   ChevronRight: (props: Record<string, unknown>) => ({ type: 'ChevronRight', props }),
+  ChevronDown: (props: Record<string, unknown>) => ({ type: 'ChevronDown', props }),
   ShieldCheck: (props: Record<string, unknown>) => ({ type: 'ShieldCheck', props }),
   FileText: (props: Record<string, unknown>) => ({ type: 'FileText', props }),
 }));
 
 import { TaxSummaryCard } from '../src/components/Tax/TaxSummaryCard';
+import { FYDropdownPicker, FYDropdownModal } from '../src/components/Tax/FYDropdownPicker';
 import { AdvanceTaxMatrixCard } from '../src/components/Tax/AdvanceTaxMatrixCard';
 import { HarvestOpportunitiesList } from '../src/components/Tax/HarvestOpportunitiesList';
 import { OpportunityItem } from '../src/components/Tax/OpportunityItem';
@@ -270,6 +272,37 @@ describe('Tax Tab & Statutory Compliance Suite', () => {
     ],
     instructions: 'Section 112A Tax-Free Harvesting Instructions:\n1. Redeem units before March 31.',
   };
+
+  describe('FYDropdownPicker', () => {
+    it('renders dropdown trigger button with active FY', () => {
+      const onFYChange = vi.fn();
+      const element = FYDropdownPicker({
+        selectedFY: '2024-25',
+        availableFYs: ['2024-25', '2023-24', '2022-23'],
+        onFYChange,
+      });
+
+      expect(element).toBeDefined();
+      const props = getProps(element);
+      expect(props['children']).toBeDefined();
+    });
+
+    it('renders modal with selectable FY options and handles selection', () => {
+      const onSelect = vi.fn();
+      const onClose = vi.fn();
+      const element = FYDropdownModal({
+        isOpen: true,
+        selectedFY: '2024-25',
+        availableFYs: ['2024-25', '2023-24', '2022-23'],
+        onClose,
+        onSelect,
+      });
+
+      const props = getProps(element);
+      expect(props['testID']).toBe('fy-dropdown-modal');
+      expect(props['visible']).toBe(true);
+    });
+  });
 
   describe('TaxSummaryCard', () => {
     it('renders with testID and shows net tax liability and statutory exemption tracker', () => {

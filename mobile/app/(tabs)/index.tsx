@@ -100,7 +100,12 @@ function useDashboardData() {
     }
   }, [loadData]);
 
-  useEffect(() => { void loadData(); }, [loadData]);
+  useEffect(() => {
+    void loadData();
+    void refreshPortfolio().then(() => {
+      void loadData();
+    });
+  }, [loadData]);
   return { holdings, profiles, folios, historyPoints, isLoading, isRefreshing, handleRefresh };
 }
 

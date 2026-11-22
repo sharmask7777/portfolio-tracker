@@ -209,7 +209,7 @@ function FormInputs(props: FormInputsProps): React.ReactElement {
       />
       <InputField
         label="Email or Username"
-        placeholder="admin@example.com"
+        placeholder="synthetic.master@example.com"
         value={props.email}
         onChangeText={props.setEmail}
         testID="login-email-input"
@@ -232,8 +232,8 @@ function FormInputs(props: FormInputsProps): React.ReactElement {
 export function CredentialLoginForm(props: CredentialLoginFormProps): React.ReactElement {
   const { onSubmit, isLoading, onCancel, error } = props;
   const [serverUrl, setServerUrl] = useState<string>(DEFAULT_SERVER_URL);
-  const [email, setEmail] = useState<string>('admin@example.com');
-  const [password, setPassword] = useState<string>('');
+  const [email, setEmail] = useState<string>('synthetic.master@example.com');
+  const [password, setPassword] = useState<string>('password123');
 
   const handleSubmit = useCallback(() => {
     void onSubmit(serverUrl, email, password);

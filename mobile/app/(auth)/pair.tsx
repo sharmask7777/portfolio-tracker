@@ -12,6 +12,7 @@ import {
   parseAndValidateQrPayload,
   loginWithCredentials,
 } from '../../src/services/auth-service';
+import { refreshPortfolio } from '../../src/services/portfolio-service';
 import { ScannerView } from '../../src/components/ScannerView';
 import { ManualPairForm } from '../../src/components/ManualPairForm';
 import { CredentialLoginForm } from '../../src/components/Auth/CredentialLoginForm';
@@ -122,6 +123,16 @@ function useAuthSubmit(router: ReturnType<typeof useRouter>) {
   return { isPairing, errorMessage, setErrorMessage, runAuth };
 }
 
+async function claimAndSync(serverUrl: string, secret: string): Promise<void> {
+  await claimPairingSecret(serverUrl, secret, 'Mobile Device');
+  await refreshPortfolio();
+}
+
+async function loginAndSync(serverUrl: string, email: string, pass: string): Promise<void> {
+  await loginWithCredentials(serverUrl, email, pass);
+  await refreshPortfolio();
+}
+
 function usePairingFlow() {
   const router = useRouter();
   const [mode, setMode] = useState<PairScreenMode>('camera');
@@ -131,10 +142,7 @@ function usePairingFlow() {
     (scannedData: string) => {
       try {
         const payload = parseAndValidateQrPayload(scannedData);
-        void runAuth(
-          () => claimPairingSecret(payload.serverUrl, payload.pairingSecret, 'Mobile Device'),
-          'Pairing failed',
-        );
+        void runAuth(() => claimAndSync(payload.serverUrl, payload.pairingSecret), 'Pairing failed');
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : 'Invalid QR code');
       }
@@ -148,19 +156,14 @@ function usePairingFlow() {
         setErrorMessage('Both Server URL and Pairing Secret are required');
         return;
       }
-      void runAuth(() => claimPairingSecret(url, secret, 'Mobile Device'), 'Pairing failed');
+      void runAuth(() => claimAndSync(url, secret), 'Pairing failed');
     },
     [runAuth, setErrorMessage],
   );
 
   const handleCredentialSubmit = useCallback(
     async (serverUrl: string, email: string, pass: string) => {
-      await runAuth(
-        async () => {
-          await loginWithCredentials(serverUrl, email, pass);
-        },
-        'Login failed',
-      );
+      await runAuth(() => loginAndSync(serverUrl, email, pass), 'Login failed');
     },
     [runAuth],
   );
