@@ -59,17 +59,6 @@ export interface CreateProfileInput {
 
 const PAN_REGEX = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}$/;
 
-export const DEFAULT_PRIMARY_PROFILE: FamilyProfile = {
-  id: 'prof-primary-self',
-  name: 'Primary Investor',
-  pan: 'ABCDE1234F',
-  relationship: 'Self',
-  isPrimary: true,
-  notes: 'Primary account profile',
-  createdAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
-};
-
 /**
  * Validates whether a given PAN conforms to the synthetic statutory PAN format.
  *
@@ -191,15 +180,15 @@ export async function getStoredFamilyProfiles(): Promise<FamilyProfile[]> {
   try {
     const raw = await SecureStore.getItemAsync(SECURE_STORE_FAMILY_PROFILES_KEY);
     if (!raw) {
-      return [DEFAULT_PRIMARY_PROFILE];
+      return [];
     }
     const parsed: unknown = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed as FamilyProfile[];
     }
-    return [DEFAULT_PRIMARY_PROFILE];
+    return [];
   } catch {
-    return [DEFAULT_PRIMARY_PROFILE];
+    return [];
   }
 }
 

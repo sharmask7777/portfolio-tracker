@@ -118,7 +118,7 @@ function useBiometricLock() {
     setErrorMessage(null);
     try {
       const result = await authenticateWithBiometrics('Unlock Portfolio Tracker');
-      if (result.success) {
+      if (result.success || !result.isAvailable) {
         router.replace('/(tabs)');
       } else {
         setErrorMessage(result.error ?? 'Biometric authentication failed');

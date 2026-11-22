@@ -14,8 +14,13 @@ import {
 } from '../../src/components/Analytics';
 import {
   getEnrichedHoldings,
+  refreshPortfolio,
   type EnrichedHolding,
 } from '../../src/services/portfolio-service';
+import {
+  getCachedPortfolioAnalytics,
+  type CachedAnalyticsResult,
+} from '../../src/services/analytics-sync-service';
 import {
   getStoredFamilyProfiles,
   getStoredFolios,
@@ -57,11 +62,12 @@ export interface AllocationCardProps {
 }
 
 export function AllocationCard({ name, value, pct, color }: AllocationCardProps): React.ReactElement {
+  const displayPct = pct <= 1 && pct > 0 ? pct * 100 : pct;
   return (
     <View style={styles.allocationCard} key={name}>
       <Text style={styles.allocationName}>{name}</Text>
       <Text style={styles.allocationValue}>{formatIndianRupee(value)}</Text>
-      <Text style={[styles.allocationPct, { color }]}>{pct.toFixed(1)}%</Text>
+      <Text style={[styles.allocationPct, { color }]}>{displayPct.toFixed(1)}%</Text>
     </View>
   );
 }
@@ -101,36 +107,46 @@ function useAnalyticsData() {
   const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
   const [folios, setFolios] = useState<FolioEntity[]>([]);
+  const [cachedAnalytics, setCachedAnalytics] = useState<CachedAnalyticsResult | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [enriched, storedProfiles, storedFolios] = await Promise.all([
+      const [enriched, storedProfiles, storedFolios, analytics] = await Promise.all([
         getEnrichedHoldings(),
         getStoredFamilyProfiles(),
         getStoredFolios(),
+        getCachedPortfolioAnalytics(),
       ]);
       setHoldings(enriched);
       setProfiles(storedProfiles);
       setFolios(storedFolios);
+      setCachedAnalytics(analytics);
     } catch {
       // Retain state
     }
   }, []);
 
-  useEffect(() => { void loadData(); }, [loadData]);
+  useEffect(() => {
+    void loadData();
+    void refreshPortfolio().then(() => {
+      void loadData();
+    });
+  }, [loadData]);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    await refreshPortfolio();
     await loadData();
     setRefreshing(false);
   }, [loadData]);
 
-  return { refreshing, onRefresh, holdings, profiles, folios };
+  return { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics };
 }
 
 interface AnalyticsStateInput {
   holdings: EnrichedHolding[];
   profiles: FamilyProfile[];
   folios: FolioEntity[];
+  cachedAnalytics: CachedAnalyticsResult | null;
 }
 
 function useAnalyticsDerivedData(input: AnalyticsStateInput, excludeArbitrage: boolean) {
@@ -145,10 +161,15 @@ function useAnalyticsDerivedData(input: AnalyticsStateInput, excludeArbitrage: b
     [activeProfile, input.holdings, input.folios],
   );
 
-  const { xrayData, exposures } = useMemo(
-    () => deriveAnalyticsFromHoldings(filteredHoldings),
-    [filteredHoldings],
-  );
+  const { xrayData, exposures } = useMemo(() => {
+    if (!activeProfile && input.cachedAnalytics?.xrayData && input.cachedAnalytics.exposures) {
+      const exps = excludeArbitrage
+        ? (input.cachedAnalytics.exposuresExArb ?? input.cachedAnalytics.exposures)
+        : input.cachedAnalytics.exposures;
+      return { xrayData: input.cachedAnalytics.xrayData, exposures: exps };
+    }
+    return deriveAnalyticsFromHoldings(filteredHoldings);
+  }, [activeProfile, input.cachedAnalytics, excludeArbitrage, filteredHoldings]);
 
   const rootHierarchyNode = useMemo(
     () => buildPortfolioHierarchy(xrayData, exposures, { excludeArbitrage }),
@@ -164,12 +185,12 @@ function useAnalyticsDerivedData(input: AnalyticsStateInput, excludeArbitrage: b
  * @returns React Native screen component element
  */
 export default function AnalyticsScreen(): React.ReactElement {
-  const { refreshing, onRefresh, holdings, profiles, folios } = useAnalyticsData();
+  const { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics } = useAnalyticsData();
   const [excludeArbitrage, setExcludeArbitrage] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockExposure | null>(null);
 
   const { scopeState, xrayData, exposures, rootHierarchyNode } = useAnalyticsDerivedData(
-    { holdings, profiles, folios },
+    { holdings, profiles, folios, cachedAnalytics },
     excludeArbitrage,
   );
 

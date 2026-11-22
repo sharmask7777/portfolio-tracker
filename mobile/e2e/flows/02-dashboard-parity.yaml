@@ -1,0 +1,53 @@
+appId: com.portfolio.mobile
+---
+# Flow 02: Dashboard Cross-Platform Parity Verification
+- launchApp:
+    clearState: false
+
+# Handle unlock prompt if present
+- runFlow:
+    when:
+      visible: "Unlock Portfolio"
+    commands:
+      - tapOn: "Unlock Portfolio"
+
+# 1. Scope Selector & Status Bar Ergonomics
+- assertVisible: "Dashboard"
+- assertVisible: "Total Net Worth"
+
+# Verify Scope Selector Header is present
+- assertVisible:
+    id: "scope-selector-header"
+
+# Ensure dummy investor ABCDE1234F is NOT present
+- assertNotVisible: "ABCDE1234F"
+
+# Capture Scope Selector Screenshot
+- takeScreenshot: "02-scope-selector"
+
+# 2. Historical Trend Chart & Range Presets Check
+- assertVisible: "Valuation Trend & Checkpoints"
+- assertVisible:
+    id: "history-range-bar"
+
+# Verify range preset buttons are accessible
+- assertVisible: "1M"
+- assertVisible: "6M"
+- assertVisible: "1Y"
+- assertVisible: "ALL"
+
+# Exercise range switching
+- tapOn: "1M"
+- tapOn: "1Y"
+- tapOn: "ALL"
+
+# Capture Historical Chart Screenshot
+- takeScreenshot: "03-historical-chart"
+
+# 3. Canonical Asset Allocation Check
+# Invariant: Ensure legacy non-canonical 'Gold/Others' representation is absent
+- assertNotVisible: "Gold/Others"
+- assertNotVisible: "Gold / Others"
+
+# Capture Asset Allocation Screenshot
+- takeScreenshot: "04-asset-allocation"

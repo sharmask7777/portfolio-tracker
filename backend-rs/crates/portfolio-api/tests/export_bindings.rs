@@ -9,12 +9,15 @@ use portfolio_api::routes::auth::{
     PairClaimRequest, PairClaimResponse, PairInitResponse, UserResponse,
 };
 use portfolio_api::routes::holdings::HoldingsSummaryResponse;
-use portfolio_api::routes::portfolio::{DragDecompositionDto, PanBreakdownDto, SummaryMetrics};
+use portfolio_api::routes::portfolio::{
+    AssetAllocationDto, DragDecompositionDto, PanBreakdownDto, SummaryMetrics,
+};
 use portfolio_api::routes::tax::{
     HarvestOpportunityDto, HarvestTicketResponse, SimulationSellRequest, SimulationSellResponse,
     TaxViewResponse, TsExportExt, UnrealizedLotGainDto, UnrealizedSummaryDto,
 };
 use portfolio_api::services::{HistoryPoint, PortfolioValuationSnapshot};
+use portfolio_core::classification::AssetCategory;
 use std::fs;
 use std::path::Path;
 use ts_rs::TS;
@@ -48,6 +51,8 @@ fn test_export_typescript_bindings() {
         .expect("exported");
     SummaryMetrics::export_to(output_dir.join("SummaryMetrics.ts")).expect("exported");
     PanBreakdownDto::export_to(output_dir.join("PanBreakdownDto.ts")).expect("exported");
+    AssetAllocationDto::export_to(output_dir.join("AssetAllocationDto.ts")).expect("exported");
+    AssetCategory::export_to(output_dir.join("AssetCategory.ts")).expect("exported");
     DragDecompositionDto::export_to(output_dir.join("DragDecompositionDto.ts")).expect("exported");
     HarvestTicketResponse::export_to(output_dir.join("HarvestTicketResponse.ts"))
         .expect("exported");

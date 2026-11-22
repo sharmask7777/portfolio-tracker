@@ -6,7 +6,6 @@
 
 import type {
   HistoricalCheckpoint,
-  HistoricalRawPoint,
 } from '../../services/reality-check-service';
 
 /**
@@ -47,31 +46,6 @@ export function formatDate(dateStr: string): string {
   } catch {
     return dateStr;
   }
-}
-
-/**
- * Generates synthetic baseline checkpoints when portfolio history is empty.
- *
- * @param val Current portfolio valuation
- * @param cost Total invested capital cost
- * @returns Synthetic historical raw points
- */
-export function createSyntheticPoints(val: number, cost: number): HistoricalRawPoint[] {
-  const now = new Date();
-  const points: HistoricalRawPoint[] = [];
-  const count = 6;
-  for (let i = count - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 30 * 24 * 60 * 60 * 1000);
-    const fraction = (count - i) / count;
-    const pVal = Math.round(cost + (val - cost) * fraction);
-    const pCost = Math.round(cost * (0.8 + 0.2 * fraction));
-    points.push({
-      date: d.toISOString().split('T')[0] ?? '',
-      value: Math.max(0, pVal),
-      investedAmount: Math.max(0, pCost),
-    });
-  }
-  return points;
 }
 
 /**

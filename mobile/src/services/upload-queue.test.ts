@@ -129,6 +129,7 @@ describe('upload-queue service & CAS upload workflow', () => {
 
   describe('buildUploadUrl', () => {
     it('constructs correct default endpoint URL', () => {
+      expect(DEFAULT_UPLOAD_ENDPOINT).toBe('/api/portfolio/upload');
       expect(buildUploadUrl('https://api.example.com')).toBe(
         `https://api.example.com${DEFAULT_UPLOAD_ENDPOINT}`,
       );
@@ -320,11 +321,40 @@ describe('upload-queue service & CAS upload workflow', () => {
       expect(result.errors[0]).toContain('HTTP 500');
 
       const updated = await getQueueItemById(db, item.id);
-      expect(updated?.status).toBe('FAILED');
+      expect(updated?.status).toBe('PENDING');
       expect(updated?.retry_count).toBe(1);
 
       // Password should NOT be deleted on failure
       expect(mockStorage.get(item.password_key!)).toBe('PAN_PRESERVED');
+    });
+
+    it('marks item FAILED permanently on 400 Bad Request error', async () => {
+      const item = await enqueueCasUpload(
+        {
+          filePath: 'file:///var/mobile/corrupted_cas.pdf',
+          fileName: 'corrupted_cas.pdf',
+        },
+        db,
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        status: 400,
+        ok: false,
+      });
+
+      const result = await flushUploadQueue(
+        'https://portfolio.test',
+        'token-abc',
+        { db },
+      );
+
+      expect(result.processed).toBe(1);
+      expect(result.succeeded).toBe(0);
+      expect(result.failed).toBe(1);
+
+      const updated = await getQueueItemById(db, item.id);
+      expect(updated?.status).toBe('FAILED');
+      expect(updated?.retry_count).toBe(1);
     });
 
     it('handles network failure exception gracefully and increments retry count', async () => {
@@ -348,7 +378,7 @@ describe('upload-queue service & CAS upload workflow', () => {
       expect(result.errors[0]).toBe('Network request failed: unreachable');
 
       const updated = await getQueueItemById(db, item.id);
-      expect(updated?.status).toBe('FAILED');
+      expect(updated?.status).toBe('PENDING');
       expect(updated?.retry_count).toBe(1);
 
       // Retry again increments retry_count further

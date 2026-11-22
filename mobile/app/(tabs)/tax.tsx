@@ -27,8 +27,17 @@ import {
 } from '../../src/services/tax-harvesting';
 import {
   getEnrichedHoldings,
+  refreshPortfolio,
   type EnrichedHolding,
 } from '../../src/services/portfolio-service';
+import {
+  getCachedPortfolioAnalytics,
+  type CachedAnalyticsResult,
+} from '../../src/services/analytics-sync-service';
+import {
+  mapServerTableFToMatrix,
+  mapServerSummaryToResult,
+} from '../../src/services/tax-summary-mapper';
 import {
   getStoredFamilyProfiles,
   getStoredFolios,
@@ -103,30 +112,39 @@ function useTaxData() {
   const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
   const [folios, setFolios] = useState<FolioEntity[]>([]);
+  const [cachedAnalytics, setCachedAnalytics] = useState<CachedAnalyticsResult | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [enriched, storedProfiles, storedFolios] = await Promise.all([
+      const [enriched, storedProfiles, storedFolios, analytics] = await Promise.all([
         getEnrichedHoldings(),
         getStoredFamilyProfiles(),
         getStoredFolios(),
+        getCachedPortfolioAnalytics(),
       ]);
       setHoldings(enriched);
       setProfiles(storedProfiles);
       setFolios(storedFolios);
+      setCachedAnalytics(analytics);
     } catch {
       // Retain state
     }
   }, []);
 
-  useEffect(() => { void loadData(); }, [loadData]);
+  useEffect(() => {
+    void loadData();
+    void refreshPortfolio().then(() => {
+      void loadData();
+    });
+  }, [loadData]);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    await refreshPortfolio();
     await loadData();
     setRefreshing(false);
   }, [loadData]);
 
-  return { refreshing, onRefresh, holdings, profiles, folios };
+  return { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics };
 }
 
 interface TaxDerivedCalculations {
@@ -135,14 +153,30 @@ interface TaxDerivedCalculations {
   harvestPlan: HarvestPlan;
 }
 
-function useTaxCalculations(filteredHoldings: EnrichedHolding[], selectedFY: string): TaxDerivedCalculations {
+function useTaxCalculations(
+  filteredHoldings: EnrichedHolding[],
+  selectedFY: string,
+  cachedAnalytics: CachedAnalyticsResult | null,
+): TaxDerivedCalculations {
   const harvestPlan = useMemo(() => {
     const harvestInputs = mapHoldingsToHarvestInputs(filteredHoldings);
     return buildTaxHarvestPlan(harvestInputs, 0);
   }, [filteredHoldings]);
 
-  const taxResult = useMemo(() => computeTaxBreakdowns([], selectedFY), [selectedFY]);
-  const advanceMatrix = useMemo(() => buildAdvanceTaxMatrix([]), []);
+  const taxResult = useMemo(() => {
+    if (cachedAnalytics?.taxSummary) {
+      return mapServerSummaryToResult(cachedAnalytics.taxSummary, selectedFY);
+    }
+    return computeTaxBreakdowns([], selectedFY);
+  }, [cachedAnalytics, selectedFY]);
+
+  const advanceMatrix = useMemo(() => {
+    if (cachedAnalytics?.taxSummary) {
+      const tableF = cachedAnalytics.taxSummary['tableF'] as Record<string, unknown> | undefined;
+      return mapServerTableFToMatrix(tableF);
+    }
+    return buildAdvanceTaxMatrix([]);
+  }, [cachedAnalytics]);
 
   return { taxResult, advanceMatrix, harvestPlan };
 }
@@ -199,9 +233,9 @@ export default function TaxScreen(): React.ReactElement {
   const [simModalOpen, setSimModalOpen] = useState<boolean>(false);
   const [simTarget, setSimTarget] = useState<ActiveSimulationTarget | null>(null);
 
-  const { refreshing, onRefresh, holdings, profiles, folios } = useTaxData();
+  const { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics } = useTaxData();
   const { scopeState, filteredHoldings } = useTaxScopeFilter(holdings, profiles, folios);
-  const calcs = useTaxCalculations(filteredHoldings, selectedFY);
+  const calcs = useTaxCalculations(filteredHoldings, selectedFY, cachedAnalytics);
 
   const handleSimulateHarvest = (opportunity: HarvestOpportunity) => {
     setSimTarget({

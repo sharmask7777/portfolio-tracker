@@ -1,0 +1,65 @@
+appId: com.portfolio.mobile
+---
+# Flow 04: Backend SSoT Look-Through Analytics & Tax FY Dropdown Verification
+- launchApp:
+    clearState: false
+
+# Handle unlock prompt if present
+- runFlow:
+    when:
+      visible: "Unlock Portfolio"
+    commands:
+      - tapOn: "Unlock Portfolio"
+
+# 1. Navigate to Analytics Tab
+- tapOn: "Analytics"
+
+# Verify Portfolio X-Ray Header
+- assertVisible: "Portfolio X-Ray"
+- assertVisible: "ASSET ALLOCATION"
+
+# Verify Visual Treemap
+- assertVisible: "VISUAL TREEMAP"
+
+# Verify SSoT Stock Overlap Table (authoritative backend look-through)
+- assertVisible: "Stock Overlap"
+- assertVisible: "18 Companies"
+
+# Scroll down to reveal stock overlap rows
+- scrollUntilVisible:
+    element: "HDFC Bank Ltd."
+    direction: DOWN
+
+- assertVisible: "HDFC Bank Ltd."
+
+# Capture Analytics Evidence Screenshot
+- takeScreenshot: "05-analytics-ssot"
+
+# 2. Navigate to Tax & Statutory Tab
+- tapOn: "Tax"
+
+# Verify Tax Header & Capital Gains Card
+- assertVisible: "Tax & ITR"
+- assertVisible: "Tax & Capital Gains"
+
+# Verify FY Dropdown Picker is visible
+- assertVisible:
+    id: "fy-dropdown-button"
+
+# Open FY Dropdown Modal
+- tapOn:
+    id: "fy-dropdown-button"
+
+# Verify Dropdown Modal is presented
+- assertVisible: "FINANCIAL YEAR"
+- assertVisible: "FY 2024-25"
+- assertVisible: "FY 2023-24"
+
+# Select FY 2023-24
+- tapOn: "FY 2023-24"
+
+# Verify Table F is active
+- assertVisible: "Advance Tax Table F"
+
+# Capture Tax FY Dropdown Evidence Screenshot
+- takeScreenshot: "06-tax-dropdown-success"

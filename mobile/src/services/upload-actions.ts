@@ -5,6 +5,7 @@ import {
   isServerReachable,
 } from './upload-queue';
 import { getStoredCredentials } from './auth-service';
+import { refreshPortfolio } from './portfolio-service';
 
 export interface SelectedFile {
   name: string;
@@ -60,6 +61,7 @@ export async function submitCasUpload(
   if (reachable && creds.serverUrl && creds.token) {
     const res = await flushUploadQueue(creds.serverUrl, creds.token);
     if (res.succeeded > 0) {
+      await refreshPortfolio().catch(() => {});
       onStatus({
         type: 'success',
         text: 'Statement uploaded and processed successfully!',
@@ -97,6 +99,7 @@ export async function runOutboxSync(
 
   const res = await flushUploadQueue(creds.serverUrl, creds.token ?? '');
   if (res.succeeded > 0) {
+    await refreshPortfolio().catch(() => {});
     onStatus({
       type: 'success',
       text: `Synced ${res.succeeded} statement(s) successfully!`,

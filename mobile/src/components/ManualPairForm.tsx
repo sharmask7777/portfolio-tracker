@@ -182,7 +182,7 @@ export function ManualPairForm({
   }, [onSubmit, serverUrl, secret]);
 
   return (
-    <View style={styles.manualCard}>
+    <View style={styles.manualCard} testID="manual-pair-form">
       <FormField
         label="Server URL"
         placeholder="https://portfolio.example.com"

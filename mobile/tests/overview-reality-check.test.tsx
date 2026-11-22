@@ -440,7 +440,7 @@ describe('Task 5: Reality Check & Historical Checkpoints Suite', () => {
 
       const props = getProps(rangeBar);
       const buttons = props['children'] as React.ReactElement[];
-      expect(buttons.length).toBe(5);
+      expect(buttons.length).toBe(7);
 
       const firstBtn = getProps(buttons[0]!);
       (firstBtn['onPress'] as () => void)();

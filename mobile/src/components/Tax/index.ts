@@ -5,6 +5,7 @@
  */
 
 export * from './TaxSummaryCard';
+export * from './FYDropdownPicker';
 export * from './AdvanceTaxMatrixCard';
 export * from './OpportunityItem';
 export * from './HarvestOpportunitiesList';

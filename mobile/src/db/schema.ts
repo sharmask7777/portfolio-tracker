@@ -45,6 +45,22 @@ export interface SyncQueueItem {
   retry_count: number;
 }
 
+export interface PortfolioHistoryEntity {
+  portfolio_id: string;
+  date: string;
+  value: number;
+  invested_amount: number;
+}
+
+export interface PortfolioAnalyticsEntity {
+  portfolio_id: string;
+  xray_json: string;
+  exposures_json: string;
+  exposures_ex_arb_json: string;
+  tax_summary_json: string | null;
+  updated_at: string;
+}
+
 export const CREATE_PORTFOLIOS_TABLE = `
 CREATE TABLE IF NOT EXISTS portfolios (
   id TEXT PRIMARY KEY,
@@ -101,10 +117,32 @@ CREATE TABLE IF NOT EXISTS sync_queue (
 );
 `.trim();
 
+export const CREATE_PORTFOLIO_HISTORY_TABLE = `
+CREATE TABLE IF NOT EXISTS portfolio_history (
+  portfolio_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  value REAL NOT NULL,
+  invested_amount REAL NOT NULL,
+  PRIMARY KEY (portfolio_id, date)
+);
+`.trim();
+
+export const CREATE_PORTFOLIO_ANALYTICS_TABLE = `
+CREATE TABLE IF NOT EXISTS portfolio_analytics (
+  portfolio_id TEXT PRIMARY KEY,
+  xray_json TEXT NOT NULL,
+  exposures_json TEXT NOT NULL,
+  exposures_ex_arb_json TEXT NOT NULL,
+  tax_summary_json TEXT,
+  updated_at TEXT NOT NULL
+);
+`.trim();
+
 export const CREATE_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_holdings_folio ON holdings (folio_number);
 CREATE INDEX IF NOT EXISTS idx_holdings_amfi ON holdings (amfi_code);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue (status);
+CREATE INDEX IF NOT EXISTS idx_portfolio_history_id ON portfolio_history (portfolio_id);
 `.trim();
 
 export const MIGRATION_STATEMENTS = [
@@ -113,6 +151,8 @@ export const MIGRATION_STATEMENTS = [
   CREATE_HOLDINGS_TABLE,
   CREATE_NAV_HISTORY_TABLE,
   CREATE_SYNC_QUEUE_TABLE,
+  CREATE_PORTFOLIO_HISTORY_TABLE,
+  CREATE_PORTFOLIO_ANALYTICS_TABLE,
   CREATE_INDEXES,
 ] as const;
 

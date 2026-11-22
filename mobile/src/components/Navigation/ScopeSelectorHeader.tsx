@@ -11,7 +11,10 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Users, User } from 'lucide-react-native';
 import type { PortfolioScope } from '@portfolio/core-view';
 import type { PanBreakdownDto } from '../../types/generated';
@@ -214,8 +217,17 @@ export function ScopeSelectorHeader({
     useScopeBreakdowns(panBreakdowns, profiles, totalFolios);
   const badgeText = `${uniquePanCount} PANs${totalCount !== undefined ? ` • ${totalCount} Folios` : ''}`;
 
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets?.top ?? 0,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0,
+  ) + 6;
+
   return (
-    <View style={styles.container} testID="scope-selector-header">
+    <View
+      style={[styles.container, { paddingTop: topPadding }]}
+      testID="scope-selector-header"
+    >
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <ConsolidatedChip
           isConsolidated={isConsolidated}

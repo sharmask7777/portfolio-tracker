@@ -23,6 +23,10 @@ import {
   generateUuid,
   type PortfolioSnapshotInput,
 } from './repository';
+import {
+  savePortfolioHistory,
+  getPortfolioHistory,
+} from './history-repository';
 import type {
   FolioEntity,
   HoldingEntity,
@@ -482,6 +486,28 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
       expect(id1).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
+    });
+  });
+
+  describe('Portfolio History Repository & Service', () => {
+    it('persists and retrieves chronological portfolio history checkpoints', async () => {
+      const db = createInMemoryTestDatabase();
+      await initDatabase(db);
+
+      const points = [
+        { date: '2026-01-01', value: 100000, investedAmount: 90000 },
+        { date: '2026-02-01', value: 110000, investedAmount: 95000 },
+      ];
+
+      await savePortfolioHistory(db, 'port-1', points);
+      const loaded = await getPortfolioHistory(db, 'port-1');
+      expect(loaded).toEqual(points);
+
+      const empty = await getPortfolioHistory(db, 'port-unknown');
+      expect(empty).toEqual([]);
+
+      const fallback = await getPortfolioHistory(db, 'default');
+      expect(fallback).toEqual(points);
     });
   });
 });

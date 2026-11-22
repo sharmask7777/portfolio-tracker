@@ -23,6 +23,12 @@ vi.mock('react-native', () => ({
   Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
   ScrollView: (props: Record<string, unknown>) => ({ type: 'ScrollView', props }),
   TouchableOpacity: (props: Record<string, unknown>) => ({ type: 'TouchableOpacity', props }),
+  Platform: { OS: 'android' },
+  StatusBar: { currentHeight: 28 },
+}));
+
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 32, bottom: 0, left: 0, right: 0 }),
 }));
 
 vi.mock('lucide-react-native', () => ({
@@ -119,7 +125,7 @@ describe('ScopeSelectorHeader Component Suite', () => {
     expect(props['testID']).toBe('scope-selector-header');
   });
 
-  it('renders without breakdowns fallback to profile list count', () => {
+  it('renders without breakdowns fallback to profile list count and accounts for status bar top insets', () => {
     const scope: PortfolioScope = { type: 'consolidated' };
     const element = ScopeSelectorHeader({
       scope,
@@ -128,6 +134,12 @@ describe('ScopeSelectorHeader Component Suite', () => {
       onSelectMember: vi.fn(),
     });
 
-    expect(getProps(element)['testID']).toBe('scope-selector-header');
+    const props = getProps(element);
+    expect(props['testID']).toBe('scope-selector-header');
+    // Insets top is 32, StatusBar is 28, max is 32 + 6 = 38
+    expect(props['style']).toEqual([
+      expect.anything(),
+      { paddingTop: 38 },
+    ]);
   });
 });

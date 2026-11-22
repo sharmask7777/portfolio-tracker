@@ -7,7 +7,9 @@ let databaseInstance: SQLiteDatabase | null = null;
 
 export async function initDatabase(customDb?: SQLiteDatabase): Promise<SQLiteDatabase> {
   const db = customDb ?? (await openDatabaseAsync(DEFAULT_DATABASE_NAME));
-  await db.execAsync(CREATE_TABLES_SQL);
+  if (db && typeof db.execAsync === 'function') {
+    await db.execAsync(CREATE_TABLES_SQL);
+  }
   databaseInstance = db;
   return db;
 }

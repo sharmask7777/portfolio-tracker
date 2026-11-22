@@ -1,8 +1,9 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { ShieldCheck } from 'lucide-react-native';
 import type { TaxCalculationsResult } from '../../services/tax-harvesting';
 import { formatInr } from '../../services/portfolio-service';
+import { FYDropdownPicker } from './FYDropdownPicker';
 
 /**
  * Props for {@link TaxSummaryCard}.
@@ -44,27 +45,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#f4f4f5',
-  },
-  fyChips: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  fyChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: '#27272a',
-  },
-  fyChipActive: {
-    backgroundColor: '#2563eb',
-  },
-  fyText: {
-    fontSize: 11,
-    color: '#a1a1aa',
-    fontWeight: '600',
-  },
-  fyTextActive: {
-    color: '#ffffff',
   },
   heroBlock: {
     paddingVertical: 12,
@@ -225,21 +205,11 @@ function SummaryHeader({ selectedFY, availableFYs, onFYChange }: SummaryHeaderPr
         <ShieldCheck size={20} color="#3b82f6" />
         <Text style={styles.title}>Tax & Capital Gains</Text>
       </View>
-      <View style={styles.fyChips}>
-        {availableFYs.map((fy) => (
-          <TouchableOpacity
-            key={fy}
-            style={[styles.fyChip, selectedFY === fy && styles.fyChipActive]}
-            onPress={() => onFYChange?.(fy)}
-            accessibilityRole="button"
-            accessibilityLabel={`Select FY ${fy}`}
-          >
-            <Text style={[styles.fyText, selectedFY === fy && styles.fyTextActive]}>
-              FY {fy}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <FYDropdownPicker
+        selectedFY={selectedFY}
+        availableFYs={availableFYs}
+        onFYChange={onFYChange}
+      />
     </View>
   );
 }

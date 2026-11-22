@@ -130,6 +130,7 @@ pub fn create_app(state: AppState) -> Router {
         .nest("/api/auth", auth::routes())
         .nest("/api/v1/auth", auth::routes())
         .nest("/api/portfolio", portfolio::routes())
+        .nest("/api/v1/cas", portfolio::routes())
         .nest("/api/tax", tax::routes())
         .nest("/api/family", family::routes())
         .nest("/api/fund-holdings", fund_holdings::routes())

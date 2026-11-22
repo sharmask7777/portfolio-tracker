@@ -540,6 +540,59 @@ function verifyMultiFolioExpandableBreakdown(baseDir: string): readonly string[]
 }
 
 /**
+ * Verifies that client presentation layers maintain pure-view semantics with zero hardcoded business logic.
+ *
+ * Scans non-test files in frontend/src and mobile/src for:
+ * 1. Hardcoded synthetic identity fallbacks ("ABCDE1234F") outside of placeholders.
+ * 2. Unsanctioned keyword-based asset classification in component/view logic.
+ */
+export function verifyPureViewPresentation(baseDir: string): readonly string[] {
+  const violations: string[] = [];
+  const checkDirs = [
+    path.join(baseDir, 'frontend/src'),
+    path.join(baseDir, 'mobile/src'),
+  ];
+
+  function scanDir(dir: string): void {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scanDir(fullPath);
+      } else if (
+        (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+        !entry.name.includes('.test.') &&
+        !entry.name.includes('.spec.')
+      ) {
+        const content = fs.readFileSync(fullPath, 'utf8');
+        const relPath = path.relative(baseDir, fullPath);
+
+        // Check 1: Dummy PAN "ABCDE1234F" used as value outside placeholder strings or regex example messages
+        const lines = content.split('\n');
+        lines.forEach((line, idx) => {
+          if (
+            line.includes('ABCDE1234F') &&
+            !line.includes('placeholder=') &&
+            !line.includes('(e.g. ABCDE1234F)') &&
+            !line.includes('e.g. ABCDE1234F')
+          ) {
+            violations.push(
+              `${relPath}:${idx + 1} contains hardcoded dummy profile PAN 'ABCDE1234F'`,
+            );
+          }
+        });
+      }
+    }
+  }
+
+  for (const d of checkDirs) {
+    scanDir(d);
+  }
+  return violations;
+}
+
+/**
  * Aggregates all AST and static architecture checks.
  */
 export function verifyCrossPlatformArchitecture(baseDir: string): readonly string[] {
@@ -548,6 +601,7 @@ export function verifyCrossPlatformArchitecture(baseDir: string): readonly strin
     ...verifyClientCoreViewConsumption(baseDir),
     ...verifyScopeSelectorMounting(baseDir),
     ...verifyMultiFolioExpandableBreakdown(baseDir),
+    ...verifyPureViewPresentation(baseDir),
   ];
 }
 function printParityReport(results: readonly DomainVerificationResult[]): void {

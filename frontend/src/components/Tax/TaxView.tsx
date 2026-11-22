@@ -108,7 +108,7 @@ function downloadITRReport(summary: ITRSummary, selectedFY: string, filteredDeta
       summary.userName ||
       filteredDetails[0]?.panName ||
       'Portfolio Investor',
-    pan: summary.pan || filteredDetails[0]?.pan || 'ABCDE1234F',
+    pan: summary.pan || filteredDetails[0]?.pan || '',
     fy: selectedFY,
     ay,
     details: filteredDetails,

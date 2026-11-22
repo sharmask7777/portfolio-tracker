@@ -15,7 +15,7 @@ import { checkServerReachable } from './portfolio-service';
 
 export type { SyncQueueItem, SyncQueueStatus };
 
-export const DEFAULT_UPLOAD_ENDPOINT = '/api/v1/cas/upload';
+export const DEFAULT_UPLOAD_ENDPOINT = '/api/portfolio/upload';
 
 export interface EnqueueCasUploadInput {
   filePath: string;
@@ -129,10 +129,11 @@ async function uploadSingleItem(
       return { success: true };
     }
 
-    await updateQueueStatus(db, item.id, 'FAILED');
+    const nextStatus = res.status >= 400 && res.status < 500 ? 'FAILED' : 'PENDING';
+    await updateQueueStatus(db, item.id, { status: nextStatus, incrementRetry: true });
     return { success: false, error: `Upload rejected with HTTP ${res.status}` };
   } catch (err) {
-    await updateQueueStatus(db, item.id, 'FAILED');
+    await updateQueueStatus(db, item.id, { status: 'PENDING', incrementRetry: true });
     const msg = err instanceof Error ? err.message : 'Upload network error';
     return { success: false, error: msg };
   }

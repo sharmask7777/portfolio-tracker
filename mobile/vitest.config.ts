@@ -11,8 +11,10 @@ export default defineConfig({
   resolve: {
     alias: {
       'react': path.resolve(__dirname, 'node_modules/react'),
+      'react-native': path.resolve(__dirname, 'tests/mocks/react-native.ts'),
       'react-native-svg': path.resolve(__dirname, 'tests/mocks/react-native-svg.ts'),
       'expo-constants': path.resolve(__dirname, 'tests/mocks/expo-constants.ts'),
+      'react-native-safe-area-context': path.resolve(__dirname, 'tests/mocks/react-native-safe-area-context.ts'),
     },
   },
   test: {

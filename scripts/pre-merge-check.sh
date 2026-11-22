@@ -30,10 +30,14 @@ echo "📱 [4/5] Running Mobile Sensors & Test Coverage Guardrail..."
 pnpm --filter mobile build:verify
 
 # 5. Cross-Platform Feature Parity Gate
-echo "🔄 [5/5] Running Web-Mobile Domain Parity Verification Gate..."
+echo "🔄 [5/6] Running Web-Mobile Domain Parity Verification Gate..."
 pnpm parity:check
 
-# 6. Summary
+# 6. Cross-Platform Visual Parity & Architecture Invariants Gate
+echo "👁️  [6/6] Running Web-Mobile Visual Parity & Architecture Invariants Gate..."
+pnpm parity:visual
+
+# 7. Summary
 echo "================================================================================"
 echo "🎉 All Multi-Language Maintainability Sensors & Verification Stages PASSED!"
 echo "================================================================================"
