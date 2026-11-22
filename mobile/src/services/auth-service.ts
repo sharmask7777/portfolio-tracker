@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 import type { PairClaimRequest, PairClaimResponse, UserResponse } from '../types/generated';
@@ -147,8 +148,12 @@ export function parseAndValidateQrPayload(raw: string): QrPairingPayload {
   return validateQrFields(record);
 }
 
-function normalizeServerUrl(url: string): string {
-  return url.trim().replace(/\/+$/, '');
+export function normalizeServerUrl(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (Platform.OS === 'android') {
+    return trimmed.replace(/\b(localhost|127\.0\.0\.1)\b/g, '10.0.2.2');
+  }
+  return trimmed;
 }
 
 function validatePairClaimResponse(data: unknown): PairClaimResponse {
@@ -213,7 +218,11 @@ export async function claimPairingSecret(
   return claimResponse;
 }
 
-export const DEFAULT_SERVER_URL = 'http://10.0.2.2:8080';
+export const DEFAULT_SERVER_URL =
+  Platform.OS === 'android' ? 'http://10.0.2.2:8082' : 'http://localhost:8082';
+
+export const LOCAL_DEV_SERVER_URL =
+  Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080';
 
 export interface LoginResponse {
   token: string;

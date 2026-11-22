@@ -8,6 +8,9 @@ import {
   claimPairingSecret,
   loginWithCredentials,
   authenticateWithBiometrics,
+  DEFAULT_SERVER_URL,
+  LOCAL_DEV_SERVER_URL,
+  normalizeServerUrl,
 } from './auth-service';
 import type { UserResponse } from '../types/generated';
 
@@ -354,9 +357,20 @@ describe('auth-service', () => {
       await loginWithCredentials('', 'user@example.com', 'pass');
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://10.0.2.2:8080/api/auth/login',
+        `${DEFAULT_SERVER_URL}/api/auth/login`,
         expect.objectContaining({ method: 'POST' }),
       );
+    });
+
+    it('rewrites localhost to 10.0.2.2 on Android platforms to prevent ConnectException', () => {
+      expect(DEFAULT_SERVER_URL).toBe('http://10.0.2.2:8082');
+      expect(LOCAL_DEV_SERVER_URL).toBe('http://10.0.2.2:8080');
+
+      const normalized = normalizeServerUrl('http://localhost:8082');
+      expect(normalized).toBe('http://10.0.2.2:8082');
+
+      const normalizedIp = normalizeServerUrl('http://127.0.0.1:8082');
+      expect(normalizedIp).toBe('http://10.0.2.2:8082');
     });
   });
 

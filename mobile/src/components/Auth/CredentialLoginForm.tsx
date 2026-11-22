@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import { DEFAULT_SERVER_URL } from '../../services/auth-service';
+import { DEFAULT_SERVER_URL, LOCAL_DEV_SERVER_URL } from '../../services/auth-service';
 
 const styles = StyleSheet.create({
   card: {
@@ -79,6 +79,35 @@ const styles = StyleSheet.create({
     color: '#60a5fa',
     fontSize: 13,
   },
+  presetContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  presetButton: {
+    flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3f3f46',
+    backgroundColor: '#27272a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presetButtonActive: {
+    borderColor: '#3b82f6',
+    backgroundColor: '#1e3a5f',
+  },
+  presetButtonText: {
+    fontSize: 11,
+    color: '#a1a1aa',
+    fontWeight: '500',
+  },
+  presetButtonTextActive: {
+    color: '#60a5fa',
+    fontWeight: '700',
+  },
 });
 
 /**
@@ -120,6 +149,40 @@ function InputField(props: InputFieldProps): React.ReactElement {
   );
 }
 
+interface PresetSelectorProps {
+  readonly currentUrl: string;
+  readonly onSelectUrl: (url: string) => void;
+}
+
+function EnvironmentPresets(props: PresetSelectorProps): React.ReactElement {
+  const { currentUrl, onSelectUrl } = props;
+  const isDocker = currentUrl === DEFAULT_SERVER_URL;
+  const isLocal = currentUrl === LOCAL_DEV_SERVER_URL;
+
+  return (
+    <View style={styles.presetContainer}>
+      <TouchableOpacity
+        style={[styles.presetButton, isDocker ? styles.presetButtonActive : null]}
+        onPress={() => onSelectUrl(DEFAULT_SERVER_URL)}
+        testID="env-docker-button"
+      >
+        <Text style={[styles.presetButtonText, isDocker ? styles.presetButtonTextActive : null]}>
+          Docker (:8082)
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.presetButton, isLocal ? styles.presetButtonActive : null]}
+        onPress={() => onSelectUrl(LOCAL_DEV_SERVER_URL)}
+        testID="env-local-button"
+      >
+        <Text style={[styles.presetButtonText, isLocal ? styles.presetButtonTextActive : null]}>
+          Local Dev (:8080)
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 interface FormInputsProps {
   readonly serverUrl: string;
   readonly setServerUrl: (val: string) => void;
@@ -132,9 +195,14 @@ interface FormInputsProps {
 function FormInputs(props: FormInputsProps): React.ReactElement {
   return (
     <>
+      <Text style={styles.label}>Target Environment</Text>
+      <EnvironmentPresets
+        currentUrl={props.serverUrl}
+        onSelectUrl={props.setServerUrl}
+      />
       <InputField
         label="Server URL"
-        placeholder="http://10.0.2.2:8080"
+        placeholder={DEFAULT_SERVER_URL}
         value={props.serverUrl}
         onChangeText={props.setServerUrl}
         testID="login-server-url-input"
