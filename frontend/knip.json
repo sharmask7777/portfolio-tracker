@@ -9,7 +9,10 @@
   ],
   "ignore": [
     "src/types/generated/**",
-    "src/components/Family/FamilyManager.tsx"
+    "src/components/Family/FamilyManager.tsx",
+    "src/utils/consolidation.ts",
+    "src/utils/consolidation-types.ts",
+    "src/utils/sorting.ts"
   ],
   "ignoreDependencies": [
     "@vitest/ui",

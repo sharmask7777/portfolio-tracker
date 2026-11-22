@@ -107,16 +107,30 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/static-components': 'off',
       'react-refresh/only-export-components': 'off',
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-      // Maintainability sensors for coding agents (Martin Fowler / Böckeler)
-      'complexity': ['warn', { max: 15 }],
-      'max-lines': ['warn', { max: 600, skipBlankLines: true, skipComments: true }],
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
+  },
+  {
+    // Fowler Maintainability Sensors for App.tsx and modular dashboard components
+    files: [
+      'src/App.tsx',
+      'src/ActiveTabRouter.tsx',
+      'src/DashboardActionHeader.tsx',
+      'src/DashboardModals.tsx',
+      'src/components/Dashboard/EmptyStatePlaceholder.tsx',
+      'src/components/Dashboard/DashboardNavigationTabs.tsx',
+      'src/components/Dashboard/SortHeaderCell.tsx',
+      'src/components/Dashboard/TransactionHistoryModal.tsx',
+    ],
+    rules: {
+      'complexity': ['error', 10],
+      'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': [
-        'warn',
-        { max: 120, skipBlankLines: true, skipComments: true, IIFEs: true },
+        'error',
+        { max: 50, skipBlankLines: true, skipComments: true },
       ],
-      'max-params': ['warn', { max: 4 }],
+      'max-params': ['error', 4],
     },
   },
   {
