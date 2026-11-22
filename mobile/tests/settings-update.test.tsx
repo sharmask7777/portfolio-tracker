@@ -37,6 +37,7 @@ const { mockAlert } = vi.hoisted(() => ({
 vi.mock('react-native', () => ({
   StyleSheet: { create: (s: Record<string, unknown>) => s },
   View: (props: Record<string, unknown>) => ({ type: 'View', props }),
+  KeyboardAvoidingView: (props: Record<string, unknown>) => ({ type: 'KeyboardAvoidingView', props }),
   Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
   TouchableOpacity: (props: Record<string, unknown>) => ({ type: 'TouchableOpacity', props }),
   ActivityIndicator: (props: Record<string, unknown>) => ({ type: 'ActivityIndicator', props }),

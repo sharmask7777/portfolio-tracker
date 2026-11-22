@@ -20,6 +20,7 @@ import type { HistoryRangePreset } from '../src/services/reality-check-service';
 vi.mock('react-native', () => ({
   StyleSheet: { create: (s: Record<string, unknown>) => s },
   View: (props: Record<string, unknown>) => ({ type: 'View', props }),
+  KeyboardAvoidingView: (props: Record<string, unknown>) => ({ type: 'KeyboardAvoidingView', props }),
   Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
   TouchableOpacity: (props: Record<string, unknown>) => ({ type: 'TouchableOpacity', props }),
   Platform: { OS: 'android' },

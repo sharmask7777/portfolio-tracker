@@ -17,3 +17,5 @@ export const ScrollView = (props: Record<string, unknown>): Record<string, unkno
 export const ActivityIndicator = (props: Record<string, unknown>): Record<string, unknown> => ({ type: 'ActivityIndicator', props });
 export const Alert = { alert: vi.fn() };
 export const StatusBar = { currentHeight: 24 };
+export const KeyboardAvoidingView = (props: Record<string, unknown>): Record<string, unknown> => ({ type: 'KeyboardAvoidingView', props });
+export const Modal = (props: Record<string, unknown>): Record<string, unknown> => ({ type: 'Modal', props });

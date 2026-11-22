@@ -77,6 +77,7 @@ vi.mock('lucide-react-native', () => ({
 vi.mock('react-native', () => ({
   StyleSheet: { create: (s: Record<string, unknown>) => s },
   View: (props: Record<string, unknown>) => ({ type: 'View', props }),
+  KeyboardAvoidingView: (props: Record<string, unknown>) => ({ type: 'KeyboardAvoidingView', props }),
   Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
   ScrollView: (props: Record<string, unknown>) => ({ type: 'ScrollView', props }),
   TextInput: (props: Record<string, unknown>) => ({ type: 'TextInput', props }),

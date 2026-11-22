@@ -6,7 +6,10 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Target, Plus } from 'lucide-react-native';
 import {
   getStoredGoals,
@@ -270,6 +273,13 @@ export default function InsightsScreen(): React.ReactElement {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingGoal, setEditingGoal] = useState<FinancialGoal | null>(null);
 
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets?.top ?? 0,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0,
+    16
+  ) + 16;
+
   const netWorth = holdings.reduce((sum, h) => sum + h.current_value, 0);
   const goalsWithMetrics = goals.map((g) => ({
     goal: g,
@@ -289,7 +299,7 @@ export default function InsightsScreen(): React.ReactElement {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingTop: topPadding }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await loadData(); setRefreshing(false); }} tintColor="#3b82f6" />}
       testID="insights-screen"
     >

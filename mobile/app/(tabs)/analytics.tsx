@@ -46,7 +46,7 @@ import { formatIndianRupee } from '../../src/services/hierarchy-formatters';
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#09090b' },
-  content: { padding: 20, paddingTop: 48 },
+  content: { padding: 20, paddingTop: 16 },
   header: { marginBottom: 20 },
   category: { fontSize: 12, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   title: { fontSize: 26, fontWeight: '800', color: '#f4f4f5' },

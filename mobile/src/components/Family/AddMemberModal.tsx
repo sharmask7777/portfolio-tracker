@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { X, UserPlus } from 'lucide-react-native';
 import {
@@ -251,7 +253,10 @@ export function AddMemberModal(props: AddMemberModalProps): React.ReactElement {
   return (
     <Modal visible={visible} animationType="slide" transparent testID="add-member-modal">
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.sheet}
+        >
           <View style={styles.header}>
             <View style={styles.titleRow}><UserPlus size={20} color="#60a5fa" /><Text style={styles.title}>Add Family Member</Text></View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}><X size={18} color="#a1a1aa" /></TouchableOpacity>
@@ -261,7 +266,7 @@ export function AddMemberModal(props: AddMemberModalProps): React.ReactElement {
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}><Text style={styles.cancelBtnText}>Cancel</Text></TouchableOpacity>
             <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} testID="submit-add-member-btn"><Text style={styles.submitBtnText}>Add Member</Text></TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

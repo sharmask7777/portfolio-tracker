@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Platform, StatusBar } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   UploadFormCard,
   UploadQueueCard,
@@ -50,6 +51,13 @@ function UploadHeader(): React.ReactElement {
  * @returns React Native upload tab element
  */
 export default function UploadTabScreen(): React.ReactElement {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets?.top ?? 0,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0,
+    16
+  ) + 16;
+
   const {
     selectedFile,
     password,
@@ -65,7 +73,7 @@ export default function UploadTabScreen(): React.ReactElement {
 
   return (
     <View style={styles.container} testID="upload-screen">
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: topPadding }]}>
         <UploadHeader />
         <UploadFormCard
           selectedFile={selectedFile}

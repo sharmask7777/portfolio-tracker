@@ -6,6 +6,8 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { classifyTransportSecurity, TransportSecurityInfo } from '../services/transport-security';
 
@@ -161,6 +163,36 @@ export interface ManualPairFormProps {
   onSwitchToCamera: () => void;
 }
 
+interface ActionButtonsProps {
+  onSubmit: () => void;
+  isPairing: boolean;
+  onSwitchToCamera: () => void;
+}
+
+function ActionButtons({ onSubmit, isPairing, onSwitchToCamera }: ActionButtonsProps): React.ReactElement {
+  return (
+    <>
+      <TouchableOpacity
+        style={styles.primaryButton}
+        onPress={onSubmit}
+        disabled={isPairing}
+        activeOpacity={0.8}
+        testID="connect-pair-btn"
+        accessibilityLabel="Connect & Pair"
+      >
+        {isPairing ? (
+          <ActivityIndicator color="#ffffff" size="small" />
+        ) : (
+          <Text style={styles.primaryButtonText}>Connect & Pair</Text>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.linkButton} onPress={onSwitchToCamera} disabled={isPairing}>
+        <Text style={styles.linkButtonText}>Switch to QR Scanner</Text>
+      </TouchableOpacity>
+    </>
+  );
+}
+
 /**
  * Fallback form allowing manual entry of server URL and pairing secret
  * when camera is unavailable or QR scanning is not preferred.
@@ -182,7 +214,11 @@ export function ManualPairForm({
   }, [onSubmit, serverUrl, secret]);
 
   return (
-    <View style={styles.manualCard} testID="manual-pair-form">
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.manualCard}
+      testID="manual-pair-form"
+    >
       <FormField
         label="Server URL"
         placeholder="https://portfolio.example.com"
@@ -198,23 +234,7 @@ export function ManualPairForm({
         onChangeText={setSecret}
         testID="pairing-secret-input"
       />
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={handleSubmit}
-        disabled={isPairing}
-        activeOpacity={0.8}
-        testID="connect-pair-btn"
-        accessibilityLabel="Connect & Pair"
-      >
-        {isPairing ? (
-          <ActivityIndicator color="#ffffff" size="small" />
-        ) : (
-          <Text style={styles.primaryButtonText}>Connect & Pair</Text>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.linkButton} onPress={onSwitchToCamera} disabled={isPairing}>
-        <Text style={styles.linkButtonText}>Switch to QR Scanner</Text>
-      </TouchableOpacity>
-    </View>
+      <ActionButtons onSubmit={handleSubmit} isPairing={isPairing} onSwitchToCamera={onSwitchToCamera} />
+    </KeyboardAvoidingView>
   );
 }

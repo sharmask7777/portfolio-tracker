@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, Modal, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  Modal,
+  TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { X } from 'lucide-react-native';
 import {
   simulateSellRedemption,
@@ -180,7 +189,10 @@ export function SimulationModal(props: SimulationModalProps): React.ReactElement
   return (
     <Modal visible={props.visible} animationType="slide" transparent testID="simulation-modal">
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalContent}
+        >
           <SimulationHeader schemeName={props.schemeName ?? 'Mutual Fund Scheme'} onClose={props.onClose} />
           <ScrollView>
             {!result ? (
@@ -197,7 +209,7 @@ export function SimulationModal(props: SimulationModalProps): React.ReactElement
               <SimulationResultView result={result} onReset={() => setResult(null)} />
             )}
           </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

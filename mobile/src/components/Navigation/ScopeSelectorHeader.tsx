@@ -104,6 +104,7 @@ function MemberChipItem({ profile, isSelected, corpusShare, onSelect }: MemberCh
     <TouchableOpacity
       style={[styles.chip, isSelected && styles.chipActive]}
       onPress={onSelect}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       testID={`scope-chip-${profile.id}`}
       accessibilityRole="button"
       accessibilityLabel={`Select profile ${profile.name}`}
@@ -142,6 +143,7 @@ function ConsolidatedChip({ isConsolidated, uniquePanCount, labelText, onSelect 
     <TouchableOpacity
       style={[styles.chip, isConsolidated && styles.chipActive]}
       onPress={onSelect}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       testID="scope-chip-consolidated"
       accessibilityRole="button"
       accessibilityLabel="Select Consolidated Family scope"

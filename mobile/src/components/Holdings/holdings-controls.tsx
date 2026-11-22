@@ -186,6 +186,7 @@ function SortChips({ selectedSort, onSelectSort }: SortChipsProps): React.ReactE
           key={s.id}
           style={[styles.sortChip, selectedSort === s.id && styles.sortChipActive]}
           onPress={() => onSelectSort(s.id)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           testID={`sort-by-${s.id}`}
         >
           <Text style={[styles.sortChipText, selectedSort === s.id && styles.sortChipTextActive]}>
