@@ -100,3 +100,9 @@ The autonomous verification pattern where agents capture actual UI rendering scr
 
 The Multimodal Visual Verification Loop prevents silent visual regressions that pass headless unit tests from reaching production.
 
+### Withdrawal Simulation
+A predictive tax and exit load calculation for redeeming units from a specific folio or hypothetical position, evaluating FIFO lot exhaustion, grandfathered deemed cost under Section 55(2)(ac), statutory tax liability under Sections 112A, 111A, or 50AA, exit load penalties, and net in-hand proceeds.
+*Avoid: Sell calculator, mock redemption*
+
+Under Withdrawal Simulation, the client uses backend calculation as the single source of truth (`POST /api/tax/simulate-sell`) to guarantee cross-platform numerical parity, with transparent offline fallback to local calculations when unreachable.
+

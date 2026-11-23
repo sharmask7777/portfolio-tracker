@@ -219,7 +219,7 @@ export async function claimPairingSecret(
 }
 
 export const DEFAULT_SERVER_URL =
-  Platform.OS === 'android' ? 'http://10.0.2.2:8082' : 'http://localhost:8082';
+  Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080';
 
 export const LOCAL_DEV_SERVER_URL =
   Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080';

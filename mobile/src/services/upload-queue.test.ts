@@ -146,6 +146,12 @@ describe('upload-queue service & CAS upload workflow', () => {
         'https://api.example.com/api/portfolio/upload',
       );
     });
+
+    it('normalizes server URL removing trailing slashes and handling whitespace', () => {
+      expect(buildUploadUrl('  https://api.example.com//  ')).toBe(
+        `https://api.example.com${DEFAULT_UPLOAD_ENDPOINT}`,
+      );
+    });
   });
 
   describe('enqueueCasUpload & secure password storage', () => {
@@ -248,6 +254,44 @@ describe('upload-queue service & CAS upload workflow', () => {
       expect(reqInit.body).toBeInstanceOf(FormData);
 
       // Verify item updated in SQLite
+      const updated = await getQueueItemById(db, item.id);
+      expect(updated?.status).toBe('COMPLETED');
+      expect(updated?.retry_count).toBe(0);
+
+      // Verify password was removed from SecureStore
+      expect(mockStorage.has(item.password_key!)).toBe(false);
+
+      // Verify queue is now empty of pending items
+      const pending = await getPendingUploads(db);
+      expect(pending).toHaveLength(0);
+    });
+
+    it('flushes pending upload and marks COMPLETED when server responds with 202 Accepted', async () => {
+      const item = await enqueueCasUpload(
+        {
+          filePath: 'file:///var/mobile/cas_accepted.pdf',
+          fileName: 'cas_accepted.pdf',
+          password: 'ACCEPTED_SECRET',
+        },
+        db,
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        status: 202,
+        ok: true,
+      });
+
+      const result = await flushUploadQueue(
+        'https://portfolio.test',
+        'device-jwt-token',
+        { db },
+      );
+
+      expect(result.processed).toBe(1);
+      expect(result.succeeded).toBe(1);
+      expect(result.failed).toBe(0);
+
+      // Verify item updated in SQLite to COMPLETED
       const updated = await getQueueItemById(db, item.id);
       expect(updated?.status).toBe('COMPLETED');
       expect(updated?.retry_count).toBe(0);
@@ -423,6 +467,16 @@ describe('upload-queue service & CAS upload workflow', () => {
     it('returns true when health endpoint responds < 500', async () => {
       mockFetch.mockResolvedValueOnce({ status: 200 });
       const reachable = await isServerReachable('https://server.domain');
+      expect(reachable).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://server.domain/health',
+        expect.objectContaining({ method: 'GET' }),
+      );
+    });
+
+    it('normalizes server URL in reachability check', async () => {
+      mockFetch.mockResolvedValueOnce({ status: 200 });
+      const reachable = await isServerReachable('  https://server.domain/  ');
       expect(reachable).toBe(true);
       expect(mockFetch).toHaveBeenCalledWith(
         'https://server.domain/health',

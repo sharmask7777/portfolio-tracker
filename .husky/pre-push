@@ -2,6 +2,13 @@
 
 set -e
 
+if [ -z "${SDKROOT:-}" ] && [ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk" ]; then
+  export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+fi
+if [ -d "/Library/Developer/CommandLineTools/usr/bin" ]; then
+  export PATH="/Library/Developer/CommandLineTools/usr/bin:${PATH}"
+fi
+
 echo "Running static privacy & Anti-PII guardrail..."
 python3 scripts/check-privacy-and-pii.py
 

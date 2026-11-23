@@ -11,10 +11,10 @@ import {
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import {
-  simulateSellRedemption,
   type SimulationLot,
   type SimulationSellResult,
 } from '../../services/tax-harvesting';
+import { simulateWithdrawal } from '../../services/tax-simulation-service';
 import { SimulationResultView } from './SimulationResultView';
 import { SimulationForm } from './SimulationForm';
 
@@ -146,6 +146,7 @@ function useSellSimulation(props: SimulationModalProps) {
   const [mode, setMode] = useState<'units' | 'amount'>('units');
   const [inputVal, setInputVal] = useState(initialUnits ? initialUnits.toString() : '');
   const [result, setResult] = useState<SimulationSellResult | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (initialUnits) {
@@ -156,24 +157,27 @@ function useSellSimulation(props: SimulationModalProps) {
 
   const unitsToSell = computeUnits(mode, inputVal, currentNav);
 
-  const handleSimulate = () => {
+  const handleSimulate = async () => {
     const activeLots = resolveLots({ lots, isElss, unitsToSell, currentNav });
-    setResult(
-      simulateSellRedemption({
+    setLoading(true);
+    try {
+      const res = await simulateWithdrawal({
         folioId,
         schemeName,
         isElss,
         assetClass,
         lots: activeLots,
         unitsToSell,
-        sellPrice: currentNav,
-        sellDate: new Date().toISOString().split('T')[0] ?? '2024-09-01',
+        currentNav,
         taxSlab,
-      })
-    );
+      });
+      setResult(res);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return { mode, setMode, inputVal, setInputVal, result, setResult, unitsToSell, handleSimulate };
+  return { mode, setMode, inputVal, setInputVal, result, setResult, unitsToSell, handleSimulate, loading };
 }
 
 /**
@@ -183,7 +187,7 @@ function useSellSimulation(props: SimulationModalProps) {
  * @returns React Native modal
  */
 export function SimulationModal(props: SimulationModalProps): React.ReactElement {
-  const { mode, setMode, inputVal, setInputVal, result, setResult, unitsToSell, handleSimulate } =
+  const { mode, setMode, inputVal, setInputVal, result, setResult, unitsToSell, handleSimulate, loading } =
     useSellSimulation(props);
 
   return (
@@ -204,6 +208,7 @@ export function SimulationModal(props: SimulationModalProps): React.ReactElement
                 unitsToSell={unitsToSell}
                 currentNav={props.currentNav ?? 100}
                 onSubmit={handleSimulate}
+                loading={loading}
               />
             ) : (
               <SimulationResultView result={result} onReset={() => setResult(null)} />
