@@ -20,11 +20,16 @@ export const DEFAULT_PERFORMANCE_MODE: PerformanceMode = 'XIRR';
 /** In-memory cache for synchronous read fallbacks */
 let inMemoryPerformanceMode: PerformanceMode | null = null;
 
+/** Module-level listener registry for synchronizing state across active tab screens */
+type PerformanceModeListener = (mode: PerformanceMode) => void;
+const listeners = new Set<PerformanceModeListener>();
+
 /**
- * Resets the in-memory performance mode cache for testing isolation.
+ * Resets the in-memory performance mode cache and listeners for testing isolation.
  */
 export function _resetInMemoryPerformanceModeForTesting(): void {
   inMemoryPerformanceMode = null;
+  listeners.clear();
 }
 
 /**
@@ -66,6 +71,7 @@ export async function getStoredPerformanceMode(): Promise<PerformanceMode> {
  */
 export async function setStoredPerformanceMode(mode: PerformanceMode): Promise<void> {
   inMemoryPerformanceMode = mode;
+  listeners.forEach((listener) => listener(mode));
   try {
     await SecureStore.setItemAsync(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE, mode);
   } catch {
@@ -75,6 +81,7 @@ export async function setStoredPerformanceMode(mode: PerformanceMode): Promise<v
 
 /**
  * Custom React hook for accessing and mutating the persistent performance calculation mode.
+ * Automatically synchronizes mode across all mounted tab screens via listener registry.
  *
  * @returns Tuple containing active PerformanceMode and update callback
  */
@@ -84,6 +91,7 @@ export function usePerformanceMode(): readonly [PerformanceMode, (mode: Performa
   );
 
   useEffect(() => {
+    listeners.add(setPerformanceModeState);
     let isMounted = true;
     void getStoredPerformanceMode().then((mode) => {
       if (isMounted) {
@@ -92,11 +100,11 @@ export function usePerformanceMode(): readonly [PerformanceMode, (mode: Performa
     });
     return () => {
       isMounted = false;
+      listeners.delete(setPerformanceModeState);
     };
   }, []);
 
   const setPerformanceMode = useCallback((mode: PerformanceMode) => {
-    setPerformanceModeState(mode);
     void setStoredPerformanceMode(mode);
   }, []);
 

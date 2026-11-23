@@ -134,5 +134,35 @@ describe('settings-service', () => {
         expect(mockStorage.get(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE)).toBe('XIRR');
       });
     });
+
+    it('synchronizes mode across multiple mounted consumers', async () => {
+      let tab1Mode: PerformanceMode | null = null;
+      let tab2Mode: PerformanceMode | null = null;
+      let tab1SetMode: ((m: PerformanceMode) => void) | null = null;
+
+      function MultiTabContainer(): React.ReactElement {
+        const [m1, setM1] = usePerformanceMode();
+        const [m2] = usePerformanceMode();
+        tab1Mode = m1;
+        tab1SetMode = setM1;
+        tab2Mode = m2;
+        return React.createElement(View, { testID: 'tabs-container' });
+      }
+
+      render(() => React.createElement(MultiTabContainer));
+
+      await waitFor(() => {
+        expect(tab1Mode).toBe('XIRR');
+        expect(tab2Mode).toBe('XIRR');
+      });
+
+      // Update from tab1
+      tab1SetMode!('ABS');
+
+      await waitFor(() => {
+        expect(tab1Mode).toBe('ABS');
+        expect(tab2Mode).toBe('ABS');
+      });
+    });
   });
 });

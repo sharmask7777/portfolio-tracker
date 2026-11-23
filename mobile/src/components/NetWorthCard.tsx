@@ -91,9 +91,20 @@ function resolveReturnPct(
   unrealizedGainPct: number
 ): number {
   if (performanceMode === 'XIRR' && overallXirr !== undefined) {
-    return Math.abs(overallXirr) <= 2 && overallXirr !== 0 ? overallXirr * 100 : overallXirr;
+    return overallXirr * 100;
   }
   return unrealizedGainPct;
+}
+
+function resolveReturnLabel(
+  performanceMode: PerformanceMode | undefined,
+  overallXirr: number | undefined
+): string {
+  if (!performanceMode) return 'Total Gain / Loss';
+  if (performanceMode === 'XIRR') {
+    return overallXirr !== undefined ? 'Total Gain (XIRR)' : 'Total Gain (ABS)';
+  }
+  return 'Total Gain (ABS)';
 }
 
 /**
@@ -114,7 +125,7 @@ export function NetWorthCard({
   const isGainPositive = unrealizedGain >= 0;
   const gainStyle = isGainPositive ? styles.positive : styles.negative;
   const returnPct = resolveReturnPct(performanceMode, overallXirr, unrealizedGainPct);
-  const returnLabel = performanceMode ? `Total Gain (${performanceMode})` : 'Total Gain / Loss';
+  const returnLabel = resolveReturnLabel(performanceMode, overallXirr);
   const gainFormatted = `${formatInr(unrealizedGain)} (${formatPct(returnPct)})`;
 
   return (

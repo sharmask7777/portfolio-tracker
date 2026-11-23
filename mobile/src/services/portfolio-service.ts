@@ -182,26 +182,39 @@ export async function getDashboardSummary(
   };
 }
 
+function extractHoldingReturnRate(h: EnrichedHolding): number {
+  if (typeof h.xirr === 'number' && !Number.isNaN(h.xirr) && h.xirr !== 0) {
+    return h.xirr;
+  }
+  if (typeof h.absolute_return === 'number' && !Number.isNaN(h.absolute_return)) {
+    return h.absolute_return;
+  }
+  if (typeof h.gainLossPct === 'number' && !Number.isNaN(h.gainLossPct)) {
+    return h.gainLossPct / 100;
+  }
+  return 0;
+}
+
 /**
  * Computes value-weighted overall portfolio annualized XIRR from holdings.
+ * Falls back to absolute return for holdings without computed XIRR to prevent valuation truncation.
  *
  * @param holdings - Enriched holdings list
- * @returns Weighted XIRR or undefined if no holdings have XIRR metrics
+ * @returns Weighted XIRR or undefined if no holdings have valuation
  */
 export function computeOverallPortfolioXirr(holdings: readonly EnrichedHolding[]): number | undefined {
+  if (holdings.length === 0) return undefined;
   let totalValuation = 0;
-  let weightedXirr = 0;
-  let hasValidXirr = false;
+  let weightedRateSum = 0;
 
   for (const h of holdings) {
-    if (typeof h.xirr === 'number' && !Number.isNaN(h.xirr) && h.current_value > 0) {
+    if (h.current_value > 0) {
       totalValuation += h.current_value;
-      weightedXirr += h.current_value * h.xirr;
-      hasValidXirr = true;
+      weightedRateSum += h.current_value * extractHoldingReturnRate(h);
     }
   }
 
-  return hasValidXirr && totalValuation > 0 ? weightedXirr / totalValuation : undefined;
+  return totalValuation > 0 ? weightedRateSum / totalValuation : undefined;
 }
 
 export async function checkServerReachable(
