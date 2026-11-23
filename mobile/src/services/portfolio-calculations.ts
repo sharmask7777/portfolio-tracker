@@ -1,7 +1,23 @@
+/**
+ * @file portfolio-calculations.ts
+ * @description In-memory financial aggregation, currency formatting, folio parsing, and summary metrics.
+ */
+
 import type { HoldingEntity } from '../db/schema';
 import { generateUuid } from '../db/repository';
+import {
+  type CanonicalAssetClass,
+  ASSET_CLASSES,
+  ALLOCATION_COLORS,
+  normalizeAssetClass,
+} from './asset-classification';
 
-export type CanonicalAssetClass = 'Equity' | 'Debt' | 'Arbitrage' | 'Gold' | 'Cash' | 'Other';
+export {
+  type CanonicalAssetClass,
+  ASSET_CLASSES,
+  ALLOCATION_COLORS,
+  normalizeAssetClass,
+};
 
 export interface AssetAllocationItem {
   name: CanonicalAssetClass;
@@ -25,7 +41,12 @@ export interface GroupedHoldings {
 }
 
 export interface ServerTransactionData {
-  id?: string; type?: string; date?: string; units?: number; nav?: number; amount?: number;
+  id?: string | undefined;
+  type?: string | undefined;
+  date?: string | undefined;
+  units?: number | undefined;
+  nav?: number | undefined;
+  amount?: number | undefined;
 }
 
 export interface ServerFolioData {
@@ -37,7 +58,12 @@ export interface ServerFolioData {
   pan?: string | undefined;
   units?: number | string | undefined;
   assetCategory?: string | undefined;
-  asset?: { amfiCode?: string | null | undefined; name?: string | undefined; isin?: string | null | undefined; assetType?: string | undefined } | undefined;
+  asset?: {
+    amfiCode?: string | null | undefined;
+    name?: string | undefined;
+    isin?: string | null | undefined;
+    assetType?: string | undefined;
+  } | undefined;
   metrics?: {
     investedAmount?: number | undefined;
     currentValue?: number | undefined;
@@ -50,62 +76,41 @@ export interface ServerFolioData {
   transactions?: ServerTransactionData[] | undefined;
 }
 
-function matchCategory(cat: string): CanonicalAssetClass | null {
-  const u = cat.trim().toUpperCase();
-  if (u.includes('ARBITRAGE')) return 'Arbitrage';
-  if (u.includes('EQUITY')) return 'Equity';
-  if (u.includes('DEBT')) return 'Debt';
-  if (u.includes('GOLD')) return 'Gold';
-  if (u.includes('CASH')) return 'Cash';
-  if (u.includes('OTHER')) return 'Other';
-  return null;
-}
-
-const DEBT_TOKENS = ['debt', 'bond', 'liquid', 'gilt', 'treasury'];
-const EQUITY_TOKENS = ['equity', 'stock', 'index'];
-const GOLD_TOKENS = ['gold', 'sgb', 'silver'];
-const CASH_TOKENS = ['cash', 'overnight'];
-
-function hasToken(str: string, tokens: readonly string[]): boolean {
-  return tokens.some((t) => str.includes(t));
-}
-
-function matchTokens(combined: string): CanonicalAssetClass {
-  const l = combined.toLowerCase();
-  if (l.includes('arbitrage')) return 'Arbitrage';
-  if (hasToken(l, EQUITY_TOKENS)) return 'Equity';
-  if (hasToken(l, DEBT_TOKENS)) return 'Debt';
-  if (hasToken(l, GOLD_TOKENS)) return 'Gold';
-  if (hasToken(l, CASH_TOKENS)) return 'Cash';
-  return 'Other';
-}
-
-export function normalizeAssetClass(
-  raw: string,
-  category?: string | null,
-): CanonicalAssetClass {
-  if (category) {
-    const matched = matchCategory(category);
-    if (matched) return matched;
-  }
-  return matchTokens(`${raw || ''} ${category || ''}`);
-}
-
+/**
+ * Formats a monetary amount into standard Indian Rupee notation (₹x,xx,xxx.xx).
+ *
+ * @param amount - The numeric amount in INR
+ * @returns Formatted currency string
+ */
 export function formatInr(amount: number): string {
   const isNegative = amount < 0;
-  const abs = Math.abs(amount);
-  const formatted = abs.toLocaleString('en-IN', {
+  const absoluteAmount = Math.abs(amount);
+  const formatted = absoluteAmount.toLocaleString('en-IN', {
     maximumFractionDigits: 2,
     minimumFractionDigits: 2,
   });
   return `${isNegative ? '-' : ''}₹${formatted}`;
 }
 
+/**
+ * Formats a percentage value with signed indicator (+x.xx% or -x.xx%).
+ *
+ * @param pct - The numeric percentage value
+ * @returns Signed percentage string
+ */
 export function formatPct(pct: number): string {
   const sign = pct > 0 ? '+' : '';
   return `${sign}${pct.toFixed(2)}%`;
 }
 
+/**
+ * Filters enriched holdings by search query and asset class filter.
+ *
+ * @param holdings - List of enriched holdings to filter
+ * @param query - Optional search query string matching scheme name or folio number
+ * @param assetClass - Optional asset class filter string
+ * @returns Filtered array of enriched holdings
+ */
 export function filterHoldings(
   holdings: EnrichedHolding[],
   query?: string,
@@ -113,47 +118,43 @@ export function filterHoldings(
 ): EnrichedHolding[] {
   let list = holdings;
   if (query && query.trim().length > 0) {
-    const q = query.trim().toLowerCase();
-    list = list.filter((h) => h.scheme_name.toLowerCase().includes(q) || h.folio_number.toLowerCase().includes(q));
+    const normalizedQuery = query.trim().toLowerCase();
+    list = list.filter(
+      (holding) =>
+        holding.scheme_name.toLowerCase().includes(normalizedQuery) ||
+        holding.folio_number.toLowerCase().includes(normalizedQuery),
+    );
   }
   if (assetClass && assetClass.trim().length > 0) {
-    list = list.filter((h) => normalizeAssetClass(h.asset_class, h.asset_category) === assetClass);
+    list = list.filter(
+      (holding) =>
+        normalizeAssetClass(holding.asset_class, holding.asset_category) === assetClass,
+    );
   }
   return list;
 }
 
-export const ASSET_CLASSES: readonly CanonicalAssetClass[] = [
-  'Equity',
-  'Debt',
-  'Arbitrage',
-  'Gold',
-  'Cash',
-  'Other',
-] as const;
-
-export const ALLOCATION_COLORS: Record<CanonicalAssetClass, string> = {
-  Equity: '#38bdf8',
-  Debt: '#10b981',
-  Arbitrage: '#ec4899',
-  Gold: '#f59e0b',
-  Cash: '#06b6d4',
-  Other: '#71717a',
-};
-
+/**
+ * Groups a collection of enriched holdings by their canonical asset class.
+ *
+ * @param holdings - List of enriched holdings to group
+ * @returns Array of grouped holdings with aggregated values
+ */
 export function groupHoldingsByAssetClass(
   holdings: EnrichedHolding[],
 ): GroupedHoldings[] {
   const groups: GroupedHoldings[] = [];
 
-  for (const c of ASSET_CLASSES) {
+  for (const assetClass of ASSET_CLASSES) {
     const list = holdings.filter(
-      (h) => normalizeAssetClass(h.asset_class, h.asset_category) === c,
+      (holding) =>
+        normalizeAssetClass(holding.asset_class, holding.asset_category) === assetClass,
     );
     if (list.length > 0) {
       const val = list.reduce((sum, item) => sum + item.current_value, 0);
       const inv = list.reduce((sum, item) => sum + item.invested_cost, 0);
       groups.push({
-        assetClass: c,
+        assetClass,
         totalValue: Math.round(val * 100) / 100,
         totalInvested: Math.round(inv * 100) / 100,
         holdings: list,
@@ -163,70 +164,112 @@ export function groupHoldingsByAssetClass(
   return groups;
 }
 
+/**
+ * Constructs canonical asset allocation breakdown items from holdings and total portfolio value.
+ *
+ * @param holdings - List of enriched holdings
+ * @param totalValue - Total current valuation of portfolio in INR
+ * @returns List of asset allocation items with percentage weights and colors
+ */
 export function buildAssetAllocation(
   holdings: EnrichedHolding[],
   totalValue: number,
 ): AssetAllocationItem[] {
   const items: AssetAllocationItem[] = [];
 
-  for (const c of ASSET_CLASSES) {
+  for (const assetClass of ASSET_CLASSES) {
     const sum = holdings
-      .filter((h) => normalizeAssetClass(h.asset_class, h.asset_category) === c)
-      .reduce((acc, h) => acc + h.current_value, 0);
+      .filter(
+        (holding) =>
+          normalizeAssetClass(holding.asset_class, holding.asset_category) === assetClass,
+      )
+      .reduce((acc, holding) => acc + holding.current_value, 0);
     if (sum > 0) {
-      const percentage = totalValue > 0
-        ? Math.round((sum / totalValue) * 100 * 10) / 10
-        : 0;
+      const percentage =
+        totalValue > 0 ? Math.round((sum / totalValue) * 100 * 10) / 10 : 0;
       items.push({
-        name: c,
+        name: assetClass,
         amount: Math.round(sum * 100) / 100,
         percentage,
-        color: ALLOCATION_COLORS[c],
+        color: ALLOCATION_COLORS[assetClass],
       });
     }
   }
   return items;
 }
 
-function extractFolioNumber(f: ServerFolioData): string {
-  return f.number || f.folioNumber || 'UNKNOWN';
+function extractFolioNumber(serverFolio: ServerFolioData): string {
+  return serverFolio.number || serverFolio.folioNumber || 'UNKNOWN';
 }
 
-function extractHoldingPrices(f: ServerFolioData, units: number): { price: number; val: number } {
-  const price = typeof f.metrics?.currentPrice === 'number' ? f.metrics.currentPrice : 0;
-  const val = typeof f.metrics?.currentValue === 'number' ? f.metrics.currentValue : units * price;
+function extractHoldingPrices(
+  serverFolio: ServerFolioData,
+  units: number,
+): { price: number; val: number } {
+  const price =
+    typeof serverFolio.metrics?.currentPrice === 'number'
+      ? serverFolio.metrics.currentPrice
+      : 0;
+  const val =
+    typeof serverFolio.metrics?.currentValue === 'number'
+      ? serverFolio.metrics.currentValue
+      : units * price;
   return { price, val };
 }
 
-function extractAssetMeta(f: ServerFolioData) {
+function extractAssetMeta(serverFolio: ServerFolioData): {
+  schemeName: string;
+  amfiCode: string | null;
+  isin: string | null;
+  assetClass: string;
+} {
   return {
-    schemeName: f.asset?.name || 'Unknown Scheme', amfiCode: f.asset?.amfiCode || null,
-    isin: f.asset?.isin || null, assetClass: f.asset?.assetType || 'EQUITY',
+    schemeName: serverFolio.asset?.name || 'Unknown Scheme',
+    amfiCode: serverFolio.asset?.amfiCode || null,
+    isin: serverFolio.asset?.isin || null,
+    assetClass: serverFolio.asset?.assetType || 'EQUITY',
   };
 }
 
-function extractHoldingMetrics(m?: ServerFolioData['metrics']) {
-  if (!m) return { investedCost: 0, dayChange: 0, dayChangePct: 0, xirr: 0, absoluteReturn: 0 };
+function extractHoldingMetrics(metrics?: ServerFolioData['metrics']): {
+  investedCost: number;
+  dayChange: number;
+  dayChangePct: number;
+  xirr: number;
+  absoluteReturn: number;
+} {
+  if (!metrics) {
+    return { investedCost: 0, dayChange: 0, dayChangePct: 0, xirr: 0, absoluteReturn: 0 };
+  }
   return {
-    investedCost: Number(m.investedAmount || 0),
-    dayChange: m.dayChange ?? 0, dayChangePct: m.dayChangePercentage ?? 0,
-    xirr: m.xirr ?? 0, absoluteReturn: m.absoluteReturn ?? 0,
+    investedCost: Number(metrics.investedAmount || 0),
+    dayChange: metrics.dayChange ?? 0,
+    dayChangePct: metrics.dayChangePercentage ?? 0,
+    xirr: metrics.xirr ?? 0,
+    absoluteReturn: metrics.absoluteReturn ?? 0,
   };
 }
 
+/**
+ * Maps raw server folio payload item into a validated local SQLite HoldingEntity.
+ *
+ * @param serverFolio - Server folio data object
+ * @param now - Current ISO timestamp string
+ * @returns Local HoldingEntity record or null
+ */
 export function mapRawFolioToHolding(
-  f: ServerFolioData,
+  serverFolio: ServerFolioData,
   now: string,
 ): HoldingEntity | null {
-  const units = Number(f.units || 0);
-  const folioNumber = extractFolioNumber(f);
-  const { price, val } = extractHoldingPrices(f, units);
-  const meta = extractAssetMeta(f);
-  const metrics = extractHoldingMetrics(f.metrics);
+  const units = Number(serverFolio.units || 0);
+  const folioNumber = extractFolioNumber(serverFolio);
+  const { price, val } = extractHoldingPrices(serverFolio, units);
+  const meta = extractAssetMeta(serverFolio);
+  const metrics = extractHoldingMetrics(serverFolio.metrics);
   const navDate = now.split('T')[0] || '';
 
   return {
-    id: f.id || generateUuid(),
+    id: serverFolio.id || generateUuid(),
     folio_number: folioNumber,
     amfi_code: meta.amfiCode,
     scheme_name: meta.schemeName,
@@ -242,7 +285,7 @@ export function mapRawFolioToHolding(
     day_change_pct: metrics.dayChangePct,
     xirr: metrics.xirr,
     absolute_return: metrics.absoluteReturn,
-    asset_category: f.assetCategory ?? meta.assetClass,
+    asset_category: serverFolio.assetCategory ?? meta.assetClass,
   };
 }
 
@@ -269,20 +312,22 @@ export function summarizeHoldings(holdings: EnrichedHolding[]): {
   let prevTotalValue = 0;
   let latestUpdate: string | null = null;
 
-  for (const h of holdings) {
-    totalValue += h.current_value;
-    totalInvested += h.invested_cost;
-    totalDayGain += h.dayChange;
-    prevTotalValue += h.current_value - h.dayChange;
-    if (!latestUpdate || h.updated_at > latestUpdate) latestUpdate = h.updated_at;
+  for (const holding of holdings) {
+    totalValue += holding.current_value;
+    totalInvested += holding.invested_cost;
+    totalDayGain += holding.dayChange;
+    prevTotalValue += holding.current_value - holding.dayChange;
+    if (!latestUpdate || holding.updated_at > latestUpdate) latestUpdate = holding.updated_at;
   }
 
   const roundedValue = Math.round(totalValue * 100) / 100;
   const roundedInvested = Math.round(totalInvested * 100) / 100;
   const unrealizedGain = Math.round((roundedValue - roundedInvested) * 100) / 100;
-  const unrealizedGainPct = roundedInvested > 0 ? Math.round((unrealizedGain / roundedInvested) * 10000) / 100 : 0;
+  const unrealizedGainPct =
+    roundedInvested > 0 ? Math.round((unrealizedGain / roundedInvested) * 10000) / 100 : 0;
   const roundedDayGain = Math.round(totalDayGain * 100) / 100;
-  const dayGainPct = prevTotalValue > 0 ? Math.round((roundedDayGain / prevTotalValue) * 10000) / 100 : 0;
+  const dayGainPct =
+    prevTotalValue > 0 ? Math.round((roundedDayGain / prevTotalValue) * 10000) / 100 : 0;
 
   return {
     totalCurrentValue: roundedValue,
@@ -296,4 +341,3 @@ export function summarizeHoldings(holdings: EnrichedHolding[]): {
     lastUpdated: latestUpdate,
   };
 }
-

@@ -13,6 +13,13 @@ const MIGRATION_ALTERS = [
 
 let databaseInstance: SQLiteDatabase | null = null;
 
+/**
+ * Applies safe, idempotent SQLite column addition migrations to existing database instances.
+ *
+ * Catches and ignores duplicate column errors on already-migrated schemas.
+ *
+ * @param db - SQLiteDatabase connection instance
+ */
 async function runSafeMigrations(db: SQLiteDatabase): Promise<void> {
   for (const alter of MIGRATION_ALTERS) {
     try {

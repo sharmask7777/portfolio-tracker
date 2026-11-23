@@ -77,6 +77,14 @@ export function AllocationCard({ name, value, pct, color }: AllocationCardProps)
   );
 }
 
+/**
+ * Renders a responsive grid of canonical asset allocation cards for the portfolio X-Ray.
+ *
+ * Dynamically displays all non-zero categories (Equity, Debt, Arbitrage, Cash, Gold, Other).
+ *
+ * @param props - Component properties containing XRayData
+ * @returns React Native element
+ */
 export function AllocationCardsGrid({ xrayData }: { xrayData: XRayData }): React.ReactElement {
   const alloc = xrayData.assetAllocation;
   const rawItems: AllocationCardProps[] = [
@@ -103,10 +111,20 @@ export function AllocationCardsGrid({ xrayData }: { xrayData: XRayData }): React
   );
 }
 
+/**
+ * Properties for MarketCapSection component.
+ */
 export interface MarketCapSectionProps {
+  /** Market capitalization look-through data object */
   marketCap: XRayData['marketCap'];
 }
 
+/**
+ * Renders the Market Cap Breakdown tier cards (Large Cap, Mid Cap, Small Cap, Other) for equity holdings.
+ *
+ * @param props - Component properties {@link MarketCapSectionProps}
+ * @returns React Native element
+ */
 export function MarketCapSection({ marketCap }: MarketCapSectionProps): React.ReactElement {
   const items: AllocationCardProps[] = [
     { name: 'Large Cap', value: marketCap.large.value, pct: marketCap.large.percentage, color: '#38bdf8' },

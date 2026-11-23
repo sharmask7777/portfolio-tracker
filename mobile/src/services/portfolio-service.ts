@@ -77,6 +77,13 @@ async function calculateHoldingDayChange(
   return { dayChange: 0, dayChangePct: 0 };
 }
 
+/**
+ * Computes unrealized monetary gain and percentage return for a single holding.
+ *
+ * @param currentValue - Current valuation amount in INR
+ * @param investedCost - Total invested cost amount in INR
+ * @returns Object containing absolute gainLoss and percentage gainLossPct
+ */
 function computeHoldingGainLoss(currentValue: number, investedCost: number): {
   gainLoss: number;
   gainLossPct: number;
@@ -88,6 +95,15 @@ function computeHoldingGainLoss(currentValue: number, investedCost: number): {
   return { gainLoss, gainLossPct };
 }
 
+/**
+ * Resolves day valuation change for a holding, prioritizing server-synced metrics.
+ *
+ * Falls back to computing differences against SQLite nav_history if server values are zero.
+ *
+ * @param db - SQLite database instance
+ * @param holding - Holding entity to inspect
+ * @returns Object with dayChange in INR and percentage dayChangePct
+ */
 async function resolveHoldingDayChange(
   db: SQLiteDatabase,
   holding: HoldingEntity,
@@ -182,15 +198,23 @@ export async function getDashboardSummary(
   };
 }
 
-function extractHoldingReturnRate(h: EnrichedHolding): number {
-  if (typeof h.xirr === 'number' && !Number.isNaN(h.xirr) && h.xirr !== 0) {
-    return h.xirr;
+/**
+ * Extracts a normalized decimal return rate from an enriched holding.
+ *
+ * Checks in priority order: XIRR rate -> explicit absolute return -> calculated gain/loss percentage.
+ *
+ * @param holding - The enriched holding entity
+ * @returns Normalized decimal rate (e.g. 0.15 for 15%)
+ */
+function extractHoldingReturnRate(holding: EnrichedHolding): number {
+  if (typeof holding.xirr === 'number' && !Number.isNaN(holding.xirr) && holding.xirr !== 0) {
+    return holding.xirr;
   }
-  if (typeof h.absolute_return === 'number' && !Number.isNaN(h.absolute_return)) {
-    return h.absolute_return;
+  if (typeof holding.absolute_return === 'number' && !Number.isNaN(holding.absolute_return)) {
+    return holding.absolute_return;
   }
-  if (typeof h.gainLossPct === 'number' && !Number.isNaN(h.gainLossPct)) {
-    return h.gainLossPct / 100;
+  if (typeof holding.gainLossPct === 'number' && !Number.isNaN(holding.gainLossPct)) {
+    return holding.gainLossPct / 100;
   }
   return 0;
 }
