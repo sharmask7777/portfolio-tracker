@@ -233,6 +233,29 @@ describe('portfolio-service', () => {
       expect(summary.dayGain).toBe(2000);
       expect(summary.dayGainPct).toBe(3.45);
     });
+
+    it('uses server day_change and day_change_pct directly without nav_history', async () => {
+      const holdingWithServerChange: HoldingEntity = {
+        ...sampleHoldings[0]!,
+        day_change: 1500,
+        day_change_pct: 2.5,
+      };
+      const snapshot: PortfolioSnapshotInput = {
+        portfolio: { id: 'p1', name: 'Primary', updated_at: '2026-11-17T10:00:00Z' },
+        folios: [{ folio_number: '12345/A', amc_name: 'HDFC AMC', pan: 'ABCDE1234F', updated_at: '2026-11-17T10:00:00Z' }],
+        holdings: [holdingWithServerChange],
+      };
+      await savePortfolioSnapshot(db, snapshot);
+
+      const enriched = await getEnrichedHoldings(db);
+      expect(enriched).toHaveLength(1);
+      expect(enriched[0]?.dayChange).toBe(1500);
+      expect(enriched[0]?.dayChangePct).toBe(2.5);
+
+      const summary = await getDashboardSummary(db);
+      expect(summary.dayGain).toBe(1500);
+      expect(summary.dayGainPct).toBe(2.56);
+    });
   });
 
   describe('Holdings Filtering and Grouping', () => {

@@ -24,6 +24,11 @@ export interface HoldingEntity {
   asset_class: string;
   nav_date: string;
   updated_at: string;
+  day_change?: number | undefined;
+  day_change_pct?: number | undefined;
+  xirr?: number | undefined;
+  absolute_return?: number | undefined;
+  asset_category?: string | null | undefined;
 }
 
 export interface TransactionEntity {
@@ -102,7 +107,12 @@ CREATE TABLE IF NOT EXISTS holdings (
   current_value REAL NOT NULL,
   asset_class TEXT NOT NULL,
   nav_date TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  day_change REAL DEFAULT 0,
+  day_change_pct REAL DEFAULT 0,
+  xirr REAL DEFAULT 0,
+  absolute_return REAL DEFAULT 0,
+  asset_category TEXT
 );
 `.trim();
 

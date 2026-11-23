@@ -76,6 +76,29 @@ async function calculateHoldingDayChange(
   return { dayChange: 0, dayChangePct: 0 };
 }
 
+function computeHoldingGainLoss(currentValue: number, investedCost: number): {
+  gainLoss: number;
+  gainLossPct: number;
+} {
+  const gainLoss = Math.round((currentValue - investedCost) * 100) / 100;
+  const gainLossPct = investedCost > 0
+    ? Math.round((gainLoss / investedCost) * 100 * 100) / 100
+    : 0;
+  return { gainLoss, gainLossPct };
+}
+
+async function resolveHoldingDayChange(
+  db: SQLiteDatabase,
+  holding: HoldingEntity,
+): Promise<{ dayChange: number; dayChangePct: number }> {
+  const dayChange = holding.day_change ?? 0;
+  const dayChangePct = holding.day_change_pct ?? 0;
+  if (dayChange !== 0 || dayChangePct !== 0) {
+    return { dayChange, dayChangePct };
+  }
+  return calculateHoldingDayChange(db, holding);
+}
+
 export async function getEnrichedHoldings(
   db?: SQLiteDatabase,
 ): Promise<EnrichedHolding[]> {
@@ -87,11 +110,8 @@ export async function getEnrichedHoldings(
   const results: EnrichedHolding[] = [];
 
   for (const h of rawHoldings) {
-    const { dayChange, dayChangePct } = await calculateHoldingDayChange(targetDb, h);
-    const gainLoss = Math.round((h.current_value - h.invested_cost) * 100) / 100;
-    const gainLossPct = h.invested_cost > 0
-      ? Math.round((gainLoss / h.invested_cost) * 100 * 100) / 100
-      : 0;
+    const { dayChange, dayChangePct } = await resolveHoldingDayChange(targetDb, h);
+    const { gainLoss, gainLossPct } = computeHoldingGainLoss(h.current_value, h.invested_cost);
     results.push({ ...h, dayChange, dayChangePct, gainLoss, gainLossPct });
   }
 
@@ -107,10 +127,7 @@ export async function getEnrichedClosedHoldings(
   }
   const rawClosed = await getClosedHoldings(targetDb);
   return rawClosed.map((h) => {
-    const gainLoss = Math.round((h.current_value - h.invested_cost) * 100) / 100;
-    const gainLossPct = h.invested_cost > 0
-      ? Math.round((gainLoss / h.invested_cost) * 100 * 100) / 100
-      : 0;
+    const { gainLoss, gainLossPct } = computeHoldingGainLoss(h.current_value, h.invested_cost);
     return { ...h, dayChange: 0, dayChangePct: 0, gainLoss, gainLossPct };
   });
 }
