@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   mapRawFolioToHolding,
   summarizeHoldings,
+  normalizeAssetClass,
+  buildAssetAllocation,
   type ServerFolioData,
   type EnrichedHolding,
 } from './portfolio-calculations';
@@ -123,6 +125,93 @@ describe('portfolio-calculations', () => {
       expect(summary.totalInvestedCost).toBe(15000);
       expect(summary.dayGain).toBe(150);
       expect(summary.dayGainPct).toBe(0.93);
+    });
+  });
+
+  describe('normalizeAssetClass canonical mapping', () => {
+    it('maps schemes with AssetCategory ARBITRAGE or name containing Arbitrage to Arbitrage', () => {
+      expect(normalizeAssetClass('Kotak Arbitrage Fund', 'ARBITRAGE')).toBe('Arbitrage');
+      expect(normalizeAssetClass('Kotak Equity Arbitrage Fund')).toBe('Arbitrage');
+      expect(normalizeAssetClass('', 'ARBITRAGE')).toBe('Arbitrage');
+    });
+
+    it('maps schemes with AssetCategory EQUITY, DEBT, GOLD, CASH to respective classes', () => {
+      expect(normalizeAssetClass('Flexi Cap Fund', 'EQUITY')).toBe('Equity');
+      expect(normalizeAssetClass('Short Term Bond', 'DEBT')).toBe('Debt');
+      expect(normalizeAssetClass('Gold BeES', 'GOLD')).toBe('Gold');
+      expect(normalizeAssetClass('Overnight Liquid', 'CASH')).toBe('Cash');
+    });
+
+    it('maps unknown schemes to Other and never Gold/Others, preventing rogue gold bug', () => {
+      expect(normalizeAssetClass('Unclassified Real Estate Venture')).toBe('Other');
+      expect(normalizeAssetClass('', '')).toBe('Other');
+      expect(normalizeAssetClass('Random Instrument', 'OTHER')).toBe('Other');
+      expect(normalizeAssetClass('Unknown XYZ')).not.toBe('Gold/Others');
+    });
+  });
+
+  describe('buildAssetAllocation canonical categories and colors', () => {
+    it('maps 6 canonical categories with standard palette', () => {
+      const holdings: EnrichedHolding[] = [
+        {
+          id: 'h1',
+          folio_number: 'F1',
+          amfi_code: '1',
+          scheme_name: 'Equity Fund',
+          isin: 'INF1',
+          units: 10,
+          invested_cost: 1000,
+          current_nav: 100,
+          current_value: 1000,
+          asset_class: 'EQUITY',
+          nav_date: '2026-03-31',
+          updated_at: '2026-03-31T10:00:00.000Z',
+          day_change: 0,
+          day_change_pct: 0,
+          xirr: 0,
+          absolute_return: 0,
+          asset_category: 'EQUITY',
+          dayChange: 0,
+          dayChangePct: 0,
+          gainLoss: 0,
+          gainLossPct: 0,
+        },
+        {
+          id: 'h2',
+          folio_number: 'F2',
+          amfi_code: '2',
+          scheme_name: 'Arbitrage Fund',
+          isin: 'INF2',
+          units: 10,
+          invested_cost: 500,
+          current_nav: 50,
+          current_value: 500,
+          asset_class: 'HYBRID',
+          nav_date: '2026-03-31',
+          updated_at: '2026-03-31T10:00:00.000Z',
+          day_change: 0,
+          day_change_pct: 0,
+          xirr: 0,
+          absolute_return: 0,
+          asset_category: 'ARBITRAGE',
+          dayChange: 0,
+          dayChangePct: 0,
+          gainLoss: 0,
+          gainLossPct: 0,
+        },
+      ];
+
+      const allocation = buildAssetAllocation(holdings, 1500);
+      const names = allocation.map((a) => a.name);
+      expect(names).toContain('Equity');
+      expect(names).toContain('Arbitrage');
+      expect(names).not.toContain('Gold/Others');
+
+      const eq = allocation.find((a) => a.name === 'Equity');
+      expect(eq?.color).toBe('#38bdf8');
+
+      const arb = allocation.find((a) => a.name === 'Arbitrage');
+      expect(arb?.color).toBe('#ec4899');
     });
   });
 });

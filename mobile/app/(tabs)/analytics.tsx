@@ -79,16 +79,53 @@ export function AllocationCard({ name, value, pct, color }: AllocationCardProps)
 
 export function AllocationCardsGrid({ xrayData }: { xrayData: XRayData }): React.ReactElement {
   const alloc = xrayData.assetAllocation;
-  const items: AllocationCardProps[] = [
+  const rawItems: AllocationCardProps[] = [
     { name: 'Equity', value: alloc.equity.value, pct: alloc.equity.percentage, color: '#38bdf8' },
     { name: 'Debt', value: alloc.debt.value, pct: alloc.debt.percentage, color: '#10b981' },
-    { name: 'Cash', value: alloc.cash.value, pct: alloc.cash.percentage, color: '#a855f7' },
+    { name: 'Arbitrage', value: alloc.arbitrage?.value ?? 0, pct: alloc.arbitrage?.percentage ?? 0, color: '#ec4899' },
+    { name: 'Cash', value: alloc.cash.value, pct: alloc.cash.percentage, color: '#06b6d4' },
     { name: 'Gold', value: alloc.gold.value, pct: alloc.gold.percentage, color: '#f59e0b' },
+    { name: 'Other', value: alloc.other.value, pct: alloc.other.percentage, color: '#71717a' },
   ];
+  const items = rawItems.filter(
+    (it) => it.value > 0 || ['Equity', 'Debt', 'Cash', 'Gold'].includes(it.name),
+  );
 
   return (
-    <View style={styles.allocationSection}>
+    <View style={styles.allocationSection} testID="allocation-cards-grid">
       <Text style={styles.sectionTitle}>Asset Allocation</Text>
+      <View style={styles.allocationGrid}>
+        {items.map((it) => (
+          <AllocationCard key={it.name} {...it} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+export interface MarketCapSectionProps {
+  marketCap: XRayData['marketCap'];
+}
+
+export function MarketCapSection({ marketCap }: MarketCapSectionProps): React.ReactElement {
+  const items: AllocationCardProps[] = [
+    { name: 'Large Cap', value: marketCap.large.value, pct: marketCap.large.percentage, color: '#38bdf8' },
+    { name: 'Mid Cap', value: marketCap.mid.value, pct: marketCap.mid.percentage, color: '#a855f7' },
+    { name: 'Small Cap', value: marketCap.small.value, pct: marketCap.small.percentage, color: '#f59e0b' },
+  ];
+
+  if (marketCap.other && marketCap.other.value > 0) {
+    items.push({
+      name: 'Other',
+      value: marketCap.other.value,
+      pct: marketCap.other.percentage,
+      color: '#71717a',
+    });
+  }
+
+  return (
+    <View style={styles.allocationSection} testID="market-cap-section">
+      <Text style={styles.sectionTitle}>Market Cap Breakdown</Text>
       <View style={styles.allocationGrid}>
         {items.map((it) => (
           <AllocationCard key={it.name} {...it} />
@@ -229,6 +266,7 @@ export default function AnalyticsScreen(): React.ReactElement {
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38bdf8" />}>
         <AnalyticsHeader />
         <AllocationCardsGrid xrayData={xrayData} />
+        <MarketCapSection marketCap={xrayData.marketCap} />
         <ExpenseAnalysisCard {...expenseAnalysis} />
         <Text style={styles.sectionTitle}>Visual Treemap</Text>
         <SvgTreemap rootNode={rootHierarchyNode} onSelectStock={handleSelectFromTreemap} />

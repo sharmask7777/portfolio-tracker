@@ -156,10 +156,9 @@ describe('portfolio-service', () => {
       expect(normalizeAssetClass('Large Cap Stock')).toBe('Equity');
       expect(normalizeAssetClass('DEBT_SHORT_TERM')).toBe('Debt');
       expect(normalizeAssetClass('Liquid Fund')).toBe('Debt');
-      expect(normalizeAssetClass('Aggressive Hybrid')).toBe('Hybrid');
-      expect(normalizeAssetClass('BALANCED_ADVANTAGE')).toBe('Hybrid');
-      expect(normalizeAssetClass('Gold ETF')).toBe('Gold/Others');
-      expect(normalizeAssetClass('')).toBe('Gold/Others');
+      expect(normalizeAssetClass('Kotak Arbitrage Fund')).toBe('Arbitrage');
+      expect(normalizeAssetClass('Gold ETF')).toBe('Gold');
+      expect(normalizeAssetClass('')).toBe('Other');
     });
 
     it('formats Indian rupee currency correctly', () => {

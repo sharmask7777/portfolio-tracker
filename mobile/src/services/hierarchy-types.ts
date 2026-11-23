@@ -46,6 +46,7 @@ export interface XRayData {
     cash: { percentage: number; value: number };
     gold: { percentage: number; value: number };
     other: { percentage: number; value: number };
+    arbitrage?: { percentage: number; value: number } | undefined;
   };
   sectors: { name: string; percentage: number; value: number }[];
   marketCap: {
