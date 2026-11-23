@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { formatInr } from '../../services/portfolio-service';
 
 /**
@@ -19,7 +19,9 @@ export interface SimulationFormProps {
   /** Current NAV per unit */
   currentNav: number;
   /** Submit handler */
-  onSubmit: () => void;
+  onSubmit: () => void | Promise<void>;
+  /** Optional loading state */
+  loading?: boolean | undefined;
 }
 
 const styles = StyleSheet.create({
@@ -121,6 +123,7 @@ export function SimulationForm({
   unitsToSell,
   currentNav,
   onSubmit,
+  loading,
 }: SimulationFormProps): React.ReactElement {
   return (
     <View>
@@ -145,12 +148,16 @@ export function SimulationForm({
       </View>
 
       <TouchableOpacity
-        style={[styles.submitBtn, unitsToSell <= 0 && { opacity: 0.5 }]}
+        style={[styles.submitBtn, (unitsToSell <= 0 || loading) && { opacity: 0.5 }]}
         testID="simulate-submit-btn"
-        disabled={unitsToSell <= 0}
+        disabled={unitsToSell <= 0 || loading}
         onPress={onSubmit}
       >
-        <Text style={styles.submitBtnText}>Calculate Post-Tax Proceeds</Text>
+        {loading ? (
+          <ActivityIndicator color="#ffffff" size="small" testID="sim-loading-indicator" />
+        ) : (
+          <Text style={styles.submitBtnText}>Calculate Post-Tax Proceeds</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
