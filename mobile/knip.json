@@ -4,7 +4,8 @@
     "app/**/*.{ts,tsx}!",
     "src/db/index.ts!",
     "src/feeds/index.ts!",
-    "src/services/index.ts!"
+    "src/services/index.ts!",
+    "src/env.ts!"
   ],
   "project": [
     "app/**/*.{ts,tsx}!",

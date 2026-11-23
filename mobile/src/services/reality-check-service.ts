@@ -148,22 +148,40 @@ function computeBenchmarkSpread(
 }
 
 /**
- * Assembles the sequential 5-stage drag waterfall.
+ * Assembles the sequential 6-stage drag waterfall aligned with Web DragWaterfall
+ * and backend DragDecompositionDto.
+ *
+ * 1. Gross Nominal
+ * 2. Sec 50AA Debt Drag
+ * 3. Sec 112A/111A Equity Drag
+ * 4. 4% Cess Drag (Cess & Overheads)
+ * 5. CPI Inflation Drag
+ * 6. Real Purchasing XIRR
  *
  * @param nominalReturn Gross nominal return
  * @param decomp Decomposed tax, inflation, and real returns
- * @returns Array of waterfall stages
+ * @returns Array of 6 waterfall stages
  */
 function buildWaterfallStages(
   nominalReturn: number,
   decomp: ReturnsDecomposition,
 ): DragWaterfallStage[] {
+  // Approximate standard statutory breakdown for client-side model:
+  // - Sec 50AA Debt Drag: ~30% of total tax drag
+  // - Sec 112A/111A Equity Drag: ~66% of total tax drag
+  // - 4% Cess Drag: ~4% of total tax drag
+  const totalTax = decomp.taxDrag;
+  const debtDrag = totalTax > 0 ? Math.round(totalTax * 0.30 * 1000000) / 1000000 : 0;
+  const equityDrag = totalTax > 0 ? Math.round(totalTax * 0.66 * 1000000) / 1000000 : 0;
+  const cessDrag = totalTax > 0 ? Math.round((totalTax - debtDrag - equityDrag) * 1000000) / 1000000 : 0;
+
   return [
     { step: 1, label: 'Gross Nominal', rate: nominalReturn, drag: 0, description: 'Pre-tax annualized return' },
-    { step: 2, label: 'Tax Drag', rate: decomp.taxDrag, drag: -decomp.taxDrag, description: 'Statutory capital gains drag' },
-    { step: 3, label: 'Post-Tax Nominal', rate: decomp.postTaxReturn, drag: 0, description: 'Net retained post statutory tax' },
-    { step: 4, label: 'CPI Inflation Drag', rate: decomp.inflationDrag, drag: -decomp.inflationDrag, description: 'Purchasing power deflator erosion' },
-    { step: 5, label: 'Real Purchasing Return', rate: decomp.realPostTaxReturn, drag: 0, description: 'True wealth compounding over inflation' },
+    { step: 2, label: 'Sec 50AA Debt Drag', rate: debtDrag, drag: -debtDrag, description: 'Slab rate debt fund taxation' },
+    { step: 3, label: 'Sec 112A/111A Equity Drag', rate: equityDrag, drag: -equityDrag, description: '12.5% LTCG / 20% STCG equity drag' },
+    { step: 4, label: '4% Cess Drag', rate: cessDrag, drag: -cessDrag, description: 'Health & education cess overhead' },
+    { step: 5, label: 'CPI Inflation Drag', rate: decomp.inflationDrag, drag: -decomp.inflationDrag, description: 'Purchasing power deflator erosion' },
+    { step: 6, label: 'Real Purchasing XIRR', rate: decomp.realPostTaxReturn, drag: 0, description: 'True wealth compounding over inflation' },
   ];
 }
 

@@ -22,6 +22,15 @@ export interface GroupedHoldings {
   holdings: EnrichedHolding[];
 }
 
+export interface ServerTransactionData {
+  id?: string;
+  type?: string;
+  date?: string;
+  units?: number;
+  nav?: number;
+  amount?: number;
+}
+
 export interface ServerFolioData {
   id?: string;
   number?: string;
@@ -40,7 +49,10 @@ export interface ServerFolioData {
     investedAmount?: number;
     currentValue?: number;
     currentPrice?: number;
+    xirr?: number;
+    absoluteReturn?: number;
   };
+  transactions?: ServerTransactionData[];
 }
 
 export function normalizeAssetClass(
@@ -196,7 +208,6 @@ export function mapRawFolioToHolding(
   now: string,
 ): HoldingEntity | null {
   const units = Number(f.units || 0);
-  if (units <= 0) return null;
 
   const folioNumber = extractFolioNumber(f);
   const { price, val } = extractHoldingPrices(f, units);

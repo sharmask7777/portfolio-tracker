@@ -260,6 +260,7 @@ export function ModalHeader({ name, sector, onClose }: ModalHeaderProps): React.
 export interface SummaryProps {
   absoluteValue: number;
   pct: string;
+  denominatorLabel?: string | undefined;
 }
 
 /**
@@ -268,7 +269,7 @@ export interface SummaryProps {
  * @param props Summary properties
  * @returns Grid element
  */
-export function StockSummaryCards({ absoluteValue, pct }: SummaryProps): React.ReactElement {
+export function StockSummaryCards({ absoluteValue, pct, denominatorLabel = '% of Portfolio' }: SummaryProps): React.ReactElement {
   return (
     <View style={styles.summaryGrid}>
       <View style={styles.summaryCard}>
@@ -277,7 +278,7 @@ export function StockSummaryCards({ absoluteValue, pct }: SummaryProps): React.R
       </View>
       <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>Portfolio Weight</Text>
-        <Text style={styles.summaryHighlight}>{pct}%</Text>
+        <Text style={styles.summaryHighlight}>{pct}% {denominatorLabel}</Text>
       </View>
     </View>
   );
@@ -298,7 +299,10 @@ export function StockDetailModal({
 }: StockDetailModalProps): React.ReactElement | null {
   if (!visible || !stock) return null;
 
-  const pct = (stock.percentage * (stock.percentage <= 1 ? 100 : 1)).toFixed(2);
+  const weightOfPortfolio = totalPortfolioValue > 0
+    ? (stock.absoluteValue / totalPortfolioValue) * 100
+    : stock.percentage * (stock.percentage <= 1 ? 100 : 1);
+  const pct = weightOfPortfolio.toFixed(2);
   const fundCount = stock.contributions?.length || 0;
 
   return (
@@ -306,7 +310,7 @@ export function StockDetailModal({
       <View style={styles.backdrop}>
         <View style={styles.modalContainer}>
           <ModalHeader name={stock.name} sector={stock.sector} onClose={onClose} />
-          <StockSummaryCards absoluteValue={stock.absoluteValue} pct={pct} />
+          <StockSummaryCards absoluteValue={stock.absoluteValue} pct={pct} denominatorLabel="% of Portfolio" />
 
           {fundCount > 1 && (
             <View style={styles.overlapBanner}>

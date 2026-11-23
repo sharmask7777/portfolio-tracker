@@ -54,6 +54,15 @@ export interface XRayData {
     small: { percentage: number; value: number };
     other?: { percentage: number; value: number } | undefined;
   };
+  expenseAnalysis?: {
+    totalAnnualFees: number;
+    weightedAvgTer: number;
+    categoryBreakdown: {
+      category: string;
+      totalFees: number;
+      avgTer: number;
+    }[];
+  } | undefined;
   exArbitrage?: {
     assetAllocation: {
       equity: { percentage: number; value: number };

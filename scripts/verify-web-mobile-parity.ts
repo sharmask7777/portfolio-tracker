@@ -217,7 +217,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
     id: 'cas-upload',
     name: 'CAS Statement Upload & Sync Queue',
     webComponents: [
-      'frontend/src/components/Dashboard/TransactionSidePanel.tsx',
+      'frontend/src/App.tsx',
     ],
     mobileScreens: ['mobile/app/(tabs)/upload.tsx'],
     mobileComponents: [
@@ -467,14 +467,16 @@ function verifyCorePackageExports(baseDir: string): readonly string[] {
 function verifyClientCoreViewConsumption(baseDir: string): readonly string[] {
   const violations: string[] = [];
   const webApp = parseAst(baseDir, 'frontend/src/App.tsx');
-  if (!webApp || !webApp.content.includes('@portfolio/core-view')) {
-    violations.push('frontend/src/App.tsx must import from @portfolio/core-view');
+  const webController = parseAst(baseDir, 'frontend/src/useDashboardController.ts');
+  const webContent = (webApp?.content || '') + (webController?.content || '');
+  if (!webContent.includes('@portfolio/core-view')) {
+    violations.push('frontend/src/App.tsx (or useDashboardController) must import from @portfolio/core-view');
   } else {
-    if (!webApp.content.includes('usePortfolioScope')) {
-      violations.push('frontend/src/App.tsx must consume usePortfolioScope');
+    if (!webContent.includes('usePortfolioScope')) {
+      violations.push('frontend/src/App.tsx (or useDashboardController) must consume usePortfolioScope');
     }
-    if (!webApp.content.includes('useConsolidatedHoldings')) {
-      violations.push('frontend/src/App.tsx must consume useConsolidatedHoldings');
+    if (!webContent.includes('useConsolidatedHoldings')) {
+      violations.push('frontend/src/App.tsx (or useDashboardController) must consume useConsolidatedHoldings');
     }
   }
 
@@ -498,8 +500,12 @@ function verifyClientCoreViewConsumption(baseDir: string): readonly string[] {
 function verifyScopeSelectorMounting(baseDir: string): readonly string[] {
   const violations: string[] = [];
   const webApp = parseAst(baseDir, 'frontend/src/App.tsx');
-  if (webApp && !findJsxElement(webApp.sf, 'FamilySelector')) {
-    violations.push('frontend/src/App.tsx must mount ScopeSelector (FamilySelector)');
+  const webActionHeader = parseAst(baseDir, 'frontend/src/DashboardActionHeader.tsx');
+  const mountsScopeSelector =
+    (webApp && findJsxElement(webApp.sf, 'FamilySelector')) ||
+    (webActionHeader && findJsxElement(webActionHeader.sf, 'FamilySelector'));
+  if (!mountsScopeSelector) {
+    violations.push('frontend/src/App.tsx (or DashboardActionHeader) must mount ScopeSelector (FamilySelector)');
   }
 
   const mobileScopeScreens = [
@@ -507,6 +513,10 @@ function verifyScopeSelectorMounting(baseDir: string): readonly string[] {
     'mobile/app/(tabs)/holdings.tsx',
     'mobile/app/(tabs)/analytics.tsx',
     'mobile/app/(tabs)/tax.tsx',
+    ...(fs.existsSync(path.resolve(baseDir, 'mobile/app/(tabs)/insights.tsx')) &&
+    fs.readFileSync(path.resolve(baseDir, 'mobile/app/(tabs)/insights.tsx'), 'utf8').includes('ScopeSelectorHeader')
+      ? ['mobile/app/(tabs)/insights.tsx']
+      : []),
   ];
   for (const screenPath of mobileScopeScreens) {
     const screenAst = parseAst(baseDir, screenPath);
@@ -523,16 +533,20 @@ function verifyScopeSelectorMounting(baseDir: string): readonly string[] {
 function verifyMultiFolioExpandableBreakdown(baseDir: string): readonly string[] {
   const violations: string[] = [];
   const webApp = parseAst(baseDir, 'frontend/src/App.tsx');
-  if (webApp && !hasPropertyAccess(webApp.sf, 'group', 'pans')) {
-    violations.push('frontend/src/App.tsx must render member PAN badges via group.pans');
+  const webHoldings = parseAst(baseDir, 'frontend/src/components/Dashboard/SchemeMasterRow.tsx') || parseAst(baseDir, 'frontend/src/components/Holdings/SchemeMasterRow.tsx');
+  const hasWebPans = (webApp && hasPropertyAccess(webApp.sf, 'group', 'pans')) || (webHoldings && hasPropertyAccess(webHoldings.sf, 'group', 'pans'));
+  if (!hasWebPans) {
+    violations.push('frontend/src/App.tsx or SchemeMasterRow.tsx must render member PAN badges via group.pans');
   }
 
   const schemeCard = parseAst(baseDir, 'mobile/src/components/Holdings/SchemeGroupCard.tsx');
+  const cardRows = parseAst(baseDir, 'mobile/src/components/Holdings/scheme-card-rows.tsx');
   if (schemeCard) {
     if (!hasPropertyAccess(schemeCard.sf, 'group', 'pans') && !schemeCard.content.includes('group.pans')) {
       violations.push('mobile/src/components/Holdings/SchemeGroupCard.tsx must access group.pans for PAN badges');
     }
-    if (!findJsxElement(schemeCard.sf, 'FolioChildRow')) {
+    const mountsFolioChild = findJsxElement(schemeCard.sf, 'FolioChildRow') || (cardRows && findJsxElement(cardRows.sf, 'FolioChildRow'));
+    if (!mountsFolioChild) {
       violations.push('mobile/src/components/Holdings/SchemeGroupCard.tsx must mount FolioChildRow in expanded view');
     }
   }

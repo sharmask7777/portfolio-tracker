@@ -54,6 +54,7 @@ vi.mock('expo-router', () => ({
 vi.mock('react-native', () => ({
   StyleSheet: { create: (s: Record<string, unknown>) => s },
   View: (props: Record<string, unknown>) => ({ type: 'View', props }),
+  KeyboardAvoidingView: (props: Record<string, unknown>) => ({ type: 'KeyboardAvoidingView', props }),
   Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
   ScrollView: (props: Record<string, unknown>) => ({ type: 'ScrollView', props }),
   TextInput: (props: Record<string, unknown>) => ({ type: 'TextInput', props }),
@@ -77,6 +78,9 @@ vi.mock('react-native-svg', () => {
     TSpan: (props: Record<string, unknown>) => ({ type: 'TSpan', props }),
     G: (props: Record<string, unknown>) => ({ type: 'G', props }),
     Path: (props: Record<string, unknown>) => ({ type: 'Path', props }),
+    Defs: (props: Record<string, unknown>) => ({ type: 'Defs', props }),
+    Pattern: (props: Record<string, unknown>) => ({ type: 'Pattern', props }),
+    Line: (props: Record<string, unknown>) => ({ type: 'Line', props }),
   };
 });
 

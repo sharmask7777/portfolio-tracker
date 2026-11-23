@@ -8,7 +8,7 @@
     "build": "pnpm build:verify && vite build",
     "build:verify": "pnpm lint && pnpm typecheck && pnpm knip",
     "typecheck": "tsc -b --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "knip": "knip --production",
     "preview": "vite preview",
     "test:e2e": "playwright test",

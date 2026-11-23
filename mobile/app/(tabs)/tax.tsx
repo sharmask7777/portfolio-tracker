@@ -15,6 +15,7 @@ import {
   HarvestOpportunitiesList,
   SimulationModal,
 } from '../../src/components/Tax';
+import { exportScheduleCgCsv } from '../../src/services/itr-csv-service';
 import {
   buildTaxHarvestPlan,
   computeTaxBreakdowns,
@@ -50,7 +51,7 @@ import { ScopeSelectorHeader } from '../../src/components/Navigation';
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#09090b' },
-  content: { padding: 20, paddingTop: 48 },
+  content: { padding: 20, paddingTop: 16 },
   header: { marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   category: { fontSize: 12, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   title: { fontSize: 26, fontWeight: '800', color: '#f4f4f5' },
@@ -59,23 +60,31 @@ const styles = StyleSheet.create({
 });
 
 function mapHoldingsToHarvestInputs(holdings: EnrichedHolding[]): HoldingHarvestInput[] {
-  return holdings.map((h) => ({
-    folioId: h.folio_number,
-    schemeName: h.scheme_name,
-    isin: h.isin ?? undefined,
-    isElss: h.scheme_name.toLowerCase().includes('elss'),
-    currentUnits: h.units,
-    currentNav: h.current_nav,
-    lots: [
-      {
-        lotId: `LOT-${h.id}`,
-        buyDate: '2023-04-01',
-        units: h.units,
-        buyPrice: h.invested_cost > 0 && h.units > 0 ? h.invested_cost / h.units : h.current_nav * 0.8,
-        isElss: h.scheme_name.toLowerCase().includes('elss'),
-      },
-    ],
-  }));
+  return holdings.map((h) => {
+    const buyPrice = h.invested_cost > 0 && h.units > 0 ? h.invested_cost / h.units : h.current_nav * 0.8;
+    const buyDate = h.nav_date && !isNaN(Date.parse(h.nav_date))
+      ? h.nav_date
+      : new Date().toISOString().split('T')[0] ?? '2024-04-01';
+    const isElss = h.scheme_name.toLowerCase().includes('elss');
+
+    return {
+      folioId: h.folio_number,
+      schemeName: h.scheme_name,
+      isin: h.isin ?? undefined,
+      isElss,
+      currentUnits: h.units,
+      currentNav: h.current_nav,
+      lots: [
+        {
+          lotId: `LOT-${h.id}`,
+          buyDate,
+          units: h.units,
+          buyPrice,
+          isElss,
+        },
+      ],
+    };
+  });
 }
 
 interface ActiveSimulationTarget {
@@ -158,17 +167,18 @@ function useTaxCalculations(
   selectedFY: string,
   cachedAnalytics: CachedAnalyticsResult | null,
 ): TaxDerivedCalculations {
-  const harvestPlan = useMemo(() => {
-    const harvestInputs = mapHoldingsToHarvestInputs(filteredHoldings);
-    return buildTaxHarvestPlan(harvestInputs, 0);
-  }, [filteredHoldings]);
-
   const taxResult = useMemo(() => {
     if (cachedAnalytics?.taxSummary) {
       return mapServerSummaryToResult(cachedAnalytics.taxSummary, selectedFY);
     }
     return computeTaxBreakdowns([], selectedFY);
   }, [cachedAnalytics, selectedFY]);
+
+  const harvestPlan = useMemo(() => {
+    const harvestInputs = mapHoldingsToHarvestInputs(filteredHoldings);
+    const realizedLtcg = Math.max(0, taxResult.totalEquityLTCG);
+    return buildTaxHarvestPlan(harvestInputs, realizedLtcg);
+  }, [filteredHoldings, taxResult.totalEquityLTCG]);
 
   const advanceMatrix = useMemo(() => {
     if (cachedAnalytics?.taxSummary) {
@@ -189,10 +199,20 @@ interface MainContentProps {
   onSelectFY: (fy: string) => void;
   onSimulateHarvest: (opp: HarvestOpportunity) => void;
   onOpenSimulate: () => void;
+  onExportScheduleCg: () => void;
 }
 
 function MainContent(props: MainContentProps): React.ReactElement {
-  const { selectedFY, calcs, refreshing, onRefresh, onSelectFY, onSimulateHarvest, onOpenSimulate } = props;
+  const {
+    selectedFY,
+    calcs,
+    refreshing,
+    onRefresh,
+    onSelectFY,
+    onSimulateHarvest,
+    onOpenSimulate,
+    onExportScheduleCg,
+  } = props;
   return (
     <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
       <TaxHeader onSimulate={onOpenSimulate} />
@@ -201,6 +221,7 @@ function MainContent(props: MainContentProps): React.ReactElement {
         taxResult={calcs.taxResult}
         remainingExemption={calcs.harvestPlan.remainingExemption}
         onFYChange={onSelectFY}
+        onExportScheduleCg={onExportScheduleCg}
       />
       <AdvanceTaxMatrixCard selectedFY={selectedFY} matrix={calcs.advanceMatrix} />
       <HarvestOpportunitiesList plan={calcs.harvestPlan} onSimulateHarvest={onSimulateHarvest} />
@@ -223,21 +244,11 @@ function useTaxScopeFilter(holdings: EnrichedHolding[], profiles: FamilyProfile[
   return { scopeState, filteredHoldings };
 }
 
-/**
- * Tax & Statutory Compliance Tab screen.
- *
- * @returns React Native tax tab screen component
- */
-export default function TaxScreen(): React.ReactElement {
-  const [selectedFY, setSelectedFY] = useState<string>('2024-25');
+function useTaxSimulation() {
   const [simModalOpen, setSimModalOpen] = useState<boolean>(false);
   const [simTarget, setSimTarget] = useState<ActiveSimulationTarget | null>(null);
 
-  const { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics } = useTaxData();
-  const { scopeState, filteredHoldings } = useTaxScopeFilter(holdings, profiles, folios);
-  const calcs = useTaxCalculations(filteredHoldings, selectedFY, cachedAnalytics);
-
-  const handleSimulateHarvest = (opportunity: HarvestOpportunity) => {
+  const handleSimulateHarvest = useCallback((opportunity: HarvestOpportunity) => {
     setSimTarget({
       schemeName: opportunity.schemeName,
       folioId: opportunity.folioId,
@@ -246,7 +257,31 @@ export default function TaxScreen(): React.ReactElement {
       isElss: opportunity.schemeName.toLowerCase().includes('elss'),
     });
     setSimModalOpen(true);
-  };
+  }, []);
+
+  const openBlankSimulate = useCallback(() => {
+    setSimTarget(null);
+    setSimModalOpen(true);
+  }, []);
+
+  return { simModalOpen, setSimModalOpen, simTarget, handleSimulateHarvest, openBlankSimulate };
+}
+
+/**
+ * Tax & Statutory Compliance Tab screen.
+ *
+ * @returns React Native tax tab screen component
+ */
+export default function TaxScreen(): React.ReactElement {
+  const [selectedFY, setSelectedFY] = useState<string>('2024-25');
+  const { simModalOpen, setSimModalOpen, simTarget, handleSimulateHarvest, openBlankSimulate } = useTaxSimulation();
+  const { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics } = useTaxData();
+  const { scopeState, filteredHoldings } = useTaxScopeFilter(holdings, profiles, folios);
+  const calcs = useTaxCalculations(filteredHoldings, selectedFY, cachedAnalytics);
+
+  const handleExportScheduleCg = useCallback(() => {
+    void exportScheduleCgCsv(selectedFY, calcs.taxResult, calcs.advanceMatrix);
+  }, [selectedFY, calcs.taxResult, calcs.advanceMatrix]);
 
   return (
     <View style={styles.container}>
@@ -264,7 +299,8 @@ export default function TaxScreen(): React.ReactElement {
         onRefresh={onRefresh}
         onSelectFY={setSelectedFY}
         onSimulateHarvest={handleSimulateHarvest}
-        onOpenSimulate={() => { setSimTarget(null); setSimModalOpen(true); }}
+        onOpenSimulate={openBlankSimulate}
+        onExportScheduleCg={handleExportScheduleCg}
       />
       <SimulationModal
         visible={simModalOpen}

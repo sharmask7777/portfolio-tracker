@@ -75,4 +75,28 @@ describe('tax-summary-mapper', () => {
     expect(result.ltcgExemptClaimed).toBe(118000);
     expect(result.grandTotalTax).toBe(6760 + 6890 + 6240);
   });
+
+  it('maps Section 112 Debt LTCG totals into TaxCalculationsResult', () => {
+    const rawSummary = {
+      sectionTotals: {
+        '112 Debt (20% Indexed)': {
+          totalGain: '40000',
+          totalTax: '8320.00',
+          taxBeforeCess: '8000.00',
+        },
+        '112 Debt (12.5%)': {
+          totalGain: '20000',
+          totalTax: '2600.00',
+          taxBeforeCess: '2500.00',
+        },
+      },
+    };
+
+    const result = mapServerSummaryToResult(rawSummary, '2024-25');
+    expect(result.debtLtcg20Gain).toBe(40000);
+    expect(result.debtLtcg12_5Gain).toBe(20000);
+    expect(result.totalDebtLTCG).toBe(60000);
+    expect(result.debtTotalTax).toBe(8320 + 2600);
+    expect(result.grandTotalTax).toBe(8320 + 2600);
+  });
 });

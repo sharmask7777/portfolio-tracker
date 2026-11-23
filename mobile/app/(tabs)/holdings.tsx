@@ -5,7 +5,7 @@
  * member PAN breakdown, search, asset-class filtering, and sorting.
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,28 +16,23 @@ import {
 } from 'react-native';
 import {
   usePortfolioScope,
-  useConsolidatedHoldings,
   type SchemeSortField,
-  type PortfolioScope,
+  type ConsolidatedSchemeGroup,
 } from '@portfolio/core-view';
-import {
-  getEnrichedHoldings,
-  refreshPortfolio,
-  type EnrichedHolding,
-} from '../../src/services/portfolio-service';
-import {
-  getStoredFamilyProfiles,
-  getStoredFolios,
-  type FamilyProfile,
-  type FolioEntity,
-} from '../../src/services/family-service';
+import { type EnrichedHolding } from '../../src/services/portfolio-service';
 import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
 import { ScopeSelectorHeader } from '../../src/components/Navigation';
 import {
   SchemeGroupCard,
   HoldingsFilterControls,
-  adaptHoldingsToFolioInputs,
+  ClosedPositionsSection,
+  AddAssetModal,
 } from '../../src/components/Holdings';
+import {
+  useHoldingsData,
+  useManualAssetMutations,
+  useHoldingsFilters,
+} from './use-holdings-screen';
 
 const styles = StyleSheet.create({
   container: {
@@ -62,77 +57,9 @@ const styles = StyleSheet.create({
   },
 });
 
-function useHoldingsData() {
-  const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
-  const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
-  const [folios, setFolios] = useState<FolioEntity[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const loadData = useCallback(async () => {
-    try {
-      const [enriched, storedProfiles, storedFolios] = await Promise.all([
-        getEnrichedHoldings(),
-        getStoredFamilyProfiles(),
-        getStoredFolios(),
-      ]);
-      setHoldings(enriched);
-      setProfiles(storedProfiles);
-      setFolios(storedFolios);
-    } catch {
-      // Retain existing state
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
-    try {
-      await refreshPortfolio();
-      await loadData();
-    } catch {
-      // Retain state on error
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [loadData]);
-
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
-  return { holdings, profiles, folios, isLoading, isRefreshing, handleRefresh };
-}
-
-interface FilteredHoldingsOptions {
-  holdings: readonly EnrichedHolding[];
-  folios: readonly FolioEntity[];
-  scope: PortfolioScope;
-  searchQuery: string;
-  selectedAsset: string;
-  selectedSort: SchemeSortField;
-}
-
-function useFilteredHoldings(opts: FilteredHoldingsOptions) {
-  const { holdings, folios, scope, searchQuery, selectedAsset, selectedSort } = opts;
-  const folioInputs = useMemo(() => {
-    return adaptHoldingsToFolioInputs(holdings, folios);
-  }, [holdings, folios]);
-
-  return useConsolidatedHoldings({
-    folios: folioInputs,
-    scope,
-    searchQuery,
-    assetTypeFilter: selectedAsset,
-    sortField: selectedSort,
-    sortDirection: selectedSort === 'name' ? 'asc' : 'desc',
-  });
-}
-
 interface HoldingsListProps {
   isLoading: boolean;
-  schemes: ReturnType<typeof useConsolidatedHoldings>['sortedSchemes'];
+  schemes: readonly ConsolidatedSchemeGroup[];
   isExpanded: (id: string) => boolean;
   onToggleExpand: (id: string) => void;
   isConsolidatedScope: boolean;
@@ -181,6 +108,9 @@ interface HoldingsScreenContentProps {
   setSelectedAsset: (a: string) => void;
   selectedSort: SchemeSortField;
   setSelectedSort: (s: SchemeSortField) => void;
+  closedHoldings: readonly EnrichedHolding[];
+  onDeleteClosedFolio: (folioNumber: string) => Promise<void>;
+  onOpenAddAsset: () => void;
   listProps: HoldingsListProps;
 }
 
@@ -194,6 +124,9 @@ function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactEl
     setSelectedAsset,
     selectedSort,
     setSelectedSort,
+    closedHoldings,
+    onDeleteClosedFolio,
+    onOpenAddAsset,
     listProps,
   } = props;
 
@@ -217,8 +150,13 @@ function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactEl
         onSelectAsset={setSelectedAsset}
         selectedSort={selectedSort}
         onSelectSort={setSelectedSort}
+        onOpenAddAsset={onOpenAddAsset}
       />
       <HoldingsList {...listProps} />
+      <ClosedPositionsSection
+        closedHoldings={closedHoldings}
+        onDeleteFolio={onDeleteClosedFolio}
+      />
     </ScrollView>
   );
 }
@@ -229,27 +167,17 @@ function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactEl
  * @returns React Native holdings tab element.
  */
 export default function HoldingsScreen(): React.ReactElement {
-  const { holdings, profiles, folios, isLoading, isRefreshing, handleRefresh } = useHoldingsData();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedAsset, setSelectedAsset] = useState('ALL');
-  const [selectedSort, setSelectedSort] = useState<SchemeSortField>('value');
-
+  const { holdings, closedHoldings, profiles, folios, isLoading, isRefreshing, handleRefresh, loadData } = useHoldingsData();
+  const [addAssetModalOpen, setAddAssetModalOpen] = useState(false);
   const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
-
-  const { sortedSchemes, isExpanded, toggleExpanded } = useFilteredHoldings({
-    holdings,
-    folios,
-    scope: scopeState.scope,
-    searchQuery,
-    selectedAsset,
-    selectedSort,
-  });
+  const { handleDeleteClosedFolio, handleAddManualAsset } = useManualAssetMutations(loadData, scopeState.scope);
+  const filters = useHoldingsFilters(holdings, folios, scopeState.scope);
 
   const listProps: HoldingsListProps = {
     isLoading,
-    schemes: sortedSchemes,
-    isExpanded,
-    onToggleExpand: toggleExpanded,
+    schemes: filters.sortedSchemes,
+    isExpanded: filters.isExpanded,
+    onToggleExpand: filters.toggleExpanded,
     isConsolidatedScope: scopeState.scope.type === 'consolidated',
   };
 
@@ -265,13 +193,21 @@ export default function HoldingsScreen(): React.ReactElement {
       <HoldingsScreenContent
         isRefreshing={isRefreshing}
         handleRefresh={handleRefresh}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        selectedAsset={selectedAsset}
-        setSelectedAsset={setSelectedAsset}
-        selectedSort={selectedSort}
-        setSelectedSort={setSelectedSort}
+        searchQuery={filters.searchQuery}
+        setSearchQuery={filters.setSearchQuery}
+        selectedAsset={filters.selectedAsset}
+        setSelectedAsset={filters.setSelectedAsset}
+        selectedSort={filters.selectedSort}
+        setSelectedSort={filters.setSelectedSort}
+        closedHoldings={closedHoldings}
+        onDeleteClosedFolio={handleDeleteClosedFolio}
+        onOpenAddAsset={() => setAddAssetModalOpen(true)}
         listProps={listProps}
+      />
+      <AddAssetModal
+        visible={addAssetModalOpen}
+        onClose={() => setAddAssetModalOpen(false)}
+        onSubmit={handleAddManualAsset}
       />
     </View>
   );

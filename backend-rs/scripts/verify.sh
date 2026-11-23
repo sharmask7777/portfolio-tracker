@@ -58,11 +58,16 @@ else
 fi
 
 echo ""
-echo "▶ [8/9] Parity Validation Harness: cargo run --package portfolio-parity"
+echo "▶ [8/10] Parity Validation Harness: cargo run --package portfolio-parity"
 cargo run --package portfolio-parity
 
 echo ""
-echo "▶ [9/9] Static Privacy & Anti-PII Guardrail: scripts/check-privacy-and-pii.py"
+echo "▶ [9/10] TypeScript Contract Parity Export & Drift Gate"
+cargo test --package portfolio-api --test export_bindings
+git diff --exit-code "${SCRIPT_DIR}/../../frontend/src/types/generated" "${SCRIPT_DIR}/../../mobile/src/types/generated"
+
+echo ""
+echo "▶ [10/10] Static Privacy & Anti-PII Guardrail: scripts/check-privacy-and-pii.py"
 python3 "${SCRIPT_DIR}/../../scripts/check-privacy-and-pii.py"
 
 echo ""

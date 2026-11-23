@@ -3,10 +3,11 @@ import {
   StyleSheet,
   View,
   Text,
-  TouchableOpacity,
 } from 'react-native';
-import Svg, { G, Rect, Text as SvgText, TSpan } from 'react-native-svg';
-import { ChevronLeft } from 'lucide-react-native';
+import Svg, { G, Rect, Text as SvgText, TSpan, Defs, Pattern, Line } from 'react-native-svg';
+import { TreemapHeader, TreemapBreadcrumbs } from './treemap-header';
+
+export { TreemapHeader, TreemapBreadcrumbs };
 import type { HierarchyNode } from '../../services/hierarchy-builder';
 import { computeTreemapLayout, type TreemapRect } from './treemap-layout';
 
@@ -29,52 +30,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#27272a',
     marginBottom: 16,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  titleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#f4f4f5',
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    backgroundColor: '#27272a',
-    borderRadius: 6,
-    gap: 4,
-  },
-  backButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#38bdf8',
-  },
-  breadcrumbBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    marginBottom: 10,
-    gap: 4,
-  },
-  crumbText: {
-    fontSize: 12,
-    color: '#71717a',
-  },
-  crumbActive: {
-    fontSize: 12,
-    color: '#38bdf8',
-    fontWeight: '600',
   },
   emptyContainer: {
     backgroundColor: '#18181b',
@@ -102,6 +57,75 @@ export interface TileProps {
   onPress: (node: HierarchyNode) => void;
 }
 
+interface TileContentProps {
+  x: number;
+  y: number;
+  height: number;
+  displayName: string;
+  pct: string;
+  denomination: string;
+  textColor: string;
+}
+
+function TileContent({
+  x,
+  y,
+  height,
+  displayName,
+  pct,
+  denomination,
+  textColor,
+}: TileContentProps): React.ReactElement {
+  return (
+    <SvgText x={x + 6} y={y + 16} fill={textColor} fontSize="11" fontWeight="bold">
+      {displayName}
+      {height >= 42 && (
+        <TSpan x={x + 6} y={y + 30} fill={textColor} fontSize="10" fillOpacity={0.85}>
+          {`${pct}${denomination}`}
+        </TSpan>
+      )}
+    </SvgText>
+  );
+}
+
+interface TileBackgroundProps {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  isHedged?: boolean | undefined;
+}
+
+function TileBackground({ x, y, width, height, color, isHedged }: TileBackgroundProps): React.ReactElement {
+  return (
+    <>
+      <Rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={color}
+        stroke="#18181b"
+        strokeWidth={1.5}
+        rx={3}
+      />
+      {isHedged && (
+        <Rect
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill="url(#mobile-hedged-stripes)"
+          stroke="#18181b"
+          strokeWidth={1.5}
+          rx={3}
+        />
+      )}
+    </>
+  );
+}
+
 /**
  * Single SVG rectangle tile inside the Treemap.
  *
@@ -112,6 +136,7 @@ export function TreemapTile({ rect, onPress }: TileProps): React.ReactElement {
   const { x, y, width, height, node } = rect;
   const isLargeEnough = width >= 44 && height >= 28;
   const pct = (node.metrics.weightOfParent * 100).toFixed(1);
+  const denomination = node.depth === 'stock' ? '% of Sector' : '% of Portfolio';
   const displayName = node.name.length > 14 && width < 90
     ? `${node.name.slice(0, 12)}…`
     : node.name;
@@ -121,128 +146,32 @@ export function TreemapTile({ rect, onPress }: TileProps): React.ReactElement {
       key={node.id}
       onPress={() => onPress(node)}
       accessibilityRole="button"
-      accessibilityLabel={`${node.name}, ${pct}%`}
+      accessibilityLabel={`${node.name}, ${pct}${denomination}`}
     >
-      <Rect
+      <TileBackground
         x={x}
         y={y}
         width={width}
         height={height}
-        fill={node.color || '#3b82f6'}
-        stroke="#18181b"
-        strokeWidth={1.5}
-        rx={3}
+        color={node.color || '#3b82f6'}
+        isHedged={node.isHedged}
       />
       {isLargeEnough && (
-        <SvgText
-          x={x + 6}
-          y={y + 16}
-          fill={node.textColor || '#ffffff'}
-          fontSize="11"
-          fontWeight="bold"
-        >
-          {displayName}
-          {height >= 42 && (
-            <TSpan
-              x={x + 6}
-              y={y + 30}
-              fill={node.textColor || '#ffffff'}
-              fontSize="10"
-              fillOpacity={0.85}
-            >
-              {`${pct}%`}
-            </TSpan>
-          )}
-        </SvgText>
+        <TileContent
+          x={x}
+          y={y}
+          height={height}
+          displayName={displayName}
+          pct={pct}
+          denomination={denomination}
+          textColor={node.textColor || '#ffffff'}
+        />
       )}
     </G>
   );
 }
 
-/**
- * Properties for Treemap navigation header.
- */
-export interface TreemapHeaderProps {
-  title: string;
-  canGoBack: boolean;
-  onBack: () => void;
-}
-
-/**
- * Header displaying active node title and back navigation.
- *
- * @param props Header properties
- * @returns Header element
- */
-export function TreemapHeader({ title, canGoBack, onBack }: TreemapHeaderProps): React.ReactElement {
-  return (
-    <View style={styles.headerRow}>
-      <View style={styles.titleGroup}>
-        <Text style={styles.title}>{title}</Text>
-      </View>
-      {canGoBack && (
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={onBack}
-          accessibilityRole="button"
-          accessibilityLabel="Navigate up one level in treemap"
-        >
-          <ChevronLeft size={14} color="#38bdf8" />
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-}
-
-/**
- * Properties for breadcrumb path bar.
- */
-export interface BreadcrumbProps {
-  navPath: HierarchyNode[];
-  onSelectCrumb: (index: number) => void;
-}
-
-/**
- * Breadcrumbs indicating the current drilldown depth in the portfolio hierarchy.
- *
- * @param props Breadcrumb properties
- * @returns Breadcrumbs bar element
- */
-export function TreemapBreadcrumbs({ navPath, onSelectCrumb }: BreadcrumbProps): React.ReactElement {
-  return (
-    <View style={styles.breadcrumbBar}>
-      {navPath.map((crumb, idx) => {
-        const isLast = idx === navPath.length - 1;
-        return (
-          <React.Fragment key={crumb.id}>
-            {idx > 0 && <Text style={styles.crumbText}>/</Text>}
-            <Text
-              style={isLast ? styles.crumbActive : styles.crumbText}
-              onPress={() => onSelectCrumb(idx)}
-            >
-              {crumb.name}
-            </Text>
-          </React.Fragment>
-        );
-      })}
-    </View>
-  );
-}
-
-/**
- * Visual squarified Treemap rendering asset class and sector blocks with react-native-svg.
- *
- * @param props SvgTreemap properties
- * @returns Rendered treemap element
- */
-export function SvgTreemap({
-  rootNode,
-  width = 340,
-  height = 220,
-  onSelectStock,
-  testID = 'svg-treemap',
-}: SvgTreemapProps): React.ReactElement {
+function useTreemapNavigation(rootNode: HierarchyNode, onSelectStock?: (node: HierarchyNode) => void) {
   const [navPath, setNavPath] = useState<HierarchyNode[]>([rootNode]);
   const effectiveNavPath = useMemo(() => {
     if (navPath.length === 1 && navPath[0]?.id === rootNode.id && navPath[0] !== rootNode) {
@@ -251,10 +180,6 @@ export function SvgTreemap({
     return navPath;
   }, [navPath, rootNode]);
   const activeNode = effectiveNavPath[effectiveNavPath.length - 1] ?? rootNode;
-
-  const rects = useMemo(() => {
-    return computeTreemapLayout(activeNode, width, height);
-  }, [activeNode, width, height]);
 
   const handleTilePress = useCallback((node: HierarchyNode) => {
     if (node.children && node.children.length > 0) {
@@ -272,6 +197,29 @@ export function SvgTreemap({
     setNavPath((prev) => prev.slice(0, idx + 1));
   }, []);
 
+  return { navPath, activeNode, handleTilePress, handleBack, handleSelectCrumb };
+}
+
+/**
+ * Visual squarified Treemap rendering asset class and sector blocks with react-native-svg.
+ *
+ * @param props SvgTreemap properties
+ * @returns Rendered treemap element
+ */
+export function SvgTreemap({
+  rootNode,
+  width = 340,
+  height = 220,
+  onSelectStock,
+  testID = 'svg-treemap',
+}: SvgTreemapProps): React.ReactElement {
+  const { navPath, activeNode, handleTilePress, handleBack, handleSelectCrumb } =
+    useTreemapNavigation(rootNode, onSelectStock);
+
+  const rects = useMemo(() => {
+    return computeTreemapLayout(activeNode, width, height);
+  }, [activeNode, width, height]);
+
   if (rootNode.metrics.layoutValue <= 0 || rects.length === 0) {
     return (
       <View style={styles.emptyContainer} testID={`${testID}-empty`}>
@@ -285,6 +233,17 @@ export function SvgTreemap({
       <TreemapHeader title={activeNode.name} canGoBack={navPath.length > 1} onBack={handleBack} />
       <TreemapBreadcrumbs navPath={navPath} onSelectCrumb={handleSelectCrumb} />
       <Svg width={width} height={height}>
+        <Defs>
+          <Pattern
+            id="mobile-hedged-stripes"
+            patternUnits="userSpaceOnUse"
+            width={10}
+            height={10}
+            patternTransform="rotate(45)"
+          >
+            <Line x1={0} y1={0} x2={0} y2={10} stroke="rgba(255, 255, 255, 0.4)" strokeWidth={3} />
+          </Pattern>
+        </Defs>
         {rects.map((rect) => (
           <TreemapTile key={rect.node.id} rect={rect} onPress={handleTilePress} />
         ))}

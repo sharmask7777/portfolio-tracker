@@ -1,12 +1,7 @@
 import {
-  AdvanceTaxQuarter,
   TaxSectionName,
-  type AdvanceTaxAccrualMatrix,
-  type TableFQuarterData,
   type TaxCalculationsResult,
   type DeemedCostParams,
-  type ClassifyTaxParams,
-  type GainItemInput,
   type Exemption112AResult,
   type GainsAcc,
   type GainInputSlice,
@@ -21,75 +16,94 @@ export function calculateSection55DeemedCost(params: DeemedCostParams): number {
   return Math.max(cost, benchmark);
 }
 
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+}
+
+function resolveLeapMaturityDay(targetYear: number, month: number, day: number): number {
+  if (month === 2 && day === 29) {
+    return isLeapYear(targetYear) ? 29 : 28;
+  }
+  return day;
+}
+
+export function elssLockInExpiry(buyDate: string): string {
+  const parts = buyDate.split('-');
+  const y = parseInt(parts[0] ?? '0', 10);
+  const m = parseInt(parts[1] ?? '0', 10);
+  const d = parseInt(parts[2] ?? '0', 10);
+  if (!y || !m || !d) return buyDate;
+
+  const targetYear = y + 3;
+  const targetDay = resolveLeapMaturityDay(targetYear, m, d);
+  const mm = String(m).padStart(2, '0');
+  const dd = String(targetDay).padStart(2, '0');
+  return `${targetYear}-${mm}-${dd}`;
+}
+
 export function checkElssLockIn(buyDate: string, sellDate: string): boolean {
-  const buyTime = Date.parse(buyDate);
-  const sellTime = Date.parse(sellDate);
-  if (isNaN(buyTime) || isNaN(sellTime)) return false;
-  return ((sellTime - buyTime) / (1000 * 60 * 60 * 24)) < 1095;
+  if (!buyDate || !sellDate) return false;
+  const expiry = elssLockInExpiry(buyDate);
+  return sellDate < expiry;
 }
 
-function parseMonthAndDay(dateInput: Date | string): { month: number; day: number } | null {
-  if (typeof dateInput === 'string') {
-    const match = dateInput.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match) {
-      return { month: parseInt(match[2] ?? '0', 10), day: parseInt(match[3] ?? '0', 10) };
-    }
-  }
-  const dateObj = new Date(dateInput);
-  if (isNaN(dateObj.getTime())) return null;
-  return { month: dateObj.getMonth() + 1, day: dateObj.getDate() };
-}
+export {
+  getAdvanceTaxQuarter,
+  classifyTaxSection,
+  buildAdvanceTaxMatrix,
+} from './advance-tax-service';
 
-const QUARTER_RANGES: Array<{ min: number; max: number; quarter: AdvanceTaxQuarter }> = [
-  { min: 401, max: 615, quarter: AdvanceTaxQuarter.Q1 },
-  { min: 616, max: 722, quarter: AdvanceTaxQuarter.Q2A },
-  { min: 723, max: 915, quarter: AdvanceTaxQuarter.Q2B },
-  { min: 916, max: 1215, quarter: AdvanceTaxQuarter.Q3 },
-  { min: 1216, max: 1231, quarter: AdvanceTaxQuarter.Q4 },
-  { min: 101, max: 315, quarter: AdvanceTaxQuarter.Q4 },
-  { min: 316, max: 331, quarter: AdvanceTaxQuarter.Q5 },
-];
+/**
+ * Applies statutory capital loss set-off rules under Section 70 of the Income Tax Act, 1961:
+ * - LTCL can ONLY set off LTCG; it cannot touch STCG or Slab.
+ * - STCL (Equity STCL + Section 50AA Slab STCL) sets off Slab -> STCG -> LTCG.
+ * - Taxable gains can never be negative.
+ *
+ * @returns [taxableStcg, taxableLtcg, taxableSlab]
+ */
+export function applyCapitalLossSetOffWithSlab(
+  realizedStcg: number,
+  realizedLtcg: number,
+  realizedSlab: number
+): [number, number, number] {
+  let totalStcl = 0;
+  let stcg = 0;
+  let slabGain = 0;
 
-export function getAdvanceTaxQuarter(dateInput: Date | string): AdvanceTaxQuarter {
-  const parsed = parseMonthAndDay(dateInput);
-  if (!parsed) return AdvanceTaxQuarter.Q1;
-  const code = parsed.month * 100 + parsed.day;
-  for (const r of QUARTER_RANGES) {
-    if (code >= r.min && code <= r.max) return r.quarter;
+  if (realizedStcg < 0) {
+    totalStcl += Math.abs(realizedStcg);
+  } else {
+    stcg = realizedStcg;
   }
-  return AdvanceTaxQuarter.Q5;
-}
 
-function classifyStcgSection(taxRate?: number, isPostBudget = false): TaxSectionName {
-  if (taxRate === 0.20 || (taxRate === undefined && isPostBudget)) {
-    return TaxSectionName.SEC_111A_20;
+  if (realizedSlab < 0) {
+    totalStcl += Math.abs(realizedSlab);
+  } else {
+    slabGain = realizedSlab;
   }
-  return TaxSectionName.SEC_111A_15;
-}
 
-function classifyLtcgSection(params: ClassifyTaxParams, isPostBudget: boolean): TaxSectionName {
-  const isDebt = params.assetClass === 'DEBT' || (params.taxRate === 0.20 && params.isGrandfathered);
-  if (isDebt) {
-    return params.taxRate === 0.20 ? TaxSectionName.SEC_112_DEBT_20 : TaxSectionName.SEC_112_DEBT_12_5;
-  }
-  if (params.taxRate === 0.125 || (!params.isGrandfathered && isPostBudget)) {
-    return TaxSectionName.SEC_112A_12_5;
-  }
-  return TaxSectionName.SEC_112A_10;
-}
+  const ltcl = realizedLtcg < 0 ? Math.abs(realizedLtcg) : 0;
+  let ltcg = realizedLtcg > 0 ? realizedLtcg : 0;
 
-export function classifyTaxSection(params: ClassifyTaxParams): TaxSectionName {
-  const isPostBudget = params.sellDate !== undefined && String(params.sellDate) >= '2024-07-23';
-  if (params.taxType === 'STCG') {
-    return classifyStcgSection(params.taxRate, isPostBudget);
-  }
-  if (params.taxType === 'LTCG') {
-    return classifyLtcgSection(params, isPostBudget);
-  }
-  if (params.taxType === 'SLAB') {
-    return TaxSectionName.SEC_50AA;
-  }
-  return TaxSectionName.SLAB;
+  // 1. LTCL can ONLY set off LTCG
+  const setOffLt = Math.min(ltcg, ltcl);
+  ltcg -= setOffLt;
+
+  // 2. STCL sets off Slab STCG first, then Equity STCG, then LTCG
+  let remainingStcl = totalStcl;
+
+  const setOffSlab = Math.min(slabGain, remainingStcl);
+  slabGain -= setOffSlab;
+  remainingStcl -= setOffSlab;
+
+  const setOffSt = Math.min(stcg, remainingStcl);
+  stcg -= setOffSt;
+  remainingStcl -= setOffSt;
+
+  const setOffStLt = Math.min(ltcg, remainingStcl);
+  ltcg -= setOffStLt;
+
+  return [stcg, ltcg, slabGain];
 }
 
 export function calculate112AExemption(
@@ -101,8 +115,20 @@ export function calculate112AExemption(
   const isPostBudget = !isNaN(startYear) ? startYear >= 2024 : fy >= '2024-25';
   const statutoryLimit = isPostBudget ? 125000 : 100000;
 
-  const pos10 = Math.max(0, ltcg10);
-  const pos12_5 = Math.max(0, ltcg12_5);
+  // Apply Section 70 loss netting between 10% and 12.5% pools if either is negative
+  let pos10 = ltcg10;
+  let pos12_5 = ltcg12_5;
+  if (pos10 < 0 && pos12_5 > 0) {
+    pos12_5 = Math.max(0, pos12_5 + pos10);
+    pos10 = 0;
+  } else if (pos12_5 < 0 && pos10 > 0) {
+    pos10 = Math.max(0, pos10 + pos12_5);
+    pos12_5 = 0;
+  } else {
+    pos10 = Math.max(0, pos10);
+    pos12_5 = Math.max(0, pos12_5);
+  }
+
   const exempt10 = Math.min(pos10, statutoryLimit);
   const exempt12_5 = Math.min(pos12_5, statutoryLimit - exempt10);
 
@@ -122,80 +148,6 @@ export function calculate112AExemption(
     tax12_5,
     totalTax: tax10 + tax12_5,
   };
-}
-
-function initQuarterData(): TableFQuarterData {
-  return {
-    stcg15: 0,
-    stcg20: 0,
-    ltcg10: 0,
-    ltcg12_5: 0,
-    debtLtcg12_5: 0,
-    debtLtcg20: 0,
-    slab: 0,
-    totalGain: 0,
-    taxBeforeCess: 0,
-    cess: 0,
-    estimatedTax: 0,
-  };
-}
-
-function addSectionGain(data: TableFQuarterData, section: TaxSectionName, gain: number): void {
-  if (section === TaxSectionName.SEC_111A_15) data.stcg15 += gain;
-  else if (section === TaxSectionName.SEC_111A_20) data.stcg20 += gain;
-  else if (section === TaxSectionName.SEC_112A_10) data.ltcg10 += gain;
-  else if (section === TaxSectionName.SEC_112A_12_5) data.ltcg12_5 += gain;
-  else if (section === TaxSectionName.SEC_112_DEBT_12_5) data.debtLtcg12_5 += gain;
-  else if (section === TaxSectionName.SEC_112_DEBT_20) data.debtLtcg20 += gain;
-  else data.slab += gain;
-}
-
-export function buildAdvanceTaxMatrix(details: GainItemInput[]): AdvanceTaxAccrualMatrix {
-  const quarters: Record<AdvanceTaxQuarter, TableFQuarterData> = {
-    [AdvanceTaxQuarter.Q1]: initQuarterData(),
-    [AdvanceTaxQuarter.Q2A]: initQuarterData(),
-    [AdvanceTaxQuarter.Q2B]: initQuarterData(),
-    [AdvanceTaxQuarter.Q3]: initQuarterData(),
-    [AdvanceTaxQuarter.Q4]: initQuarterData(),
-    [AdvanceTaxQuarter.Q5]: initQuarterData(),
-  };
-
-  const quarterTotals: Record<AdvanceTaxQuarter, number> = {
-    [AdvanceTaxQuarter.Q1]: 0,
-    [AdvanceTaxQuarter.Q2A]: 0,
-    [AdvanceTaxQuarter.Q2B]: 0,
-    [AdvanceTaxQuarter.Q3]: 0,
-    [AdvanceTaxQuarter.Q4]: 0,
-    [AdvanceTaxQuarter.Q5]: 0,
-  };
-
-  for (const item of details) {
-    const quarter = (item.advanceTaxQuarter as AdvanceTaxQuarter) ||
-      (item.sellDate ? getAdvanceTaxQuarter(item.sellDate) : AdvanceTaxQuarter.Q1);
-    const data = quarters[quarter];
-    if (!data) continue;
-
-    const section = (item.section as TaxSectionName) || classifyTaxSection({
-      taxType: item.taxType ?? 'STCG',
-      assetClass: item.assetClass,
-      taxRate: item.taxRate,
-      isGrandfathered: item.isGrandfathered,
-      sellDate: item.sellDate,
-    });
-
-    addSectionGain(data, section, item.gain);
-    const tbCess = item.taxBeforeCess ?? 0;
-    const cess = item.cess ?? tbCess * 0.04;
-    const estimated = item.estimatedTax ?? tbCess + cess;
-
-    data.totalGain += item.gain;
-    data.taxBeforeCess += tbCess;
-    data.cess += cess;
-    data.estimatedTax += estimated;
-    quarterTotals[quarter] += estimated;
-  }
-
-  return { quarters, quarterTotals };
 }
 
 function accumulateStcgGain(acc: GainsAcc, g: GainInputSlice): boolean {
@@ -310,6 +262,23 @@ export function computeTaxBreakdowns(
     accumulateBreakdownGain(acc, g);
   }
 
-  const exemptionRes = calculate112AExemption(acc.ltcg10, acc.ltcg12_5, selectedFY);
+  // Apply Section 70 loss set-offs before calculating exemptions
+  const totalStcg = acc.stcg15 + acc.stcg20;
+  const totalLtcg = acc.ltcg10 + acc.ltcg12_5;
+  const totalSlab = acc.slab;
+  const [, taxableLtcg] = applyCapitalLossSetOffWithSlab(totalStcg, totalLtcg, totalSlab);
+
+  let netLtcg10 = acc.ltcg10;
+  let netLtcg12_5 = acc.ltcg12_5;
+  if (totalLtcg > 0 && taxableLtcg < totalLtcg) {
+    const ratio = taxableLtcg / totalLtcg;
+    netLtcg10 = Math.max(0, netLtcg10 * ratio);
+    netLtcg12_5 = Math.max(0, netLtcg12_5 * ratio);
+  } else if (totalLtcg <= 0) {
+    netLtcg10 = 0;
+    netLtcg12_5 = 0;
+  }
+
+  const exemptionRes = calculate112AExemption(netLtcg10, netLtcg12_5, selectedFY);
   return buildBreakdownResult(acc, exemptionRes, selectedFY);
 }

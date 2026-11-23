@@ -8,3 +8,4 @@ export * from './treemap-layout';
 export * from './SvgTreemap';
 export * from './StockOverlapTable';
 export * from './StockDetailModal';
+export * from './ExpenseAnalysisCard';

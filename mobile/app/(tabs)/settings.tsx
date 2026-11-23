@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   getStoredCredentials,
   clearCredentials,
@@ -246,6 +247,8 @@ function renderSecurityCard(): React.ReactElement {
  */
 export default function SettingsScreen(): React.ReactElement {
   const { state, handleDisconnect } = useSettingsState();
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(insets?.top ?? 0, 16) + 16;
 
   if (state.isChecking) {
     return (
@@ -258,7 +261,7 @@ export default function SettingsScreen(): React.ReactElement {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingTop: topPadding }]}
       testID="settings-scroll"
     >
       <View style={styles.header}>

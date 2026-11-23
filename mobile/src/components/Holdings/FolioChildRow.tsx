@@ -5,14 +5,15 @@
  * current value, invested amount, and individual return (XIRR or absolute return).
  */
 
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import {
   formatIndianRupee,
   formatPercent,
   type FolioInput,
   type PerformanceMode,
 } from '@portfolio/core-view';
+import { TransactionLedgerSheet } from './TransactionLedgerSheet';
 
 /**
  * Props for {@link FolioChildRow}.
@@ -22,6 +23,8 @@ export interface FolioChildRowProps {
   readonly folio: FolioInput;
   /** Performance display mode: 'XIRR' or 'ABS' */
   readonly performanceMode?: PerformanceMode | undefined;
+  /** Optional callback invoked when folio is pressed */
+  readonly onPress?: ((folio: FolioInput) => void) | undefined;
 }
 
 const styles = StyleSheet.create({
@@ -211,24 +214,48 @@ function resolveFolioValues(folio: FolioInput) {
 export function FolioChildRow({
   folio,
   performanceMode = 'XIRR',
+  onPress,
 }: FolioChildRowProps): React.ReactElement {
+  const [showLedger, setShowLedger] = useState(false);
   const { folioNum, amcName, currentValue, investedAmount } = resolveFolioValues(folio);
   const returnRate = getReturnRate(folio, performanceMode);
   const unitsNavFormatted = resolveUnitsNavText(folio, folioNum);
 
+  const handlePress = () => {
+    if (onPress) {
+      onPress(folio);
+    } else {
+      setShowLedger(true);
+    }
+  };
+
   return (
-    <View style={styles.container} testID={`folio-child-row-${folio.id}`}>
-      <FolioHeaderInfo folioNum={folioNum} pan={folio.pan} currentValue={currentValue} />
-      {amcName ? (
-        <Text style={styles.amcText} numberOfLines={1}>
-          {amcName}
-        </Text>
-      ) : null}
-      <FolioMetricsSubRow
-        unitsNavFormatted={unitsNavFormatted}
-        investedAmount={investedAmount}
-        returnRate={returnRate}
+    <>
+      <TouchableOpacity
+        style={styles.container}
+        testID={`folio-child-row-${folio.id}`}
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        <FolioHeaderInfo folioNum={folioNum} pan={folio.pan} currentValue={currentValue} />
+        {amcName ? (
+          <Text style={styles.amcText} numberOfLines={1}>
+            {amcName}
+          </Text>
+        ) : null}
+        <FolioMetricsSubRow
+          unitsNavFormatted={unitsNavFormatted}
+          investedAmount={investedAmount}
+          returnRate={returnRate}
+        />
+      </TouchableOpacity>
+      <TransactionLedgerSheet
+        visible={showLedger}
+        folioNumber={folioNum}
+        schemeName={folio.asset?.name}
+        pan={folio.pan}
+        onClose={() => setShowLedger(false)}
       />
-    </View>
+    </>
   );
 }

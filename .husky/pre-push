@@ -10,10 +10,22 @@ echo "Running Rust backend verification pipeline..."
 
 echo "Verifying TypeScript contracts parity..."
 (cd backend-rs && cargo test --package portfolio-api --test export_bindings)
-git diff --exit-code frontend/src/types/generated || (echo "❌ Frontend types drift detected! Commit updated generated types." && exit 1)
+git diff --exit-code frontend/src/types/generated mobile/src/types/generated || (echo "❌ Frontend or mobile types drift detected! Commit updated generated types." && exit 1)
 
 echo "Enforcing backend test coverage threshold (fail-under-lines 80%)..."
 (cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 80 --summary-only)
+
+echo "Verifying mobile build, lints, knip, and coverage..."
+pnpm --filter mobile build:verify
+
+echo "Running mobile E2E simulation suites..."
+pnpm --filter mobile test:e2e
+
+echo "Verifying cross-platform web-mobile domain parity..."
+pnpm parity:check
+
+echo "Verifying cross-platform visual parity & invariants..."
+pnpm parity:visual
 
 echo "Running frontend hermetic unit tests with coverage gate (lines 88%, statements 86%, funcs 85%, branches 65%)..."
 pnpm --filter frontend test:unit

@@ -47,6 +47,7 @@ vi.mock('expo-router', () => ({
 vi.mock('react-native', () => ({
   StyleSheet: { create: (s: Record<string, unknown>) => s, hairlineWidth: 1 },
   View: (props: Record<string, unknown>) => ({ type: 'View', props }),
+  KeyboardAvoidingView: (props: Record<string, unknown>) => ({ type: 'KeyboardAvoidingView', props }),
   Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
   ScrollView: (props: Record<string, unknown>) => ({ type: 'ScrollView', props }),
   TextInput: (props: Record<string, unknown>) => ({ type: 'TextInput', props }),
@@ -181,7 +182,7 @@ describe('Task 5: Reality Check & Historical Checkpoints Suite', () => {
       expect(result.purchasingPowerLoss).toBeGreaterThan(0);
     });
 
-    it('calculates safe-asset benchmark spread', () => {
+    it('calculates safe-asset benchmark spread and generates 6-stage drag waterfall', () => {
       const result = calculateRealityCheckMetrics({
         currentValue: 1200000,
         investedCost: 1000000,
@@ -194,7 +195,13 @@ describe('Task 5: Reality Check & Historical Checkpoints Suite', () => {
       });
 
       expect(typeof result.benchmarkSpread).toBe('number');
-      expect(result.dragWaterfall.length).toBe(5);
+      expect(result.dragWaterfall.length).toBe(6);
+      expect(result.dragWaterfall[0]?.label).toBe('Gross Nominal');
+      expect(result.dragWaterfall[1]?.label).toBe('Sec 50AA Debt Drag');
+      expect(result.dragWaterfall[2]?.label).toBe('Sec 112A/111A Equity Drag');
+      expect(result.dragWaterfall[3]?.label).toBe('4% Cess Drag');
+      expect(result.dragWaterfall[4]?.label).toBe('CPI Inflation Drag');
+      expect(result.dragWaterfall[5]?.label).toBe('Real Purchasing XIRR');
     });
 
     it('derives nominal return from current value and invested cost when not explicitly provided', () => {

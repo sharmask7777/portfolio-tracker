@@ -7,6 +7,8 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import type {
@@ -199,7 +201,10 @@ export function AddGoalModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.sheet}
+        >
           <ModalHeader isEdit={Boolean(initialGoal)} onClose={onClose} />
           <ScrollView>
             <Text style={styles.label}>Goal Name</Text>
@@ -216,7 +221,7 @@ export function AddGoalModal({
               <Text style={styles.saveBtnText}>{initialGoal ? 'Update Goal' : 'Save Goal'}</Text>
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

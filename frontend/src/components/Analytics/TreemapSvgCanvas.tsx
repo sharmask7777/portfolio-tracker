@@ -63,6 +63,7 @@ const SingleTile: React.FC<SingleTileProps> = ({
   const isTier2 = !isTier1 && rect.width >= 50 && rect.height >= 32;
   const isInteractive = (node.children && node.children.length > 0) || node.depth === 'stock';
   const weightPct = (node.metrics.weightOfParent * 100).toFixed(1);
+  const denomination = node.depth === 'stock' ? '% of Sector' : '% of Portfolio';
   const rupeeStr = formatIndianRupee(node.metrics.signedValue);
 
   return (
@@ -70,7 +71,7 @@ const SingleTile: React.FC<SingleTileProps> = ({
       id={`treemap-tile-${index}`}
       role="button"
       tabIndex={isFocused ? 0 : -1}
-      aria-label={`${node.name}, ${rupeeStr}, ${weightPct}%`}
+      aria-label={`${node.name}, ${rupeeStr}, ${weightPct}${denomination}`}
       onClick={() => onTileClick(node)}
       onKeyDown={e => onTileKeyDown(e, index, rect)}
       className={`cursor-pointer transition-opacity duration-200 outline-none focus:ring-2 focus:ring-offset-2 ${
@@ -136,7 +137,7 @@ const SingleTile: React.FC<SingleTileProps> = ({
             opacity="0.8"
             className="pointer-events-none"
           >
-            {weightPct}%
+            {weightPct}{denomination}
           </text>
         </g>
       )}
