@@ -21,6 +21,11 @@ import {
 } from './portfolio-calculations';
 import { syncWithServer } from './portfolio-sync-service';
 export { syncWithServer, parseServerPayload } from './portfolio-sync-service';
+export {
+  simulateWithdrawal,
+  type WithdrawalSimulationParams,
+  type WithdrawalSimulationRequest,
+} from './tax-simulation-service';
 
 export type { TransactionEntity } from '../db/schema';
 export * from './portfolio-calculations';
