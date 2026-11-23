@@ -116,7 +116,7 @@ pub async fn get_insights(
     }
 
     let mut sectors: Vec<(String, f64)> = sector_map.into_iter().collect();
-    sectors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    sectors.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
     for (sector_name, pct) in sectors {
         if pct > 0.3 {

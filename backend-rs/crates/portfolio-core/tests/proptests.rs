@@ -14,6 +14,7 @@ use rust_decimal::Decimal;
 
 use portfolio_core::holdings::{
     Folio, Transaction, TransactionType, get_latest_units, is_unit_addition, is_unit_redemption,
+    sort_transactions,
 };
 use portfolio_core::performance::xirr::{CashFlow, calculate_xirr_with_terminal_value};
 use portfolio_core::tax::BuyLot;
@@ -502,5 +503,74 @@ proptest! {
         // Invariant 3: Sum of opportunity gains equals total_potential_harvest
         let opportunities_sum: Money = summary.opportunities.iter().map(|op| op.unrealized_gain).sum();
         prop_assert_eq!(opportunities_sum, summary.total_potential_harvest);
+    }
+
+    // ========================================================================
+    // Property 8: Total Order and Transitivity in Transaction Sorting
+    // ========================================================================
+    // For any arbitrary list of transactions containing identical dates,
+    // mixture of buys/sells/stamp duties, and varying zero/positive balances:
+    // 1. `sort_transactions` must satisfy total order (no cycles or panics).
+    // 2. The output sequence must be strictly sorted and deterministic.
+    #[test]
+    fn prop_sort_transactions_total_order_and_transitivity(
+        raw_txs in proptest::collection::vec(
+            (
+                0u32..=3u32, // date offset
+                0u8..=4u8,  // type selector: 0=Buy, 1=Purchase, 2=Sell, 3=Redemption, 4=StampDuty
+                0u32..=5u32, // balance selector: 0 = zero balance, 1..=5 = positive balance
+                0u32..=1000u32 // id entropy
+            ),
+            1..=20
+        )
+    ) {
+        let base_date = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
+        let txs: Vec<Transaction> = raw_txs.into_iter().enumerate().map(|(idx, (d_offset, tx_choice, bal_choice, id_salt))| {
+            let tx_date = base_date + chrono::Duration::days(d_offset as i64);
+            let tx_type = match tx_choice {
+                0 => TransactionType::Buy,
+                1 => TransactionType::Purchase,
+                2 => TransactionType::Sell,
+                3 => TransactionType::Redemption,
+                _ => TransactionType::StampDuty,
+            };
+            let (units_val, nav_val) = match tx_type {
+                TransactionType::StampDuty => (Decimal::ZERO, Decimal::ZERO),
+                TransactionType::Sell | TransactionType::Redemption => (Decimal::from(10), Decimal::from(20)),
+                _ => (Decimal::from(50), Decimal::from(20)),
+            };
+            let bal_val = if bal_choice == 0 {
+                Decimal::ZERO
+            } else {
+                Decimal::from(bal_choice * 100)
+            };
+            let id = format!("tx-{idx}-{id_salt}");
+            Transaction::new(
+                id,
+                tx_date,
+                tx_type,
+                Money::new(units_val * nav_val),
+                Units::new(units_val),
+                Nav::new(nav_val),
+                Units::new(bal_val),
+            )
+        }).collect();
+
+        // Must run without panic (verifying strict weak order / total order)
+        let sorted = sort_transactions(&txs);
+        prop_assert_eq!(sorted.len(), txs.len());
+
+        // Invariant 1: Dates are monotonically non-decreasing
+        for i in 1..sorted.len() {
+            prop_assert!(sorted[i - 1].date <= sorted[i].date);
+        }
+
+        // Invariant 2: Permutation Invariance (re-sorting any shuffled variant yields identical sequence)
+        let mut reversed = txs;
+        reversed.reverse();
+        let sorted_reversed = sort_transactions(&reversed);
+        let ids_1: Vec<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
+        let ids_2: Vec<&str> = sorted_reversed.iter().map(|t| t.id.as_str()).collect();
+        prop_assert_eq!(ids_1, ids_2);
     }
 }

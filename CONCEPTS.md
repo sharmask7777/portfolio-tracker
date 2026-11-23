@@ -42,6 +42,18 @@ An ingestion protocol where all pre-existing ledger entries and cached valuation
 
 Clean-Slate Reconstruction ensures complete state predictability across heterogeneous deployments, preventing orphaned duplicate records or historical sign anomalies from persisting.
 
+### Canonical Folio Normalization
+The process of stripping trailing whitespace, check digits, and delimiter formatting quirks from registrar account identifiers so that format perturbations across successive statements map deterministically to the identical underlying Folio.
+*Avoid: Raw folio matching, literal account key*
+
+Under Canonical Folio Normalization, folio lookup queries and transaction external ID generation match base account numbers and collapse duplicate twin folios automatically on upload.
+
+### Total Order Invariant
+The mathematical property requiring comparison functions used in sorting algorithms to satisfy reflexivity, antisymmetry, and transitivity across all elements without forming cycles.
+*Avoid: Partial equality, conditional sorting*
+
+The Total Order Invariant guarantees that intra-day tiebreakers consistently sequence transactions with advancing positive running balances before zero-unit auxiliary records, preventing sorting panics during portfolio compilation.
+
 ## Valuation & Performance
 
 ### XIRR (Extended Internal Rate of Return)

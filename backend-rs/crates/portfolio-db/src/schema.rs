@@ -337,6 +337,89 @@ pub async fn run_self_healing_migrations(pool: &PgPool) -> Result<(), sqlx::Erro
         .await?;
     }
 
+    let folios_migrated: bool = sqlx::query_scalar::<_, bool>(
+        r#"SELECT EXISTS(SELECT 1 FROM "_SchemaMigrations" WHERE id = 'reconcile_and_merge_duplicate_folios_v3')"#,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !folios_migrated {
+        sqlx::raw_sql(
+            r#"
+            -- 1. Identify all duplicate/split twin folios sharing the same portfolio, asset,
+            -- and base account number (TRIM(split_part(number, '/', 1))).
+            CREATE TEMP TABLE IF NOT EXISTS "TempFoliosToMerge" AS
+            WITH "DuplicateFolioClusters" AS (
+                SELECT id,
+                       "portfolioId",
+                       "assetId",
+                       FIRST_VALUE(id) OVER (
+                           PARTITION BY "portfolioId", "assetId", TRIM(split_part(number, '/', 1))
+                           ORDER BY "createdAt" ASC, id ASC
+                       ) AS keeper_id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "portfolioId", "assetId", TRIM(split_part(number, '/', 1))
+                           ORDER BY "createdAt" ASC, id ASC
+                       ) AS cluster_rank
+                FROM "Folio"
+            )
+            SELECT id AS orphan_id, keeper_id, "portfolioId"
+            FROM "DuplicateFolioClusters"
+            WHERE cluster_rank > 1;
+
+            -- 2. Re-parent all transactions belonging to orphan duplicate folios to their keeper folio
+            UPDATE "Transaction" t
+            SET "folioId" = m.keeper_id
+            FROM "TempFoliosToMerge" m
+            WHERE t."folioId" = m.orphan_id;
+
+            -- 3. Delete the orphan duplicate folios
+            DELETE FROM "Folio"
+            WHERE id IN (SELECT orphan_id FROM "TempFoliosToMerge");
+
+            -- 4. Clean up any exact duplicate transactions across merged folios
+            WITH "ExactDuplicateMergedRows" AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "folioId",
+                                        date::date,
+                                        UPPER(TRIM(type)),
+                                        ROUND(ABS(amount)::numeric, 2),
+                                        ROUND(ABS(units)::numeric, 4),
+                                        ROUND(ABS(balance)::numeric, 4)
+                           ORDER BY
+                               CASE
+                                   WHEN "externalId" LIKE '%-%-%-%-%-%-%-%' AND "externalId" NOT LIKE '%--%' THEN 0
+                                   WHEN "externalId" IS NOT NULL AND "externalId" NOT LIKE '%--%' THEN 1
+                                   ELSE 2
+                               END ASC,
+                               "createdAt" ASC,
+                               id ASC
+                       ) AS rank_idx
+                FROM "Transaction"
+            )
+            DELETE FROM "Transaction"
+            WHERE id IN (
+                SELECT id
+                FROM "ExactDuplicateMergedRows"
+                WHERE rank_idx > 1
+            );
+
+            -- 5. Purge stale PortfolioHistory snapshots for affected portfolios so they are cleanly recalculated
+            DELETE FROM "PortfolioHistory"
+            WHERE "portfolioId" IN (SELECT DISTINCT "portfolioId" FROM "TempFoliosToMerge");
+
+            DROP TABLE IF EXISTS "TempFoliosToMerge";
+
+            INSERT INTO "_SchemaMigrations" ("id") VALUES ('reconcile_and_merge_duplicate_folios_v3')
+            ON CONFLICT ("id") DO NOTHING;
+            "#,
+        )
+        .execute(pool)
+        .await?;
+    }
+
     Ok(())
 }
 
