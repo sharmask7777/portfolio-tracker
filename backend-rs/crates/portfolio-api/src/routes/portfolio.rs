@@ -1719,8 +1719,8 @@ pub async fn compute_portfolio_exposures(
 
     exposures.sort_by(|a, b| {
         b.absolute_value
-            .partial_cmp(&a.absolute_value)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .total_cmp(&a.absolute_value)
+            .then_with(|| a.name.cmp(&b.name))
     });
 
     Ok(exposures)
@@ -2693,9 +2693,11 @@ pub async fn get_xray(
         sectors_vec.sort_by(|a, b| {
             let val_a = a["value"].as_f64().unwrap_or(0.0);
             let val_b = b["value"].as_f64().unwrap_or(0.0);
-            val_b
-                .partial_cmp(&val_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            val_b.total_cmp(&val_a).then_with(|| {
+                let name_a = a["name"].as_str().unwrap_or("");
+                let name_b = b["name"].as_str().unwrap_or("");
+                name_a.cmp(name_b)
+            })
         });
 
         let total_mc_val = large_cap_val + mid_cap_val + small_cap_val + other_cap_val;

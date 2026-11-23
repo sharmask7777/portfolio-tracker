@@ -209,28 +209,54 @@ pub async fn upsert_postgres_folio(
     pan: Option<&str>,
 ) -> Result<Uuid, DbError> {
     let trimmed = folio_number.trim();
-    let base_number = trimmed.split('/').next().unwrap_or("").trim();
+    let canonical = portfolio_core::types::FolioNumber::canonical_format(trimmed);
+    let base_number = canonical.split('/').next().unwrap_or("").trim();
 
     let existing = sqlx::query_scalar::<_, String>(
         r#"
         SELECT id FROM "Folio"
         WHERE "assetId" = $1 AND "portfolioId" = $2
           AND (
-              number = $3 
-              OR ($4 <> '' AND split_part(number, '/', 1) = $4)
+              number = $3
+              OR number = $4
+              OR regexp_replace(number, '\s*/\s*', '/', 'g') = $4
+              OR regexp_replace(regexp_replace(number, '\s*/\s*', '/', 'g'), '/0+$', '') = $4
+              OR ($5 <> '' AND TRIM(split_part(number, '/', 1)) = $5)
           )
-        ORDER BY CASE WHEN number = $3 THEN 0 ELSE 1 END
+        ORDER BY
+            CASE
+                WHEN number = $3 OR number = $4 THEN 0
+                WHEN regexp_replace(number, '\s*/\s*', '/', 'g') = $4 THEN 1
+                WHEN regexp_replace(regexp_replace(number, '\s*/\s*', '/', 'g'), '/0+$', '') = $4 THEN 2
+                ELSE 3
+            END ASC
         LIMIT 1
         "#,
     )
     .bind(asset_id.to_string())
     .bind(portfolio_id.to_string())
     .bind(trimmed)
+    .bind(&canonical)
     .bind(base_number)
     .fetch_optional(pool)
     .await?;
 
     if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
+        let _ = sqlx::query(
+            r#"
+            UPDATE "Folio"
+            SET amc = COALESCE($2, amc),
+                pan = COALESCE($3, pan),
+                "updatedAt" = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(parsed.to_string())
+        .bind(amc)
+        .bind(pan)
+        .execute(pool)
+        .await;
+
         return Ok(parsed);
     }
 
@@ -247,7 +273,7 @@ pub async fn upsert_postgres_folio(
         "#,
     )
     .bind(new_id.to_string())
-    .bind(trimmed)
+    .bind(&canonical)
     .bind(amc)
     .bind(pan)
     .bind(portfolio_id.to_string())
@@ -271,6 +297,67 @@ pub async fn reconcile_postgres_folio(pool: &sqlx::PgPool, folio_id: Uuid) -> Re
     .bind(folio_id.to_string())
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+/// Reconciles all folios within a portfolio by collapsing duplicate twin folios sharing the same
+/// asset and base account number, ensuring clean-slate canonical state before fresh statement ingestion.
+pub async fn reconcile_portfolio_folios(
+    pool: &sqlx::PgPool,
+    portfolio_id: Uuid,
+) -> Result<(), DbError> {
+    sqlx::query(
+        r#"
+        WITH "DuplicateFolioClusters" AS (
+            SELECT id,
+                   "assetId",
+                   FIRST_VALUE(id) OVER (
+                       PARTITION BY "assetId", TRIM(split_part(number, '/', 1))
+                       ORDER BY "createdAt" ASC, id ASC
+                   ) AS keeper_id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY "assetId", TRIM(split_part(number, '/', 1))
+                       ORDER BY "createdAt" ASC, id ASC
+                   ) AS cluster_rank
+            FROM "Folio"
+            WHERE "portfolioId" = $1
+        ),
+        "FoliosToMerge" AS (
+            SELECT id AS orphan_id, keeper_id
+            FROM "DuplicateFolioClusters"
+            WHERE cluster_rank > 1
+        )
+        UPDATE "Transaction" t
+        SET "folioId" = m.keeper_id
+        FROM "FoliosToMerge" m
+        WHERE t."folioId" = m.orphan_id
+        "#,
+    )
+    .bind(portfolio_id.to_string())
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH "DuplicateFolioClusters" AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY "assetId", TRIM(split_part(number, '/', 1))
+                       ORDER BY "createdAt" ASC, id ASC
+                   ) AS cluster_rank
+            FROM "Folio"
+            WHERE "portfolioId" = $1
+        )
+        DELETE FROM "Folio"
+        WHERE id IN (
+            SELECT id FROM "DuplicateFolioClusters" WHERE cluster_rank > 1
+        )
+        "#,
+    )
+    .bind(portfolio_id.to_string())
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 

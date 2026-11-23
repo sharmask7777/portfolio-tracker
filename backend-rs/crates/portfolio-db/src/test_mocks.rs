@@ -626,7 +626,8 @@ impl InMemoryDatabase {
     ) -> Option<FolioEntity> {
         let state = self.state.read().expect("lock poisoned");
         let trimmed = number.trim();
-        let base_number = trimmed.split('/').next().unwrap_or("").trim();
+        let canonical = portfolio_core::types::FolioNumber::canonical_format(trimmed);
+        let base_number = canonical.split('/').next().unwrap_or("").trim();
         state
             .folios
             .values()
@@ -635,8 +636,11 @@ impl InMemoryDatabase {
                     return false;
                 }
                 let folio_trimmed = folio.number.trim();
-                let folio_base = folio_trimmed.split('/').next().unwrap_or("").trim();
+                let folio_canonical =
+                    portfolio_core::types::FolioNumber::canonical_format(folio_trimmed);
+                let folio_base = folio_canonical.split('/').next().unwrap_or("").trim();
                 folio_trimmed.eq_ignore_ascii_case(trimmed)
+                    || folio_canonical.eq_ignore_ascii_case(&canonical)
                     || (!base_number.is_empty() && folio_base.eq_ignore_ascii_case(base_number))
             })
             .cloned()
