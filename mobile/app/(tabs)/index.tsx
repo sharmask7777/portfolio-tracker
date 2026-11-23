@@ -7,14 +7,16 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
-import { usePortfolioScope } from '@portfolio/core-view';
+import { usePortfolioScope, type PerformanceMode } from '@portfolio/core-view';
 import {
   getEnrichedHoldings,
   refreshPortfolio,
   summarizeHoldings,
+  computeOverallPortfolioXirr,
   type DashboardSummary,
   type EnrichedHolding,
 } from '../../src/services/portfolio-service';
+import { usePerformanceMode } from '../../src/services/settings-service';
 import {
   getStoredFamilyProfiles,
   getStoredFolios,
@@ -173,10 +175,12 @@ interface DashboardCardsProps {
   setAssumptions: (a: RealityCheckAssumptions) => void;
   isAssumptionsOpen: boolean;
   setIsAssumptionsOpen: (open: boolean) => void;
+  performanceMode: PerformanceMode;
+  onTogglePerformanceMode: (mode: PerformanceMode) => void;
 }
 
 function DashboardCards(props: DashboardCardsProps): React.ReactElement {
-  const { data, historyPoints } = props;
+  const { data, historyPoints, performanceMode, onTogglePerformanceMode } = props;
   const hasHoldings = data.holdingsCount > 0;
 
   return (
@@ -186,7 +190,15 @@ function DashboardCards(props: DashboardCardsProps): React.ReactElement {
         <Text style={styles.title}>Dashboard</Text>
       </View>
       <RealityCheckSection {...props} />
-      <NetWorthCard totalCurrentValue={data.totalCurrentValue} totalInvestedCost={data.totalInvestedCost} unrealizedGain={data.unrealizedGain} unrealizedGainPct={data.unrealizedGainPct} />
+      <NetWorthCard
+        totalCurrentValue={data.totalCurrentValue}
+        totalInvestedCost={data.totalInvestedCost}
+        unrealizedGain={data.unrealizedGain}
+        unrealizedGainPct={data.unrealizedGainPct}
+        performanceMode={performanceMode}
+        overallXirr={data.overallXirr}
+        onTogglePerformanceMode={onTogglePerformanceMode}
+      />
       <DayReturnBanner dayGain={data.dayGain} dayGainPct={data.dayGainPct} isOfflineFallback={data.isOfflineFallback} />
       <HistoricalTrendChart
         currentValue={data.totalCurrentValue}
@@ -212,7 +224,11 @@ function useFilteredSummary(holdings: EnrichedHolding[], profiles: FamilyProfile
 
   const summary = useMemo(() => {
     if (filteredHoldings.length === 0) return defaultSummary;
-    return { ...summarizeHoldings(filteredHoldings), isOfflineFallback: false };
+    return {
+      ...summarizeHoldings(filteredHoldings),
+      overallXirr: computeOverallPortfolioXirr(filteredHoldings),
+      isOfflineFallback: false,
+    };
   }, [filteredHoldings]);
 
   return { scopeState, summary };
@@ -228,6 +244,7 @@ function useFilteredSummary(holdings: EnrichedHolding[], profiles: FamilyProfile
 export default function DashboardScreen(): React.ReactElement {
   const { holdings, profiles, folios, historyPoints, isLoading, isRefreshing, handleRefresh } = useDashboardData();
   const { scopeState, summary } = useFilteredSummary(holdings, profiles, folios);
+  const [performanceMode, setPerformanceMode] = usePerformanceMode();
   const [realityCheckMode, setRealityCheckMode] = useState(false);
   const [assumptions, setAssumptions] = useState<RealityCheckAssumptions>(DEFAULT_ASSUMPTIONS);
   const [isAssumptionsOpen, setIsAssumptionsOpen] = useState(false);
@@ -263,6 +280,8 @@ export default function DashboardScreen(): React.ReactElement {
           setAssumptions={setAssumptions}
           isAssumptionsOpen={isAssumptionsOpen}
           setIsAssumptionsOpen={setIsAssumptionsOpen}
+          performanceMode={performanceMode}
+          onTogglePerformanceMode={setPerformanceMode}
         />
       </ScrollView>
     </View>

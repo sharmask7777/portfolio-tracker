@@ -246,6 +246,43 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
       expect(folio102Holdings[0]?.amfi_code).toBe('118989');
     });
 
+    it('persists and reads day_change, day_change_pct, xirr, absolute_return, asset_category', async () => {
+      const holdingWithMetrics: HoldingEntity = {
+        id: 'hold-metrics-01',
+        folio_number: 'FOLIO-SYN-101',
+        amfi_code: '120503',
+        scheme_name: 'Synthetic Bluechip Equity Direct Growth',
+        isin: 'INF209K01157',
+        units: 100.0,
+        invested_cost: 10000.0,
+        current_nav: 125.0,
+        current_value: 12500.0,
+        asset_class: 'EQUITY',
+        nav_date: '2026-03-31',
+        updated_at: '2026-03-31T10:00:00.000Z',
+        day_change: 250.5,
+        day_change_pct: 2.04,
+        xirr: 0.156,
+        absolute_return: 0.25,
+        asset_category: 'Equity Large Cap',
+      };
+
+      await savePortfolioSnapshot(db, {
+        portfolio: syntheticPortfolio,
+        folios: syntheticFolios,
+        holdings: [holdingWithMetrics],
+      });
+
+      const holdings = await getPortfolioHoldings(db, 'FOLIO-SYN-101');
+      expect(holdings).toHaveLength(1);
+      const saved = holdings[0];
+      expect(saved?.day_change).toBe(250.5);
+      expect(saved?.day_change_pct).toBe(2.04);
+      expect(saved?.xirr).toBe(0.156);
+      expect(saved?.absolute_return).toBe(0.25);
+      expect(saved?.asset_category).toBe('Equity Large Cap');
+    });
+
     it('upserts existing records on subsequent snapshots without duplication', async () => {
       await savePortfolioSnapshot(db, {
         portfolio: syntheticPortfolio,

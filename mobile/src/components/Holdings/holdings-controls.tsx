@@ -6,7 +6,8 @@
 import React from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import { Plus } from 'lucide-react-native';
-import type { SchemeSortField } from '@portfolio/core-view';
+import type { SchemeSortField, PerformanceMode } from '@portfolio/core-view';
+import { PerformanceModeToggle } from '../Common/PerformanceModeToggle';
 
 /** Available asset class filter options */
 export const ASSET_TYPES = [
@@ -97,6 +98,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  sortToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
   sortLabel: {
     fontSize: 11,
     color: '#71717a',
@@ -140,6 +148,10 @@ export interface HoldingsFilterControlsProps {
   selectedSort: SchemeSortField;
   /** Callback on sort field selection */
   onSelectSort: (sort: SchemeSortField) => void;
+  /** Optional active performance mode: 'XIRR' or 'ABS' */
+  performanceMode?: PerformanceMode | undefined;
+  /** Optional callback on performance mode change */
+  onTogglePerformanceMode?: ((mode: PerformanceMode) => void) | undefined;
   /** Optional callback to open add asset modal */
   onOpenAddAsset?: (() => void) | undefined;
 }
@@ -214,6 +226,8 @@ export function HoldingsFilterControls(
     onSelectAsset,
     selectedSort,
     onSelectSort,
+    performanceMode,
+    onTogglePerformanceMode,
     onOpenAddAsset,
   } = props;
 
@@ -242,7 +256,12 @@ export function HoldingsFilterControls(
         testID="holdings-search-input"
       />
       <AssetPills selectedAsset={selectedAsset} onSelectAsset={onSelectAsset} />
-      <SortChips selectedSort={selectedSort} onSelectSort={onSelectSort} />
+      <View style={styles.sortToggleRow}>
+        <SortChips selectedSort={selectedSort} onSelectSort={onSelectSort} />
+        {performanceMode && onTogglePerformanceMode ? (
+          <PerformanceModeToggle mode={performanceMode} onToggle={onTogglePerformanceMode} />
+        ) : null}
+      </View>
     </View>
   );
 }

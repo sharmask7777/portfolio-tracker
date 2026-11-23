@@ -130,6 +130,7 @@ import {
 import AnalyticsScreen, {
   AllocationCard,
   AllocationCardsGrid,
+  MarketCapSection,
   AnalyticsHeader,
 } from '../app/(tabs)/analytics';
 import TabsLayout from '../app/(tabs)/_layout';
@@ -629,6 +630,9 @@ describe('Analytics Tab & Stock X-Ray Suite', () => {
 
       const grid = AllocationCardsGrid({ xrayData: mockXRayData });
       expect(grid).toBeDefined();
+
+      const marketCapSec = MarketCapSection({ marketCap: mockXRayData.marketCap });
+      expect(marketCapSec).toBeDefined();
 
       const header = AnalyticsHeader();
       expect(header).toBeDefined();

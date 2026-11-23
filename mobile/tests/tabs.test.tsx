@@ -166,6 +166,43 @@ describe('Tabs Screens & Components', () => {
       expect(getProps(element)['children']).toBeDefined();
     });
 
+    it('renders NetWorthCard with XIRR toggle and overallXirr metric', () => {
+      const onToggle = vi.fn();
+      const element = NetWorthCard({
+        totalCurrentValue: 126000,
+        totalInvestedCost: 110000,
+        unrealizedGain: 16000,
+        unrealizedGainPct: 14.55,
+        performanceMode: 'XIRR',
+        overallXirr: 0.165,
+        onTogglePerformanceMode: onToggle,
+      });
+
+      expect(getProps(element)['testID']).toBe('net-worth-card');
+      const children = getProps(element)['children'] as Array<{ props?: Record<string, unknown> }>;
+      const metricsRow = children[2]?.props?.children as Array<{ props?: Record<string, unknown> }>;
+      const gainBlock = metricsRow[1]?.props?.children as Array<{ props?: Record<string, unknown> }>;
+      expect(gainBlock[0]?.props?.children).toBe('Total Gain (XIRR)');
+      expect(gainBlock[1]?.props?.children).toContain('+16.50%');
+    });
+
+    it('falls back to Total Gain (ABS) when overallXirr is undefined in XIRR mode', () => {
+      const element = NetWorthCard({
+        totalCurrentValue: 126000,
+        totalInvestedCost: 110000,
+        unrealizedGain: 16000,
+        unrealizedGainPct: 14.55,
+        performanceMode: 'XIRR',
+        overallXirr: undefined,
+      });
+
+      const children = getProps(element)['children'] as Array<{ props?: Record<string, unknown> }>;
+      const metricsRow = children[2]?.props?.children as Array<{ props?: Record<string, unknown> }>;
+      const gainBlock = metricsRow[1]?.props?.children as Array<{ props?: Record<string, unknown> }>;
+      expect(gainBlock[0]?.props?.children).toBe('Total Gain (ABS)');
+      expect(gainBlock[1]?.props?.children).toContain('+14.55%');
+    });
+
     it('renders DayReturnBanner with positive gain and offline badge', () => {
       const element = DayReturnBanner({
         dayGain: 2100,

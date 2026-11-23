@@ -52,7 +52,9 @@ export function adaptHoldingToFolioInput(
 ): FolioInput {
   const pan = resolvePan(folioMeta);
   const amcName = resolveAmcName(folioMeta);
-  const gainPct = holding.gainLossPct !== undefined ? holding.gainLossPct / 100 : undefined;
+  const fallbackAbsReturn = holding.gainLossPct !== undefined ? holding.gainLossPct / 100 : undefined;
+  const absoluteReturn = holding.absolute_return ?? fallbackAbsReturn;
+  const xirr = holding.xirr ?? undefined;
 
   return {
     id: holding.id,
@@ -78,7 +80,8 @@ export function adaptHoldingToFolioInput(
       dayChangePercentage: holding.dayChangePct,
       currentPrice: holding.current_nav,
       totalGain: holding.gainLoss,
-      absoluteReturn: gainPct,
+      absoluteReturn,
+      xirr,
     },
   };
 }

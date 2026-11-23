@@ -249,6 +249,22 @@ describe('Mobile Holdings Breakdown Components', () => {
       expect(ASSET_TYPES.length).toBeGreaterThan(0);
       expect(SORT_OPTIONS.length).toBeGreaterThan(0);
     });
+
+    it('renders PerformanceModeToggle when performanceMode and onTogglePerformanceMode are provided', () => {
+      const onToggle = vi.fn();
+      const element = HoldingsFilterControls({
+        searchQuery: '',
+        onSearchChange: vi.fn(),
+        selectedAsset: 'ALL',
+        onSelectAsset: vi.fn(),
+        selectedSort: 'value',
+        onSelectSort: vi.fn(),
+        performanceMode: 'XIRR',
+        onTogglePerformanceMode: onToggle,
+      });
+
+      expect(element).toBeDefined();
+    });
   });
 
   describe('holding-adapters', () => {

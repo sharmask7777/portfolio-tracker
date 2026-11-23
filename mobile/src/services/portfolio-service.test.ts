@@ -46,6 +46,7 @@ import {
   syncWithServer,
   syncWithPublicFeed,
   refreshPortfolio,
+  computeOverallPortfolioXirr,
 } from './portfolio-service';
 import type { HoldingEntity } from '../db/schema';
 
@@ -156,10 +157,9 @@ describe('portfolio-service', () => {
       expect(normalizeAssetClass('Large Cap Stock')).toBe('Equity');
       expect(normalizeAssetClass('DEBT_SHORT_TERM')).toBe('Debt');
       expect(normalizeAssetClass('Liquid Fund')).toBe('Debt');
-      expect(normalizeAssetClass('Aggressive Hybrid')).toBe('Hybrid');
-      expect(normalizeAssetClass('BALANCED_ADVANTAGE')).toBe('Hybrid');
-      expect(normalizeAssetClass('Gold ETF')).toBe('Gold/Others');
-      expect(normalizeAssetClass('')).toBe('Gold/Others');
+      expect(normalizeAssetClass('Kotak Arbitrage Fund')).toBe('Arbitrage');
+      expect(normalizeAssetClass('Gold ETF')).toBe('Gold');
+      expect(normalizeAssetClass('')).toBe('Other');
     });
 
     it('formats Indian rupee currency correctly', () => {
@@ -232,6 +232,29 @@ describe('portfolio-service', () => {
       // diff is 20 per unit * 100 units = 2000 day gain
       expect(summary.dayGain).toBe(2000);
       expect(summary.dayGainPct).toBe(3.45);
+    });
+
+    it('uses server day_change and day_change_pct directly without nav_history', async () => {
+      const holdingWithServerChange: HoldingEntity = {
+        ...sampleHoldings[0]!,
+        day_change: 1500,
+        day_change_pct: 2.5,
+      };
+      const snapshot: PortfolioSnapshotInput = {
+        portfolio: { id: 'p1', name: 'Primary', updated_at: '2026-11-17T10:00:00Z' },
+        folios: [{ folio_number: '12345/A', amc_name: 'HDFC AMC', pan: 'ABCDE1234F', updated_at: '2026-11-17T10:00:00Z' }],
+        holdings: [holdingWithServerChange],
+      };
+      await savePortfolioSnapshot(db, snapshot);
+
+      const enriched = await getEnrichedHoldings(db);
+      expect(enriched).toHaveLength(1);
+      expect(enriched[0]?.dayChange).toBe(1500);
+      expect(enriched[0]?.dayChangePct).toBe(2.5);
+
+      const summary = await getDashboardSummary(db);
+      expect(summary.dayGain).toBe(1500);
+      expect(summary.dayGainPct).toBe(2.56);
     });
   });
 
@@ -422,6 +445,84 @@ describe('portfolio-service', () => {
       expect(feedResult.success).toBe(true);
       expect(feedResult.source).toBe('public_feed');
       expect(feedResult.dayGain).toBe(1000);
+    });
+  });
+
+  describe('computeOverallPortfolioXirr', () => {
+    it('returns undefined for empty holdings or non-positive valuation', () => {
+      expect(computeOverallPortfolioXirr([])).toBeUndefined();
+
+      const zeroValHolding = {
+        ...sampleHoldings[0]!,
+        current_value: 0,
+        dayChange: 0,
+        dayChangePct: 0,
+        gainLoss: 0,
+        gainLossPct: 0,
+      };
+      expect(computeOverallPortfolioXirr([zeroValHolding])).toBeUndefined();
+    });
+
+    it('computes value-weighted XIRR when all holdings have valid xirr', () => {
+      const h1 = {
+        ...sampleHoldings[0]!,
+        current_value: 60000,
+        xirr: 0.15,
+        dayChange: 0,
+        dayChangePct: 0,
+        gainLoss: 10000,
+        gainLossPct: 20,
+      };
+      const h2 = {
+        ...sampleHoldings[1]!,
+        current_value: 40000,
+        xirr: 0.10,
+        dayChange: 0,
+        dayChangePct: 0,
+        gainLoss: 5000,
+        gainLossPct: 14.28,
+      };
+
+      // (60000 * 0.15 + 40000 * 0.10) / 100000 = (9000 + 4000) / 100000 = 0.13
+      const result = computeOverallPortfolioXirr([h1, h2]);
+      expect(result).toBeCloseTo(0.13, 4);
+    });
+
+    it('falls back to absolute_return or gainLossPct when xirr is absent or zero', () => {
+      const h1 = {
+        ...sampleHoldings[0]!,
+        current_value: 50000,
+        xirr: 0.12,
+        dayChange: 0,
+        dayChangePct: 0,
+        gainLoss: 5000,
+        gainLossPct: 10,
+      };
+      const h2 = {
+        ...sampleHoldings[1]!,
+        current_value: 50000,
+        xirr: 0, // uncomputed XIRR
+        absolute_return: 0.08,
+        dayChange: 0,
+        dayChangePct: 0,
+        gainLoss: 4000,
+        gainLossPct: 8,
+      };
+      const h3 = {
+        ...sampleHoldings[0]!,
+        id: 'h3',
+        current_value: 50000,
+        xirr: undefined,
+        absolute_return: undefined,
+        dayChange: 0,
+        dayChangePct: 0,
+        gainLoss: 3000,
+        gainLossPct: 6, // 6% -> 0.06
+      };
+
+      // (50000 * 0.12 + 50000 * 0.08 + 50000 * 0.06) / 150000 = (6000 + 4000 + 3000) / 150000 = 13000 / 150000 ≈ 0.08667
+      const result = computeOverallPortfolioXirr([h1, h2, h3]);
+      expect(result).toBeCloseTo(0.08667, 4);
     });
   });
 });

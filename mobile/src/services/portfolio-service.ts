@@ -36,6 +36,7 @@ export interface DashboardSummary {
   holdingsCount: number;
   lastUpdated: string | null;
   isOfflineFallback: boolean;
+  overallXirr?: number | undefined;
 }
 
 export interface RefreshResult {
@@ -76,6 +77,45 @@ async function calculateHoldingDayChange(
   return { dayChange: 0, dayChangePct: 0 };
 }
 
+/**
+ * Computes unrealized monetary gain and percentage return for a single holding.
+ *
+ * @param currentValue - Current valuation amount in INR
+ * @param investedCost - Total invested cost amount in INR
+ * @returns Object containing absolute gainLoss and percentage gainLossPct
+ */
+function computeHoldingGainLoss(currentValue: number, investedCost: number): {
+  gainLoss: number;
+  gainLossPct: number;
+} {
+  const gainLoss = Math.round((currentValue - investedCost) * 100) / 100;
+  const gainLossPct = investedCost > 0
+    ? Math.round((gainLoss / investedCost) * 100 * 100) / 100
+    : 0;
+  return { gainLoss, gainLossPct };
+}
+
+/**
+ * Resolves day valuation change for a holding, prioritizing server-synced metrics.
+ *
+ * Falls back to computing differences against SQLite nav_history if server values are zero.
+ *
+ * @param db - SQLite database instance
+ * @param holding - Holding entity to inspect
+ * @returns Object with dayChange in INR and percentage dayChangePct
+ */
+async function resolveHoldingDayChange(
+  db: SQLiteDatabase,
+  holding: HoldingEntity,
+): Promise<{ dayChange: number; dayChangePct: number }> {
+  const dayChange = holding.day_change ?? 0;
+  const dayChangePct = holding.day_change_pct ?? 0;
+  if (dayChange !== 0 || dayChangePct !== 0) {
+    return { dayChange, dayChangePct };
+  }
+  return calculateHoldingDayChange(db, holding);
+}
+
 export async function getEnrichedHoldings(
   db?: SQLiteDatabase,
 ): Promise<EnrichedHolding[]> {
@@ -87,11 +127,8 @@ export async function getEnrichedHoldings(
   const results: EnrichedHolding[] = [];
 
   for (const h of rawHoldings) {
-    const { dayChange, dayChangePct } = await calculateHoldingDayChange(targetDb, h);
-    const gainLoss = Math.round((h.current_value - h.invested_cost) * 100) / 100;
-    const gainLossPct = h.invested_cost > 0
-      ? Math.round((gainLoss / h.invested_cost) * 100 * 100) / 100
-      : 0;
+    const { dayChange, dayChangePct } = await resolveHoldingDayChange(targetDb, h);
+    const { gainLoss, gainLossPct } = computeHoldingGainLoss(h.current_value, h.invested_cost);
     results.push({ ...h, dayChange, dayChangePct, gainLoss, gainLossPct });
   }
 
@@ -107,10 +144,7 @@ export async function getEnrichedClosedHoldings(
   }
   const rawClosed = await getClosedHoldings(targetDb);
   return rawClosed.map((h) => {
-    const gainLoss = Math.round((h.current_value - h.invested_cost) * 100) / 100;
-    const gainLossPct = h.invested_cost > 0
-      ? Math.round((gainLoss / h.invested_cost) * 100 * 100) / 100
-      : 0;
+    const { gainLoss, gainLossPct } = computeHoldingGainLoss(h.current_value, h.invested_cost);
     return { ...h, dayChange: 0, dayChangePct: 0, gainLoss, gainLossPct };
   });
 }
@@ -159,8 +193,52 @@ export async function getDashboardSummary(
   const summary = summarizeHoldings(holdings);
   return {
     ...summary,
+    overallXirr: computeOverallPortfolioXirr(holdings),
     isOfflineFallback: false,
   };
+}
+
+/**
+ * Extracts a normalized decimal return rate from an enriched holding.
+ *
+ * Checks in priority order: XIRR rate -> explicit absolute return -> calculated gain/loss percentage.
+ *
+ * @param holding - The enriched holding entity
+ * @returns Normalized decimal rate (e.g. 0.15 for 15%)
+ */
+function extractHoldingReturnRate(holding: EnrichedHolding): number {
+  if (typeof holding.xirr === 'number' && !Number.isNaN(holding.xirr) && holding.xirr !== 0) {
+    return holding.xirr;
+  }
+  if (typeof holding.absolute_return === 'number' && !Number.isNaN(holding.absolute_return)) {
+    return holding.absolute_return;
+  }
+  if (typeof holding.gainLossPct === 'number' && !Number.isNaN(holding.gainLossPct)) {
+    return holding.gainLossPct / 100;
+  }
+  return 0;
+}
+
+/**
+ * Computes value-weighted overall portfolio annualized XIRR from holdings.
+ * Falls back to absolute return for holdings without computed XIRR to prevent valuation truncation.
+ *
+ * @param holdings - Enriched holdings list
+ * @returns Weighted XIRR or undefined if no holdings have valuation
+ */
+export function computeOverallPortfolioXirr(holdings: readonly EnrichedHolding[]): number | undefined {
+  if (holdings.length === 0) return undefined;
+  let totalValuation = 0;
+  let weightedRateSum = 0;
+
+  for (const h of holdings) {
+    if (h.current_value > 0) {
+      totalValuation += h.current_value;
+      weightedRateSum += h.current_value * extractHoldingReturnRate(h);
+    }
+  }
+
+  return totalValuation > 0 ? weightedRateSum / totalValuation : undefined;
 }
 
 export async function checkServerReachable(

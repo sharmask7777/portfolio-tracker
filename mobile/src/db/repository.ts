@@ -72,9 +72,10 @@ async function upsertHolding(db: SQLiteDatabase, holding: HoldingEntity): Promis
     `INSERT INTO holdings (
        id, folio_number, amfi_code, scheme_name, isin,
        units, invested_cost, current_nav, current_value,
-       asset_class, nav_date, updated_at
+       asset_class, nav_date, updated_at,
+       day_change, day_change_pct, xirr, absolute_return, asset_category
      )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        folio_number = excluded.folio_number,
        amfi_code = excluded.amfi_code,
@@ -86,7 +87,12 @@ async function upsertHolding(db: SQLiteDatabase, holding: HoldingEntity): Promis
        current_value = excluded.current_value,
        asset_class = excluded.asset_class,
        nav_date = excluded.nav_date,
-       updated_at = excluded.updated_at;`,
+       updated_at = excluded.updated_at,
+       day_change = excluded.day_change,
+       day_change_pct = excluded.day_change_pct,
+       xirr = excluded.xirr,
+       absolute_return = excluded.absolute_return,
+       asset_category = excluded.asset_category;`,
     [
       holding.id,
       holding.folio_number,
@@ -100,6 +106,11 @@ async function upsertHolding(db: SQLiteDatabase, holding: HoldingEntity): Promis
       holding.asset_class,
       holding.nav_date,
       holding.updated_at,
+      holding.day_change ?? 0,
+      holding.day_change_pct ?? 0,
+      holding.xirr ?? 0,
+      holding.absolute_return ?? 0,
+      holding.asset_category ?? null,
     ],
   );
 }

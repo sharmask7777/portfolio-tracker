@@ -28,7 +28,16 @@ function isHybrid(assetClass: string): boolean {
   return assetClass.includes('hybrid') || assetClass.includes('balanced');
 }
 
-function categorizeHolding(nameLower: string, assetClassLower: string): AssetCategory {
+function matchHoldingCategory(cat: string): AssetCategory | null {
+  if (cat.includes('arbitrage')) return 'arbitrage';
+  if (cat.includes('cash')) return 'cash';
+  if (cat.includes('gold')) return 'gold';
+  if (cat.includes('debt')) return 'debt';
+  if (cat.includes('hybrid')) return 'hybrid';
+  return null;
+}
+
+function matchHoldingTokens(nameLower: string, assetClassLower: string): AssetCategory {
   if (nameLower.includes('arbitrage')) return 'arbitrage';
   if (isCashOrLiquid(nameLower)) return 'cash';
   if (isGold(nameLower, assetClassLower)) return 'gold';
@@ -37,11 +46,21 @@ function categorizeHolding(nameLower: string, assetClassLower: string): AssetCat
   return 'equity';
 }
 
+function categorizeHolding(
+  nameLower: string,
+  assetClassLower: string,
+  categoryLower?: string,
+): AssetCategory {
+  if (categoryLower) {
+    const matched = matchHoldingCategory(categoryLower);
+    if (matched) return matched;
+  }
+  return matchHoldingTokens(nameLower, assetClassLower);
+}
+
 function accumulateVal(acc: AllocationAccumulator, cat: AssetCategory, val: number): void {
   if (cat === 'arbitrage') {
     acc.arbitrage += val;
-    acc.equity += val * 0.65;
-    acc.debt += val * 0.35;
   } else if (cat === 'cash') {
     acc.cash += val;
   } else if (cat === 'gold') {
@@ -60,7 +79,11 @@ function classifyHoldingAmounts(holdings: EnrichedHolding[]): AllocationAccumula
   const acc: AllocationAccumulator = { equity: 0, debt: 0, cash: 0, gold: 0, other: 0, arbitrage: 0 };
   for (const h of holdings) {
     const val = Math.max(0, h.current_value);
-    const cat = categorizeHolding(h.scheme_name.toLowerCase(), (h.asset_class || '').toLowerCase());
+    const cat = categorizeHolding(
+      h.scheme_name.toLowerCase(),
+      (h.asset_class || '').toLowerCase(),
+      (h.asset_category || '').toLowerCase(),
+    );
     accumulateVal(acc, cat, val);
   }
   return acc;
@@ -124,28 +147,29 @@ function buildXRayData(totalValue: number, acc: AllocationAccumulator): XRayData
       debt: { percentage: toPct(acc.debt), value: acc.debt },
       cash: { percentage: toPct(acc.cash), value: acc.cash },
       gold: { percentage: toPct(acc.gold), value: acc.gold },
+      arbitrage: { percentage: toPct(acc.arbitrage), value: acc.arbitrage },
       other: { percentage: toPct(acc.other), value: acc.other },
     },
     sectors,
     marketCap: {
-      large: { percentage: 65, value: Math.round(eq * 0.65 * 100) / 100 },
-      mid: { percentage: 25, value: Math.round(eq * 0.25 * 100) / 100 },
-      small: { percentage: 10, value: Math.round(eq * 0.10 * 100) / 100 },
+      large: { percentage: eq > 0 ? 65 : 0, value: Math.round(eq * 0.65 * 100) / 100 },
+      mid: { percentage: eq > 0 ? 25 : 0, value: Math.round(eq * 0.25 * 100) / 100 },
+      small: { percentage: eq > 0 ? 10 : 0, value: Math.round(eq * 0.10 * 100) / 100 },
     },
     exArbitrage: {
       assetAllocation: {
-        equity: { percentage: toPct(eq - acc.arbitrage * 0.65), value: Math.max(0, eq - acc.arbitrage * 0.65) },
+        equity: { percentage: toPct(eq), value: eq },
         debt: { percentage: toPct(acc.debt), value: acc.debt },
         cash: { percentage: toPct(acc.cash), value: acc.cash },
         gold: { percentage: toPct(acc.gold), value: acc.gold },
         arbitrage: { percentage: toPct(acc.arbitrage), value: acc.arbitrage },
-        other: { percentage: 0, value: 0 },
+        other: { percentage: toPct(acc.other), value: acc.other },
       },
       sectors,
       marketCap: {
-        large: { percentage: 65, value: Math.round(eq * 0.65 * 100) / 100 },
-        mid: { percentage: 25, value: Math.round(eq * 0.25 * 100) / 100 },
-        small: { percentage: 10, value: Math.round(eq * 0.10 * 100) / 100 },
+        large: { percentage: eq > 0 ? 65 : 0, value: Math.round(eq * 0.65 * 100) / 100 },
+        mid: { percentage: eq > 0 ? 25 : 0, value: Math.round(eq * 0.25 * 100) / 100 },
+        small: { percentage: eq > 0 ? 10 : 0, value: Math.round(eq * 0.10 * 100) / 100 },
       },
     },
   };

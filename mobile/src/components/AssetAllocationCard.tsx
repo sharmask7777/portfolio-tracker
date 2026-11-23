@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { formatInr, type AssetAllocationItem } from '../services/portfolio-service';
+import { formatInr, type AssetAllocationItem } from '../services/portfolio-calculations';
 
 /**
  * Props for {@link AssetAllocationCard}.
@@ -77,11 +77,22 @@ const styles = StyleSheet.create({
   },
 });
 
+/** Standard hex color map for canonical asset classes. */
+export const ASSET_CLASS_COLORS: Record<string, string> = {
+  Equity: '#38bdf8',
+  Debt: '#10b981',
+  Arbitrage: '#ec4899',
+  Gold: '#f59e0b',
+  Cash: '#06b6d4',
+  Other: '#71717a',
+};
+
 function renderAllocationRow(item: AssetAllocationItem): React.ReactElement {
+  const color = item.color || ASSET_CLASS_COLORS[item.name] || '#71717a';
   return (
     <View key={item.name} style={styles.legendRow}>
       <View style={styles.legendLabelGroup}>
-        <View style={[styles.dot, { backgroundColor: item.color }]} />
+        <View style={[styles.dot, { backgroundColor: color }]} />
         <Text style={styles.className}>{item.name}</Text>
         <Text style={styles.percentBadge}>{item.percentage}%</Text>
       </View>
@@ -91,7 +102,7 @@ function renderAllocationRow(item: AssetAllocationItem): React.ReactElement {
 }
 
 /**
- * Card displaying portfolio asset class distribution (Equity, Debt, Hybrid, Commodities)
+ * Card displaying portfolio asset class distribution (Equity, Debt, Arbitrage, Gold, Cash, Other)
  * as a horizontal segmented progress bar with legend.
  *
  * @param props - Component properties {@link AssetAllocationCardProps}
@@ -110,18 +121,21 @@ export function AssetAllocationCard({
       ) : (
         <>
           <View style={styles.barContainer}>
-            {allocation.map((item) => (
-              <View
-                key={item.name}
-                style={[
-                  styles.barSegment,
-                  {
-                    backgroundColor: item.color,
-                    flex: item.percentage > 0 ? item.percentage : 1,
-                  },
-                ]}
-              />
-            ))}
+            {allocation.map((item) => {
+              const color = item.color || ASSET_CLASS_COLORS[item.name] || '#71717a';
+              return (
+                <View
+                  key={item.name}
+                  style={[
+                    styles.barSegment,
+                    {
+                      backgroundColor: color,
+                      flex: item.percentage > 0 ? item.percentage : 1,
+                    },
+                  ]}
+                />
+              );
+            })}
           </View>
 
           <View style={styles.legend}>
