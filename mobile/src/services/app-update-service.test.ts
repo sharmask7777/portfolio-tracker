@@ -9,6 +9,7 @@ const { mockLinking } = vi.hoisted(() => ({
 
 vi.mock('react-native', () => ({
   Linking: mockLinking,
+  Platform: { OS: 'android' },
 }));
 
 vi.mock('expo-constants', () => ({
@@ -54,6 +55,7 @@ describe('app-update-service', () => {
         ok: true,
         json: async () => ({
           tag_name: 'v2.0.0',
+          html_url: 'https://github.com/testowner/testrepo/releases/tag/v2.0.0',
           body: 'New features and offline optimizations',
           assets: [
             {
@@ -77,6 +79,9 @@ describe('app-update-service', () => {
       expect(result?.releaseNotes).toBe('New features and offline optimizations');
       expect(result?.downloadUrl).toBe(
         'https://github.com/testowner/testrepo/releases/download/v2.0.0/app.apk'
+      );
+      expect(result?.releasePageUrl).toBe(
+        'https://github.com/testowner/testrepo/releases/tag/v2.0.0'
       );
     });
 
@@ -126,8 +131,7 @@ describe('app-update-service', () => {
   });
 
   describe('downloadAndInstallUpdate', () => {
-    it('opens URL when Linking.canOpenURL returns true', async () => {
-      mockLinking.canOpenURL.mockResolvedValueOnce(true);
+    it('opens URL directly via Linking.openURL', async () => {
       mockLinking.openURL.mockResolvedValueOnce(undefined);
 
       const success = await downloadAndInstallUpdate('https://example.com/app.apk');
@@ -136,19 +140,36 @@ describe('app-update-service', () => {
       expect(mockLinking.openURL).toHaveBeenCalledWith('https://example.com/app.apk');
     });
 
-    it('returns false when Linking.canOpenURL returns false', async () => {
-      mockLinking.canOpenURL.mockResolvedValueOnce(false);
+    it('falls back to secondary URL if primary URL fails to launch', async () => {
+      mockLinking.openURL.mockRejectedValueOnce(new Error('APK launch error'));
+      mockLinking.openURL.mockResolvedValueOnce(undefined);
 
-      const success = await downloadAndInstallUpdate('invalid-url');
+      const success = await downloadAndInstallUpdate(
+        'https://example.com/app.apk',
+        'https://github.com/testowner/testrepo/releases/tag/v2.0.0'
+      );
+
+      expect(success).toBe(true);
+      expect(mockLinking.openURL).toHaveBeenCalledWith('https://example.com/app.apk');
+      expect(mockLinking.openURL).toHaveBeenCalledWith(
+        'https://github.com/testowner/testrepo/releases/tag/v2.0.0'
+      );
+    });
+
+    it('returns false when both downloadUrl and fallbackUrl are empty', async () => {
+      const success = await downloadAndInstallUpdate('', '');
 
       expect(success).toBe(false);
       expect(mockLinking.openURL).not.toHaveBeenCalled();
     });
 
-    it('returns false when Linking throws an error', async () => {
-      mockLinking.canOpenURL.mockRejectedValueOnce(new Error('OS link error'));
+    it('returns false when all launch attempts reject', async () => {
+      mockLinking.openURL.mockRejectedValue(new Error('No browser installed'));
 
-      const success = await downloadAndInstallUpdate('https://example.com/app.apk');
+      const success = await downloadAndInstallUpdate(
+        'https://example.com/app.apk',
+        'https://github.com/testowner/testrepo/releases/tag/v2.0.0'
+      );
 
       expect(success).toBe(false);
     });

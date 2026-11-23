@@ -168,7 +168,10 @@ function useAppUpdate(repoOwner: string, repoName: string) {
       Alert.alert('Download Unavailable', 'No direct APK download asset found in release.');
       return;
     }
-    const success = await downloadAndInstallUpdate(releaseInfo.downloadUrl);
+    const success = await downloadAndInstallUpdate(
+      releaseInfo.downloadUrl,
+      releaseInfo.releasePageUrl
+    );
     if (!success) {
       Alert.alert('Install Error', 'Unable to launch browser/installer for APK download.');
     }

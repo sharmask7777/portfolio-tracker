@@ -77,6 +77,7 @@ describe('AppUpdateCard Component', () => {
       version: 'mobile-v4',
       releaseNotes: 'Parity update with tax, treemap and family features.',
       downloadUrl: 'https://github.com/sharmask7777/portfolio-tracker/releases/download/mobile-v4/app.apk',
+      releasePageUrl: 'https://github.com/sharmask7777/portfolio-tracker/releases/tag/mobile-v4',
       hasUpdate: true,
     });
 
@@ -107,6 +108,7 @@ describe('AppUpdateCard Component', () => {
     await onInstall();
     expect(downloadSpy).toHaveBeenCalledWith(
       'https://github.com/sharmask7777/portfolio-tracker/releases/download/mobile-v4/app.apk',
+      'https://github.com/sharmask7777/portfolio-tracker/releases/tag/mobile-v4',
     );
   });
 
@@ -115,6 +117,7 @@ describe('AppUpdateCard Component', () => {
       version: 'mobile-v4',
       releaseNotes: 'Parity update',
       downloadUrl: 'https://github.com/test.apk',
+      releasePageUrl: 'https://github.com/test',
       hasUpdate: true,
     });
 
@@ -147,6 +150,7 @@ describe('AppUpdateCard Component', () => {
       version: 'mobile-v4',
       releaseNotes: 'No apk',
       downloadUrl: '',
+      releasePageUrl: 'https://github.com/test',
       hasUpdate: true,
     });
 
@@ -196,6 +200,7 @@ describe('AppUpdateCard Component', () => {
       version: 'mobile-v4',
       releaseNotes: 'Already latest',
       downloadUrl: 'https://github.com/test.apk',
+      releasePageUrl: 'https://github.com/test',
       hasUpdate: false,
     });
 
