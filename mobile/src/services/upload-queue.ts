@@ -10,7 +10,7 @@ import {
   generateUuid,
 } from '../db/repository';
 import type { SyncQueueItem, SyncQueueStatus } from '../db/schema';
-import { getStoredCredentials } from './auth-service';
+import { getStoredCredentials, normalizeServerUrl } from './auth-service';
 import { checkServerReachable } from './portfolio-service';
 
 export type { SyncQueueItem, SyncQueueStatus };
@@ -65,7 +65,7 @@ export function buildUploadUrl(
   serverUrl: string,
   endpoint: string = DEFAULT_UPLOAD_ENDPOINT,
 ): string {
-  const base = serverUrl.trim().replace(/\/+$/, '');
+  const base = normalizeServerUrl(serverUrl);
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   return `${base}${path}`;
 }
@@ -108,7 +108,7 @@ async function executeUploadRequest(
     body: formData,
   });
 
-  return { status: res.status, ok: res.status === 200 || res.status === 201 };
+  return { status: res.status, ok: res.status >= 200 && res.status < 300 };
 }
 
 async function uploadSingleItem(
