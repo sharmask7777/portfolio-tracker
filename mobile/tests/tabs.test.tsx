@@ -166,6 +166,21 @@ describe('Tabs Screens & Components', () => {
       expect(getProps(element)['children']).toBeDefined();
     });
 
+    it('renders NetWorthCard with XIRR toggle and overallXirr metric', () => {
+      const onToggle = vi.fn();
+      const element = NetWorthCard({
+        totalCurrentValue: 126000,
+        totalInvestedCost: 110000,
+        unrealizedGain: 16000,
+        unrealizedGainPct: 14.55,
+        performanceMode: 'XIRR',
+        overallXirr: 0.165,
+        onTogglePerformanceMode: onToggle,
+      });
+
+      expect(getProps(element)['testID']).toBe('net-worth-card');
+    });
+
     it('renders DayReturnBanner with positive gain and offline badge', () => {
       const element = DayReturnBanner({
         dayGain: 2100,

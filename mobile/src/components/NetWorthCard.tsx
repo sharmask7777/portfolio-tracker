@@ -1,6 +1,13 @@
+/**
+ * @file NetWorthCard.tsx
+ * @description Overview card showing total portfolio net worth, invested principal, and returns with XIRR/ABS mode toggle.
+ */
+
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import type { PerformanceMode } from '@portfolio/core-view';
 import { formatInr, formatPct } from '../services/portfolio-service';
+import { PerformanceModeToggle } from './Common/PerformanceModeToggle';
 
 /**
  * Props for {@link NetWorthCard}.
@@ -14,6 +21,12 @@ export interface NetWorthCardProps {
   unrealizedGain: number;
   /** Unrealized return percentage */
   unrealizedGainPct: number;
+  /** Optional performance mode toggle state: 'XIRR' or 'ABS' */
+  performanceMode?: PerformanceMode | undefined;
+  /** Optional overall annualized XIRR rate (decimal or percentage) */
+  overallXirr?: number | undefined;
+  /** Optional callback invoked when performance mode toggle is switched */
+  onTogglePerformanceMode?: ((mode: PerformanceMode) => void) | undefined;
 }
 
 const styles = StyleSheet.create({
@@ -25,13 +38,18 @@ const styles = StyleSheet.create({
     borderColor: '#27272a',
     marginBottom: 16,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
   label: {
     fontSize: 13,
     fontWeight: '500',
     color: '#a1a1aa',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 6,
   },
   value: {
     fontSize: 32,
@@ -67,6 +85,17 @@ const styles = StyleSheet.create({
   },
 });
 
+function resolveReturnPct(
+  performanceMode: PerformanceMode | undefined,
+  overallXirr: number | undefined,
+  unrealizedGainPct: number
+): number {
+  if (performanceMode === 'XIRR' && overallXirr !== undefined) {
+    return Math.abs(overallXirr) <= 2 && overallXirr !== 0 ? overallXirr * 100 : overallXirr;
+  }
+  return unrealizedGainPct;
+}
+
 /**
  * Overview card showing total portfolio net worth, invested principal, and unrealized returns.
  *
@@ -78,14 +107,24 @@ export function NetWorthCard({
   totalInvestedCost,
   unrealizedGain,
   unrealizedGainPct,
+  performanceMode,
+  overallXirr,
+  onTogglePerformanceMode,
 }: NetWorthCardProps): React.ReactElement {
   const isGainPositive = unrealizedGain >= 0;
   const gainStyle = isGainPositive ? styles.positive : styles.negative;
-  const gainFormatted = `${formatInr(unrealizedGain)} (${formatPct(unrealizedGainPct)})`;
+  const returnPct = resolveReturnPct(performanceMode, overallXirr, unrealizedGainPct);
+  const returnLabel = performanceMode ? `Total Gain (${performanceMode})` : 'Total Gain / Loss';
+  const gainFormatted = `${formatInr(unrealizedGain)} (${formatPct(returnPct)})`;
 
   return (
     <View style={styles.card} testID="net-worth-card">
-      <Text style={styles.label}>Total Net Worth</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.label}>Total Net Worth</Text>
+        {performanceMode && onTogglePerformanceMode ? (
+          <PerformanceModeToggle mode={performanceMode} onToggle={onTogglePerformanceMode} />
+        ) : null}
+      </View>
       <Text style={styles.value}>{formatInr(totalCurrentValue)}</Text>
 
       <View style={styles.metricsRow}>
@@ -95,7 +134,7 @@ export function NetWorthCard({
         </View>
 
         <View style={styles.metricBlock}>
-          <Text style={styles.metricLabel}>Total Gain / Loss</Text>
+          <Text style={styles.metricLabel}>{returnLabel}</Text>
           <Text style={[styles.metricValue, gainStyle]}>{gainFormatted}</Text>
         </View>
       </View>

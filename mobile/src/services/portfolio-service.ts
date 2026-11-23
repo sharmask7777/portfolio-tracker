@@ -36,6 +36,7 @@ export interface DashboardSummary {
   holdingsCount: number;
   lastUpdated: string | null;
   isOfflineFallback: boolean;
+  overallXirr?: number | undefined;
 }
 
 export interface RefreshResult {
@@ -176,8 +177,31 @@ export async function getDashboardSummary(
   const summary = summarizeHoldings(holdings);
   return {
     ...summary,
+    overallXirr: computeOverallPortfolioXirr(holdings),
     isOfflineFallback: false,
   };
+}
+
+/**
+ * Computes value-weighted overall portfolio annualized XIRR from holdings.
+ *
+ * @param holdings - Enriched holdings list
+ * @returns Weighted XIRR or undefined if no holdings have XIRR metrics
+ */
+export function computeOverallPortfolioXirr(holdings: readonly EnrichedHolding[]): number | undefined {
+  let totalValuation = 0;
+  let weightedXirr = 0;
+  let hasValidXirr = false;
+
+  for (const h of holdings) {
+    if (typeof h.xirr === 'number' && !Number.isNaN(h.xirr) && h.current_value > 0) {
+      totalValuation += h.current_value;
+      weightedXirr += h.current_value * h.xirr;
+      hasValidXirr = true;
+    }
+  }
+
+  return hasValidXirr && totalValuation > 0 ? weightedXirr / totalValuation : undefined;
 }
 
 export async function checkServerReachable(

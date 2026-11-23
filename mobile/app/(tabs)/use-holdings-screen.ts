@@ -23,6 +23,7 @@ import {
   type FamilyProfile,
   type FolioEntity,
 } from '../../src/services/family-service';
+import { usePerformanceMode } from '../../src/services/settings-service';
 import {
   adaptHoldingsToFolioInputs,
   type ManualAssetInput,
@@ -135,6 +136,7 @@ export function useHoldingsFilters(
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAsset, setSelectedAsset] = useState('ALL');
   const [selectedSort, setSelectedSort] = useState<SchemeSortField>('value');
+  const [performanceMode, setPerformanceMode] = usePerformanceMode();
 
   const folioInputs = useMemo(() => {
     return adaptHoldingsToFolioInputs(holdings, folios);
@@ -147,6 +149,7 @@ export function useHoldingsFilters(
     assetTypeFilter: selectedAsset,
     sortField: selectedSort,
     sortDirection: selectedSort === 'name' ? 'asc' : 'desc',
+    performanceMode,
   });
 
   return {
@@ -156,6 +159,8 @@ export function useHoldingsFilters(
     setSelectedAsset,
     selectedSort,
     setSelectedSort,
+    performanceMode,
+    setPerformanceMode,
     sortedSchemes,
     isExpanded,
     toggleExpanded,

@@ -18,6 +18,7 @@ import {
   usePortfolioScope,
   type SchemeSortField,
   type ConsolidatedSchemeGroup,
+  type PerformanceMode,
 } from '@portfolio/core-view';
 import { type EnrichedHolding } from '../../src/services/portfolio-service';
 import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
@@ -63,10 +64,11 @@ interface HoldingsListProps {
   isExpanded: (id: string) => boolean;
   onToggleExpand: (id: string) => void;
   isConsolidatedScope: boolean;
+  performanceMode?: PerformanceMode | undefined;
 }
 
 function HoldingsList(props: HoldingsListProps): React.ReactElement {
-  const { isLoading, schemes, isExpanded, onToggleExpand, isConsolidatedScope } = props;
+  const { isLoading, schemes, isExpanded, onToggleExpand, isConsolidatedScope, performanceMode } = props;
 
   if (isLoading && schemes.length === 0) {
     return (
@@ -92,6 +94,7 @@ function HoldingsList(props: HoldingsListProps): React.ReactElement {
           group={group}
           isExpanded={isExpanded(group.id)}
           onToggleExpand={onToggleExpand}
+          performanceMode={performanceMode}
           showPanBadges={isConsolidatedScope}
         />
       ))}
@@ -108,6 +111,8 @@ interface HoldingsScreenContentProps {
   setSelectedAsset: (a: string) => void;
   selectedSort: SchemeSortField;
   setSelectedSort: (s: SchemeSortField) => void;
+  performanceMode?: PerformanceMode | undefined;
+  onTogglePerformanceMode?: ((mode: PerformanceMode) => void) | undefined;
   closedHoldings: readonly EnrichedHolding[];
   onDeleteClosedFolio: (folioNumber: string) => Promise<void>;
   onOpenAddAsset: () => void;
@@ -124,6 +129,8 @@ function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactEl
     setSelectedAsset,
     selectedSort,
     setSelectedSort,
+    performanceMode,
+    onTogglePerformanceMode,
     closedHoldings,
     onDeleteClosedFolio,
     onOpenAddAsset,
@@ -150,6 +157,8 @@ function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactEl
         onSelectAsset={setSelectedAsset}
         selectedSort={selectedSort}
         onSelectSort={setSelectedSort}
+        performanceMode={performanceMode}
+        onTogglePerformanceMode={onTogglePerformanceMode}
         onOpenAddAsset={onOpenAddAsset}
       />
       <HoldingsList {...listProps} />
@@ -179,6 +188,7 @@ export default function HoldingsScreen(): React.ReactElement {
     isExpanded: filters.isExpanded,
     onToggleExpand: filters.toggleExpanded,
     isConsolidatedScope: scopeState.scope.type === 'consolidated',
+    performanceMode: filters.performanceMode,
   };
 
   return (
@@ -199,6 +209,8 @@ export default function HoldingsScreen(): React.ReactElement {
         setSelectedAsset={filters.setSelectedAsset}
         selectedSort={filters.selectedSort}
         setSelectedSort={filters.setSelectedSort}
+        performanceMode={filters.performanceMode}
+        onTogglePerformanceMode={filters.setPerformanceMode}
         closedHoldings={closedHoldings}
         onDeleteClosedFolio={handleDeleteClosedFolio}
         onOpenAddAsset={() => setAddAssetModalOpen(true)}
