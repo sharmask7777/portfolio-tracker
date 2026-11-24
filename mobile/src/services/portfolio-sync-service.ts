@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import type { DragDecompositionDto } from '../types/generated';
 import {
   savePortfolioSnapshot,
   type PortfolioSnapshotInput,
@@ -12,6 +13,16 @@ import {
   type ServerTransactionData,
 } from './portfolio-calculations';
 import { saveFamilyProfiles, type FamilyProfile } from './family-service';
+
+let cachedDrags: DragDecompositionDto | null = null;
+
+export function setCachedDrags(drags: DragDecompositionDto | null): void {
+  cachedDrags = drags;
+}
+
+export function getCachedDrags(): DragDecompositionDto | null {
+  return cachedDrags;
+}
 
 function extractFolioEntities(foliosList: ServerFolioData[], now: string): FolioEntity[] {
   return foliosList.map((f) => ({
@@ -128,6 +139,12 @@ export async function syncWithServer(
     if (!res.ok) return false;
     const json = (await res.json()) as Record<string, unknown>;
     const snapshot = parseServerPayload(json);
+    if (json['metrics'] && typeof json['metrics'] === 'object') {
+      const metrics = json['metrics'] as Record<string, unknown>;
+      if (metrics['drags']) {
+        setCachedDrags(metrics['drags'] as DragDecompositionDto);
+      }
+    }
     await savePortfolioSnapshot(targetDb, snapshot);
     await syncFamilyProfilesFromServer(profilesUrl, token);
     const historyUrl = `${trimmed}/api/portfolio/${snapshot.portfolio.id}/history`;

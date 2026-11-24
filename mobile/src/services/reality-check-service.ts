@@ -1,14 +1,13 @@
 /**
- * Reality check calculations and historical portfolio checkpoint processing.
+ * Reality check display metrics and historical portfolio checkpoint processing.
  *
- * Implements the Fisher equation for purchasing-power adjusted returns:
- *   (1 + R_post) / (1 + i) - 1
- *
- * Mathematical Invariant:
- *   Real Post-Tax Return <= Post-Tax Return <= Nominal Return (when i >= 0 and tax >= 0).
+ * Primary mode: Consumes canonical backend DragDecompositionDto contracts.
+ * Fallback mode: Provides offline client-side simulation when backend drags are absent.
  *
  * @module reality-check-service
  */
+
+import type { DragDecompositionDto } from '../types/generated';
 
 export interface RealityCheckAssumptions {
   inflationRate: number;
@@ -26,6 +25,7 @@ export interface RealityCheckInput {
   currentValue: number;
   investedCost: number;
   nominalReturn?: number | undefined;
+  drags?: DragDecompositionDto | null | undefined;
   assumptions?: Partial<RealityCheckAssumptions> | undefined;
 }
 
@@ -57,6 +57,11 @@ export interface HistoricalRawPoint {
   date: string;
   value: number;
   investedAmount: number;
+  unrealizedGain?: number | undefined;
+  gainPercentage?: number | undefined;
+  isAth?: boolean | undefined;
+  athValue?: number | undefined;
+  drawdownPercentage?: number | undefined;
 }
 
 export interface HistoricalCheckpoint {
@@ -79,102 +84,42 @@ interface ReturnsDecomposition {
   inflationDrag: number;
 }
 
-/**
- * Computes tax drag, nominal post-tax return, and Fisher real purchasing power return.
- *
- * @param nominalReturn Gross nominal annualized return
- * @param taxRate Marginal tax bracket
- * @param inflationRate Annual CPI inflation rate
- * @returns Decomposed return rates
- */
 function calculateReturnsDecomposition(
   nominalReturn: number,
   taxRate: number,
   inflationRate: number,
 ): ReturnsDecomposition {
-  const taxDrag = nominalReturn > 0
-    ? Math.round(nominalReturn * taxRate * 1000000) / 1000000
-    : 0;
-  const postTaxReturn = Math.round((nominalReturn - taxDrag) * 1000000) / 1000000;
-  const realPostTaxReturn = Math.round(
-    (((1 + postTaxReturn) / (1 + inflationRate)) - 1) * 1000000,
-  ) / 1000000;
-  const inflationDrag = Math.round((postTaxReturn - realPostTaxReturn) * 1000000) / 1000000;
-
+  const taxDrag = nominalReturn > 0 ? Math.round(nominalReturn * taxRate * 1e6) / 1e6 : 0;
+  const postTaxReturn = Math.round((nominalReturn - taxDrag) * 1e6) / 1e6;
+  const realPostTaxReturn = Math.round((((1 + postTaxReturn) / (1 + inflationRate)) - 1) * 1e6) / 1e6;
+  const inflationDrag = Math.round((postTaxReturn - realPostTaxReturn) * 1e6) / 1e6;
   return { taxDrag, postTaxReturn, realPostTaxReturn, inflationDrag };
 }
 
-/**
- * Calculates post-tax wealth and purchasing power deflated over horizon.
- *
- * @param currentValue Current portfolio market valuation
- * @param nominalGain Unrealized capital gain amount
- * @param assumptions Macro inflation, tax rate, and compounding horizon
- * @returns Wealth and purchasing power metrics
- */
 function calculatePurchasingPowerWealth(
   currentValue: number,
   nominalGain: number,
   assumptions: RealityCheckAssumptions,
 ): { estimatedTax: number; postTaxValue: number; purchasingPowerValue: number; purchasingPowerLoss: number } {
-  const estimatedTax = nominalGain > 0
-    ? Math.round(nominalGain * assumptions.taxRate * 100) / 100
-    : 0;
+  const estimatedTax = nominalGain > 0 ? Math.round(nominalGain * assumptions.taxRate * 100) / 100 : 0;
   const postTaxValue = Math.round((currentValue - estimatedTax) * 100) / 100;
   const deflator = Math.pow(1 + assumptions.inflationRate, assumptions.horizonYears);
   const purchasingPowerValue = Math.round((postTaxValue / deflator) * 100) / 100;
   const purchasingPowerLoss = Math.round((currentValue - purchasingPowerValue) * 100) / 100;
-
   return { estimatedTax, postTaxValue, purchasingPowerValue, purchasingPowerLoss };
 }
 
-/**
- * Computes spread over risk-free asset benchmark (6.5% nominal FD).
- *
- * @param realPostTaxReturn Real purchasing-power adjusted return
- * @param taxRate Marginal tax rate
- * @param inflationRate Annual CPI inflation rate
- * @returns Spread over real safe benchmark
- */
-function computeBenchmarkSpread(
-  realPostTaxReturn: number,
-  taxRate: number,
-  inflationRate: number,
-): number {
-  const rfNominal = 0.065;
-  const rfPostTax = rfNominal * (1 - taxRate);
+function computeBenchmarkSpread(realPostTaxReturn: number, taxRate: number, inflationRate: number): number {
+  const rfPostTax = 0.065 * (1 - taxRate);
   const rfReal = ((1 + rfPostTax) / (1 + inflationRate)) - 1;
-  return Math.round((realPostTaxReturn - rfReal) * 1000000) / 1000000;
+  return Math.round((realPostTaxReturn - rfReal) * 1e6) / 1e6;
 }
 
-/**
- * Assembles the sequential 6-stage drag waterfall aligned with Web DragWaterfall
- * and backend DragDecompositionDto.
- *
- * 1. Gross Nominal
- * 2. Sec 50AA Debt Drag
- * 3. Sec 112A/111A Equity Drag
- * 4. 4% Cess Drag (Cess & Overheads)
- * 5. CPI Inflation Drag
- * 6. Real Purchasing XIRR
- *
- * @param nominalReturn Gross nominal return
- * @param decomp Decomposed tax, inflation, and real returns
- * @returns Array of 6 waterfall stages
- */
-function buildWaterfallStages(
-  nominalReturn: number,
-  decomp: ReturnsDecomposition,
-): DragWaterfallStage[] {
-  // Approximate standard statutory breakdown for client-side model:
-  // - Sec 50AA Debt Drag: ~30% of total tax drag
-  // - Sec 112A/111A Equity Drag: ~66% of total tax drag
-  // - 4% Cess Drag: ~4% of total tax drag
+function buildWaterfallStages(nominalReturn: number, decomp: ReturnsDecomposition): DragWaterfallStage[] {
   const totalTax = decomp.taxDrag;
-  const debtDrag = totalTax > 0 ? Math.round(totalTax * 0.30 * 1000000) / 1000000 : 0;
-  const equityDrag = totalTax > 0 ? Math.round(totalTax * 0.66 * 1000000) / 1000000 : 0;
-  const cessDrag = totalTax > 0 ? Math.round((totalTax - debtDrag - equityDrag) * 1000000) / 1000000 : 0;
-
+  const debtDrag = totalTax > 0 ? Math.round(totalTax * 0.30 * 1e6) / 1e6 : 0;
+  const equityDrag = totalTax > 0 ? Math.round(totalTax * 0.66 * 1e6) / 1e6 : 0;
+  const cessDrag = totalTax > 0 ? Math.round((totalTax - debtDrag - equityDrag) * 1e6) / 1e6 : 0;
   return [
     { step: 1, label: 'Gross Nominal', rate: nominalReturn, drag: 0, description: 'Pre-tax annualized return' },
     { step: 2, label: 'Sec 50AA Debt Drag', rate: debtDrag, drag: -debtDrag, description: 'Slab rate debt fund taxation' },
@@ -185,27 +130,61 @@ function buildWaterfallStages(
   ];
 }
 
-/**
- * Calculates Reality Check metrics, return drags, and real purchasing-power adjusted metrics.
- *
- * @param input Portfolio valuation, invested capital, and assumption overrides
- * @returns Comprehensive reality check decomposition
- */
-export function calculateRealityCheckMetrics(
-  input: RealityCheckInput,
-): RealityCheckResult {
+function resolveBackendStages(d: DragDecompositionDto): DragWaterfallStage[] {
+  if (d.stages && d.stages.length > 0) {
+    return d.stages.map((s) => ({
+      step: s.step,
+      label: s.label,
+      rate: s.rate,
+      drag: s.drag,
+      description: s.description,
+    }));
+  }
+  return [];
+}
+
+function resolveBackendValues(input: RealityCheckInput, d: DragDecompositionDto) {
+  const nominalGain = Math.round((input.currentValue - input.investedCost) * 100) / 100;
+  // Prioritize canonical backend nominalXirr
+  const nominalReturn = d.nominalXirr ?? input.nominalReturn ?? 0;
+  const postTaxReturn = d.postTaxXirr ?? (nominalReturn - d.totalTaxDrag);
+  const realPostTaxReturn = d.realPostTaxXirr ?? (postTaxReturn - d.inflationDrag);
+  const postTaxValue = d.postTaxValue ?? input.currentValue;
+  const purchasingPowerValue = d.purchasingPowerValue ?? postTaxValue;
+  const purchasingPowerLoss = d.purchasingPowerLoss ?? Math.max(0, input.currentValue - purchasingPowerValue);
+  return { nominalGain, nominalReturn, postTaxReturn, realPostTaxReturn, postTaxValue, purchasingPowerValue, purchasingPowerLoss };
+}
+
+function calculateFromBackendDrags(input: RealityCheckInput, d: DragDecompositionDto): RealityCheckResult {
+  const v = resolveBackendValues(input, d);
+  const dragWaterfall = resolveBackendStages(d);
+
+  return {
+    nominalReturn: v.nominalReturn,
+    taxDrag: d.totalTaxDrag,
+    postTaxReturn: v.postTaxReturn,
+    inflationDrag: d.inflationDrag,
+    realPostTaxReturn: v.realPostTaxReturn,
+    nominalGain: v.nominalGain,
+    estimatedTax: Math.round((input.currentValue - v.postTaxValue) * 100) / 100,
+    postTaxValue: v.postTaxValue,
+    purchasingPowerValue: v.purchasingPowerValue,
+    purchasingPowerLoss: v.purchasingPowerLoss,
+    benchmarkSpread: d.benchmarkSpread ?? 0,
+    dragWaterfall,
+    invariantHolds: v.realPostTaxReturn <= v.postTaxReturn + 1e-5 && v.postTaxReturn <= v.nominalReturn + 1e-5,
+  };
+}
+
+function calculateFromClientAssumptions(input: RealityCheckInput): RealityCheckResult {
   const assumptions: RealityCheckAssumptions = { ...DEFAULT_ASSUMPTIONS, ...input.assumptions };
   const nominalGain = Math.round((input.currentValue - input.investedCost) * 100) / 100;
-  const nominalReturn = input.nominalReturn ?? (
-    input.investedCost > 0 ? Math.round((nominalGain / input.investedCost) * 1000000) / 1000000 : 0
-  );
-
+  const nominalReturn = input.nominalReturn ?? (input.investedCost > 0 ? Math.round((nominalGain / input.investedCost) * 1e6) / 1e6 : 0);
   const decomp = calculateReturnsDecomposition(nominalReturn, assumptions.taxRate, assumptions.inflationRate);
   const wealth = calculatePurchasingPowerWealth(input.currentValue, nominalGain, assumptions);
   const benchmarkSpread = computeBenchmarkSpread(decomp.realPostTaxReturn, assumptions.taxRate, assumptions.inflationRate);
   const dragWaterfall = buildWaterfallStages(nominalReturn, decomp);
-  const invariantHolds = decomp.realPostTaxReturn <= decomp.postTaxReturn + 0.00001
-    && decomp.postTaxReturn <= nominalReturn + 0.00001;
+  const invariantHolds = decomp.realPostTaxReturn <= decomp.postTaxReturn + 1e-5 && decomp.postTaxReturn <= nominalReturn + 1e-5;
 
   return {
     nominalReturn,
@@ -225,46 +204,38 @@ export function calculateRealityCheckMetrics(
 }
 
 /**
- * Derives mark-to-market historical checkpoints with All-Time High (ATH) tracking and drawdown.
+ * Calculates reality check display metrics using backend DTOs when present,
+ * with fallback to client simulation when offline.
  *
- * @param points Chronological valuation checkpoints
- * @returns Enriched checkpoints with ATH and drawdown metrics
+ * @param input Input values and optional backend drag DTO
+ * @returns Formatted reality check metrics
  */
-export function deriveHistoricalCheckpoints(
-  points: HistoricalRawPoint[],
-): HistoricalCheckpoint[] {
-  let rollingAth = 0;
-
-  return points.map((p) => {
-    rollingAth = Math.max(rollingAth, p.value);
-    const isAth = p.value >= rollingAth;
-    const drawdownPct = rollingAth > 0
-      ? Math.round(((p.value - rollingAth) / rollingAth) * 10000) / 100
-      : 0;
-    const unrealizedGain = Math.round((p.value - p.investedAmount) * 100) / 100;
-    const gainPct = p.investedAmount > 0
-      ? Math.round(((unrealizedGain / p.investedAmount) * 100) * 100) / 100
-      : 0;
-
-    return {
-      date: p.date,
-      value: p.value,
-      investedAmount: p.investedAmount,
-      unrealizedGain,
-      gainPct,
-      isAth,
-      athValue: rollingAth,
-      drawdownPct,
-    };
-  });
+export function calculateRealityCheckMetrics(input: RealityCheckInput): RealityCheckResult {
+  if (input.drags) {
+    return calculateFromBackendDrags(input, input.drags);
+  }
+  return calculateFromClientAssumptions(input);
 }
 
 /**
- * Gets cutoff days for range filter.
+ * Derives historical checkpoints from raw timeline points.
  *
- * @param range History range preset
- * @returns Number of days
+ * @param points Raw historical valuation points
+ * @returns Enriched historical checkpoints
  */
+export function deriveHistoricalCheckpoints(points: HistoricalRawPoint[]): HistoricalCheckpoint[] {
+  let rollingAth = 0;
+  return points.map((p) => {
+    rollingAth = Math.max(rollingAth, p.value);
+    const isAth = p.isAth ?? (p.value >= rollingAth);
+    const athValue = p.athValue ?? rollingAth;
+    const drawdownPct = p.drawdownPercentage ?? (rollingAth > 0 ? Math.round(((p.value - rollingAth) / rollingAth) * 10000) / 100 : 0);
+    const unrealizedGain = p.unrealizedGain ?? Math.round((p.value - p.investedAmount) * 100) / 100;
+    const gainPct = p.gainPercentage ?? (p.investedAmount > 0 ? Math.round(((unrealizedGain / p.investedAmount) * 100) * 100) / 100 : 0);
+    return { date: p.date, value: p.value, investedAmount: p.investedAmount, unrealizedGain, gainPct, isAth, athValue, drawdownPct };
+  });
+}
+
 function getCutoffDays(range: HistoryRangePreset): number {
   switch (range) {
     case '1M': return 30;
@@ -278,22 +249,16 @@ function getCutoffDays(range: HistoryRangePreset): number {
 }
 
 /**
- * Filters historical checkpoints by range preset.
+ * Filters historical checkpoints by a preset timeline range.
  *
- * @param checkpoints Enriched historical checkpoints
- * @param range History range filter preset
- * @returns Filtered checkpoints
+ * @param checkpoints Historical checkpoints array
+ * @param range Preset range filter
+ * @returns Filtered historical checkpoints
  */
-export function filterCheckpointsByRange(
-  checkpoints: HistoricalCheckpoint[],
-  range: HistoryRangePreset,
-): HistoricalCheckpoint[] {
+export function filterCheckpointsByRange(checkpoints: HistoricalCheckpoint[], range: HistoryRangePreset): HistoricalCheckpoint[] {
   if (range === 'ALL' || checkpoints.length === 0) return checkpoints;
-
   const days = getCutoffDays(range);
-  const now = new Date();
-  const cutoffTime = now.getTime() - (days * 24 * 60 * 60 * 1000);
-
+  const cutoffTime = new Date().getTime() - (days * 24 * 60 * 60 * 1000);
   const filtered = checkpoints.filter((cp) => new Date(cp.date).getTime() >= cutoffTime);
   if (filtered.length === 0 && checkpoints.length > 0) {
     const last = checkpoints[checkpoints.length - 1];

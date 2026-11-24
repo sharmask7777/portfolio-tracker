@@ -15,6 +15,8 @@ else
   echo "⚠️  Ruff not found on PATH; skipping Python static linting."
 fi
 python3 "$REPO_ROOT/scripts/check-privacy-and-pii.py"
+python3 "$REPO_ROOT/scripts/check-view-layer-boundaries.py" --self-test
+python3 "$REPO_ROOT/scripts/check-view-layer-boundaries.py"
 
 # 2. Rust Backend Sensors & Hermetic Pipeline
 echo "🦀 [2/4] Running Rust Backend Sensor Suite..."

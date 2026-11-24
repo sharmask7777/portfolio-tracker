@@ -2211,6 +2211,15 @@ async fn test_portfolio_summary_reality_check_metrics_and_query_validation() {
     assert!(drags["equityDrag"].is_number());
     assert!(drags["cessAndOtherDrag"].is_number());
     assert!(drags["inflationDrag"].is_number());
+    assert!(drags["totalTaxDrag"].is_number());
+    assert!(drags["totalOverallDrag"].is_number());
+    assert!(drags["postTaxValue"].is_number());
+    assert!(drags["purchasingPowerValue"].is_number());
+    assert!(drags["purchasingPowerLoss"].is_number());
+    assert!(drags["stages"].is_array());
+    assert_eq!(drags["stages"].as_array().unwrap().len(), 6);
+    assert_eq!(drags["stages"][0]["step"], 1);
+    assert_eq!(drags["stages"][5]["step"], 6);
 
     // 6. Test backward-compatible Serde alias parameters
     let alias_req = Request::builder()
@@ -2415,6 +2424,11 @@ async fn test_portfolio_history_terminal_parity_with_live_summary() {
     assert_eq!(terminal_point["date"], today.to_string());
     assert_eq!(terminal_point["investedAmount"], 10000.0);
     assert_eq!(terminal_point["value"], 15000.0); // Exact parity with summary.currentValue!
+    assert_eq!(terminal_point["unrealizedGain"], 5000.0);
+    assert_eq!(terminal_point["gainPercentage"], 50.0);
+    assert_eq!(terminal_point["isAth"], true);
+    assert_eq!(terminal_point["athValue"], 15000.0);
+    assert_eq!(terminal_point["drawdownPercentage"], 0.0);
 
     // 5. Query GET /api/portfolio/{port_id}/stats
     let stats_req = Request::builder()
@@ -2608,4 +2622,209 @@ async fn test_portfolio_summary_display_ready_pan_breakdowns_contract() {
     assert_eq!(filtered_pan_breakdowns[0]["investedAmount"], 2500.0);
     assert_eq!(filtered_pan_breakdowns[0]["currentValue"], 3000.0);
     assert_eq!(filtered_pan_breakdowns[0]["folioCount"], 1);
+}
+
+#[tokio::test]
+async fn test_portfolio_summary_with_same_day_zero_balance_stamp_duty_and_purchases() {
+    let (app, db, _) = setup_test_app();
+
+    // 1. Create a user and auth token
+    let user = db.create_user("total.order@example.com", "hash_pw");
+    let token = portfolio_api::create_jwt(
+        user.id,
+        &user.email,
+        "hermetic_test_secret_for_parity_verification_12345",
+    )
+    .unwrap();
+
+    // 2. Create managed profile with PAN
+    let profile = db
+        .create_managed_profile(
+            user.id,
+            "Total Order User",
+            "ABCDE1234F",
+            Decimal::new(3, 1),
+        )
+        .await
+        .unwrap();
+
+    // 3. Create portfolio and mutual fund folio
+    let portfolio = db
+        .create_portfolio(user.id, "Total Order Portfolio", Some(profile.id))
+        .await
+        .unwrap();
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "Nifty 50 Index Fund",
+        Some("INF200K01123"),
+        Some("120000"),
+        None,
+        None,
+    );
+    let folio = db
+        .create_folio(
+            portfolio.id,
+            asset.id,
+            "FOLIO-STAMP-DUTY-1",
+            Some("Nifty AMC"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+
+    let tx_date = Utc::now().date_naive() - Duration::days(60);
+
+    // 4. Same-day transactions: Non-zero purchases + zero-balance fee charges
+    // Stamp duty tax charge (balance = 0)
+    db.create_transaction(
+        folio.id,
+        tx_date,
+        "STAMP_DUTY_TAX",
+        Decimal::from_str("18.75").unwrap(),
+        Decimal::ZERO,
+        Decimal::ZERO,
+        Decimal::ZERO,
+        Some("TX-FEE-STAMP-1"),
+    )
+    .await
+    .unwrap();
+
+    // First purchase (balance = 4301.053)
+    db.create_transaction(
+        folio.id,
+        tx_date,
+        "PURCHASE",
+        Decimal::from_str("399980").unwrap(),
+        Decimal::from_str("3291.372").unwrap(),
+        Decimal::from_str("121.5238").unwrap(),
+        Decimal::from_str("4301.053").unwrap(),
+        Some("TX-BUY-1"),
+    )
+    .await
+    .unwrap();
+
+    // Second purchase (balance = 12529.482)
+    db.create_transaction(
+        folio.id,
+        tx_date,
+        "PURCHASE",
+        Decimal::from_str("999950").unwrap(),
+        Decimal::from_str("8228.429").unwrap(),
+        Decimal::from_str("121.5238").unwrap(),
+        Decimal::from_str("12529.482").unwrap(),
+        Some("TX-BUY-2"),
+    )
+    .await
+    .unwrap();
+
+    // Another fee charge on the same date (balance = 0)
+    db.create_transaction(
+        folio.id,
+        tx_date,
+        "OTHER",
+        Decimal::from_str("50").unwrap(),
+        Decimal::ZERO,
+        Decimal::ZERO,
+        Decimal::ZERO,
+        Some("TX-FEE-OTHER-2"),
+    )
+    .await
+    .unwrap();
+
+    // 5. Query Portfolio Summary by profileId
+    let summary_req = Request::builder()
+        .uri(format!("/api/portfolio/summary?profileId={}", profile.id))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let summary_res = app.oneshot(summary_req).await.unwrap();
+    assert_eq!(
+        summary_res.status(),
+        StatusCode::OK,
+        "Summary endpoint must return 200 OK without total order panic"
+    );
+    let summary_json = parse_json(summary_res.into_body()).await;
+
+    // Verify display-ready metrics returned cleanly
+    assert!(summary_json["metrics"].is_object());
+    assert!(summary_json["metrics"]["totalInvested"].as_f64().unwrap() > 0.0);
+    assert!(summary_json["metrics"]["drags"].is_object());
+    let stages = summary_json["metrics"]["drags"]["stages"]
+        .as_array()
+        .expect("stages array");
+    assert_eq!(
+        stages.len(),
+        6,
+        "Must contain all 6 display-ready drag stages"
+    );
+}
+
+#[tokio::test]
+async fn test_portfolio_summary_deduplicates_duplicate_folio_formats() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    let user = db.create_user("synthetic.folio.dedup@example.com", "hash_pw");
+    let token = portfolio_api::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
+
+    let portfolio = db
+        .create_portfolio(user.id, "Consolidated Wealth", None)
+        .await
+        .unwrap();
+
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "HDFC Corporate Bond Fund - Direct Plan",
+        Some("INF179K01XD8"),
+        Some("118989"),
+        None,
+        None,
+    );
+
+    // Create folio with spacing around slash
+    let folio1 = db
+        .create_folio(
+            portfolio.id,
+            asset.id,
+            "10101010 / 05",
+            Some("HDFC MF"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+
+    let tx_date = chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap();
+
+    db.create_transaction(
+        folio1.id,
+        tx_date,
+        "PURCHASE",
+        Decimal::from_str("500000").unwrap(),
+        Decimal::from_str("20000").unwrap(),
+        Decimal::from_str("25").unwrap(),
+        Decimal::from_str("20000").unwrap(),
+        Some("DEDUP-TX-1"),
+    )
+    .await
+    .unwrap();
+
+    // Query GET /api/portfolio/summary
+    let summary_req = Request::builder()
+        .uri("/api/portfolio/summary")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let summary_res = app.oneshot(summary_req).await.unwrap();
+    assert_eq!(summary_res.status(), StatusCode::OK);
+    let summary_json = parse_json(summary_res.into_body()).await;
+
+    // Invested must be 500,000, not doubled
+    let total_invested = summary_json["metrics"]["totalInvested"].as_f64().unwrap();
+    assert_eq!(total_invested, 500000.0);
+
+    // Active folios array must have length 1
+    let folios = summary_json["folios"].as_array().unwrap();
+    assert_eq!(folios.len(), 1);
+    assert_eq!(folios[0]["number"], "10101010/05");
 }

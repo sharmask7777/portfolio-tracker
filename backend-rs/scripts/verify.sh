@@ -10,7 +10,8 @@
 set -euo pipefail
 
 # Ensure standard cargo, homebrew, and developer tools binary paths are included in PATH
-if [ -z "${SDKROOT:-}" ] && [ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk" ]; then
+if [ -d "/Library/Developer/CommandLineTools" ]; then
+  export DEVELOPER_DIR="/Library/Developer/CommandLineTools"
   export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
 fi
 export PATH="/Library/Developer/CommandLineTools/usr/bin:/opt/homebrew/bin:${HOME}/.cargo/bin:${PATH}"

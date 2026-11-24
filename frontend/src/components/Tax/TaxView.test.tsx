@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { TaxView, getDaysUntilFYEndIST, formatHarvestInstructions } from './TaxView';
+import { TaxView } from './TaxView';
+import { getDaysUntilFYEndIST, formatHarvestInstructions } from './tax-harvest-instructions';
 import type { HarvestTicketResponse } from '../../types/generated/HarvestTicketResponse';
 import type { UnrealizedSummaryDto } from '../../types/generated/UnrealizedSummaryDto';
 import { describe, it, expect, vi } from 'vitest';

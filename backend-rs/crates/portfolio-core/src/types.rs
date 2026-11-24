@@ -828,6 +828,48 @@ impl<'de> Deserialize<'de> for Pan {
     }
 }
 
+/// Canonicalizes a raw mutual fund folio string into a standardized format.
+///
+/// 1. Trims leading and trailing whitespace.
+/// 2. If empty, falls back to `"DEFAULT-FOLIO"`.
+/// 3. Strips all internal ASCII whitespace (e.g. `"10101010 / 05"` -> `"10101010/05"`).
+/// 4. Uppercases all ASCII alphanumeric characters for case-insensitive determinism.
+/// 5. Strips redundant zero sub-account suffixes: if the folio ends with `"/0"`, `"/00"`, etc.,
+///    it strips the zero suffix so that `"99999999999/0"` resolves to `"99999999999"`.
+pub fn canonicalize_folio_number(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "DEFAULT-FOLIO".to_string();
+    }
+
+    let no_spaces: String = trimmed
+        .chars()
+        .filter(|c| !c.is_ascii_whitespace())
+        .collect::<String>()
+        .to_ascii_uppercase();
+
+    if no_spaces.is_empty() || no_spaces == "DEFAULT-FOLIO" {
+        return "DEFAULT-FOLIO".to_string();
+    }
+
+    // Strip trailing zero sub-account suffix (e.g. "/0", "/00")
+    if let Some((base, suffix)) = no_spaces.rsplit_once('/')
+        && !base.is_empty()
+        && !suffix.is_empty()
+        && suffix.chars().all(|c| c == '0')
+    {
+        return base.to_string();
+    }
+
+    no_spaces
+}
+
+/// Extracts the base folio number (the account identifier before any sub-account slash).
+pub fn extract_folio_base(raw: &str) -> String {
+    let canonical = canonicalize_folio_number(raw);
+    canonical.split('/').next().unwrap_or("").to_string()
+}
+
 /// Strongly-typed mutual fund or brokerage folio number.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TS)]
 #[ts(type = "string")]
@@ -851,7 +893,14 @@ impl FolioNumber {
             }
         }
 
-        Ok(Self(raw.to_string()))
+        let canonical = canonicalize_folio_number(raw);
+        Ok(Self(canonical))
+    }
+
+    /// Extracts the canonical base folio number by stripping sub-account suffixes after '/'
+    /// and trimming whitespace (e.g. "10101010 / 05" -> "10101010").
+    pub fn base_number(&self) -> &str {
+        self.0.split('/').next().unwrap_or("").trim()
     }
 
     /// Returns the underlying folio number string slice.
@@ -862,25 +911,7 @@ impl FolioNumber {
     /// Normalizes a raw folio number by collapsing whitespace around slashes (e.g. `14751338 / 05` -> `14751338/05`)
     /// and stripping registrar check-digit `/0` or `/00` suffixes (e.g. `577329058171 / 0` -> `577329058171`).
     pub fn canonical_format(s: &str) -> String {
-        let trimmed = s.trim();
-        let collapsed = trimmed
-            .split('/')
-            .map(str::trim)
-            .collect::<Vec<_>>()
-            .join("/");
-        if let Some(base) = collapsed
-            .strip_suffix("/0")
-            .or_else(|| collapsed.strip_suffix("/00"))
-        {
-            base.to_string()
-        } else {
-            collapsed
-        }
-    }
-
-    /// Returns the base account number before any sub-account slash.
-    pub fn base_number(&self) -> &str {
-        self.0.split('/').next().unwrap_or("").trim()
+        canonicalize_folio_number(s)
     }
 }
 

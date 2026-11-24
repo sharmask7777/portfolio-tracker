@@ -545,12 +545,7 @@ async fn process_cas_file_internal(
             };
 
             // 4. Folio
-            let raw_folio = if folio_data.folio.trim().is_empty() {
-                "DEFAULT-FOLIO"
-            } else {
-                folio_data.folio.trim()
-            };
-            let canonical_folio = portfolio_core::types::FolioNumber::canonical_format(raw_folio);
+            let canonical_folio = portfolio_core::canonicalize_folio_number(&folio_data.folio);
 
             let folio: FolioEntity =
                 if let Some(existing) = db.find_folio(portfolio.id, asset.id, &canonical_folio) {

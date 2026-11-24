@@ -50,6 +50,8 @@ pub struct PerformanceMetrics {
 pub struct DragDecomposition {
     /// Nominal gross annualized internal rate of return across all cash flows.
     pub nominal_xirr: Option<Decimal>,
+    /// Post-tax annualized internal rate of return.
+    pub post_tax_xirr: Option<Decimal>,
     /// Drag attributed to Section 50AA debt gains slab taxation.
     pub debt_drag: Decimal,
     /// Drag attributed to Section 112A / 111A equity capital gains taxation.
@@ -58,6 +60,10 @@ pub struct DragDecomposition {
     pub cess_and_other_drag: Decimal,
     /// Drag attributed to CPI inflation eroding purchasing power.
     pub inflation_drag: Decimal,
+    /// Total tax drag (nominal XIRR - post-tax XIRR).
+    pub total_tax_drag: Decimal,
+    /// Total overall drag from nominal gross XIRR to real post-tax XIRR.
+    pub total_overall_drag: Decimal,
     /// Net real purchasing-power return after tax and inflation.
     pub real_post_tax_xirr: Option<Decimal>,
     /// Real spread over the real post-tax risk-free benchmark rate.
@@ -267,6 +273,10 @@ pub fn calculate_drag_attribution(
                 let inf_drag = (pt - real).round_dp(6);
                 (d_drag, eq_drag, c_drag, inf_drag)
             }
+            (Some(_nom), Some(pt), Some(real)) => {
+                let inf_drag = (pt - real).round_dp(6);
+                (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, inf_drag)
+            }
             _ => (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
         };
 
@@ -281,12 +291,25 @@ pub fn calculate_drag_attribution(
             None
         };
 
+    let total_tax_drag = match (nominal_xirr, post_tax_xirr) {
+        (Some(nom), Some(pt)) if nom > Decimal::ZERO => (nom - pt).max(Decimal::ZERO).round_dp(6),
+        _ => Decimal::ZERO,
+    };
+
+    let total_overall_drag = match (nominal_xirr, real_post_tax_xirr) {
+        (Some(nom), Some(real)) => (nom - real).round_dp(6),
+        _ => total_tax_drag,
+    };
+
     Ok(DragDecomposition {
         nominal_xirr,
+        post_tax_xirr,
         debt_drag,
         equity_drag,
         cess_and_other_drag: cess_drag,
         inflation_drag,
+        total_tax_drag,
+        total_overall_drag,
         real_post_tax_xirr,
         benchmark_spread,
     })

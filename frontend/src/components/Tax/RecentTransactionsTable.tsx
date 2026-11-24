@@ -1,6 +1,6 @@
 import React from 'react';
-import { classifySection } from '../../utils/itr-report-generator';
-import type { ITRGainDetail } from '../../utils/itr-report-generator';
+import type { ITRGainDetail } from '../../utils/itr-report-types';
+import { classifySection } from '../../utils/tax-formatters';
 
 interface RecentTransactionsTableProps {
   selectedFY: string;

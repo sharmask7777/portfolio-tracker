@@ -10,9 +10,7 @@ import {
   TaxSectionName,
   type AdvanceTaxAccrualMatrix,
   type ITRGainDetail,
-  type ITRSummary,
   type ITRReportParams,
-  type ITRVerificationTarget,
 } from './itr-report-types';
 import { verifyItrInvariants } from './itr-invariants';
 import {
@@ -30,17 +28,10 @@ export type {
   ITRSummary,
   ITRReportParams,
   ITRVerificationTarget,
-};
+} from './itr-report-types';
+import { computeAY, classifySection } from './tax-formatters';
 
-/**
- * Computes the official Assessment Year (AY) string corresponding to a Financial Year (FY).
- */
-export function computeAY(fy: string): string {
-  const startYear = parseInt(fy.split('-')[0] ?? '', 10);
-  const ayStartYear = startYear + 1;
-  const ayEndYear = (startYear + 2).toString().slice(-2);
-  return `${ayStartYear}-${ayEndYear}`;
-}
+export { computeAY, classifySection };
 
 function parseMonthAndDay(dateInput: Date | string): { month: number; day: number } | null {
   if (typeof dateInput === 'string') {
@@ -140,45 +131,6 @@ export function calculate112AExemption(
     tax12_5,
     totalTax: tax10 + tax12_5,
   };
-}
-
-function isPostBudgetSell(sellDate: Date | string | undefined): boolean {
-  if (!sellDate) return false;
-  return String(sellDate) >= '2024-07-23';
-}
-
-/**
- * Classifies an individual realized capital gain lot into its exact statutory Income Tax Section.
- */
-export function classifySection(gainItem: Partial<ITRGainDetail>): string {
-  if (gainItem.section) return gainItem.section;
-
-  const { taxType, assetClass, taxRate, isGrandfathered, sellDate } = gainItem;
-  const isPostBudget = isPostBudgetSell(sellDate);
-
-  if (taxType === 'STCG') {
-    if (taxRate === 0.20 || (!taxRate && isPostBudget)) {
-      return TaxSectionName.SEC_111A_20;
-    }
-    return TaxSectionName.SEC_111A_15;
-  }
-
-  if (taxType === 'LTCG') {
-    const isDebt = assetClass === 'DEBT' || (taxRate === 0.20 && isGrandfathered);
-    if (isDebt) {
-      return taxRate === 0.20 ? TaxSectionName.SEC_112_DEBT_20 : TaxSectionName.SEC_112_DEBT_12_5;
-    }
-    if (taxRate === 0.125 || (!isGrandfathered && isPostBudget)) {
-      return TaxSectionName.SEC_112A_12_5;
-    }
-    return TaxSectionName.SEC_112A_10;
-  }
-
-  if (taxType === 'SLAB') {
-    return TaxSectionName.SEC_50AA;
-  }
-
-  return TaxSectionName.SLAB;
 }
 
 function initEmptyQuarterData() {

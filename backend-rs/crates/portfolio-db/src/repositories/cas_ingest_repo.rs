@@ -199,7 +199,8 @@ pub async fn upsert_postgres_asset(
 /// Upserts a folio account under a portfolio for an asset.
 ///
 /// Normalizes sub-account suffixes (e.g. `15161515 / 16` vs `15161515`) to prevent duplicate folios,
-/// while enforcing uniqueness on (`number`, `assetId`, `portfolioId`).
+/// while enforcing uniqueness on (`number`, `assetId`, `portfolioId`). If duplicate folios were
+/// previously created under un-normalized names, purges duplicate records and retains the primary survivor.
 pub async fn upsert_postgres_folio(
     pool: &sqlx::PgPool,
     portfolio_id: Uuid,
@@ -208,56 +209,83 @@ pub async fn upsert_postgres_folio(
     amc: Option<&str>,
     pan: Option<&str>,
 ) -> Result<Uuid, DbError> {
-    let trimmed = folio_number.trim();
-    let canonical = portfolio_core::types::FolioNumber::canonical_format(trimmed);
-    let base_number = canonical.split('/').next().unwrap_or("").trim();
+    let canonical = portfolio_core::canonicalize_folio_number(folio_number);
+    let base_number = portfolio_core::extract_folio_base(&canonical);
 
-    let existing = sqlx::query_scalar::<_, String>(
+    // Look for all existing folios under this portfolio and asset that match either:
+    // 1. The exact canonical number (ignoring spaces: REPLACE(number, ' ', '') = canonical)
+    // 2. The base folio number (TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) = base_number)
+    // Ordered such that exact canonical match comes first, followed by base match, then oldest created.
+    let matching_rows = sqlx::query_as::<_, (String, String)>(
         r#"
-        SELECT id FROM "Folio"
+        SELECT id, number FROM "Folio"
         WHERE "assetId" = $1 AND "portfolioId" = $2
           AND (
-              number = $3
-              OR number = $4
-              OR regexp_replace(number, '\s*/\s*', '/', 'g') = $4
-              OR regexp_replace(regexp_replace(number, '\s*/\s*', '/', 'g'), '/0+$', '') = $4
-              OR ($5 <> '' AND TRIM(split_part(number, '/', 1)) = $5)
+              REPLACE(number, ' ', '') = $3 
+              OR regexp_replace(number, '\s*/\s*', '/', 'g') = $3
+              OR regexp_replace(regexp_replace(number, '\s*/\s*', '/', 'g'), '/0+$', '') = $3
+              OR (
+                  $4 <> '' AND $4 <> 'DEFAULT-FOLIO' 
+                  AND TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) = $4
+              )
           )
-        ORDER BY
-            CASE
-                WHEN number = $3 OR number = $4 THEN 0
-                WHEN regexp_replace(number, '\s*/\s*', '/', 'g') = $4 THEN 1
-                WHEN regexp_replace(regexp_replace(number, '\s*/\s*', '/', 'g'), '/0+$', '') = $4 THEN 2
-                ELSE 3
-            END ASC
-        LIMIT 1
+        ORDER BY 
+            CASE 
+                WHEN REPLACE(number, ' ', '') = $3 THEN 0 
+                WHEN regexp_replace(number, '\s*/\s*', '/', 'g') = $3 THEN 1
+                WHEN regexp_replace(regexp_replace(number, '\s*/\s*', '/', 'g'), '/0+$', '') = $3 THEN 2
+                WHEN TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) = $4 THEN 3
+                ELSE 4
+            END ASC,
+            "createdAt" ASC
         "#,
     )
     .bind(asset_id.to_string())
     .bind(portfolio_id.to_string())
-    .bind(trimmed)
     .bind(&canonical)
-    .bind(base_number)
-    .fetch_optional(pool)
+    .bind(&base_number)
+    .fetch_all(pool)
     .await?;
 
-    if let Some(parsed) = existing.and_then(|s| Uuid::parse_str(&s).ok()) {
-        let _ = sqlx::query(
-            r#"
-            UPDATE "Folio"
-            SET amc = COALESCE($2, amc),
-                pan = COALESCE($3, pan),
-                "updatedAt" = NOW()
-            WHERE id = $1
-            "#,
-        )
-        .bind(parsed.to_string())
-        .bind(amc)
-        .bind(pan)
-        .execute(pool)
-        .await;
+    if !matching_rows.is_empty() {
+        let (survivor_id_str, survivor_number) = &matching_rows[0];
+        let survivor_id = Uuid::parse_str(survivor_id_str)
+            .map_err(|e| DbError::Internal(format!("Invalid survivor folio UUID: {e}")))?;
 
-        return Ok(parsed);
+        // Deduplicate: If duplicate folios were previously created, purge their transactions and remove them
+        for (dup_id_str, _) in &matching_rows[1..] {
+            sqlx::query(r#"DELETE FROM "Transaction" WHERE "folioId" = $1"#)
+                .bind(dup_id_str)
+                .execute(pool)
+                .await?;
+
+            sqlx::query(r#"DELETE FROM "Folio" WHERE id = $1"#)
+                .bind(dup_id_str)
+                .execute(pool)
+                .await?;
+        }
+
+        // Ensure the survivor folio's number is canonicalized and metadata updated
+        if survivor_number != &canonical || amc.is_some() || pan.is_some() {
+            sqlx::query(
+                r#"
+                UPDATE "Folio"
+                SET number = $1,
+                    amc = COALESCE($2, amc),
+                    pan = COALESCE($3, pan),
+                    "updatedAt" = NOW()
+                WHERE id = $4
+                "#,
+            )
+            .bind(&canonical)
+            .bind(amc)
+            .bind(pan)
+            .bind(survivor_id_str)
+            .execute(pool)
+            .await?;
+        }
+
+        return Ok(survivor_id);
     }
 
     let new_id = Uuid::new_v4();

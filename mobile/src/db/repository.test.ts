@@ -532,8 +532,26 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
       await initDatabase(db);
 
       const points = [
-        { date: '2026-01-01', value: 100000, investedAmount: 90000 },
-        { date: '2026-02-01', value: 110000, investedAmount: 95000 },
+        {
+          date: '2026-01-01',
+          value: 100000,
+          investedAmount: 90000,
+          unrealizedGain: 10000,
+          gainPercentage: 11.11,
+          isAth: false,
+          athValue: 100000,
+          drawdownPercentage: 0,
+        },
+        {
+          date: '2026-02-01',
+          value: 110000,
+          investedAmount: 95000,
+          unrealizedGain: 15000,
+          gainPercentage: 15.79,
+          isAth: false,
+          athValue: 110000,
+          drawdownPercentage: 0,
+        },
       ];
 
       await savePortfolioHistory(db, 'port-1', points);

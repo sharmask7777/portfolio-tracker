@@ -164,6 +164,23 @@ export default defineConfig([
     },
   },
   {
+    // View Layer Zero Business Logic Guardrail: enforces pure paint/rendering layers across mobile components and screens
+    files: ['src/components/**/*.{ts,tsx}', 'app/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'BinaryExpression[operator="*"][right.value=0.125], BinaryExpression[operator="*"][left.value=0.125], BinaryExpression[operator="*"][right.value=0.2], BinaryExpression[operator="*"][left.value=0.2], BinaryExpression[operator="*"][right.value=0.04], BinaryExpression[operator="*"][left.value=0.04], BinaryExpression[operator="*"][right.value=0.15], BinaryExpression[operator="*"][left.value=0.15], BinaryExpression[operator="*"][right.value=0.3], BinaryExpression[operator="*"][left.value=0.3]',
+          message: 'Forbidden statutory tax rate multiplication in view layer. Tax calculations must occur on the backend.',
+        },
+        {
+          selector: 'CallExpression[callee.object.name="Math"][callee.property.name="pow"] > BinaryExpression[operator="+"][left.value=1]',
+          message: 'Forbidden Fisher purchasing power deflator compounding in view layer. Use backend DragDecompositionDto.',
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.test.{ts,tsx}', '**/__tests__/**/*.{ts,tsx}'],
     rules: {
       'max-lines': 'off',

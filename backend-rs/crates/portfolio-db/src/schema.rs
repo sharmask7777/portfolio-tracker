@@ -347,6 +347,7 @@ pub async fn run_self_healing_migrations(pool: &PgPool) -> Result<(), sqlx::Erro
     if !folios_migrated {
         sqlx::raw_sql(
             r#"
+
             -- 1. Identify all duplicate/split twin folios sharing the same portfolio, asset,
             -- and base account number (TRIM(split_part(number, '/', 1))).
             CREATE TEMP TABLE IF NOT EXISTS "TempFoliosToMerge" AS
@@ -406,13 +407,20 @@ pub async fn run_self_healing_migrations(pool: &PgPool) -> Result<(), sqlx::Erro
                 WHERE rank_idx > 1
             );
 
-            -- 5. Purge stale PortfolioHistory snapshots for affected portfolios so they are cleanly recalculated
-            DELETE FROM "PortfolioHistory"
-            WHERE "portfolioId" IN (SELECT DISTINCT "portfolioId" FROM "TempFoliosToMerge");
+            -- 5. Canonicalize whitespace in remaining folio numbers
+            UPDATE "Folio"
+            SET number = REPLACE(number, ' ', '')
+            WHERE number LIKE '% %';
+
+            -- 6. Purge stale PortfolioHistory snapshots so they are cleanly recalculated
+            DELETE FROM "PortfolioHistory";
 
             DROP TABLE IF EXISTS "TempFoliosToMerge";
 
             INSERT INTO "_SchemaMigrations" ("id") VALUES ('reconcile_and_merge_duplicate_folios_v3')
+            ON CONFLICT ("id") DO NOTHING;
+
+            INSERT INTO "_SchemaMigrations" ("id") VALUES ('dedup_legacy_folios_v1')
             ON CONFLICT ("id") DO NOTHING;
             "#,
         )

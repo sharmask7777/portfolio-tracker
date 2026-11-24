@@ -916,3 +916,65 @@ async fn test_fund_holdings_repository_crud() {
     assert_eq!(latest_after_update[0].weight, dec("8.500"));
     assert_eq!(latest_after_update[0].sector, "Banking");
 }
+
+#[tokio::test]
+async fn test_folio_creation_canonicalization_and_deduplication() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("synthetic.investor@example.com", "hashed_pwd");
+    let portfolio = db
+        .create_portfolio(user.id, "Wealth Portfolio", None)
+        .await
+        .expect("portfolio");
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "HDFC Corporate Bond Fund - Direct Plan",
+        Some("INF179K01XD8"),
+        Some("118989"),
+        None,
+        None,
+    );
+
+    // Folio created with space before slash
+    let folio1 = db
+        .create_folio(
+            portfolio.id,
+            asset.id,
+            "10101010 / 05",
+            Some("HDFC MF"),
+            Some("ABCDE1234F"),
+        )
+        .expect("folio 1");
+    assert_eq!(folio1.number, "10101010/05");
+
+    // Folio created without space before slash - must deduplicate to same folio entity!
+    let folio2 = db
+        .create_folio(
+            portfolio.id,
+            asset.id,
+            "10101010/ 05",
+            Some("HDFC MF"),
+            Some("ABCDE1234F"),
+        )
+        .expect("folio 2");
+    assert_eq!(folio1.id, folio2.id);
+    assert_eq!(folio2.number, "10101010/05");
+
+    // Listing folios for portfolio must contain exactly 1 folio
+    let folios = db.list_folios_by_portfolio(portfolio.id);
+    assert_eq!(folios.len(), 1);
+    assert_eq!(folios[0].id, folio1.id);
+
+    // Lookup via find_folio with different spacing variants must resolve to folio1
+    let found1 = db
+        .find_folio(portfolio.id, asset.id, "10101010 / 05")
+        .expect("found 1");
+    let found2 = db
+        .find_folio(portfolio.id, asset.id, "10101010/05")
+        .expect("found 2");
+    let found3 = db
+        .find_folio(portfolio.id, asset.id, "10101010")
+        .expect("found 3");
+    assert_eq!(found1.id, folio1.id);
+    assert_eq!(found2.id, folio1.id);
+    assert_eq!(found3.id, folio1.id);
+}

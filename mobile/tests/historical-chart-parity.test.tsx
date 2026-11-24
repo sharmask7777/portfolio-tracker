@@ -58,9 +58,36 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
 
   it('renders SVG canvas and tooltip when real history points are provided', () => {
     const mockPoints: HistoryPoint[] = [
-      { date: '2026-01-01', value: 100000, investedAmount: 90000 },
-      { date: '2026-02-01', value: 110000, investedAmount: 95000 },
-      { date: '2026-03-01', value: 120000, investedAmount: 100000 },
+      {
+        date: '2026-01-01',
+        value: 100000,
+        investedAmount: 90000,
+        unrealizedGain: 10000,
+        gainPercentage: 11.11,
+        isAth: false,
+        athValue: 100000,
+        drawdownPercentage: 0,
+      },
+      {
+        date: '2026-02-01',
+        value: 110000,
+        investedAmount: 95000,
+        unrealizedGain: 15000,
+        gainPercentage: 15.79,
+        isAth: false,
+        athValue: 110000,
+        drawdownPercentage: 0,
+      },
+      {
+        date: '2026-03-01',
+        value: 120000,
+        investedAmount: 100000,
+        unrealizedGain: 20000,
+        gainPercentage: 20.0,
+        isAth: false,
+        athValue: 120000,
+        drawdownPercentage: 0,
+      },
     ];
 
     const element = HistoricalTrendChart({
@@ -77,11 +104,21 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
   });
 
   it('downsamples data smoothly when point count exceeds 300 points', () => {
-    const densePoints: HistoryPoint[] = Array.from({ length: 600 }, (_, i) => ({
-      date: new Date(2025, 0, i + 1).toISOString().split('T')[0] ?? '',
-      value: 100000 + i * 100,
-      investedAmount: 80000 + i * 50,
-    }));
+    const densePoints: HistoryPoint[] = Array.from({ length: 600 }, (_, i) => {
+      const value = 100000 + i * 100;
+      const investedAmount = 80000 + i * 50;
+      const unrealizedGain = value - investedAmount;
+      return {
+        date: new Date(2025, 0, i + 1).toISOString().split('T')[0] ?? '',
+        value,
+        investedAmount,
+        unrealizedGain,
+        gainPercentage: (unrealizedGain / investedAmount) * 100,
+        isAth: false,
+        athValue: value,
+        drawdownPercentage: 0,
+      };
+    });
 
     const element = HistoricalTrendChart({
       historyPoints: densePoints,

@@ -1,6 +1,5 @@
 import React from 'react';
-import { AdvanceTaxQuarter } from '../../utils/itr-report-generator';
-import type { AdvanceTaxAccrualMatrix } from '../../utils/itr-report-generator';
+import { AdvanceTaxQuarter, type AdvanceTaxAccrualMatrix } from '../../utils/itr-report-types';
 
 interface AdvanceTaxMatrixTableProps {
   selectedFY: string;
