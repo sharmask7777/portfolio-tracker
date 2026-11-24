@@ -14,6 +14,7 @@ use rust_decimal::Decimal;
 
 use portfolio_core::holdings::{
     Folio, Transaction, TransactionType, get_latest_units, is_unit_addition, is_unit_redemption,
+    sort_transactions,
 };
 use portfolio_core::performance::xirr::{CashFlow, calculate_xirr_with_terminal_value};
 use portfolio_core::tax::BuyLot;
@@ -502,5 +503,82 @@ proptest! {
         // Invariant 3: Sum of opportunity gains equals total_potential_harvest
         let opportunities_sum: Money = summary.opportunities.iter().map(|op| op.unrealized_gain).sum();
         prop_assert_eq!(opportunities_sum, summary.total_potential_harvest);
+    }
+
+    // ========================================================================
+    // Property 5: Strict Total Order and Transitivity of Transaction Sorting
+    // ========================================================================
+    // For any list of transactions (containing zero-balance charges, same-day
+    // purchases, and redemptions), sort_transactions must never panic and must
+    // satisfy strict transitivity: for all triplets (A, B, C):
+    // if A <= B and B <= C, then A <= C.
+    #[test]
+    fn prop_transaction_sorting_strict_total_order_and_transitivity(
+        tx_data in proptest::collection::vec(
+            (
+                0u32..=5u32, // Day offset (some same day)
+                0u8..=2u8,   // 0: Purchase, 1: Redemption, 2: Other (e.g. stamp duty)
+                proptest::option::of(1u32..=10_000u32), // balance (None -> 0.0)
+                0u32..=1000u32 // ID suffix
+            ),
+            2..=30
+        )
+    ) {
+        let base_date = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
+        let txs: Vec<Transaction> = tx_data
+            .into_iter()
+            .enumerate()
+            .map(|(idx, (day_offset, type_code, balance_opt, id_suffix))| {
+                let d = base_date + chrono::Duration::days(day_offset as i64);
+                let (tx_type, units_val) = match type_code {
+                    0 => (TransactionType::Purchase, Decimal::from(100)),
+                    1 => (TransactionType::Redemption, Decimal::from(-50)),
+                    _ => (TransactionType::Other, Decimal::ZERO),
+                };
+                let bal_val = match balance_opt {
+                    Some(b) => Decimal::from(b),
+                    None => Decimal::ZERO,
+                };
+                Transaction::new(
+                    format!("tx-{}-{}", id_suffix, idx),
+                    d,
+                    tx_type,
+                    Money::new(Decimal::from(1000)),
+                    Units::new(units_val),
+                    Nav::new(Decimal::from(10)),
+                    Units::new(bal_val),
+                )
+            })
+            .collect();
+
+        // Must never panic (driftsort / smallsort transitivity check passes)
+        let sorted = sort_transactions(&txs);
+        prop_assert_eq!(sorted.len(), txs.len());
+
+        // Invariant: Sorted order is monotonic (strictly non-decreasing under total order)
+        for i in 0..sorted.len() {
+            for j in (i + 1)..sorted.len() {
+                let a = &sorted[i];
+                let b = &sorted[j];
+                prop_assert!(a.date <= b.date);
+                if a.date == b.date {
+                    let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
+                    let b_is_sell = is_unit_redemption(b.tx_type) || b.units.is_negative();
+                    prop_assert!(a_is_sell <= b_is_sell);
+                    if a_is_sell == b_is_sell {
+                        if a_is_sell {
+                            prop_assert!(a.balance >= b.balance);
+                            if a.balance == b.balance {
+                                prop_assert!(a.id <= b.id);
+                            }
+                        } else {
+                            let a_key = (a.balance == Units::ZERO, a.balance, &a.id);
+                            let b_key = (b.balance == Units::ZERO, b.balance, &b.id);
+                            prop_assert!(a_key <= b_key);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

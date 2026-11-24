@@ -67,17 +67,16 @@ pub fn sort_transactions(transactions: &[Transaction]) -> Vec<Transaction> {
                 a_is_sell.cmp(&b_is_sell)
             })
             .then_with(|| {
-                if !a.balance.is_zero() && !b.balance.is_zero() && a.balance != b.balance {
-                    let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
-                    if a_is_sell {
-                        // For redemptions on the same date, balance decreases over time (earlier redemption has higher balance)
-                        b.balance.cmp(&a.balance)
-                    } else {
-                        // For purchases on the same date, balance increases over time (earlier purchase has lower balance)
-                        a.balance.cmp(&b.balance)
-                    }
+                let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
+                if a_is_sell {
+                    // For redemptions on the same date: earlier redemption has higher balance
+                    b.balance.cmp(&a.balance)
                 } else {
-                    std::cmp::Ordering::Equal
+                    // For purchases on the same date: earlier purchase has lower balance
+                    // Transactions with positive balance sort first by balance, zero-balance sort after
+                    let a_key = (a.balance == Units::ZERO, a.balance);
+                    let b_key = (b.balance == Units::ZERO, b.balance);
+                    a_key.cmp(&b_key)
                 }
             })
             .then_with(|| a.id.cmp(&b.id))
@@ -459,5 +458,90 @@ mod tests {
                 "tx-sell-b"
             ]
         );
+    }
+
+    #[test]
+    fn test_sort_transactions_total_order_cas_repro() {
+        let t1 = Transaction::new(
+            "a53136d2",
+            date(2022, 4, 4),
+            TransactionType::Other,
+            money("20"),
+            units("0"),
+            nav("0"),
+            units("0"),
+        );
+        let t2 = Transaction::new(
+            "b01da7a8",
+            date(2022, 4, 4),
+            TransactionType::Other,
+            money("50"),
+            units("0"),
+            nav("0"),
+            units("0"),
+        );
+        let t3 = Transaction::new(
+            "6a5f8a36",
+            date(2022, 4, 4),
+            TransactionType::Other,
+            money("18.75"),
+            units("0"),
+            nav("0"),
+            units("0"),
+        );
+        let t4 = Transaction::new(
+            "9a48a7cb",
+            date(2022, 4, 4),
+            TransactionType::Purchase,
+            money("399980"),
+            units("3291.372"),
+            nav("121.5238"),
+            units("4301.053"),
+        );
+        let t5 = Transaction::new(
+            "3aa53bf0",
+            date(2022, 4, 4),
+            TransactionType::Purchase,
+            money("999950"),
+            units("8228.429"),
+            nav("121.5238"),
+            units("12529.482"),
+        );
+        let t6 = Transaction::new(
+            "fb1b0d38",
+            date(2022, 4, 4),
+            TransactionType::Purchase,
+            money("374981.25"),
+            units("3085.661"),
+            nav("121.5238"),
+            units("15615.143"),
+        );
+
+        let txs = vec![
+            t1.clone(),
+            t2.clone(),
+            t3.clone(),
+            t4.clone(),
+            t5.clone(),
+            t6.clone(),
+        ];
+        let sorted = sort_transactions(&txs);
+        let sorted_ids: Vec<&str> = sorted.iter().map(|tx| tx.id.as_str()).collect();
+
+        // Total order verifies:
+        // 1. Positive balance purchases sorted ascending by balance (t4: 4301, t5: 12529, t6: 15615)
+        // 2. Zero-balance transactions sorted by id tie-breaker ("6a5f8a36" < "a53136d2" < "b01da7a8")
+        assert_eq!(
+            sorted_ids,
+            vec![
+                "9a48a7cb", "3aa53bf0", "fb1b0d38", "6a5f8a36", "a53136d2", "b01da7a8"
+            ]
+        );
+
+        // Verification of strict total order across reverse order
+        let rev_txs = vec![t6, t5, t4, t3, t2, t1];
+        let rev_sorted = sort_transactions(&rev_txs);
+        let rev_sorted_ids: Vec<&str> = rev_sorted.iter().map(|tx| tx.id.as_str()).collect();
+        assert_eq!(rev_sorted_ids, sorted_ids);
     }
 }

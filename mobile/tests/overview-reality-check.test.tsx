@@ -93,7 +93,7 @@ import {
   HistoricalTrendChart,
 } from '../src/components/Dashboard';
 
-import { BannerHeader } from '../src/components/Dashboard/RealityCheckBanner';
+import { BannerHeader } from '../src/components/Dashboard/RealityCheckRow';
 import { ModalHeader } from '../src/components/Dashboard/AssumptionsModal';
 import {
   ChartHeader,
@@ -212,6 +212,47 @@ describe('Task 5: Reality Check & Historical Checkpoints Suite', () => {
 
       expect(result.nominalReturn).toBeCloseTo(0.20, 2);
       expect(result.nominalGain).toBe(200000);
+    });
+
+    it('uses canonical backend drags when provided and overrides input nominal return', () => {
+      const result = calculateRealityCheckMetrics({
+        currentValue: 1200000,
+        investedCost: 1000000,
+        nominalReturn: 0.12,
+        drags: {
+          nominalXirr: 0.18,
+          postTaxXirr: 0.15,
+          debtDrag: 0.01,
+          equityDrag: 0.02,
+          cessAndOtherDrag: 0.0012,
+          inflationDrag: 0.06,
+          totalTaxDrag: 0.03,
+          totalOverallDrag: 0.09,
+          realPostTaxXirr: 0.09,
+          benchmarkSpread: 0.045,
+          postTaxValue: 1160000,
+          purchasingPowerValue: 975000,
+          purchasingPowerLoss: 225000,
+          stages: [
+            { step: 1, key: 'gross_nominal', label: 'Gross Nominal', rate: 0.18, drag: 0, description: 'Pre-tax annualized IRR' },
+            { step: 2, key: 'debt_drag', label: 'Sec 50AA Debt Drag', rate: 0.01, drag: -0.01, description: 'Slab rate debt fund taxation' },
+            { step: 3, key: 'equity_drag', label: 'Sec 112A/111A Equity', rate: 0.02, drag: -0.02, description: '12.5% LTCG / 20% STCG' },
+            { step: 4, key: 'cess_drag', label: 'Cess & Overheads', rate: 0.0012, drag: -0.0012, description: '4% health & edu cess' },
+            { step: 5, key: 'inflation_drag', label: 'CPI Inflation Drag', rate: 0.06, drag: -0.06, description: 'Purchasing power deflator' },
+            { step: 6, key: 'real_xirr', label: 'Real Purchasing XIRR', rate: 0.09, drag: 0, description: 'True real compounding' },
+          ],
+        },
+      });
+
+      expect(result.nominalReturn).toBe(0.18);
+      expect(result.postTaxReturn).toBe(0.15);
+      expect(result.realPostTaxReturn).toBe(0.09);
+      expect(result.dragWaterfall.length).toBe(6);
+      expect(result.dragWaterfall[0]?.label).toBe('Gross Nominal');
+      expect(result.dragWaterfall[1]?.label).toBe('Sec 50AA Debt Drag');
+      expect(result.benchmarkSpread).toBe(0.045);
+      expect(result.postTaxValue).toBe(1160000);
+      expect(result.purchasingPowerValue).toBe(975000);
     });
   });
 

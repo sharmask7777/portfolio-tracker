@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "pnpm build:verify && vite build",
-    "build:verify": "pnpm lint && pnpm typecheck && pnpm knip",
+    "check:view-boundaries": "python3 ../scripts/check-view-layer-boundaries.py",
+    "build:verify": "node -e \"if (require('fs').existsSync('../scripts/check-view-layer-boundaries.py')) try { require('child_process').execSync('python3 ../scripts/check-view-layer-boundaries.py', { stdio: 'inherit' }); } catch (e) { process.exit(1); }\" && pnpm lint && pnpm typecheck && pnpm knip",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint . --max-warnings=0",
     "knip": "knip --production",

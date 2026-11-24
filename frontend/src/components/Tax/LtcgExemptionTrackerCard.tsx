@@ -1,5 +1,5 @@
 import React from 'react';
-import { computeAY } from '../../utils/itr-report-generator';
+import { computeAY } from '../../utils/tax-formatters';
 
 interface LtcgExemptionTrackerCardProps {
   selectedFY: string;

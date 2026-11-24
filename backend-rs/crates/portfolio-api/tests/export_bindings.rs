@@ -10,7 +10,8 @@ use portfolio_api::routes::auth::{
 };
 use portfolio_api::routes::holdings::HoldingsSummaryResponse;
 use portfolio_api::routes::portfolio::{
-    AssetAllocationDto, DragDecompositionDto, PanBreakdownDto, SummaryMetrics,
+    AssetAllocationDto, DragDecompositionDto, DragWaterfallStageDto, PanBreakdownDto,
+    SummaryMetrics,
 };
 use portfolio_api::routes::tax::{
     HarvestOpportunityDto, HarvestTicketResponse, SimulationSellRequest, SimulationSellResponse,
@@ -53,6 +54,8 @@ fn test_export_typescript_bindings() {
     PanBreakdownDto::export_to(output_dir.join("PanBreakdownDto.ts")).expect("exported");
     AssetAllocationDto::export_to(output_dir.join("AssetAllocationDto.ts")).expect("exported");
     AssetCategory::export_to(output_dir.join("AssetCategory.ts")).expect("exported");
+    DragWaterfallStageDto::export_to(output_dir.join("DragWaterfallStageDto.ts"))
+        .expect("exported");
     DragDecompositionDto::export_to(output_dir.join("DragDecompositionDto.ts")).expect("exported");
     HarvestTicketResponse::export_to(output_dir.join("HarvestTicketResponse.ts"))
         .expect("exported");
@@ -80,6 +83,7 @@ fn test_export_typescript_bindings() {
     assert!(output_dir.join("HoldingsSummaryResponse.ts").exists());
     assert!(output_dir.join("SummaryMetrics.ts").exists());
     assert!(output_dir.join("PanBreakdownDto.ts").exists());
+    assert!(output_dir.join("DragWaterfallStageDto.ts").exists());
     assert!(output_dir.join("DragDecompositionDto.ts").exists());
     assert!(output_dir.join("HarvestTicketResponse.ts").exists());
     assert!(output_dir.join("HarvestOpportunityDto.ts").exists());

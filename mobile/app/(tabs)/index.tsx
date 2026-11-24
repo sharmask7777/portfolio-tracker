@@ -13,6 +13,7 @@ import {
   refreshPortfolio,
   summarizeHoldings,
   computeOverallPortfolioXirr,
+  getCachedDrags,
   type DashboardSummary,
   type EnrichedHolding,
 } from '../../src/services/portfolio-service';
@@ -147,7 +148,7 @@ interface RealityCheckSectionProps {
 
 function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElement {
   const { realityCheckMode, setRealityCheckMode, assumptions, setAssumptions, isAssumptionsOpen, setIsAssumptionsOpen, data } = props;
-  const nominalReturnPct = data.totalInvestedCost > 0 ? (data.unrealizedGain / data.totalInvestedCost) : 0;
+  const nominalReturnPct = data.overallXirr ?? 0;
 
   return (
     <>
@@ -158,6 +159,7 @@ function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElemen
           nominalValue={data.totalCurrentValue}
           investedCost={data.totalInvestedCost}
           nominalReturnPct={nominalReturnPct}
+          drags={data.drags}
           assumptions={assumptions}
           onOpenAssumptions={() => setIsAssumptionsOpen(true)}
         />
@@ -224,9 +226,11 @@ function useFilteredSummary(holdings: EnrichedHolding[], profiles: FamilyProfile
 
   const summary = useMemo(() => {
     if (filteredHoldings.length === 0) return defaultSummary;
+    const drags = getCachedDrags();
     return {
       ...summarizeHoldings(filteredHoldings),
       overallXirr: computeOverallPortfolioXirr(filteredHoldings),
+      drags,
       isOfflineFallback: false,
     };
   }, [filteredHoldings]);

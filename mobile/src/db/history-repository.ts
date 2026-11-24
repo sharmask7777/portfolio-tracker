@@ -57,9 +57,20 @@ export async function getPortfolioHistory(
      ORDER BY date ASC;`,
     [portfolioId, portfolioId, portfolioId, portfolioId, portfolioId],
   );
-  return rows.map((r) => ({
-    date: r.date,
-    value: r.value,
-    investedAmount: r.invested_amount,
-  }));
+  return rows.map((r) => {
+    const unrealizedGain = Math.round((r.value - r.invested_amount) * 100) / 100;
+    const gainPercentage = r.invested_amount > 0
+      ? Math.round(((unrealizedGain / r.invested_amount) * 100) * 100) / 100
+      : 0;
+    return {
+      date: r.date,
+      value: r.value,
+      investedAmount: r.invested_amount,
+      unrealizedGain,
+      gainPercentage,
+      isAth: false,
+      athValue: r.value,
+      drawdownPercentage: 0,
+    };
+  });
 }

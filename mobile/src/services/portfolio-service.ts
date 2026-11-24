@@ -20,8 +20,9 @@ import {
   type EnrichedHolding,
 } from './portfolio-calculations';
 import { syncWithServer } from './portfolio-sync-service';
-export { syncWithServer, parseServerPayload } from './portfolio-sync-service';
+export { syncWithServer, parseServerPayload, setCachedDrags, getCachedDrags } from './portfolio-sync-service';
 
+import type { DragDecompositionDto, SummaryMetrics } from '../types/generated';
 export type { TransactionEntity } from '../db/schema';
 export * from './portfolio-calculations';
 
@@ -37,6 +38,8 @@ export interface DashboardSummary {
   lastUpdated: string | null;
   isOfflineFallback: boolean;
   overallXirr?: number | undefined;
+  drags?: DragDecompositionDto | null | undefined;
+  metrics?: SummaryMetrics | undefined;
 }
 
 export interface RefreshResult {

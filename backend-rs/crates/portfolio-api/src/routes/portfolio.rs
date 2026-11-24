@@ -132,6 +132,23 @@ pub struct AssetAllocationDto {
     pub color: String,
 }
 
+/// Individual stage of the sequential 6-stage drag waterfall.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DragWaterfallStageDto {
+    pub step: u8,
+    pub key: String,
+    pub label: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub rate: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub drag: Decimal,
+    pub description: String,
+}
+
 /// Detailed sequential teardown of return drag from nominal returns down to real purchasing power.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -141,6 +158,10 @@ pub struct DragDecompositionDto {
     #[serde(with = "rust_decimal::serde::float_option")]
     #[ts(optional = nullable, type = "number")]
     pub nominal_xirr: Option<Decimal>,
+    /// Post-tax annualized internal rate of return.
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub post_tax_xirr: Option<Decimal>,
     /// Drag attributed to Section 50AA debt gains slab taxation.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
@@ -157,6 +178,14 @@ pub struct DragDecompositionDto {
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub inflation_drag: Decimal,
+    /// Total tax drag (nominal XIRR - post-tax XIRR).
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub total_tax_drag: Decimal,
+    /// Total overall drag from nominal gross XIRR to real post-tax XIRR.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub total_overall_drag: Decimal,
     /// Net real purchasing-power return after tax and inflation.
     #[serde(with = "rust_decimal::serde::float_option")]
     #[ts(optional = nullable, type = "number")]
@@ -165,18 +194,90 @@ pub struct DragDecompositionDto {
     #[serde(with = "rust_decimal::serde::float_option")]
     #[ts(optional = nullable, type = "number")]
     pub benchmark_spread: Option<Decimal>,
+    /// Post-tax portfolio valuation (net realizable wealth).
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub post_tax_value: Option<Decimal>,
+    /// Purchasing power deflated over 3-year horizon.
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub purchasing_power_value: Option<Decimal>,
+    /// Wealth erosion drag due to inflation and taxes over horizon.
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub purchasing_power_loss: Option<Decimal>,
+    /// Display-ready sequential 6-stage waterfall.
+    pub stages: Vec<DragWaterfallStageDto>,
 }
 
 impl From<portfolio_core::performance::metrics::DragDecomposition> for DragDecompositionDto {
     fn from(core: portfolio_core::performance::metrics::DragDecomposition) -> Self {
+        let stages = vec![
+            DragWaterfallStageDto {
+                step: 1,
+                key: "gross_nominal".to_string(),
+                label: "Gross Nominal".to_string(),
+                rate: core.nominal_xirr.unwrap_or(Decimal::ZERO),
+                drag: Decimal::ZERO,
+                description: "Pre-tax annualized IRR".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 2,
+                key: "debt_drag".to_string(),
+                label: "Sec 50AA Debt Drag".to_string(),
+                rate: core.debt_drag,
+                drag: -core.debt_drag,
+                description: "Slab rate debt fund taxation".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 3,
+                key: "equity_drag".to_string(),
+                label: "Sec 112A/111A Equity".to_string(),
+                rate: core.equity_drag,
+                drag: -core.equity_drag,
+                description: "12.5% LTCG / 20% STCG".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 4,
+                key: "cess_drag".to_string(),
+                label: "Cess & Overheads".to_string(),
+                rate: core.cess_and_other_drag,
+                drag: -core.cess_and_other_drag,
+                description: "4% health & edu cess".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 5,
+                key: "inflation_drag".to_string(),
+                label: "CPI Inflation Drag".to_string(),
+                rate: core.inflation_drag,
+                drag: -core.inflation_drag,
+                description: "Purchasing power deflator".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 6,
+                key: "real_xirr".to_string(),
+                label: "Real Purchasing XIRR".to_string(),
+                rate: core.real_post_tax_xirr.unwrap_or(Decimal::ZERO),
+                drag: Decimal::ZERO,
+                description: "True real compounding".to_string(),
+            },
+        ];
+
         Self {
             nominal_xirr: core.nominal_xirr,
+            post_tax_xirr: core.post_tax_xirr,
             debt_drag: core.debt_drag,
             equity_drag: core.equity_drag,
             cess_and_other_drag: core.cess_and_other_drag,
             inflation_drag: core.inflation_drag,
+            total_tax_drag: core.total_tax_drag,
+            total_overall_drag: core.total_overall_drag,
             real_post_tax_xirr: core.real_post_tax_xirr,
             benchmark_spread: core.benchmark_spread,
+            post_tax_value: None,
+            purchasing_power_value: None,
+            purchasing_power_loss: None,
+            stages,
         }
     }
 }
@@ -194,6 +295,9 @@ pub struct SummaryMetrics {
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub post_tax_total_value: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub net_realizable_value: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub total_gain: Decimal,
@@ -241,6 +345,8 @@ pub struct FolioMetrics {
     pub post_tax_absolute_return: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::float_option")]
     pub estimated_tax: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::float_option")]
+    pub net_realizable_value: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::float")]
     pub current_price: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
@@ -1719,8 +1825,8 @@ pub async fn compute_portfolio_exposures(
 
     exposures.sort_by(|a, b| {
         b.absolute_value
-            .partial_cmp(&a.absolute_value)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .total_cmp(&a.absolute_value)
+            .then_with(|| a.name.cmp(&b.name))
     });
 
     Ok(exposures)
@@ -1968,6 +2074,7 @@ pub async fn get_portfolio_summary(
                 total_invested: Decimal::ZERO,
                 total_value: Decimal::ZERO,
                 post_tax_total_value: Decimal::ZERO,
+                net_realizable_value: Decimal::ZERO,
                 total_gain: Decimal::ZERO,
                 absolute_return: Decimal::ZERO,
                 xirr: Decimal::ZERO,
@@ -2046,6 +2153,10 @@ pub async fn get_portfolio_summary(
                 (Decimal::ZERO, Decimal::ZERO)
             };
 
+            let est_tax = metrics.estimated_tax.map(portfolio_core::Money::to_decimal);
+            let net_realizable =
+                Some((current_value_decimal - est_tax.unwrap_or(Decimal::ZERO)).max(Decimal::ZERO));
+
             let folio_metrics = FolioMetrics {
                 invested_amount: invested_amount_decimal,
                 current_value: current_value_decimal,
@@ -2056,7 +2167,8 @@ pub async fn get_portfolio_summary(
                 post_tax_absolute_return: metrics
                     .post_tax_absolute_return
                     .or(Some(metrics.absolute_return)),
-                estimated_tax: metrics.estimated_tax.map(portfolio_core::Money::to_decimal),
+                estimated_tax: est_tax,
+                net_realizable_value: net_realizable,
                 current_price: latest_nav.to_decimal(),
                 day_change,
                 day_change_percentage,
@@ -2076,6 +2188,7 @@ pub async fn get_portfolio_summary(
                         post_tax_xirr: metrics.post_tax_xirr.or(metrics.xirr),
                         post_tax_absolute_return: None,
                         estimated_tax: None,
+                        net_realizable_value: None,
                         current_price: latest_nav.to_decimal(),
                         day_change: Decimal::ZERO,
                         day_change_percentage: Decimal::ZERO,
@@ -2176,10 +2289,11 @@ pub async fn get_portfolio_summary(
     for folio in &active_folios {
         if let Some(tax) = folio.metrics.estimated_tax {
             let is_debt = folio.asset.as_ref().is_some_and(|a| {
-                a.asset_type.eq_ignore_ascii_case("DEBT")
-                    || a.name.to_lowercase().contains("liquid")
-                    || a.name.to_lowercase().contains("overnight")
-                    || a.name.to_lowercase().contains("money market")
+                let core_asset_type = match a.asset_type.to_uppercase().as_str() {
+                    "STOCK" => portfolio_core::AssetType::Stock,
+                    _ => portfolio_core::AssetType::MutualFund,
+                };
+                !portfolio_core::tax::rules::is_equity(core_asset_type, &a.name)
             });
             if is_debt {
                 debt_tax += tax;
@@ -2189,19 +2303,33 @@ pub async fn get_portfolio_summary(
         }
     }
 
+    // Mandatory 4% Health & Education cess on total statutory tax
+    let cess_tax = ((debt_tax + equity_tax) * Decimal::new(4, 2)).round_dp(2);
+
     // Default risk-free benchmark: 6.5% nominal (e.g. 1-year T-Bill/FD)
     let risk_free_nominal = Some(Decimal::new(65, 3));
-    let drags = portfolio_core::performance::metrics::calculate_drag_attribution(
+    let mut drags = portfolio_core::performance::metrics::calculate_drag_attribution(
         opt_nominal_xirr,
         opt_post_tax_xirr,
         Money::new(debt_tax),
         Money::new(equity_tax),
-        Money::ZERO,
+        Money::new(cess_tax),
         cpi_rate,
         risk_free_nominal,
     )
     .ok()
     .map(DragDecompositionDto::from);
+
+    if let Some(ref mut d) = drags {
+        d.post_tax_value = Some(post_tax_total_value);
+        let one_plus_cpi = Decimal::ONE + cpi_rate;
+        let deflator = one_plus_cpi * one_plus_cpi * one_plus_cpi;
+        if deflator > Decimal::ZERO {
+            let pp_val = (post_tax_total_value / deflator).round_dp(2);
+            d.purchasing_power_value = Some(pp_val);
+            d.purchasing_power_loss = Some((total_current_value - pp_val).round_dp(2));
+        }
+    }
 
     // Compute display-ready per-PAN breakdowns
     let user_profiles = fetch_user_managed_profiles(&state, auth_user.user_id)
@@ -2344,6 +2472,7 @@ pub async fn get_portfolio_summary(
             total_invested,
             total_value: total_current_value,
             post_tax_total_value,
+            net_realizable_value: post_tax_total_value,
             total_gain,
             absolute_return,
             xirr: overall_xirr,
@@ -2693,9 +2822,11 @@ pub async fn get_xray(
         sectors_vec.sort_by(|a, b| {
             let val_a = a["value"].as_f64().unwrap_or(0.0);
             let val_b = b["value"].as_f64().unwrap_or(0.0);
-            val_b
-                .partial_cmp(&val_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            val_b.total_cmp(&val_a).then_with(|| {
+                let name_a = a["name"].as_str().unwrap_or("");
+                let name_b = b["name"].as_str().unwrap_or("");
+                name_a.cmp(name_b)
+            })
         });
 
         let total_mc_val = large_cap_val + mid_cap_val + small_cap_val + other_cap_val;
@@ -3137,11 +3268,7 @@ fn fetch_in_memory_history(
             date_inv += c;
         }
 
-        history_points.push(crate::services::HistoryPoint {
-            date,
-            value: date_val,
-            invested_amount: date_inv,
-        });
+        history_points.push(crate::services::HistoryPoint::new(date, date_val, date_inv));
     }
 
     history_points
@@ -3219,11 +3346,11 @@ pub async fn get_history(
 
     if points.is_empty() {
         if !live.total_invested.is_zero() || !live.total_value.is_zero() {
-            points.push(crate::services::HistoryPoint {
-                date: today,
-                value: live.total_value,
-                invested_amount: live.total_invested,
-            });
+            points.push(crate::services::HistoryPoint::new(
+                today,
+                live.total_value,
+                live.total_invested,
+            ));
         }
     } else {
         let last = points.last_mut().expect("points is not empty");
@@ -3231,12 +3358,32 @@ pub async fn get_history(
             last.value = live.total_value;
             last.invested_amount = live.total_invested;
         } else if last.date < today {
-            points.push(crate::services::HistoryPoint {
-                date: today,
-                value: live.total_value,
-                invested_amount: live.total_invested,
-            });
+            points.push(crate::services::HistoryPoint::new(
+                today,
+                live.total_value,
+                live.total_invested,
+            ));
         }
+    }
+
+    let mut rolling_ath = Decimal::ZERO;
+    for pt in &mut points {
+        if pt.value > rolling_ath {
+            rolling_ath = pt.value;
+        }
+        pt.is_ath = pt.value >= rolling_ath && !pt.value.is_zero();
+        pt.ath_value = rolling_ath;
+        pt.drawdown_percentage = if rolling_ath > Decimal::ZERO {
+            (((pt.value - rolling_ath) / rolling_ath) * Decimal::from(100)).round_dp(2)
+        } else {
+            Decimal::ZERO
+        };
+        pt.unrealized_gain = (pt.value - pt.invested_amount).round_dp(2);
+        pt.gain_percentage = if pt.invested_amount > Decimal::ZERO {
+            ((pt.unrealized_gain / pt.invested_amount) * Decimal::from(100)).round_dp(2)
+        } else {
+            Decimal::ZERO
+        };
     }
 
     Ok(Json(
