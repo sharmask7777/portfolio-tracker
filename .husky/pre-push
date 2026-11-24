@@ -2,10 +2,9 @@
 
 set -e
 
-if [ -z "${SDKROOT:-}" ] && [ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk" ]; then
+if [ -d "/Library/Developer/CommandLineTools" ]; then
+  export DEVELOPER_DIR="/Library/Developer/CommandLineTools"
   export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
-fi
-if [ -d "/Library/Developer/CommandLineTools/usr/bin" ]; then
   export PATH="/Library/Developer/CommandLineTools/usr/bin:${PATH}"
 fi
 
