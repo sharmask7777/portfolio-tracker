@@ -541,11 +541,8 @@ async fn process_cas_file_internal(
             };
 
             // 4. Folio
-            let folio_number = if folio_data.folio.trim().is_empty() {
-                "DEFAULT-FOLIO"
-            } else {
-                folio_data.folio.trim()
-            };
+            let canonical_folio = portfolio_core::canonicalize_folio_number(&folio_data.folio);
+            let folio_number = canonical_folio.as_str();
 
             let folio: FolioEntity =
                 if let Some(existing) = db.find_folio(portfolio.id, asset.id, folio_number) {
@@ -650,7 +647,7 @@ async fn process_cas_file_internal(
                     let pg_ext_id = format!(
                         "{}-{}-{}-{}-{}-{}-{}-{}",
                         p_id,
-                        folio.number,
+                        folio_number,
                         isin.unwrap_or("UNKNOWN"),
                         date,
                         tx_type,

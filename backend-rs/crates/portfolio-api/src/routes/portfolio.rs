@@ -687,13 +687,36 @@ pub async fn resolve_target_portfolios(
     }
 }
 
+/// Defensively filters and reconciles folio entities for a portfolio, eliminating duplicate
+/// representations of the same investment account sharing asset ID and base folio number.
+pub fn reconcile_portfolio_folios(folios: Vec<FolioEntity>) -> Vec<FolioEntity> {
+    let mut seen = std::collections::HashSet::new();
+    let mut reconciled = Vec::with_capacity(folios.len());
+
+    for folio in folios {
+        let canonical = portfolio_core::canonicalize_folio_number(&folio.number);
+        let base = portfolio_core::extract_folio_base(&canonical);
+        let dedup_key = if base.is_empty() || base == "DEFAULT-FOLIO" {
+            (folio.asset_id, canonical)
+        } else {
+            (folio.asset_id, base)
+        };
+
+        if seen.insert(dedup_key) {
+            reconciled.push(folio);
+        }
+    }
+
+    reconciled
+}
+
 /// Fetches all folios belonging to a specific portfolio ID.
 pub async fn fetch_folios_for_portfolio(
     state: &AppState,
     portfolio_id: Uuid,
 ) -> Result<Vec<FolioEntity>, ApiError> {
-    if let Some(pool) = state.pool() {
-        let folios = sqlx::query_as::<_, FolioEntity>(
+    let folios = if let Some(pool) = state.pool() {
+        sqlx::query_as::<_, FolioEntity>(
             r#"
             SELECT id::uuid, "portfolioId"::uuid, "assetId"::uuid, number, amc, pan,
                    "createdAt" AT TIME ZONE 'UTC' as "createdAt",
@@ -706,11 +729,12 @@ pub async fn fetch_folios_for_portfolio(
         .bind(portfolio_id.to_string())
         .fetch_all(pool)
         .await
-        .map_err(DbError::from)?;
-        Ok(folios)
+        .map_err(DbError::from)?
     } else {
-        Ok(state.db.list_folios_by_portfolio(portfolio_id))
-    }
+        state.db.list_folios_by_portfolio(portfolio_id)
+    };
+
+    Ok(reconcile_portfolio_folios(folios))
 }
 
 /// Fetches a single folio entity by its unique identifier.
@@ -3772,6 +3796,7 @@ pub async fn delete_folio(
     }
 
     state.db.delete_folio(folio_uuid);
+    state.db.purge_historical_valuations(portfolio.id);
 
     if let Some(pool) = state.pool() {
         let _ = sqlx::query(r#"DELETE FROM "Transaction" WHERE "folioId" = $1"#)
@@ -3780,6 +3805,10 @@ pub async fn delete_folio(
             .await;
         let _ = sqlx::query(r#"DELETE FROM "Folio" WHERE id = $1"#)
             .bind(folio_uuid.to_string())
+            .execute(pool)
+            .await;
+        let _ = sqlx::query(r#"DELETE FROM "PortfolioHistory" WHERE "portfolioId" = $1"#)
+            .bind(portfolio.id.to_string())
             .execute(pool)
             .await;
     }

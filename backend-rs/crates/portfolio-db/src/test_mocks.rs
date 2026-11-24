@@ -240,6 +240,7 @@ impl InMemoryDatabase {
     // -----------------------------------------------------------------------
 
     /// Creates and persists a new folio, validating foreign key existence of portfolio and asset.
+    /// Deduplicates against any existing folio sharing the same base folio number.
     ///
     /// # Errors
     /// Returns [`DbError::PortfolioNotFound`] or [`DbError::AssetNotFound`] if foreign keys are invalid.
@@ -259,13 +260,46 @@ impl InMemoryDatabase {
             return Err(DbError::AssetNotFound(asset_id));
         }
 
+        let canonical = portfolio_core::canonicalize_folio_number(number);
+        let base_number = portfolio_core::extract_folio_base(&canonical);
+
+        // Check if matching folio already exists
+        let existing_id = state.folios.values().find_map(|f| {
+            if f.portfolio_id == portfolio_id && f.asset_id == asset_id {
+                let f_canonical = portfolio_core::canonicalize_folio_number(&f.number);
+                let f_base = portfolio_core::extract_folio_base(&f_canonical);
+                if f_canonical.eq_ignore_ascii_case(&canonical)
+                    || (!base_number.is_empty()
+                        && base_number != "DEFAULT-FOLIO"
+                        && f_base.eq_ignore_ascii_case(&base_number))
+                {
+                    return Some(f.id);
+                }
+            }
+            None
+        });
+
+        if let Some(id) = existing_id
+            && let Some(f) = state.folios.get_mut(&id)
+        {
+            f.number = canonical;
+            if amc.is_some() {
+                f.amc = amc.map(std::string::ToString::to_string);
+            }
+            if pan.is_some() {
+                f.pan = pan.map(std::string::ToString::to_string);
+            }
+            f.updated_at = Utc::now();
+            return Ok(f.clone());
+        }
+
         let id = Uuid::new_v4();
         let now = Utc::now();
         let folio = FolioEntity {
             id,
             portfolio_id,
             asset_id,
-            number: number.to_string(),
+            number: canonical,
             amc: amc.map(std::string::ToString::to_string),
             pan: pan.map(std::string::ToString::to_string),
             created_at: now,
@@ -625,8 +659,8 @@ impl InMemoryDatabase {
         number: &str,
     ) -> Option<FolioEntity> {
         let state = self.state.read().expect("lock poisoned");
-        let trimmed = number.trim();
-        let base_number = trimmed.split('/').next().unwrap_or("").trim();
+        let canonical = portfolio_core::canonicalize_folio_number(number);
+        let base_number = portfolio_core::extract_folio_base(&canonical);
         state
             .folios
             .values()
@@ -634,10 +668,12 @@ impl InMemoryDatabase {
                 if folio.portfolio_id != portfolio_id || folio.asset_id != asset_id {
                     return false;
                 }
-                let folio_trimmed = folio.number.trim();
-                let folio_base = folio_trimmed.split('/').next().unwrap_or("").trim();
-                folio_trimmed.eq_ignore_ascii_case(trimmed)
-                    || (!base_number.is_empty() && folio_base.eq_ignore_ascii_case(base_number))
+                let folio_canonical = portfolio_core::canonicalize_folio_number(&folio.number);
+                let folio_base = portfolio_core::extract_folio_base(&folio_canonical);
+                folio_canonical.eq_ignore_ascii_case(&canonical)
+                    || (!base_number.is_empty()
+                        && base_number != "DEFAULT-FOLIO"
+                        && folio_base.eq_ignore_ascii_case(&base_number))
             })
             .cloned()
     }

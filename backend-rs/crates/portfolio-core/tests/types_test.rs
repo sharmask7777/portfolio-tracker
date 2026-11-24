@@ -647,3 +647,46 @@ fn test_all_operator_combinations_and_conversions() {
     }
     assert!(AssetType::from_str("UNKNOWN").is_err());
 }
+
+#[test]
+fn test_canonicalize_folio_number_and_extract_base() {
+    use portfolio_core::types::{canonicalize_folio_number, extract_folio_base};
+
+    // 1. Whitespace around slash and ends
+    assert_eq!(canonicalize_folio_number(" 10101010 / 05 "), "10101010/05");
+    assert_eq!(canonicalize_folio_number("10101010/ 05"), "10101010/05");
+    assert_eq!(canonicalize_folio_number("10101010 /05"), "10101010/05");
+    assert_eq!(canonicalize_folio_number("10101010/05"), "10101010/05");
+
+    // 2. Base extraction
+    assert_eq!(extract_folio_base(" 10101010 / 05 "), "10101010");
+    assert_eq!(extract_folio_base("10101010/ 05"), "10101010");
+    assert_eq!(extract_folio_base("10101010"), "10101010");
+
+    // 3. CAMS / 0 default sub-account stripping
+    assert_eq!(canonicalize_folio_number("99999999999 / 0"), "99999999999");
+    assert_eq!(canonicalize_folio_number("99999999999/00"), "99999999999");
+    assert_eq!(canonicalize_folio_number("99999999999"), "99999999999");
+    assert_eq!(extract_folio_base("99999999999 / 0"), "99999999999");
+
+    // 4. Default / Empty handling
+    assert_eq!(canonicalize_folio_number(""), "DEFAULT-FOLIO");
+    assert_eq!(canonicalize_folio_number("   "), "DEFAULT-FOLIO");
+    assert_eq!(canonicalize_folio_number("DEFAULT-FOLIO"), "DEFAULT-FOLIO");
+    assert_eq!(extract_folio_base(""), "DEFAULT-FOLIO");
+    assert_eq!(extract_folio_base("DEFAULT-FOLIO"), "DEFAULT-FOLIO");
+
+    // 5. FolioNumber struct integration
+    let f1 = FolioNumber::new(" 10101010 / 05 ").unwrap();
+    let f2 = FolioNumber::new("10101010/ 05").unwrap();
+    let f3 = FolioNumber::new("10101010/05").unwrap();
+    assert_eq!(f1, f2);
+    assert_eq!(f2, f3);
+    assert_eq!(f1.as_str(), "10101010/05");
+    assert_eq!(f1.base_number(), "10101010");
+
+    let f_cams1 = FolioNumber::new("99999999999 / 0").unwrap();
+    let f_cams2 = FolioNumber::new("99999999999").unwrap();
+    assert_eq!(f_cams1, f_cams2);
+    assert_eq!(f_cams1.base_number(), "99999999999");
+}

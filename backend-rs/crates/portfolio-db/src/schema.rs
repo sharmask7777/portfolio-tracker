@@ -337,6 +337,71 @@ pub async fn run_self_healing_migrations(pool: &PgPool) -> Result<(), sqlx::Erro
         .await?;
     }
 
+    let folios_migrated: bool = sqlx::query_scalar::<_, bool>(
+        r#"SELECT EXISTS(SELECT 1 FROM "_SchemaMigrations" WHERE id = 'dedup_legacy_folios_v1')"#,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !folios_migrated {
+        sqlx::raw_sql(
+            r#"
+            -- Step 1: Identify duplicate folios sharing (portfolioId, assetId, base_number)
+            -- and delete duplicate transactions belonging to the non-survivor folios.
+            WITH "RankedFolios" AS (
+                SELECT id,
+                       "portfolioId",
+                       "assetId",
+                       number,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "portfolioId",
+                                        "assetId",
+                                        TRIM(split_part(REPLACE(number, ' ', ''), '/', 1))
+                           ORDER BY "createdAt" ASC, id ASC
+                       ) AS rank_idx
+                FROM "Folio"
+                WHERE TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) <> ''
+                  AND TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) <> 'DEFAULT-FOLIO'
+            ),
+            "DuplicateFolios" AS (
+                SELECT id FROM "RankedFolios" WHERE rank_idx > 1
+            )
+            DELETE FROM "Transaction"
+            WHERE "folioId" IN (SELECT id FROM "DuplicateFolios");
+
+            -- Step 2: Delete duplicate non-survivor folio entities
+            WITH "RankedFolios" AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY "portfolioId",
+                                        "assetId",
+                                        TRIM(split_part(REPLACE(number, ' ', ''), '/', 1))
+                           ORDER BY "createdAt" ASC, id ASC
+                       ) AS rank_idx
+                FROM "Folio"
+                WHERE TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) <> ''
+                  AND TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) <> 'DEFAULT-FOLIO'
+            )
+            DELETE FROM "Folio"
+            WHERE id IN (SELECT id FROM "RankedFolios" WHERE rank_idx > 1);
+
+            -- Step 3: Canonicalize whitespace in remaining folio numbers
+            UPDATE "Folio"
+            SET number = REPLACE(number, ' ', '')
+            WHERE number LIKE '% %';
+
+            -- Step 4: Purge cached portfolio valuations for any affected portfolios so they are cleanly recomputed
+            DELETE FROM "PortfolioHistory";
+
+            INSERT INTO "_SchemaMigrations" ("id") VALUES ('dedup_legacy_folios_v1')
+            ON CONFLICT ("id") DO NOTHING;
+            "#,
+        )
+        .execute(pool)
+        .await?;
+    }
+
     Ok(())
 }
 

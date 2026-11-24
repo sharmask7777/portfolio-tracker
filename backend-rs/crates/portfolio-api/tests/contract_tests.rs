@@ -2759,3 +2759,72 @@ async fn test_portfolio_summary_with_same_day_zero_balance_stamp_duty_and_purcha
         "Must contain all 6 display-ready drag stages"
     );
 }
+
+#[tokio::test]
+async fn test_portfolio_summary_deduplicates_duplicate_folio_formats() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    let user = db.create_user("synthetic.folio.dedup@example.com", "hash_pw");
+    let token = portfolio_api::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
+
+    let portfolio = db
+        .create_portfolio(user.id, "Consolidated Wealth", None)
+        .await
+        .unwrap();
+
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "HDFC Corporate Bond Fund - Direct Plan",
+        Some("INF179K01XD8"),
+        Some("118989"),
+        None,
+        None,
+    );
+
+    // Create folio with spacing around slash
+    let folio1 = db
+        .create_folio(
+            portfolio.id,
+            asset.id,
+            "10101010 / 05",
+            Some("HDFC MF"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+
+    let tx_date = chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap();
+
+    db.create_transaction(
+        folio1.id,
+        tx_date,
+        "PURCHASE",
+        Decimal::from_str("500000").unwrap(),
+        Decimal::from_str("20000").unwrap(),
+        Decimal::from_str("25").unwrap(),
+        Decimal::from_str("20000").unwrap(),
+        Some("DEDUP-TX-1"),
+    )
+    .await
+    .unwrap();
+
+    // Query GET /api/portfolio/summary
+    let summary_req = Request::builder()
+        .uri("/api/portfolio/summary")
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let summary_res = app.oneshot(summary_req).await.unwrap();
+    assert_eq!(summary_res.status(), StatusCode::OK);
+    let summary_json = parse_json(summary_res.into_body()).await;
+
+    // Invested must be 500,000, not doubled
+    let total_invested = summary_json["metrics"]["totalInvested"].as_f64().unwrap();
+    assert_eq!(total_invested, 500000.0);
+
+    // Active folios array must have length 1
+    let folios = summary_json["folios"].as_array().unwrap();
+    assert_eq!(folios.len(), 1);
+    assert_eq!(folios[0]["number"], "10101010/05");
+}
