@@ -54,29 +54,40 @@ pub fn is_unit_redemption(tx_type: TransactionType) -> bool {
 /// 2. **Direction (Buys before Sells)**: On the same transaction date, unit additions precede
 ///    redemptions to reflect realistic broker/AMC settlement order where purchases clear before
 ///    sales execute against available balances.
-/// 3. **Identifier (`id`)**: Lexicographical comparison of transaction IDs ensures identical,
+/// 3. **Intra-day Balance Progression**:
+///    - For redemptions: Higher running balance executed earlier in the day (decreasing balance).
+///    - For purchases/additions: Transactions with positive running balances are ordered
+///      chronologically by advancing balance (lower balance earlier). Non-positive or unrecorded
+///      balances (such as zero-unit stamp duties or fees) are placed deterministically after
+///      active balance lots.
+///
+///    This strictly partitions balance tiers so that the comparison function forms a mathematically
+///    provable total order (anti-symmetric, transitive, total), avoiding sort panics on zero balances.
+/// 4. **Identifier (`id`)**: Lexicographical comparison of transaction IDs ensures identical,
 ///    reproducible ordering across platforms and test harnesses.
 pub fn sort_transactions(transactions: &[Transaction]) -> Vec<Transaction> {
     let mut sorted = transactions.to_vec();
     sorted.sort_by(|a, b| {
+        let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
+        let b_is_sell = is_unit_redemption(b.tx_type) || b.units.is_negative();
+
         a.date
             .cmp(&b.date)
+            .then_with(|| a_is_sell.cmp(&b_is_sell))
             .then_with(|| {
-                let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
-                let b_is_sell = is_unit_redemption(b.tx_type) || b.units.is_negative();
-                a_is_sell.cmp(&b_is_sell)
-            })
-            .then_with(|| {
-                let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
                 if a_is_sell {
-                    // For redemptions on the same date: earlier redemption has higher balance
+                    // For redemptions on the same date:
+                    // Higher running balance was executed earlier in the day (balance decreases with redemptions).
                     b.balance.cmp(&a.balance)
                 } else {
-                    // For purchases on the same date: earlier purchase has lower balance
-                    // Transactions with positive balance sort first by balance, zero-balance sort after
-                    let a_key = (a.balance == Units::ZERO, a.balance);
-                    let b_key = (b.balance == Units::ZERO, b.balance);
-                    a_key.cmp(&b_key)
+                    // For purchases/additions on the same date:
+                    // Transactions with positive running balances advance over the day (lower balance first).
+                    // Zero or unrecorded balances (e.g. stamp duties, auxiliary fees) are grouped after positive balances.
+                    let a_has_bal = a.balance.is_positive();
+                    let b_has_bal = b.balance.is_positive();
+                    b_has_bal
+                        .cmp(&a_has_bal)
+                        .then_with(|| a.balance.cmp(&b.balance))
                 }
             })
             .then_with(|| a.id.cmp(&b.id))
@@ -543,5 +554,82 @@ mod tests {
         let rev_sorted = sort_transactions(&rev_txs);
         let rev_sorted_ids: Vec<&str> = rev_sorted.iter().map(|tx| tx.id.as_str()).collect();
         assert_eq!(rev_sorted_ids, sorted_ids);
+    }
+
+    #[test]
+    fn test_sort_transactions_total_order_mixed_balances_and_zero_balances() {
+        // Reproduces the exact multi-transaction scenario that caused a 3-cycle
+        // sort panic when zero-balance auxiliary records (e.g. stamp duties) coexisted
+        // with positive-balance purchases on the exact same date.
+        let tx_stamp_1 = Transaction::new(
+            "10bee505-stamp-1",
+            date(2021, 3, 5),
+            TransactionType::StampDuty,
+            money("1.75"),
+            units("0"),
+            nav("0"),
+            units("0"),
+        );
+        let tx_stamp_2 = Transaction::new(
+            "274f42d6-stamp-2",
+            date(2021, 3, 5),
+            TransactionType::StampDuty,
+            money("0.50"),
+            units("0"),
+            nav("0"),
+            units("0"),
+        );
+        let tx_purchase_lower = Transaction::new(
+            "640147a8-buy-earlier",
+            date(2021, 3, 5),
+            TransactionType::Purchase,
+            money("9999.50"),
+            units("783.912"),
+            nav("12.75"),
+            units("17530.233"),
+        );
+        let tx_purchase_higher = Transaction::new(
+            "0f75c3bc-buy-later",
+            date(2021, 3, 5),
+            TransactionType::Purchase,
+            money("34998.25"),
+            units("2743.691"),
+            nav("12.75"),
+            units("20273.924"),
+        );
+
+        let txs = vec![
+            tx_purchase_higher.clone(),
+            tx_stamp_1.clone(),
+            tx_stamp_2.clone(),
+            tx_purchase_lower.clone(),
+        ];
+
+        // Must sort without panic (verifying strict weak order / total order)
+        let sorted = sort_transactions(&txs);
+        let sorted_ids: Vec<&str> = sorted.iter().map(|tx| tx.id.as_str()).collect();
+
+        // Purchases with advancing positive balances must precede zero-balance auxiliary records,
+        // and lower balance (earlier purchase) must precede higher balance.
+        assert_eq!(
+            sorted_ids,
+            vec![
+                "640147a8-buy-earlier",
+                "0f75c3bc-buy-later",
+                "10bee505-stamp-1",
+                "274f42d6-stamp-2"
+            ]
+        );
+
+        // Permutation invariance: any scrambled input permutation must yield the identical order
+        let scrambled = vec![
+            tx_stamp_2,
+            tx_purchase_higher,
+            tx_purchase_lower,
+            tx_stamp_1,
+        ];
+        let sorted_scrambled = sort_transactions(&scrambled);
+        let scrambled_ids: Vec<&str> = sorted_scrambled.iter().map(|tx| tx.id.as_str()).collect();
+        assert_eq!(sorted_ids, scrambled_ids);
     }
 }

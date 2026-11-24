@@ -670,7 +670,8 @@ impl InMemoryDatabase {
                 }
                 let folio_canonical = portfolio_core::canonicalize_folio_number(&folio.number);
                 let folio_base = portfolio_core::extract_folio_base(&folio_canonical);
-                folio_canonical.eq_ignore_ascii_case(&canonical)
+                folio.number.trim().eq_ignore_ascii_case(number.trim())
+                    || folio_canonical.eq_ignore_ascii_case(&canonical)
                     || (!base_number.is_empty()
                         && base_number != "DEFAULT-FOLIO"
                         && folio_base.eq_ignore_ascii_case(&base_number))

@@ -8,6 +8,7 @@ import { StyleSheet, View, TouchableOpacity } from 'react-native';
 import type {
   ConsolidatedSchemeGroup,
   PerformanceMode,
+  FolioInput,
 } from '@portfolio/core-view';
 import {
   CardTopRow,
@@ -30,6 +31,10 @@ export interface SchemeGroupCardProps {
   readonly performanceMode?: PerformanceMode | undefined;
   /** Whether to show PAN chips in the sub-row (typically in Consolidated scope) */
   readonly showPanBadges?: boolean | undefined;
+  /** Optional callback invoked when simulation button is pressed */
+  readonly onSimulate?: ((folio: FolioInput) => void) | undefined;
+  /** Optional callback invoked when simulation button is pressed */
+  readonly onSimulateWithdrawal?: ((folio: FolioInput) => void) | undefined;
 }
 
 const styles = StyleSheet.create({
@@ -59,10 +64,11 @@ interface SchemeHeaderProps {
   showPanBadges: boolean;
   onPress: () => void;
   onToggleExpand: (id: string) => void;
+  onSimulate?: (() => void) | undefined;
 }
 
 function SchemeHeader(props: SchemeHeaderProps): React.ReactElement {
-  const { group, singleFolioNum, isMultiFolio, isExpanded, showPanBadges, onPress, onToggleExpand } = props;
+  const { group, singleFolioNum, isMultiFolio, isExpanded, showPanBadges, onPress, onToggleExpand, onSimulate } = props;
   return (
     <TouchableOpacity
       style={styles.headerTouchable}
@@ -86,9 +92,21 @@ function SchemeHeader(props: SchemeHeaderProps): React.ReactElement {
         isExpanded={isExpanded}
         onToggle={() => onToggleExpand(group.id)}
         schemeId={group.id}
+        onSimulate={onSimulate}
       />
     </TouchableOpacity>
   );
+}
+
+function triggerSimulate(
+  folio?: FolioInput,
+  onSim?: ((f: FolioInput) => void) | undefined,
+  onSimWith?: ((f: FolioInput) => void) | undefined,
+): void {
+  if (folio) {
+    onSim?.(folio);
+    onSimWith?.(folio);
+  }
 }
 
 /**
@@ -98,19 +116,21 @@ function SchemeHeader(props: SchemeHeaderProps): React.ReactElement {
  * @returns React Native element.
  */
 export function SchemeGroupCard(props: SchemeGroupCardProps): React.ReactElement {
-  const { group, isExpanded, onToggleExpand, performanceMode = 'XIRR', showPanBadges = true } = props;
+  const {
+    group,
+    isExpanded,
+    onToggleExpand,
+    performanceMode = 'XIRR',
+    showPanBadges = true,
+    onSimulate,
+    onSimulateWithdrawal,
+  } = props;
   const [showLedger, setShowLedger] = useState(false);
   const isMultiFolio = group.folioCount > 1;
   const singleFolio = group.folios[0];
   const singleFolioNum = singleFolio?.number || singleFolio?.folioNumber;
-
-  const handleHeaderPress = () => {
-    if (isMultiFolio) {
-      onToggleExpand(group.id);
-    } else {
-      setShowLedger(true);
-    }
-  };
+  const handleHeaderPress = () => (isMultiFolio ? onToggleExpand(group.id) : setShowLedger(true));
+  const handleQuickSimulate = () => triggerSimulate(singleFolio, onSimulate, onSimulateWithdrawal);
 
   return (
     <View style={styles.card} testID={`scheme-group-card-${group.id}`}>
@@ -123,6 +143,7 @@ export function SchemeGroupCard(props: SchemeGroupCardProps): React.ReactElement
         showPanBadges={showPanBadges}
         onPress={handleHeaderPress}
         onToggleExpand={onToggleExpand}
+        onSimulate={handleQuickSimulate}
       />
       <CardChildren
         folios={group.folios}
@@ -130,6 +151,8 @@ export function SchemeGroupCard(props: SchemeGroupCardProps): React.ReactElement
         performanceMode={performanceMode}
         isMultiFolio={isMultiFolio}
         isExpanded={isExpanded}
+        onSimulate={onSimulate}
+        onSimulateWithdrawal={onSimulateWithdrawal}
       />
       <SingleFolioLedger
         isMultiFolio={isMultiFolio}

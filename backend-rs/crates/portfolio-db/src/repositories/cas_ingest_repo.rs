@@ -222,6 +222,8 @@ pub async fn upsert_postgres_folio(
         WHERE "assetId" = $1 AND "portfolioId" = $2
           AND (
               REPLACE(number, ' ', '') = $3 
+              OR regexp_replace(number, '\s*/\s*', '/', 'g') = $3
+              OR regexp_replace(regexp_replace(number, '\s*/\s*', '/', 'g'), '/0+$', '') = $3
               OR (
                   $4 <> '' AND $4 <> 'DEFAULT-FOLIO' 
                   AND TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) = $4
@@ -230,8 +232,10 @@ pub async fn upsert_postgres_folio(
         ORDER BY 
             CASE 
                 WHEN REPLACE(number, ' ', '') = $3 THEN 0 
-                WHEN TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) = $4 THEN 1
-                ELSE 2 
+                WHEN regexp_replace(number, '\s*/\s*', '/', 'g') = $3 THEN 1
+                WHEN regexp_replace(regexp_replace(number, '\s*/\s*', '/', 'g'), '/0+$', '') = $3 THEN 2
+                WHEN TRIM(split_part(REPLACE(number, ' ', ''), '/', 1)) = $4 THEN 3
+                ELSE 4
             END ASC,
             "createdAt" ASC
         "#,
@@ -321,6 +325,67 @@ pub async fn reconcile_postgres_folio(pool: &sqlx::PgPool, folio_id: Uuid) -> Re
     .bind(folio_id.to_string())
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+/// Reconciles all folios within a portfolio by collapsing duplicate twin folios sharing the same
+/// asset and base account number, ensuring clean-slate canonical state before fresh statement ingestion.
+pub async fn reconcile_portfolio_folios(
+    pool: &sqlx::PgPool,
+    portfolio_id: Uuid,
+) -> Result<(), DbError> {
+    sqlx::query(
+        r#"
+        WITH "DuplicateFolioClusters" AS (
+            SELECT id,
+                   "assetId",
+                   FIRST_VALUE(id) OVER (
+                       PARTITION BY "assetId", TRIM(split_part(number, '/', 1))
+                       ORDER BY "createdAt" ASC, id ASC
+                   ) AS keeper_id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY "assetId", TRIM(split_part(number, '/', 1))
+                       ORDER BY "createdAt" ASC, id ASC
+                   ) AS cluster_rank
+            FROM "Folio"
+            WHERE "portfolioId" = $1
+        ),
+        "FoliosToMerge" AS (
+            SELECT id AS orphan_id, keeper_id
+            FROM "DuplicateFolioClusters"
+            WHERE cluster_rank > 1
+        )
+        UPDATE "Transaction" t
+        SET "folioId" = m.keeper_id
+        FROM "FoliosToMerge" m
+        WHERE t."folioId" = m.orphan_id
+        "#,
+    )
+    .bind(portfolio_id.to_string())
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        WITH "DuplicateFolioClusters" AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY "assetId", TRIM(split_part(number, '/', 1))
+                       ORDER BY "createdAt" ASC, id ASC
+                   ) AS cluster_rank
+            FROM "Folio"
+            WHERE "portfolioId" = $1
+        )
+        DELETE FROM "Folio"
+        WHERE id IN (
+            SELECT id FROM "DuplicateFolioClusters" WHERE cluster_rank > 1
+        )
+        "#,
+    )
+    .bind(portfolio_id.to_string())
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 

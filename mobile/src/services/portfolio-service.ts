@@ -13,7 +13,7 @@ import {
   refreshSchemeNavs,
   calculateDayValuationChange,
 } from '../feeds/nav-fetcher';
-import { getStoredCredentials } from './auth-service';
+import { getStoredCredentials, normalizeServerUrl } from './auth-service';
 import {
   summarizeHoldings,
   type AssetAllocationItem,
@@ -21,6 +21,11 @@ import {
 } from './portfolio-calculations';
 import { syncWithServer } from './portfolio-sync-service';
 export { syncWithServer, parseServerPayload, setCachedDrags, getCachedDrags } from './portfolio-sync-service';
+export {
+  simulateWithdrawal,
+  type WithdrawalSimulationParams,
+  type WithdrawalSimulationRequest,
+} from './tax-simulation-service';
 
 import type { DragDecompositionDto, SummaryMetrics } from '../types/generated';
 export type { TransactionEntity } from '../db/schema';
@@ -248,7 +253,8 @@ export async function checkServerReachable(
   serverUrl: string,
   timeoutMs: number = 3000,
 ): Promise<boolean> {
-  const trimmed = serverUrl.trim().replace(/\/+$/, '');
+  const normalized = normalizeServerUrl(serverUrl);
+  const trimmed = normalized.trim().replace(/\/+$/, '');
   if (!trimmed) return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

@@ -7,6 +7,7 @@
 
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Calculator } from 'lucide-react-native';
 import {
   formatIndianRupee,
   formatPercent,
@@ -25,6 +26,10 @@ export interface FolioChildRowProps {
   readonly performanceMode?: PerformanceMode | undefined;
   /** Optional callback invoked when folio is pressed */
   readonly onPress?: ((folio: FolioInput) => void) | undefined;
+  /** Optional callback invoked when simulation button is pressed */
+  readonly onSimulate?: ((folio: FolioInput) => void) | undefined;
+  /** Optional callback invoked when simulation button is pressed */
+  readonly onSimulateWithdrawal?: ((folio: FolioInput) => void) | undefined;
 }
 
 const styles = StyleSheet.create({
@@ -90,7 +95,16 @@ const styles = StyleSheet.create({
     color: '#a1a1aa',
   },
   valuesColumn: {
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  simulateBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: '#27272a',
+    borderWidth: 1,
+    borderColor: '#3f3f46',
   },
   currentValue: {
     fontSize: 13,
@@ -150,9 +164,12 @@ interface FolioHeaderInfoProps {
   folioNum: string;
   pan?: string | undefined;
   currentValue: number;
+  folioId: string;
+  onSimulate?: (() => void) | undefined;
 }
 
-function FolioHeaderInfo({ folioNum, pan, currentValue }: FolioHeaderInfoProps): React.ReactElement {
+function FolioHeaderInfo(props: FolioHeaderInfoProps): React.ReactElement {
+  const { folioNum, pan, currentValue, folioId, onSimulate } = props;
   return (
     <View style={styles.headerRow}>
       <View style={styles.folioInfo}>
@@ -169,6 +186,15 @@ function FolioHeaderInfo({ folioNum, pan, currentValue }: FolioHeaderInfoProps):
 
       <View style={styles.valuesColumn}>
         <Text style={styles.currentValue}>{formatIndianRupee(currentValue)}</Text>
+        <TouchableOpacity
+          style={styles.simulateBtn}
+          testID={`folio-simulate-btn-${folioId}`}
+          onPress={onSimulate}
+          accessibilityRole="button"
+          accessibilityLabel={`Simulate withdrawal for folio ${folioNum}`}
+        >
+          <Calculator size={13} color="#93c5fd" />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -205,6 +231,15 @@ function resolveFolioValues(folio: FolioInput) {
   return { folioNum, amcName, currentValue, investedAmount };
 }
 
+function fireSimulate(
+  folio: FolioInput,
+  onSim?: ((f: FolioInput) => void) | undefined,
+  onSimWith?: ((f: FolioInput) => void) | undefined,
+): void {
+  onSim?.(folio);
+  onSimWith?.(folio);
+}
+
 /**
  * Renders an individual folio child row with folio number, PAN, value, units, NAV, and return.
  *
@@ -215,19 +250,15 @@ export function FolioChildRow({
   folio,
   performanceMode = 'XIRR',
   onPress,
+  onSimulate,
+  onSimulateWithdrawal,
 }: FolioChildRowProps): React.ReactElement {
   const [showLedger, setShowLedger] = useState(false);
   const { folioNum, amcName, currentValue, investedAmount } = resolveFolioValues(folio);
   const returnRate = getReturnRate(folio, performanceMode);
   const unitsNavFormatted = resolveUnitsNavText(folio, folioNum);
-
-  const handlePress = () => {
-    if (onPress) {
-      onPress(folio);
-    } else {
-      setShowLedger(true);
-    }
-  };
+  const handlePress = () => (onPress ? onPress(folio) : setShowLedger(true));
+  const handleSimulate = () => fireSimulate(folio, onSimulate, onSimulateWithdrawal);
 
   return (
     <>
@@ -237,7 +268,13 @@ export function FolioChildRow({
         onPress={handlePress}
         activeOpacity={0.7}
       >
-        <FolioHeaderInfo folioNum={folioNum} pan={folio.pan} currentValue={currentValue} />
+        <FolioHeaderInfo
+          folioNum={folioNum}
+          pan={folio.pan}
+          currentValue={currentValue}
+          folioId={folio.id}
+          onSimulate={handleSimulate}
+        />
         {amcName ? (
           <Text style={styles.amcText} numberOfLines={1}>
             {amcName}

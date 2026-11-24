@@ -184,6 +184,27 @@ fn test_folio_number_strong_type_with_validation() {
     let f3 = FolioNumber::new("FOLIO-12345.01").expect("Valid alphanumeric folio");
     assert_eq!(f3.as_str(), "FOLIO-12345.01");
 
+    // Canonical formatting and base number tests
+    assert_eq!(
+        FolioNumber::canonical_format("577329058171 / 0"),
+        "577329058171"
+    );
+    assert_eq!(
+        FolioNumber::canonical_format("577329058171 / 00"),
+        "577329058171"
+    );
+    assert_eq!(
+        FolioNumber::canonical_format("577329058171"),
+        "577329058171"
+    );
+    assert_eq!(
+        FolioNumber::canonical_format("14751338 / 05"),
+        "14751338/05"
+    );
+    assert_eq!(FolioNumber::canonical_format("14751338/ 05"), "14751338/05");
+    assert_eq!(FolioNumber::canonical_format("14751338/05"), "14751338/05");
+    assert_eq!(f1.base_number(), "12345678");
+
     // Invalid folios: empty or invalid characters
     assert_eq!(
         FolioNumber::new(""),

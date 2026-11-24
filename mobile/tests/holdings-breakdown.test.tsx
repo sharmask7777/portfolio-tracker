@@ -43,6 +43,9 @@ vi.mock('expo-router', () => ({
 import type { ConsolidatedSchemeGroup, FolioInput } from '@portfolio/core-view';
 import { FolioChildRow } from '../src/components/Holdings/FolioChildRow';
 import { SchemeGroupCard } from '../src/components/Holdings/SchemeGroupCard';
+import HoldingsScreen from '../app/(tabs)/holdings';
+import { SimulationModal } from '../src/components/Tax/SimulationModal';
+import * as taxSimService from '../src/services/tax-simulation-service';
 import {
   HoldingsFilterControls,
   ASSET_TYPES,
@@ -63,12 +66,17 @@ vi.mock('react-native', () => ({
   TextInput: (props: Record<string, unknown>) => ({ type: 'TextInput', props }),
   ScrollView: (props: Record<string, unknown>) => ({ type: 'ScrollView', props }),
   TouchableOpacity: (props: Record<string, unknown>) => ({ type: 'TouchableOpacity', props }),
+  Modal: (props: Record<string, unknown>) => ({ type: 'Modal', props }),
+  ActivityIndicator: (props: Record<string, unknown>) => ({ type: 'ActivityIndicator', props }),
+  RefreshControl: (props: Record<string, unknown>) => ({ type: 'RefreshControl', props }),
   Platform: { OS: 'ios', select: (s: Record<string, unknown>) => s['ios'] },
 }));
 
 vi.mock('lucide-react-native', () => ({
   ChevronDown: (props: Record<string, unknown>) => ({ type: 'ChevronDown', props }),
   ChevronRight: (props: Record<string, unknown>) => ({ type: 'ChevronRight', props }),
+  Calculator: (props: Record<string, unknown>) => ({ type: 'Calculator', props }),
+  X: (props: Record<string, unknown>) => ({ type: 'X', props }),
 }));
 
 function getProps(element: React.ReactElement): Record<string, unknown> {
@@ -78,6 +86,33 @@ function getProps(element: React.ReactElement): Record<string, unknown> {
     return (p['children'][0] as React.ReactElement).props as Record<string, unknown>;
   }
   return p;
+}
+
+function findByTestId(tree: unknown, testID: string): Record<string, unknown> | null {
+  if (!tree || typeof tree !== 'object') return null;
+  const node = tree as { props?: Record<string, unknown>; type?: unknown };
+  if (node.props?.['testID'] === testID) {
+    return node.props;
+  }
+  if (typeof node.type === 'function') {
+    try {
+      const rendered = (node.type as (props: Record<string, unknown>) => unknown)(node.props ?? {});
+      const foundInRendered = findByTestId(rendered, testID);
+      if (foundInRendered) return foundInRendered;
+    } catch {
+      // Functional component evaluation fallback
+    }
+  }
+  const children = node.props?.['children'];
+  if (Array.isArray(children)) {
+    for (const child of children) {
+      const found = findByTestId(child, testID);
+      if (found) return found;
+    }
+  } else if (children && typeof children === 'object') {
+    return findByTestId(children, testID);
+  }
+  return null;
 }
 
 describe('Mobile Holdings Breakdown Components', () => {
@@ -188,6 +223,35 @@ describe('Mobile Holdings Breakdown Components', () => {
       expect(element).toBeDefined();
       expect(getProps(element)['testID']).toBe('folio-child-row-f3');
     });
+
+    it('renders a withdrawal simulation button and calls onSimulate when pressed', () => {
+      const onSimulate = vi.fn();
+      const element = FolioChildRow({
+        folio: sampleFolio1,
+        performanceMode: 'XIRR',
+        onSimulate,
+      });
+
+      const simBtn = findByTestId(element, 'folio-simulate-btn-f1');
+      expect(simBtn).toBeTruthy();
+      expect(simBtn?.['accessibilityLabel']).toContain('Simulate withdrawal');
+      (simBtn?.['onPress'] as () => void)();
+      expect(onSimulate).toHaveBeenCalledWith(sampleFolio1);
+    });
+
+    it('calls onSimulateWithdrawal when onSimulateWithdrawal prop is passed', () => {
+      const onSimulateWithdrawal = vi.fn();
+      const element = FolioChildRow({
+        folio: sampleFolio1,
+        performanceMode: 'XIRR',
+        onSimulateWithdrawal,
+      });
+
+      const simBtn = findByTestId(element, 'folio-simulate-btn-f1');
+      expect(simBtn).toBeTruthy();
+      (simBtn?.['onPress'] as () => void)();
+      expect(onSimulateWithdrawal).toHaveBeenCalledWith(sampleFolio1);
+    });
   });
 
   describe('SchemeGroupCard', () => {
@@ -203,6 +267,38 @@ describe('Mobile Holdings Breakdown Components', () => {
       expect(element).toBeDefined();
       const props = getProps(element);
       expect(props['testID']).toBe('scheme-group-card-group_hdfc_top_100');
+    });
+
+    it('renders quick simulate button for single-folio scheme and triggers onSimulate', () => {
+      const onSimulate = vi.fn();
+      const element = SchemeGroupCard({
+        group: singleFolioGroup,
+        isExpanded: false,
+        onToggleExpand: vi.fn(),
+        showPanBadges: false,
+        onSimulate,
+      });
+
+      const simBtn = findByTestId(element, 'scheme-simulate-btn-group_sbi_liquid');
+      expect(simBtn).toBeTruthy();
+      (simBtn?.['onPress'] as () => void)();
+      expect(onSimulate).toHaveBeenCalledWith(sampleFolio1);
+    });
+
+    it('forwards onSimulate to child folios in expanded multi-folio schemes', () => {
+      const onSimulate = vi.fn();
+      const element = SchemeGroupCard({
+        group: multiFolioGroup,
+        isExpanded: true,
+        onToggleExpand: vi.fn(),
+        showPanBadges: true,
+        onSimulate,
+      });
+
+      const simBtn1 = findByTestId(element, 'folio-simulate-btn-f1');
+      expect(simBtn1).toBeTruthy();
+      (simBtn1?.['onPress'] as () => void)();
+      expect(onSimulate).toHaveBeenCalledWith(sampleFolio1);
     });
 
     it('renders expanded child rows when isExpanded is true', () => {
@@ -307,6 +403,41 @@ describe('Mobile Holdings Breakdown Components', () => {
       const results = adaptHoldingsToFolioInputs([mockEnriched], [mockFolioEntity]);
       expect(results).toHaveLength(1);
       expect(results[0]?.pan).toBe('ABCDE1234F');
+    });
+  });
+
+  describe('HoldingsScreen Withdrawal Simulation Integration', () => {
+    it('mounts SimulationModal in HoldingsScreen and configures simulation target', () => {
+      const screen = HoldingsScreen();
+      expect(screen).toBeDefined();
+      const modal = findByTestId(screen, 'simulation-modal');
+      expect(modal).toBeDefined();
+      expect(modal?.['visible']).toBe(false);
+    });
+
+    it('invokes simulateWithdrawal when redemption simulation is submitted in SimulationModal', async () => {
+      const spy = vi.spyOn(taxSimService, 'simulateWithdrawal');
+      const onClose = vi.fn();
+      const element = SimulationModal({
+        visible: true,
+        onClose,
+        schemeName: 'HDFC Top 100 Fund - Growth',
+        folioId: 'f1',
+        currentNav: 600,
+        initialUnits: 10,
+      });
+
+      const submitBtn = findByTestId(element, 'simulate-submit-btn');
+      expect(submitBtn).toBeDefined();
+      await (submitBtn?.['onPress'] as () => Promise<void>)();
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          schemeName: 'HDFC Top 100 Fund - Growth',
+          folioId: 'f1',
+          currentNav: 600,
+          unitsToSell: 10,
+        }),
+      );
     });
   });
 });

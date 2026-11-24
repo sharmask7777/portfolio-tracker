@@ -907,6 +907,12 @@ impl FolioNumber {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Normalizes a raw folio number by collapsing whitespace around slashes (e.g. `14751338 / 05` -> `14751338/05`)
+    /// and stripping registrar check-digit `/0` or `/00` suffixes (e.g. `577329058171 / 0` -> `577329058171`).
+    pub fn canonical_format(s: &str) -> String {
+        canonicalize_folio_number(s)
+    }
 }
 
 impl Deref for FolioNumber {

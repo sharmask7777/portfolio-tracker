@@ -19,6 +19,7 @@ import {
   type SchemeSortField,
   type ConsolidatedSchemeGroup,
   type PerformanceMode,
+  type FolioInput,
 } from '@portfolio/core-view';
 import { type EnrichedHolding } from '../../src/services/portfolio-service';
 import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
@@ -29,6 +30,7 @@ import {
   ClosedPositionsSection,
   AddAssetModal,
 } from '../../src/components/Holdings';
+import { SimulationModal } from '../../src/components/Tax/SimulationModal';
 import {
   useHoldingsData,
   useManualAssetMutations,
@@ -65,10 +67,11 @@ interface HoldingsListProps {
   onToggleExpand: (id: string) => void;
   isConsolidatedScope: boolean;
   performanceMode?: PerformanceMode | undefined;
+  onSimulate?: ((folio: FolioInput) => void) | undefined;
 }
 
 function HoldingsList(props: HoldingsListProps): React.ReactElement {
-  const { isLoading, schemes, isExpanded, onToggleExpand, isConsolidatedScope, performanceMode } = props;
+  const { isLoading, schemes, isExpanded, onToggleExpand, isConsolidatedScope, performanceMode, onSimulate } = props;
 
   if (isLoading && schemes.length === 0) {
     return (
@@ -96,6 +99,7 @@ function HoldingsList(props: HoldingsListProps): React.ReactElement {
           onToggleExpand={onToggleExpand}
           performanceMode={performanceMode}
           showPanBadges={isConsolidatedScope}
+          onSimulate={onSimulate}
         />
       ))}
     </>
@@ -170,6 +174,68 @@ function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactEl
   );
 }
 
+interface SimulationTarget {
+  folioId?: string | undefined;
+  schemeName?: string | undefined;
+  currentNav?: number | undefined;
+  units?: number | undefined;
+  isElss?: boolean | undefined;
+  assetClass?: ('EQUITY' | 'DEBT' | 'HYBRID' | 'OTHER') | undefined;
+}
+
+function resolveAssetClass(rawType?: string): 'EQUITY' | 'DEBT' | 'HYBRID' | 'OTHER' {
+  if (rawType === 'DEBT' || rawType === 'HYBRID' || rawType === 'OTHER') {
+    return rawType;
+  }
+  return 'EQUITY';
+}
+
+function resolveIsElss(schemeName: string, assetType?: string): boolean {
+  if (assetType?.toUpperCase().includes('ELSS')) return true;
+  return schemeName.toUpperCase().includes('ELSS');
+}
+
+function resolveFolioId(folio: FolioInput): string {
+  return folio.number || folio.folioNumber || folio.id;
+}
+
+function resolveCurrentNav(folio: FolioInput): number {
+  return folio.currentNav || folio.metrics?.currentPrice || 100;
+}
+
+function createSimulationTarget(folio: FolioInput): SimulationTarget {
+  const schemeName = folio.asset?.name || 'Mutual Fund Scheme';
+
+  return {
+    folioId: resolveFolioId(folio),
+    schemeName,
+    currentNav: resolveCurrentNav(folio),
+    units: folio.units || 0,
+    isElss: resolveIsElss(schemeName, folio.asset?.type),
+    assetClass: resolveAssetClass(folio.asset?.type),
+  };
+}
+
+interface HoldingsSimulationModalProps {
+  target: SimulationTarget | null;
+  onClose: () => void;
+}
+
+function HoldingsSimulationModal({ target, onClose }: HoldingsSimulationModalProps): React.ReactElement {
+  return (
+    <SimulationModal
+      visible={target !== null}
+      onClose={onClose}
+      schemeName={target?.schemeName}
+      folioId={target?.folioId}
+      isElss={target?.isElss}
+      currentNav={target?.currentNav}
+      initialUnits={target?.units}
+      assetClass={target?.assetClass}
+    />
+  );
+}
+
 /**
  * Holdings list screen with ScopeSelector, search, asset-class filtering, and expandable schemes.
  *
@@ -178,6 +244,7 @@ function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactEl
 export default function HoldingsScreen(): React.ReactElement {
   const { holdings, closedHoldings, profiles, folios, isLoading, isRefreshing, handleRefresh, loadData } = useHoldingsData();
   const [addAssetModalOpen, setAddAssetModalOpen] = useState(false);
+  const [simTarget, setSimTarget] = useState<SimulationTarget | null>(null);
   const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
   const { handleDeleteClosedFolio, handleAddManualAsset } = useManualAssetMutations(loadData, scopeState.scope);
   const filters = useHoldingsFilters(holdings, folios, scopeState.scope);
@@ -189,6 +256,7 @@ export default function HoldingsScreen(): React.ReactElement {
     onToggleExpand: filters.toggleExpanded,
     isConsolidatedScope: scopeState.scope.type === 'consolidated',
     performanceMode: filters.performanceMode,
+    onSimulate: (folio) => setSimTarget(createSimulationTarget(folio)),
   };
 
   return (
@@ -221,6 +289,7 @@ export default function HoldingsScreen(): React.ReactElement {
         onClose={() => setAddAssetModalOpen(false)}
         onSubmit={handleAddManualAsset}
       />
+      <HoldingsSimulationModal target={simTarget} onClose={() => setSimTarget(null)} />
     </View>
   );
 }

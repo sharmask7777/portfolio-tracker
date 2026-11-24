@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
-import { ChevronDown, ChevronRight } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Calculator } from 'lucide-react-native';
 import {
   formatIndianRupee,
   formatPercent,
@@ -199,6 +199,8 @@ export interface CardSubRowProps {
   onToggle: () => void;
   /** Scheme identifier */
   schemeId: string;
+  /** Quick simulate callback for single-folio schemes */
+  onSimulate?: (() => void) | undefined;
 }
 
 /**
@@ -208,7 +210,7 @@ export interface CardSubRowProps {
  * @returns React Native element
  */
 export function CardSubRow(props: CardSubRowProps): React.ReactElement {
-  const { showPanBadges, pans, singleFolioNum, isMultiFolio, folioCount, isExpanded, onToggle, schemeId } = props;
+  const { showPanBadges, pans, singleFolioNum, isMultiFolio, folioCount, isExpanded, onToggle, schemeId, onSimulate } = props;
 
   return (
     <View style={styles.subRow}>
@@ -237,7 +239,18 @@ export function CardSubRow(props: CardSubRowProps): React.ReactElement {
             <ChevronRight size={14} color="#93c5fd" />
           )}
         </TouchableOpacity>
-      ) : null}
+      ) : (
+        <TouchableOpacity
+          style={styles.expandBtn}
+          onPress={onSimulate}
+          testID={`scheme-simulate-btn-${schemeId}`}
+          accessibilityRole="button"
+          accessibilityLabel="Simulate withdrawal"
+        >
+          <Calculator size={14} color="#93c5fd" />
+          <Text style={styles.expandBtnText}>Simulate</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -256,6 +269,10 @@ export interface CardChildrenProps {
   isMultiFolio: boolean;
   /** Expansion state */
   isExpanded: boolean;
+  /** Optional callback invoked when simulation button is pressed */
+  onSimulate?: ((folio: FolioInput) => void) | undefined;
+  /** Optional callback invoked when simulation button is pressed */
+  onSimulateWithdrawal?: ((folio: FolioInput) => void) | undefined;
 }
 
 /**
@@ -265,7 +282,7 @@ export interface CardChildrenProps {
  * @returns React Native element or null
  */
 export function CardChildren(props: CardChildrenProps): React.ReactElement | null {
-  const { folios, schemeId, performanceMode, isMultiFolio, isExpanded } = props;
+  const { folios, schemeId, performanceMode, isMultiFolio, isExpanded, onSimulate, onSimulateWithdrawal } = props;
   if (!isMultiFolio || !isExpanded) return null;
 
   return (
@@ -275,6 +292,8 @@ export function CardChildren(props: CardChildrenProps): React.ReactElement | nul
           key={folio.id}
           folio={folio}
           performanceMode={performanceMode}
+          onSimulate={onSimulate}
+          onSimulateWithdrawal={onSimulateWithdrawal}
         />
       ))}
     </View>
