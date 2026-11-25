@@ -99,26 +99,50 @@ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
     let has_explicit_balances = sorted.iter().any(|tx| !tx.balance.is_zero());
 
     if has_explicit_balances {
-        for tx in sorted.iter().rev() {
-            // ONLY consider unit-bearing transactions with valid reported balances!
-            // Auxiliary, fee, tax, stamp duty, or 0-unit note transactions do NOT define the cumulative unit balance.
-            // Furthermore, an addition of units (purchase/SIP) can NEVER legitimately result in a zero balance;
-            // a balance of zero on an addition indicates unrecorded balance, not position closure.
-            if tx.units.is_zero()
-                || (crate::holdings::lot::is_unit_addition(tx.tx_type) && tx.balance.is_zero())
-            {
-                continue;
-            }
-
+        // Find the last unit-bearing non-auxiliary transaction with a valid explicit balance
+        // (or a genuine redemption closure to zero), then replay any subsequent unit-bearing
+        // transactions that had missing (zero) balances forward.
+        let mut anchor_idx: Option<usize> = None;
+        for (idx, tx) in sorted.iter().enumerate().rev() {
             let is_auxiliary =
                 tx.tx_type == TransactionType::Other || tx.tx_type == TransactionType::StampDuty;
-            if !is_auxiliary {
-                let current_balance = tx.balance;
-                if current_balance >= fractional_dust_threshold {
-                    return current_balance;
-                }
-                return Units::ZERO;
+            if tx.units.is_zero() || is_auxiliary {
+                continue;
             }
+            if !tx.balance.is_zero() || !crate::holdings::lot::is_unit_addition(tx.tx_type) {
+                anchor_idx = Some(idx);
+                break;
+            }
+        }
+
+        if let Some(idx) = anchor_idx {
+            let mut running_balance = sorted[idx].balance;
+            for tx in sorted.iter().skip(idx + 1) {
+                let is_auxiliary = tx.tx_type == TransactionType::Other
+                    || tx.tx_type == TransactionType::StampDuty;
+                if tx.units.is_zero() || is_auxiliary {
+                    continue;
+                }
+                if tx.tx_type == TransactionType::Reversal {
+                    if tx.units.is_negative() || tx.amount.is_negative() {
+                        running_balance = (running_balance - tx.units.abs()).max(Units::ZERO);
+                    } else {
+                        running_balance += tx.units.abs();
+                    }
+                } else if crate::holdings::lot::is_unit_addition(tx.tx_type)
+                    && !tx.units.is_negative()
+                {
+                    running_balance += tx.units.abs();
+                } else if crate::holdings::lot::is_unit_redemption(tx.tx_type)
+                    || tx.units.is_negative()
+                {
+                    running_balance = (running_balance - tx.units.abs()).max(Units::ZERO);
+                }
+            }
+            if running_balance >= fractional_dust_threshold {
+                return running_balance;
+            }
+            return Units::ZERO;
         }
     }
 
@@ -190,16 +214,22 @@ pub fn consolidate_by_scheme(folios: &[Folio], current_nav: Nav) -> Vec<Consolid
         let mut total_current_value = Money::ZERO;
         let mut total_invested_amount = Money::ZERO;
 
+        // Resolve a single scheme-level latest NAV across all constituent folios when current_nav == 0
+        let scheme_nav = if current_nav.is_positive() {
+            current_nav
+        } else {
+            let all_txs: Vec<Transaction> = member_folios
+                .iter()
+                .flat_map(|f| f.transactions.iter().cloned())
+                .collect();
+            get_latest_nav(&all_txs)
+        };
+
         for folio in &member_folios {
             let units = get_latest_units(&folio.transactions);
-            let nav_to_use = if current_nav.is_positive() {
-                current_nav
-            } else {
-                get_latest_nav(&folio.transactions)
-            };
             let metrics = get_metrics(
                 &folio.transactions,
-                nav_to_use,
+                scheme_nav,
                 Some(PerformanceOptions::new().with_units_override(units)),
             );
             total_units += units;
@@ -218,6 +248,109 @@ pub fn consolidate_by_scheme(folios: &[Folio], current_nav: Nav) -> Vec<Consolid
     }
 
     consolidated_schemes
+}
+
+/// Consolidated scheme DTO with true multi-folio cash-flow XIRR, post-tax XIRR,
+/// active/closed status, day change, and deterministic sorting keys for web & mobile clients.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsolidatedSchemeDto {
+    /// Optional ISIN of the scheme.
+    pub isin: Option<Isin>,
+    /// Canonical scheme / asset name.
+    pub asset_name: String,
+    /// Total active units across all constituent folios.
+    pub total_units: Units,
+    /// Total current market value across all constituent folios.
+    pub total_current_value: Money,
+    /// Total invested cost basis across all constituent folios.
+    pub total_invested_amount: Money,
+    /// Absolute unrealized/total gain (`total_current_value - total_invested_amount`).
+    pub absolute_gain: Money,
+    /// True multi-folio cash-flow XIRR (percentage, e.g. `12.5` for `12.5%`).
+    pub xirr: Option<rust_decimal::Decimal>,
+    /// Post-tax XIRR (percentage) after accounting for unrealized/realized tax drag.
+    pub post_tax_xirr: Option<rust_decimal::Decimal>,
+    /// Whether the scheme is currently active (`total_units > 0`).
+    pub is_active: bool,
+    /// Day change in rupees (`units * (current_nav - previous_nav)`), if previous NAV is known.
+    pub day_change: Option<Money>,
+    /// Day change percentage, if previous NAV is positive.
+    pub day_change_pct: Option<f64>,
+    /// Number of constituent folios.
+    pub folio_count: usize,
+    /// Constituent folios.
+    pub folios: Vec<Folio>,
+}
+
+/// Consolidates folios by scheme and computes true multi-folio cash-flow XIRR,
+/// post-tax XIRR, active/closed status, and day change, sorted with active schemes
+/// first (by descending current value) followed by closed schemes (by asset name).
+pub fn consolidate_schemes_with_metrics(
+    folios: &[Folio],
+    current_nav: Nav,
+    previous_nav: Option<Nav>,
+    as_of_date: chrono::NaiveDate,
+    tax_slab: rust_decimal::Decimal,
+) -> Vec<ConsolidatedSchemeDto> {
+    let base = consolidate_by_scheme(folios, current_nav);
+    let mut dtos: Vec<ConsolidatedSchemeDto> = base
+        .into_iter()
+        .map(|scheme| {
+            let all_txs: Vec<Transaction> = scheme
+                .folios
+                .iter()
+                .flat_map(|f| f.transactions.iter().cloned())
+                .collect();
+            let scheme_nav = if current_nav.is_positive() {
+                current_nav
+            } else {
+                get_latest_nav(&all_txs)
+            };
+            let opts = PerformanceOptions::new()
+                .with_as_of_date(as_of_date)
+                .with_units_override(scheme.total_units)
+                .with_tax_slab(tax_slab);
+            let metrics = get_metrics(&all_txs, scheme_nav, Some(opts));
+            let is_active = scheme.total_units.is_positive();
+            let (day_change, day_change_pct) = match previous_nav {
+                Some(prev) if prev.is_positive() && scheme_nav.is_positive() && is_active => {
+                    let change_val = Money::new(
+                        scheme.total_units.as_decimal()
+                            * (scheme_nav.as_decimal() - prev.as_decimal()),
+                    );
+                    let pct = ((scheme_nav.as_decimal() - prev.as_decimal()) / prev.as_decimal())
+                        * rust_decimal::Decimal::from(100);
+                    let pct_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&pct).unwrap_or(0.0);
+                    (Some(change_val), Some(pct_f64))
+                }
+                _ => (None, None),
+            };
+            ConsolidatedSchemeDto {
+                isin: scheme.isin,
+                asset_name: scheme.asset_name,
+                total_units: scheme.total_units,
+                total_current_value: scheme.total_current_value,
+                total_invested_amount: scheme.total_invested_amount,
+                absolute_gain: scheme.total_current_value - scheme.total_invested_amount,
+                xirr: metrics.xirr,
+                post_tax_xirr: metrics.post_tax_xirr,
+                is_active,
+                day_change,
+                day_change_pct,
+                folio_count: scheme.folios.len(),
+                folios: scheme.folios,
+            }
+        })
+        .collect();
+
+    dtos.sort_by(|a, b| {
+        b.is_active
+            .cmp(&a.is_active)
+            .then_with(|| b.total_current_value.cmp(&a.total_current_value))
+            .then_with(|| a.asset_name.cmp(&b.asset_name))
+    });
+    dtos
 }
 
 #[cfg(test)]
@@ -357,9 +490,8 @@ mod tests {
         );
 
         let units = get_latest_units(&[tx_initial, tx_unrecorded_bal]);
-        // Since tx-2 had balance 0 on an addition, it should not report 0 units for the fund;
-        // it falls back to the valid explicit balance or FIFO lots
-        assert_eq!(units, Units::from_str("100").unwrap());
+        // Since tx-2 had balance 0 on an addition, we anchor at tx-1 (100) and replay tx-2 (+50) -> 150
+        assert_eq!(units, Units::from_str("150").unwrap());
     }
 
     #[test]

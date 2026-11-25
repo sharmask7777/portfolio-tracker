@@ -504,3 +504,41 @@ proptest! {
         prop_assert_eq!(opportunities_sum, summary.total_potential_harvest);
     }
 }
+
+proptest! {
+    /// Verifies that `sort_transactions` produces a deterministic total order
+    /// regardless of input permutation (strict weak ordering / transitivity).
+    #[test]
+    fn prop_sort_transactions_transitivity(
+        balances in proptest::collection::vec(0i64..=100, 3..10),
+        is_sell_flags in proptest::collection::vec(any::<bool>(), 3..10),
+    ) {
+        let len = balances.len().min(is_sell_flags.len());
+        let date = NaiveDate::from_ymd_opt(2025, 3, 15).unwrap();
+        let mut txs = Vec::with_capacity(len);
+        for i in 0..len {
+            let tx_type = if is_sell_flags[i] {
+                TransactionType::Redemption
+            } else {
+                TransactionType::Purchase
+            };
+            let bal = Units::new(Decimal::from(balances[i]));
+            txs.push(Transaction::new(
+                format!("tx-{i}"),
+                date,
+                tx_type,
+                Money::new(Decimal::from(1000)),
+                Units::new(Decimal::from(10)),
+                Nav::new(Decimal::from(100)),
+                bal,
+            ));
+        }
+        let sorted_fwd = portfolio_core::holdings::lot::sort_transactions(&txs);
+        let mut rev_txs = txs.clone();
+        rev_txs.reverse();
+        let sorted_rev = portfolio_core::holdings::lot::sort_transactions(&rev_txs);
+        let ids_fwd: Vec<&str> = sorted_fwd.iter().map(|t| t.id.as_str()).collect();
+        let ids_rev: Vec<&str> = sorted_rev.iter().map(|t| t.id.as_str()).collect();
+        prop_assert_eq!(ids_fwd, ids_rev);
+    }
+}

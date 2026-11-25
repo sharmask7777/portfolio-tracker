@@ -1131,7 +1131,8 @@ pub static SEBI_TOP_EQUITIES: &[SecurityMetadata] = &[
 ///
 /// Strips non-alphanumeric characters, converts to lowercase, and removes
 /// corporate noise terms like "limited", "ltd", "corp", "inc".
-fn normalize_identifier(s: &str) -> String {
+/// Normalizes an equity identifier/name for matching.
+pub fn normalize_identifier(s: &str) -> String {
     let lower = s.to_lowercase();
     let cleaned: String = lower
         .chars()
@@ -1210,11 +1211,14 @@ pub fn resolve_security_classification(
                 }
             }
 
-            // Second pass: symbol match as an exact word in input
+            // Second pass: symbol match as an exact word in input (require len >= 3 for
+            // word-level match, or exact full-string match for 1-2 char symbols like "V", "LT", "MM")
             for meta in SEBI_TOP_EQUITIES {
-                if input_words
-                    .iter()
-                    .any(|w| w.eq_ignore_ascii_case(meta.symbol))
+                if (meta.symbol.len() >= 3
+                    && input_words
+                        .iter()
+                        .any(|w| w.eq_ignore_ascii_case(meta.symbol)))
+                    || (meta.symbol.len() < 3 && norm_input.eq_ignore_ascii_case(meta.symbol))
                 {
                     return (Some(meta.sector), meta.tier);
                 }

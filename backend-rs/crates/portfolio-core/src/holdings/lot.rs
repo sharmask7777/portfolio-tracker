@@ -59,25 +59,21 @@ pub fn is_unit_redemption(tx_type: TransactionType) -> bool {
 pub fn sort_transactions(transactions: &[Transaction]) -> Vec<Transaction> {
     let mut sorted = transactions.to_vec();
     sorted.sort_by(|a, b| {
+        let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
+        let b_is_sell = is_unit_redemption(b.tx_type) || b.units.is_negative();
+
         a.date
             .cmp(&b.date)
+            .then_with(|| a_is_sell.cmp(&b_is_sell))
             .then_with(|| {
-                let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
-                let b_is_sell = is_unit_redemption(b.tx_type) || b.units.is_negative();
-                a_is_sell.cmp(&b_is_sell)
-            })
-            .then_with(|| {
-                if !a.balance.is_zero() && !b.balance.is_zero() && a.balance != b.balance {
-                    let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
-                    if a_is_sell {
-                        // For redemptions on the same date, balance decreases over time (earlier redemption has higher balance)
-                        b.balance.cmp(&a.balance)
-                    } else {
-                        // For purchases on the same date, balance increases over time (earlier purchase has lower balance)
-                        a.balance.cmp(&b.balance)
-                    }
+                if a_is_sell {
+                    // For redemptions on the same date, balance decreases over time:
+                    // partial redemptions (balance > 0) sort before closing redemptions (balance == 0).
+                    b.balance.cmp(&a.balance)
                 } else {
-                    std::cmp::Ordering::Equal
+                    // For purchases on the same date, recorded balances sort ascending,
+                    // followed by unrecorded (balance == 0) purchases.
+                    (a.balance.is_zero(), a.balance).cmp(&(b.balance.is_zero(), b.balance))
                 }
             })
             .then_with(|| a.id.cmp(&b.id))
@@ -197,12 +193,69 @@ pub struct LotDepletion {
 /// 3. Returns a tuple containing:
 ///    - `Vec<TaxLot>`: Remaining active lots with positive unsold units.
 ///    - `Vec<LotDepletion>`: Chronological history of all closed/depleted lot segments.
-pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotDepletion>) {
+///
+/// Summary of FIFO lot processing for a folio, including synthetic anchor tracking.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FolioLotSummary {
+    /// Remaining active lots with positive unsold units.
+    pub active_lots: Vec<TaxLot>,
+    /// Chronological history of all closed/depleted lot segments.
+    pub depletions: Vec<LotDepletion>,
+    /// Whether any transaction in the folio used a synthetic anchor or reversal adjustment.
+    pub has_synthetic_anchors: bool,
+}
+
+/// Processes a slice of transactions in FIFO order and returns a [`FolioLotSummary`].
+pub fn process_fifo_lots_with_summary(transactions: &[Transaction]) -> FolioLotSummary {
     let sorted = sort_transactions(transactions);
     let mut lots: Vec<TaxLot> = Vec::new();
     let mut depletions: Vec<LotDepletion> = Vec::new();
+    let mut has_synthetic_anchors = false;
 
     for tx in &sorted {
+        if tx.id.starts_with("synthetic") {
+            has_synthetic_anchors = true;
+        }
+
+        if tx.tx_type == TransactionType::Reversal {
+            has_synthetic_anchors = true;
+            let units = tx.units.abs();
+            if units.is_zero() {
+                continue;
+            }
+            let is_purchase_reversal = tx.units.is_negative() || tx.amount.is_negative();
+            if is_purchase_reversal {
+                // Purchase reversal: remove units from existing lots without emitting a taxable LotDepletion.
+                let mut units_to_reverse = units;
+                for lot in &mut lots {
+                    if units_to_reverse.is_zero() {
+                        break;
+                    }
+                    if lot.is_depleted() {
+                        continue;
+                    }
+                    let (consumed, _) = lot.deplete(units_to_reverse);
+                    units_to_reverse -= consumed;
+                }
+            } else {
+                // Redemption reversal: credit units back as a lot instead of double-redeeming.
+                let nav = if tx.nav.is_positive() {
+                    tx.nav
+                } else if tx.amount.abs().is_positive() {
+                    tx.amount.abs() / units
+                } else {
+                    Nav::ZERO
+                };
+                let amount = if tx.amount.abs().is_positive() {
+                    tx.amount.abs()
+                } else {
+                    units * nav
+                };
+                lots.push(TaxLot::new(tx.date, units, nav, amount));
+            }
+            continue;
+        }
+
         let is_addition = is_unit_addition(tx.tx_type) && !tx.units.is_negative();
         let is_redemption = is_unit_redemption(tx.tx_type)
             || (is_unit_addition(tx.tx_type) && tx.units.is_negative());
@@ -267,7 +320,17 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
 
     // Retain only active lots with positive unsold units
     let active_lots = lots.into_iter().filter(|l| !l.is_depleted()).collect();
-    (active_lots, depletions)
+    FolioLotSummary {
+        active_lots,
+        depletions,
+        has_synthetic_anchors,
+    }
+}
+
+/// Processes a slice of transactions in FIFO order, returning `(active_lots, depletions)`.
+pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotDepletion>) {
+    let summary = process_fifo_lots_with_summary(transactions);
+    (summary.active_lots, summary.depletions)
 }
 
 #[cfg(test)]

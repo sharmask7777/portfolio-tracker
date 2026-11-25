@@ -130,3 +130,17 @@ fn test_sebi_top_equities_dataset_integrity() {
         );
     }
 }
+
+#[test]
+fn test_v_guard_does_not_match_visa() {
+    let (sector, _tier) = portfolio_core::xray::resolve_security_classification(
+        None,
+        None,
+        "V-Guard Industries Ltd.",
+    );
+    assert_ne!(
+        sector,
+        Some("Financial Services"),
+        "V-Guard Industries must not falsely match Visa Inc. (symbol 'V')"
+    );
+}
