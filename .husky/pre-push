@@ -26,6 +26,7 @@ pnpm --filter @portfolio/core-view typecheck
 pnpm --filter @portfolio/core-view test:coverage
 
 echo "Verifying mobile build, lints, knip, and coverage..."
+pnpm --filter @portfolio/core-view build:verify
 pnpm --filter mobile build:verify
 
 echo "Running mobile E2E simulation suites..."

@@ -364,43 +364,31 @@ async fn build_verified_tax_summary(
     let section_totals = build_section_totals(&fy_details);
 
     // Statutory Section 70 set-off mechanics
-    let stcl = if total_realized_stcg < Decimal::ZERO {
-        total_realized_stcg.abs()
-    } else {
-        Decimal::ZERO
-    };
-    let ltcl = if total_realized_ltcg < Decimal::ZERO {
-        total_realized_ltcg.abs()
-    } else {
-        Decimal::ZERO
-    };
-    let mut stcg = if total_realized_stcg > Decimal::ZERO {
-        total_realized_stcg
-    } else {
-        Decimal::ZERO
-    };
-    let mut ltcg = if total_realized_ltcg > Decimal::ZERO {
-        total_realized_ltcg
-    } else {
-        Decimal::ZERO
-    };
+    let (taxable_stcg, taxable_ltcg, taxable_slab) =
+        portfolio_core::tax::apply_capital_loss_set_off_with_slab(
+            Money::new(total_realized_stcg),
+            Money::new(total_realized_ltcg),
+            Money::new(total_realized_slab),
+        );
 
-    let set_off_lt = ltcg.min(ltcl);
-    ltcg -= set_off_lt;
-
-    let mut rem_stcl = stcl;
-    let set_off_st = stcg.min(rem_stcl);
-    stcg -= set_off_st;
-    rem_stcl -= set_off_st;
-
-    let set_off_st_lt = ltcg.min(rem_stcl);
-    ltcg -= set_off_st_lt;
-
-    let taxable_stcg = stcg;
-    let taxable_ltcg = ltcg;
+    let eligible_112a_ltcg: Decimal = fy_details
+        .iter()
+        .filter(|d| {
+            matches!(
+                d.section,
+                portfolio_core::tax::TaxSection::Sec112A10
+                    | portfolio_core::tax::TaxSection::Sec112A12_5
+            ) && d.gain.to_decimal() > Decimal::ZERO
+        })
+        .map(|d| d.gain.to_decimal())
+        .sum();
 
     let exemption_limit = section_112a_limit_for_fy(&selected_fy);
-    let exempt_ltcg_112a = taxable_ltcg.min(exemption_limit).max(Decimal::ZERO);
+    let exempt_ltcg_112a = taxable_ltcg
+        .to_decimal()
+        .min(eligible_112a_ltcg)
+        .min(exemption_limit)
+        .max(Decimal::ZERO);
 
     let core_summary = portfolio_core::tax::TaxPortfolioSummary {
         has_synthetic_anchors,
@@ -409,9 +397,9 @@ async fn build_verified_tax_summary(
             stcg: Money::new(total_realized_stcg),
             ltcg: Money::new(total_realized_ltcg),
             slab: Money::new(total_realized_slab),
-            taxable_stcg: Money::new(taxable_stcg),
-            taxable_ltcg: Money::new(taxable_ltcg),
-            taxable_slab: Money::new(total_realized_slab.max(Decimal::ZERO)),
+            taxable_stcg,
+            taxable_ltcg,
+            taxable_slab,
             details: fy_details.clone(),
         },
         unrealized: TaxCategorySummary {
@@ -483,8 +471,8 @@ async fn build_verified_tax_summary(
             stcg: d2f(total_realized_stcg),
             ltcg: d2f(total_realized_ltcg),
             slab: d2f(total_realized_slab),
-            taxable_stcg: d2f(taxable_stcg),
-            taxable_ltcg: d2f(taxable_ltcg),
+            taxable_stcg: d2f(taxable_stcg.to_decimal()),
+            taxable_ltcg: d2f(taxable_ltcg.to_decimal()),
             exempt_ltcg_112a: d2f(exempt_ltcg_112a),
             details: details.clone(),
             table_f: table_f.clone(),

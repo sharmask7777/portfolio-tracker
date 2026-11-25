@@ -109,7 +109,7 @@ export const CORE_DOMAIN_SPECS: readonly DomainParitySpec[] = [
     id: 'family',
     name: 'Family Portfolio Management',
     webComponents: [
-      'frontend/src/components/Family/FamilyManager.tsx',
+      'frontend/src/components/Dashboard/ProfileManagementModal.tsx',
       'frontend/src/components/Family/FamilySelector.tsx',
     ],
     mobileScreens: ['mobile/app/(tabs)/settings.tsx'],

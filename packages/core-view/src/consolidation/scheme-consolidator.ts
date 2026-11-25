@@ -161,18 +161,18 @@ function aggregateGroupMetrics(groupFolios: readonly FolioInput[]): Consolidated
     0
   );
 
+  const postTaxCurrentValue = Math.max(0, currentValue - totalEstimatedTax);
+  const postTaxAbsoluteReturn =
+    investedAmount > 0 ? (postTaxCurrentValue - investedAmount) / investedAmount : 0;
+
   const weightedXirr = sanitizeReturnRate(
     calculateWeightedXirr(groupFolios, totalValuationWeight, false),
     absoluteReturn
   );
   const weightedPostTaxXirr = sanitizeReturnRate(
     calculateWeightedXirr(groupFolios, totalValuationWeight, true),
-    0
+    postTaxAbsoluteReturn
   );
-
-  const postTaxCurrentValue = Math.max(0, currentValue - totalEstimatedTax);
-  const postTaxAbsoluteReturn =
-    investedAmount > 0 ? (postTaxCurrentValue - investedAmount) / investedAmount : 0;
 
   return {
     investedAmount,
@@ -195,7 +195,10 @@ function buildMultiFolioGroup(
   groupKey: string,
   groupFolios: FolioInput[]
 ): ConsolidatedSchemeGroup {
-  const firstFolio = groupFolios[0]!;
+  const firstFolio = groupFolios[0];
+  if (!firstFolio) {
+    throw new Error('Cannot build multi-folio group from empty folios');
+  }
   const schemeName = firstFolio.asset?.name || 'Unknown Scheme';
   const type = firstFolio.asset?.type || 'MUTUAL_FUND';
   const metrics = aggregateGroupMetrics(groupFolios);

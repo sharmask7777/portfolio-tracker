@@ -2667,3 +2667,90 @@ async fn test_portfolio_summary_display_ready_pan_breakdowns_contract() {
     assert_eq!(filtered_pan_breakdowns[0]["currentValue"], 3000.0);
     assert_eq!(filtered_pan_breakdowns[0]["folioCount"], 1);
 }
+
+#[tokio::test]
+async fn test_cross_user_goal_idor_rejected() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    // User A creates a portfolio and a goal
+    let user_a = db.create_user("usera@example.com", "hash_a");
+    let portfolio_a = db
+        .create_portfolio(user_a.id, "User A Portfolio", None)
+        .await
+        .unwrap();
+    let portfolio_a_id = portfolio_a.id;
+    let token_a = portfolio_api::create_jwt(user_a.id, &user_a.email, &jwt_secret).unwrap();
+
+    let create_req = Request::builder()
+        .uri(format!("/api/health/{portfolio_a_id}/goals"))
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token_a}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "name": "Retirement",
+                "targetAmount": 1_000_000.0,
+                "targetDate": "2035-01-01"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let create_res = app.clone().oneshot(create_req).await.unwrap();
+    assert_eq!(create_res.status(), StatusCode::OK);
+    let created_goal = parse_json(create_res.into_body()).await;
+    let goal_id = created_goal["id"].as_str().expect("goal id").to_string();
+
+    // User B creates their own portfolio
+    let user_b = db.create_user("userb@example.com", "hash_b");
+    let portfolio_b = db
+        .create_portfolio(user_b.id, "User B Portfolio", None)
+        .await
+        .unwrap();
+    let portfolio_b_id = portfolio_b.id;
+    let token_b = portfolio_api::create_jwt(user_b.id, &user_b.email, &jwt_secret).unwrap();
+
+    // User B attempts to update User A's goal using User B's portfolio_id
+    let update_req = Request::builder()
+        .uri(format!("/api/health/{portfolio_b_id}/goals/{goal_id}"))
+        .method("PUT")
+        .header(header::AUTHORIZATION, format!("Bearer {token_b}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "name": "Hijacked",
+                "targetAmount": 1.0
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let update_res = app.clone().oneshot(update_req).await.unwrap();
+    assert_eq!(update_res.status(), StatusCode::NOT_FOUND);
+
+    // User B attempts to delete User A's goal using User B's portfolio_id
+    let delete_req = Request::builder()
+        .uri(format!("/api/health/{portfolio_b_id}/goals/{goal_id}"))
+        .method("DELETE")
+        .header(header::AUTHORIZATION, format!("Bearer {token_b}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let delete_res = app.clone().oneshot(delete_req).await.unwrap();
+    assert_eq!(delete_res.status(), StatusCode::NOT_FOUND);
+
+    // Verify User A's goal is still intact
+    let list_req = Request::builder()
+        .uri(format!("/api/health/{portfolio_a_id}/goals"))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token_a}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let list_res = app.clone().oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let goals = parse_json(list_res.into_body()).await;
+    let goals_arr = goals.as_array().expect("goals array");
+    assert_eq!(goals_arr.len(), 1);
+    assert_eq!(goals_arr[0]["name"], "Retirement");
+}

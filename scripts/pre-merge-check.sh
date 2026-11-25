@@ -34,6 +34,7 @@ pnpm --filter frontend test:unit
 
 # 5. Mobile Client Sensors & E2E
 echo "📱 [5/7] Running Mobile Sensors & E2E..."
+pnpm --filter @portfolio/core-view build:verify
 pnpm --filter mobile build:verify
 pnpm --filter mobile test:e2e
 

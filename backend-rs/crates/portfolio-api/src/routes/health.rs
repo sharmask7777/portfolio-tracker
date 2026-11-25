@@ -291,6 +291,25 @@ pub async fn create_goal(
     }))
 }
 
+/// Verifies that `goal_id` belongs to one of the resolved `portfolio_ids`.
+async fn verify_goal_ownership(
+    state: &AppState,
+    portfolio_ids: &[String],
+    goal_id: &str,
+) -> Result<(), ApiError> {
+    for pid in portfolio_ids {
+        let rows = if let Some(pool) = state.pool() {
+            PgGoalRepository::new(pool.clone()).list_goals(pid).await?
+        } else {
+            state.db.list_goals(pid).await?
+        };
+        if rows.iter().any(|g| g.id == goal_id) {
+            return Ok(());
+        }
+    }
+    Err(ApiError::NotFound(format!("Goal {goal_id} not found")))
+}
+
 /// Updates an existing financial goal.
 pub async fn update_goal(
     auth_user: AuthUser,
@@ -298,7 +317,9 @@ pub async fn update_goal(
     Path((portfolio_id, goal_id)): Path<(String, String)>,
     Json(payload): Json<UpdateGoalRequest>,
 ) -> Result<Json<GoalDto>, ApiError> {
-    let _portfolios = resolve_target_portfolios(&state, auth_user.user_id, &portfolio_id).await?;
+    let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &portfolio_id).await?;
+    let portfolio_ids: Vec<String> = portfolios.iter().map(|p| p.id.to_string()).collect();
+    verify_goal_ownership(&state, &portfolio_ids, &goal_id).await?;
     let name = payload.name.unwrap_or_else(|| "Goal".to_string());
     let target_amount =
         Decimal::from_f64(payload.target_amount.unwrap_or(100_000.0)).unwrap_or(Decimal::ZERO);
@@ -330,7 +351,9 @@ pub async fn delete_goal(
     State(state): State<AppState>,
     Path((portfolio_id, goal_id)): Path<(String, String)>,
 ) -> Result<Json<DeleteGoalResponse>, ApiError> {
-    let _portfolios = resolve_target_portfolios(&state, auth_user.user_id, &portfolio_id).await?;
+    let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &portfolio_id).await?;
+    let portfolio_ids: Vec<String> = portfolios.iter().map(|p| p.id.to_string()).collect();
+    verify_goal_ownership(&state, &portfolio_ids, &goal_id).await?;
     let deleted = if let Some(pool) = state.pool() {
         PgGoalRepository::new(pool.clone())
             .delete_goal(&goal_id)

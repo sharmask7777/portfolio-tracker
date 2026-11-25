@@ -553,18 +553,27 @@ pub async fn get_harvesting(
                 .unwrap_or(AssetType::MutualFund);
 
             if query.realized_ltcg.is_none() && !core_txs.is_empty() {
+                let grandfather_nav = if let Some(ref amfi) = asset.amfi_code {
+                    fetch_historical_nav_by_date(&state, amfi, GRANDFATHER_DATE).await
+                } else {
+                    None
+                };
                 let tax_summary = portfolio_core::tax::calculate_portfolio_tax(
                     &asset.name,
                     asset_type,
                     &core_txs,
                     current_nav,
                     tax_slab,
-                    None,
+                    grandfather_nav,
                 );
                 for detail in tax_summary.realized.details {
                     if detail.sell_date >= fy_start
                         && detail.sell_date <= fy_end
-                        && detail.tax_type == portfolio_core::tax::TaxType::Ltcg
+                        && matches!(
+                            detail.section,
+                            portfolio_core::tax::TaxSection::Sec112A10
+                                | portfolio_core::tax::TaxSection::Sec112A12_5
+                        )
                     {
                         computed_realized_ltcg += detail.gain.to_decimal();
                     }

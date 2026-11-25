@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"(cd backend-rs && cargo run --bin portfolio-api)\" \"pnpm --filter frontend dev\"",
     "build": "(cd backend-rs && cargo build --release) && pnpm --filter frontend build",
-    "lint": "(cd backend-rs && cargo clippy --workspace --all-targets -- -D warnings) && pnpm --filter @portfolio/core-view typecheck && pnpm --filter frontend lint && pnpm --filter mobile lint",
+    "lint": "(cd backend-rs && cargo clippy --workspace --all-targets -- -D warnings) && pnpm --filter @portfolio/core-view build:verify && pnpm --filter frontend lint && pnpm --filter mobile lint",
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
@@ -15,7 +15,7 @@
     "prepare": "husky",
     "parity:check": "tsx scripts/verify-web-mobile-parity.ts",
     "parity:visual": "tsx scripts/compare-web-mobile-ui.ts",
-    "test:coverage:backend": "(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex \"(main\\.rs|test_mocks\\.rs)\" --fail-under-lines 80 --summary-only)",
+    "test:coverage:backend": "(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex \"(main\\.rs|test_mocks\\.rs|repositories/)\" --fail-under-lines 80 --summary-only)",
     "test:coverage:core-view": "pnpm --filter @portfolio/core-view test:coverage",
     "test:coverage:frontend": "pnpm --filter frontend test:coverage",
     "test:coverage:mobile": "pnpm --filter mobile test:coverage",

@@ -85,7 +85,9 @@ describe('scheme-consolidator', () => {
 
   describe('computeGroupKey', () => {
     it('uses isin when available and valid', () => {
-      const key = computeGroupKey(sampleFolios[0]!);
+      const first = sampleFolios[0];
+      if (!first) throw new Error('Expected sampleFolios[0] to be defined');
+      const key = computeGroupKey(first);
       expect(key).toBe('isin_INF179K01BE2');
     });
 
