@@ -22,6 +22,31 @@ use rust_decimal::Decimal;
 use crate::tax::constants::*;
 use crate::tax::{HoldingType, TaxSection, TaxType};
 
+/// Determines whether a holding period qualifies as long-term under Indian Income Tax rules.
+///
+/// Uses calendar-month anniversary arithmetic (`realization_date >= purchase_date + months`),
+/// preserving leap-year accuracy:
+/// - **Equity**: 12 calendar months (Section 2(42A)).
+/// - **Debt (Post-Budget 2024, `realization_date >= 2024-07-23`)**: 24 calendar months.
+/// - **Debt (Pre-Budget 2024, `realization_date < 2024-07-23`)**: 36 calendar months.
+pub fn is_long_term_holding(
+    is_equity: bool,
+    purchase_date: NaiveDate,
+    realization_date: NaiveDate,
+) -> bool {
+    let threshold_months = if is_equity {
+        12
+    } else if realization_date >= BUDGET_2024_DATE {
+        24
+    } else {
+        36
+    };
+    let anniversary = purchase_date
+        .checked_add_months(chrono::Months::new(threshold_months))
+        .unwrap_or(purchase_date + chrono::Duration::days(threshold_months as i64 * 30));
+    realization_date >= anniversary
+}
+
 /// Unified statutory classification result for a transaction or holding lot.
 ///
 /// Encapsulates the holding period, tax classification, statutory section, and nominal tax rate.
@@ -71,18 +96,7 @@ impl TaxClassification {
         let is_post_debt_regime = purchase_date >= DEBT_NEW_REGIME_DATE;
 
         // Holding period threshold evaluation using calendar-month addition (preserves leap-year accuracy)
-        let is_ltcg = if is_equity {
-            let anniversary = purchase_date
-                .checked_add_months(chrono::Months::new(12))
-                .unwrap_or(purchase_date + chrono::Duration::days(365));
-            realization_date >= anniversary
-        } else {
-            let threshold_months = if is_post_budget_2024 { 24 } else { 36 };
-            let anniversary = purchase_date
-                .checked_add_months(chrono::Months::new(threshold_months))
-                .unwrap_or(purchase_date + chrono::Duration::days(threshold_months as i64 * 30));
-            realization_date >= anniversary
-        };
+        let is_ltcg = is_long_term_holding(is_equity, purchase_date, realization_date);
 
         let (holding_type, tax_type, section, tax_rate) = if is_equity {
             if is_ltcg {

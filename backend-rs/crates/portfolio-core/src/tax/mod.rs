@@ -7,6 +7,8 @@ pub mod rules;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+
+use crate::error::PortfolioError;
 use thiserror::Error;
 use ts_rs::TS;
 
@@ -202,8 +204,14 @@ pub struct TableFQuarterData {
 pub struct AdvanceTaxAccrualMatrix {
     /// Detailed quarterly accruals mapped by quarter key (e.g. "Q1 (01/04 - 15/06)").
     pub quarters: std::collections::HashMap<String, TableFQuarterData>,
-    /// Cumulative tax total per quarter for advance tax payment tracking.
+    /// Per-quarter estimated tax total for advance tax payment tracking.
     pub quarter_totals: std::collections::HashMap<String, Money>,
+    /// Cumulative tax accrued up to and including each quarter.
+    #[serde(default)]
+    pub cumulative_quarter_totals: std::collections::HashMap<String, Money>,
+    /// Statutory Section 211 cumulative advance tax installment dues (15% / 45% / 75% / 100%).
+    #[serde(default)]
+    pub statutory_installments: std::collections::HashMap<String, Money>,
 }
 
 /// Summary metrics for a specific statutory tax section.
@@ -436,6 +444,45 @@ pub enum TaxInvariantError {
     /// Schedule CG report is missing Table F quarterly breakdown matrix.
     #[error("Missing Table F advance tax matrix")]
     MissingTableF,
+
+    /// Financial year string is invalid or unparseable.
+    #[error("Invalid financial year format: {financial_year}")]
+    InvalidFinancialYear {
+        /// The invalid financial year string.
+        financial_year: String,
+    },
+
+    /// Internal symmetry violation within a Table F quarter.
+    #[error("Table F internal symmetry violation in {quarter}: {detail}")]
+    TableFInternalMismatch {
+        /// Quarter key.
+        quarter: String,
+        /// Description of the mismatch.
+        detail: String,
+    },
+
+    /// Statutory rate or Section 55(2)(ac) deemed cost invariant violation.
+    #[error("Statutory rate or deemed cost violation: {detail}")]
+    SectionRateOrCostViolation {
+        /// Description of the violation.
+        detail: String,
+    },
+
+    /// Section 70 capital loss set-off reconciliation mismatch.
+    #[error("Section 70 loss set-off mismatch: {detail}")]
+    LossSetOffMismatch {
+        /// Description of the mismatch.
+        detail: String,
+    },
+
+    /// Realized gain sell_date falls outside the report's financial year.
+    #[error("Realized gain sell_date {sell_date} is outside financial year {financial_year}")]
+    OutOfFinancialYear {
+        /// The out-of-range sell date.
+        sell_date: NaiveDate,
+        /// The report's financial year.
+        financial_year: String,
+    },
 }
 
 /// Complete capital gains tax report for statutory filing (ITR Schedule CG).
@@ -492,25 +539,58 @@ impl TaxReport {
     }
 }
 
-/// Returns the Section 112A statutory LTCG exemption limit for a given Financial Year.
-pub fn get_112a_statutory_limit(financial_year: &str) -> Money {
+/// Parses a `"YYYY-YY"` or `"YYYY-YYYY"` financial year string into `(start_year, start_date, end_date)`.
+fn parse_financial_year_bounds(
+    financial_year: &str,
+) -> Result<(i32, NaiveDate, NaiveDate), PortfolioError> {
     let start_year = financial_year
         .split('-')
         .next()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(2024);
+        .and_then(|s| s.trim().parse::<i32>().ok())
+        .filter(|&y| (1900..=2200).contains(&y))
+        .ok_or_else(|| PortfolioError::InvalidTransaction {
+            reason: format!("Invalid financial year: '{financial_year}'"),
+        })?;
+    let start_date = NaiveDate::from_ymd_opt(start_year, 4, 1).ok_or_else(|| {
+        PortfolioError::InvalidTransaction {
+            reason: format!("Invalid FY start date for '{financial_year}'"),
+        }
+    })?;
+    let end_date = NaiveDate::from_ymd_opt(start_year + 1, 3, 31).ok_or_else(|| {
+        PortfolioError::InvalidTransaction {
+            reason: format!("Invalid FY end date for '{financial_year}'"),
+        }
+    })?;
+    Ok((start_year, start_date, end_date))
+}
+
+/// Returns the Section 112A statutory LTCG exemption limit for a given Financial Year.
+///
+/// Returns `Err(PortfolioError::InvalidTransaction)` if `financial_year` cannot be parsed.
+pub fn get_112a_statutory_limit(financial_year: &str) -> Result<Money, PortfolioError> {
+    let (start_year, _, _) = parse_financial_year_bounds(financial_year)?;
     if start_year >= 2024 {
-        ltcg_exemption_limit_budget_2024()
+        Ok(ltcg_exemption_limit_budget_2024())
     } else {
-        ltcg_exemption_limit_pre_budget_2024()
+        Ok(ltcg_exemption_limit_pre_budget_2024())
     }
 }
 
 /// Verifies statutory ITR capital gains invariants before report generation/export:
 /// 1. Sum of quarterly accrued gains across Table F equals net realized gains.
-/// 2. Exempt LTCG under Sec 112A does not exceed statutory limits (₹1,25,000 post-Budget 2024, ₹1,00,000 pre-Budget 2024).
-/// 3. Taxable gain cannot be negative after set-off.
+/// 2. Table F internal symmetry (`total_gain`, `tax_before_cess + cess == estimated_tax`, and `quarter_totals`).
+/// 3. Exempt LTCG under Sec 112A is non-negative, <= statutory limit, and <= eligible 112A LTCG.
+/// 4. Taxable gain cannot be negative after set-off and reconciles with Section 70 loss set-off.
+/// 5. Statutory rate & Section 55(2)(ac) deemed cost bounds (`deemed_cost >= actual_cost`).
+/// 6. Every detail `sell_date` falls within `report.financial_year`.
 pub fn verify_itr_invariants(report: &TaxReport) -> Result<(), TaxInvariantError> {
+    let (_, fy_start, fy_end) =
+        parse_financial_year_bounds(&report.financial_year).map_err(|_| {
+            TaxInvariantError::InvalidFinancialYear {
+                financial_year: report.financial_year.clone(),
+            }
+        })?;
+
     let table_f = report
         .summary
         .table_f
@@ -527,18 +607,79 @@ pub fn verify_itr_invariants(report: &TaxReport) -> Result<(), TaxInvariantError
         });
     }
 
+    for (q_key, q_data) in &table_f.quarters {
+        let sum_buckets = q_data.stcg15
+            + q_data.stcg20
+            + q_data.ltcg10
+            + q_data.ltcg12_5
+            + q_data.debt_ltcg12_5
+            + q_data.debt_ltcg20
+            + q_data.slab;
+        if sum_buckets != q_data.total_gain {
+            return Err(TaxInvariantError::TableFInternalMismatch {
+                quarter: q_key.clone(),
+                detail: format!(
+                    "bucket sum {sum_buckets} != total_gain {}",
+                    q_data.total_gain
+                ),
+            });
+        }
+        if q_data.tax_before_cess + q_data.cess != q_data.estimated_tax {
+            return Err(TaxInvariantError::TableFInternalMismatch {
+                quarter: q_key.clone(),
+                detail: format!(
+                    "tax_before_cess ({}) + cess ({}) != estimated_tax ({})",
+                    q_data.tax_before_cess, q_data.cess, q_data.estimated_tax
+                ),
+            });
+        }
+        if let Some(&q_total) = table_f.quarter_totals.get(q_key)
+            && q_total != q_data.estimated_tax
+        {
+            return Err(TaxInvariantError::TableFInternalMismatch {
+                quarter: q_key.clone(),
+                detail: format!(
+                    "quarter_totals ({q_total}) != estimated_tax ({})",
+                    q_data.estimated_tax
+                ),
+            });
+        }
+    }
+
     if report.exempt_ltcg_112a.is_negative() {
         return Err(TaxInvariantError::NegativeExemption {
             claimed: report.exempt_ltcg_112a,
         });
     }
 
-    let limit = get_112a_statutory_limit(&report.financial_year);
+    let limit = get_112a_statutory_limit(&report.financial_year).map_err(|_| {
+        TaxInvariantError::InvalidFinancialYear {
+            financial_year: report.financial_year.clone(),
+        }
+    })?;
     if report.exempt_ltcg_112a > limit {
         return Err(TaxInvariantError::ExemptionExceedsLimit {
             claimed: report.exempt_ltcg_112a,
             limit,
         });
+    }
+
+    if !report.summary.realized.details.is_empty() {
+        let eligible_112a_ltcg: Money = report
+            .summary
+            .realized
+            .details
+            .iter()
+            .filter(|d| matches!(d.section, TaxSection::Sec112A10 | TaxSection::Sec112A12_5))
+            .map(|d| d.gain)
+            .filter(Money::is_positive)
+            .sum();
+        if report.exempt_ltcg_112a > eligible_112a_ltcg {
+            return Err(TaxInvariantError::ExemptionExceedsLimit {
+                claimed: report.exempt_ltcg_112a,
+                limit: eligible_112a_ltcg,
+            });
+        }
     }
 
     if report.summary.realized.taxable_stcg.is_negative() {
@@ -565,7 +706,227 @@ pub fn verify_itr_invariants(report: &TaxReport) -> Result<(), TaxInvariantError
         });
     }
 
+    let (expected_stcg, expected_ltcg, expected_slab) = apply_capital_loss_set_off_with_slab(
+        report.summary.realized.stcg,
+        report.summary.realized.ltcg,
+        report.summary.realized.slab,
+    );
+    if (expected_stcg, expected_ltcg, expected_slab)
+        != (
+            report.summary.realized.taxable_stcg,
+            report.summary.realized.taxable_ltcg,
+            report.summary.realized.taxable_slab,
+        )
+    {
+        return Err(TaxInvariantError::LossSetOffMismatch {
+            detail: format!(
+                "expected ({expected_stcg}, {expected_ltcg}, {expected_slab}), got ({}, {}, {})",
+                report.summary.realized.taxable_stcg,
+                report.summary.realized.taxable_ltcg,
+                report.summary.realized.taxable_slab
+            ),
+        });
+    }
+
+    for d in &report.summary.realized.details {
+        if d.sell_date < fy_start || d.sell_date > fy_end {
+            return Err(TaxInvariantError::OutOfFinancialYear {
+                sell_date: d.sell_date,
+                financial_year: report.financial_year.clone(),
+            });
+        }
+        if d.is_grandfathered
+            && matches!(d.section, TaxSection::Sec112A10 | TaxSection::Sec112A12_5)
+            && d.deemed_cost_of_acquisition < d.cost_of_acquisition
+        {
+            return Err(TaxInvariantError::SectionRateOrCostViolation {
+                detail: format!(
+                    "Sec 55(2)(ac) deemed_cost ({}) < actual_cost ({})",
+                    d.deemed_cost_of_acquisition, d.cost_of_acquisition
+                ),
+            });
+        }
+        let expected_rate = match d.section {
+            TaxSection::Sec111A15 => Some(RATE_EQUITY_STCG_PRE_BUDGET),
+            TaxSection::Sec111A20 => Some(RATE_EQUITY_STCG_POST_BUDGET),
+            TaxSection::Sec112A10 => Some(RATE_EQUITY_LTCG_PRE_BUDGET),
+            TaxSection::Sec112A12_5 => Some(RATE_EQUITY_LTCG_POST_BUDGET),
+            TaxSection::Sec112Debt12_5 => Some(RATE_DEBT_LTCG_POST_BUDGET),
+            TaxSection::Sec112Debt20 => Some(RATE_DEBT_LTCG_PRE_BUDGET),
+            TaxSection::Sec50AA | TaxSection::Slab => None,
+        };
+        if let Some(rate) = expected_rate
+            && d.tax_rate != rate
+        {
+            return Err(TaxInvariantError::SectionRateOrCostViolation {
+                detail: format!(
+                    "section {:?} expected rate {rate}, got {}",
+                    d.section, d.tax_rate
+                ),
+            });
+        }
+    }
+
     Ok(())
+}
+
+/// Returns a sorted, deduplicated list of Indian Financial Years (e.g. `"2024-25"`)
+/// in which at least one realized sale/redemption occurred.
+pub fn available_financial_years(details: &[RealizedGain]) -> Vec<String> {
+    let mut years: std::collections::BTreeSet<i32> = std::collections::BTreeSet::new();
+    for d in details {
+        years.insert(financial_year_start_year(d.sell_date));
+    }
+    years
+        .into_iter()
+        .map(|y| format!("{y}-{:02}", (y + 1) % 100))
+        .collect()
+}
+
+/// Filters realized capital gains to a specific Indian Financial Year (`"YYYY-YY"`)
+/// and recomputes realized totals, Section 70 loss set-offs, Table F, and section totals.
+pub fn calculate_portfolio_tax_for_fy(
+    asset_name: &str,
+    asset_type: AssetType,
+    transactions: &[Transaction],
+    current_nav: Nav,
+    tax_slab: Decimal,
+    grandfather_nav: Option<Nav>,
+    financial_year: &str,
+) -> Result<TaxPortfolioSummary, PortfolioError> {
+    let (_, fy_start, fy_end) = parse_financial_year_bounds(financial_year)?;
+    let mut summary = calculate_portfolio_tax_with_as_of(
+        asset_name,
+        asset_type,
+        transactions,
+        current_nav,
+        tax_slab,
+        grandfather_nav,
+        Some(fy_end),
+    );
+    summary
+        .realized
+        .details
+        .retain(|d| d.sell_date >= fy_start && d.sell_date <= fy_end);
+
+    let mut stcg = Money::ZERO;
+    let mut ltcg = Money::ZERO;
+    let mut slab = Money::ZERO;
+    for d in &summary.realized.details {
+        match d.tax_type {
+            TaxType::Stcg => stcg += d.gain,
+            TaxType::Ltcg => ltcg += d.gain,
+            TaxType::Slab => slab += d.gain,
+        }
+    }
+
+    let (taxable_stcg, taxable_ltcg, taxable_slab) =
+        apply_capital_loss_set_off_with_slab(stcg, ltcg, slab);
+    let table_f = build_advance_tax_matrix(&summary.realized.details);
+    let section_totals = build_section_totals(&summary.realized.details);
+
+    summary.realized.stcg = stcg;
+    summary.realized.ltcg = ltcg;
+    summary.realized.slab = slab;
+    summary.realized.total = stcg + ltcg + slab;
+    summary.realized.taxable_stcg = taxable_stcg;
+    summary.realized.taxable_ltcg = taxable_ltcg;
+    summary.realized.taxable_slab = taxable_slab;
+    summary.table_f = Some(table_f);
+    summary.section_totals = Some(section_totals);
+    Ok(summary)
+}
+
+/// Neutralizes CSV formula injection by prefixing cells starting with `=`, `+`, `-`, `@`, `\t`, or `\r` with `'`,
+/// and wraps fields containing commas, quotes, or newlines in double quotes.
+fn sanitize_csv_cell(raw: &str) -> String {
+    let neutralized = if raw.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{raw}")
+    } else {
+        raw.to_string()
+    };
+    if neutralized.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", neutralized.replace('"', "\"\""))
+    } else {
+        neutralized
+    }
+}
+
+/// Generates a canonical 27-column ITR Schedule CG CSV export from a [`TaxReport`].
+///
+/// Neutralizes spreadsheet formula-injection characters in all string fields.
+pub fn generate_itr_schedule_cg_csv(report: &TaxReport) -> String {
+    let headers = [
+        "FinancialYear",
+        "AssessmentYear",
+        "InvestorName",
+        "PAN",
+        "SchemeName",
+        "ISIN",
+        "AssetType",
+        "FolioNumber",
+        "BuyDate",
+        "SellDate",
+        "Units",
+        "HoldingDays",
+        "HoldingType",
+        "TaxType",
+        "Section",
+        "BuyNav",
+        "SellNav",
+        "GrossConsideration",
+        "CostOfAcquisition",
+        "GrandfatherNav",
+        "TotalFmvJan31_2018",
+        "DeemedCostOfAcquisition",
+        "TransferExpenses",
+        "CapitalGain",
+        "TaxRate",
+        "TaxBeforeCess",
+        "EstimatedTaxInclCess",
+    ];
+    let mut out = String::new();
+    out.push_str(&headers.join(","));
+    out.push('\n');
+
+    let ay = report.assessment_year.as_deref().unwrap_or("");
+    let investor = report.assessee_name.as_deref().unwrap_or("");
+    let pan = report.pan.as_deref().unwrap_or("");
+
+    for d in &report.summary.realized.details {
+        let row = [
+            sanitize_csv_cell(&report.financial_year),
+            sanitize_csv_cell(ay),
+            sanitize_csv_cell(investor),
+            sanitize_csv_cell(pan),
+            sanitize_csv_cell(&d.asset_name),
+            sanitize_csv_cell(d.isin.as_deref().unwrap_or("")),
+            sanitize_csv_cell(&d.asset_class),
+            sanitize_csv_cell(d.folio_number.as_deref().unwrap_or("")),
+            d.buy_date.to_string(),
+            d.sell_date.to_string(),
+            d.units.to_decimal().to_string(),
+            (d.sell_date - d.buy_date).num_days().to_string(),
+            format!("{:?}", d.holding_type),
+            format!("{:?}", d.tax_type),
+            sanitize_csv_cell(&d.section.to_string()),
+            d.buy_nav.to_decimal().to_string(),
+            d.sell_nav.to_decimal().to_string(),
+            d.gross_consideration.to_decimal().to_string(),
+            d.cost_of_acquisition.to_decimal().to_string(),
+            d.fmv_as_of_jan31_2018.to_decimal().to_string(),
+            d.total_fmv_jan31_2018.to_decimal().to_string(),
+            d.deemed_cost_of_acquisition.to_decimal().to_string(),
+            d.transfer_expenses.to_decimal().to_string(),
+            d.gain.to_decimal().to_string(),
+            d.tax_rate.to_string(),
+            d.tax_before_cess.to_decimal().to_string(),
+            d.estimated_tax.to_decimal().to_string(),
+        ];
+        out.push_str(&row.join(","));
+        out.push('\n');
+    }
+    out
 }
 
 /// Result of simulating a unit redemption, including tax impact and lock-in verification.
@@ -635,9 +996,32 @@ pub fn build_advance_tax_matrix(details: &[RealizedGain]) -> AdvanceTaxAccrualMa
         }
     }
 
+    let mut cumulative_quarter_totals = std::collections::HashMap::new();
+    let mut running_tax = Money::ZERO;
+    for q in quarters_list {
+        let q_str = q.as_str().to_string();
+        let q_tax = quarter_totals.get(&q_str).copied().unwrap_or(Money::ZERO);
+        running_tax += q_tax;
+        cumulative_quarter_totals.insert(q_str, running_tax);
+    }
+
+    let total_tax = running_tax;
+    let mut statutory_installments = std::collections::HashMap::new();
+    let pct = |num: i64| -> Money {
+        Money::new((total_tax.to_decimal() * Decimal::from(num)) / Decimal::from(100))
+    };
+    statutory_installments.insert(AdvanceTaxQuarter::Q1.as_str().to_string(), pct(15));
+    statutory_installments.insert(AdvanceTaxQuarter::Q2A.as_str().to_string(), pct(45));
+    statutory_installments.insert(AdvanceTaxQuarter::Q2B.as_str().to_string(), pct(45));
+    statutory_installments.insert(AdvanceTaxQuarter::Q3.as_str().to_string(), pct(75));
+    statutory_installments.insert(AdvanceTaxQuarter::Q4.as_str().to_string(), pct(100));
+    statutory_installments.insert(AdvanceTaxQuarter::Q5.as_str().to_string(), pct(100));
+
     AdvanceTaxAccrualMatrix {
         quarters,
         quarter_totals,
+        cumulative_quarter_totals,
+        statutory_installments,
     }
 }
 
@@ -923,32 +1307,41 @@ pub fn calculate_unrealized_tax(
         tax_slab
     };
 
-    let ltcg_rate = if is_eq || is_post_budget {
+    let ltcg_rate = if is_eq {
         if is_post_budget {
             RATE_EQUITY_LTCG_POST_BUDGET
         } else {
             RATE_EQUITY_LTCG_PRE_BUDGET
         }
+    } else if is_post_budget {
+        RATE_DEBT_LTCG_POST_BUDGET
     } else {
         RATE_DEBT_LTCG_PRE_BUDGET
     };
 
-    let mut estimated_tax = Money::ZERO;
+    let (taxable_stcg, taxable_ltcg, taxable_slab) = apply_capital_loss_set_off_with_slab(
+        summary.unrealized.stcg,
+        summary.unrealized.ltcg,
+        summary.unrealized.slab,
+    );
 
-    if summary.unrealized.stcg.is_positive() {
-        estimated_tax += Money::new(summary.unrealized.stcg.to_decimal() * stcg_rate);
+    let mut tax_before_cess = Money::ZERO;
+
+    if taxable_stcg.is_positive() {
+        tax_before_cess += Money::new(taxable_stcg.to_decimal() * stcg_rate);
     }
-    if summary.unrealized.ltcg.is_positive() {
-        estimated_tax += Money::new(summary.unrealized.ltcg.to_decimal() * ltcg_rate);
+    if taxable_ltcg.is_positive() {
+        tax_before_cess += Money::new(taxable_ltcg.to_decimal() * ltcg_rate);
     }
-    if summary.unrealized.slab.is_positive() {
-        estimated_tax += Money::new(summary.unrealized.slab.to_decimal() * tax_slab);
+    if taxable_slab.is_positive() {
+        tax_before_cess += Money::new(taxable_slab.to_decimal() * tax_slab);
     }
 
-    if estimated_tax.is_negative() {
+    if tax_before_cess.is_negative() || tax_before_cess.is_zero() {
         Money::ZERO
     } else {
-        estimated_tax
+        let cess = Money::new(tax_before_cess.to_decimal() * CESS_RATE);
+        tax_before_cess + cess
     }
 }
 

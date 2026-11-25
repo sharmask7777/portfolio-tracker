@@ -66,7 +66,7 @@ fn test_unrealized_tax_equity_stcg_post_budget_2024() {
         None,
     );
 
-    assert_eq!(estimated_tax, money("100"));
+    assert_eq!(estimated_tax, money("104"));
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn test_unrealized_tax_equity_ltcg_post_budget_2024() {
         None,
     );
 
-    assert_eq!(estimated_tax, money("125"));
+    assert_eq!(estimated_tax, money("130"));
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn test_unrealized_tax_debt_section_50aa() {
         None,
     );
 
-    assert_eq!(estimated_tax, money("600"));
+    assert_eq!(estimated_tax, money("624"));
 }
 
 #[test]
@@ -178,11 +178,11 @@ fn test_performance_metrics_post_tax_parity() {
 
     let metrics = get_metrics(&txs, nav("150"), Some(options));
 
-    assert_eq!(metrics.estimated_tax, Some(money("100")));
+    assert_eq!(metrics.estimated_tax, Some(money("104")));
     assert_eq!(metrics.current_value, money("1500"));
     assert_eq!(metrics.invested_amount, money("1000"));
     assert_eq!(metrics.absolute_return, dec("0.5"));
-    assert_eq!(metrics.post_tax_absolute_return, Some(dec("0.4")));
+    assert_eq!(metrics.post_tax_absolute_return, Some(dec("0.396")));
 
     // Post-tax XIRR must be strictly less than pre-tax XIRR, but positive
     assert!(metrics.xirr.is_some());
@@ -514,6 +514,7 @@ fn construct_test_tax_report(
     for (i, &name) in q_names.iter().enumerate() {
         let gain = quarterly_gains.get(i).copied().unwrap_or(Money::ZERO);
         let q_data = portfolio_core::tax::TableFQuarterData {
+            ltcg12_5: gain,
             total_gain: gain,
             ..Default::default()
         };
@@ -536,6 +537,7 @@ fn construct_test_tax_report(
         table_f: Some(portfolio_core::tax::AdvanceTaxAccrualMatrix {
             quarters,
             quarter_totals: HashMap::new(),
+            ..Default::default()
         }),
         section_totals: None,
     };

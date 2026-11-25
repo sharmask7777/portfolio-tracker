@@ -39,45 +39,13 @@ pub fn is_elss_scheme(asset_type: AssetType, asset_name: &str) -> bool {
 ///
 /// # Classification Rules:
 /// - Direct stocks (`AssetType::Stock`) are unconditionally classified as equity.
-/// - Mutual funds (`AssetType::MutualFund`) are classified as equity unless their scheme name contains
-///   keywords denoting debt, money market, liquid, commodity (gold/silver), fund-of-funds (FoF),
-///   or international/overseas equities (which do not qualify for domestic equity tax treatment).
+/// - Mutual funds (`AssetType::MutualFund`) delegate to [`crate::classification::is_domestic_equity_scheme`].
 pub fn is_equity(asset_type: AssetType, asset_name: &str) -> bool {
-    if asset_type == AssetType::Stock {
-        return true;
+    match asset_type {
+        AssetType::Stock => true,
+        AssetType::MutualFund => crate::classification::is_domestic_equity_scheme(asset_name),
+        _ => false,
     }
-    if asset_type == AssetType::MutualFund {
-        let lower = asset_name.to_lowercase();
-        let non_equity_keywords = [
-            "debt",
-            "bond",
-            "liquid",
-            "gilt",
-            "money market",
-            "overnight",
-            "credit risk",
-            "conservative",
-            "income",
-            "duration",
-            "treasury",
-            "gold",
-            "silver",
-            "commodity",
-            "fof",
-            "fund of fund",
-            "fund of funds",
-            "international",
-            "overseas",
-            "global",
-            "nasdaq",
-            "s&p 500",
-            "us equity",
-        ];
-        return !non_equity_keywords
-            .iter()
-            .any(|keyword| lower.contains(keyword));
-    }
-    false
 }
 
 /// Computes the exact 3-year lock-in maturity date for an ELSS lot.
@@ -92,8 +60,7 @@ pub fn elss_lock_in_expiry(purchase_date: NaiveDate) -> NaiveDate {
 
     NaiveDate::from_ymd_opt(target_year, month, day).unwrap_or_else(|| {
         // Feb 29 in leap year -> Feb 28 in target non-leap year
-        NaiveDate::from_ymd_opt(target_year, month, 28)
-            .expect("Feb 28 is always a valid calendar date")
+        NaiveDate::from_ymd_opt(target_year, month, 28).unwrap_or(purchase_date)
     })
 }
 
@@ -233,22 +200,8 @@ pub fn get_exit_load(
 
     let lower = asset_name.to_lowercase();
 
-    // Parag Parikh Flexi Cap: 2% < 365d, 1% < 730d, 0% thereafter
-    if lower.contains("parag parikh") {
-        if diff_days < 365 {
-            return Money::new(value.to_decimal() * Decimal::from_parts(2, 0, 0, false, 2));
-        }
-        if diff_days < 730 {
-            return Money::new(value.to_decimal() * Decimal::from_parts(1, 0, 0, false, 2));
-        }
-        return Money::ZERO;
-    }
-
-    // Arbitrage funds: 0.25% < 30 days
-    if lower.contains("arbitrage") {
-        if diff_days < 30 {
-            return Money::new(value.to_decimal() * Decimal::from_parts(25, 0, 0, false, 4));
-        }
+    // Overnight funds: 0% exit load
+    if lower.contains("overnight") {
         return Money::ZERO;
     }
 
@@ -265,6 +218,25 @@ pub fn get_exit_load(
         };
         if let Some(r) = rate {
             return Money::new(value.to_decimal() * r);
+        }
+        return Money::ZERO;
+    }
+
+    // Arbitrage funds: 0.25% < 30 days
+    if lower.contains("arbitrage") {
+        if diff_days < 30 {
+            return Money::new(value.to_decimal() * Decimal::from_parts(25, 0, 0, false, 4));
+        }
+        return Money::ZERO;
+    }
+
+    // Parag Parikh Flexi Cap: 2% < 365d, 1% < 730d, 0% thereafter
+    if lower.contains("parag parikh") && lower.contains("flexi") {
+        if diff_days < 365 {
+            return Money::new(value.to_decimal() * Decimal::from_parts(2, 0, 0, false, 2));
+        }
+        if diff_days < 730 {
+            return Money::new(value.to_decimal() * Decimal::from_parts(1, 0, 0, false, 2));
         }
         return Money::ZERO;
     }
@@ -308,6 +280,12 @@ pub fn simulate_sell_transactions_with_metadata(
     grandfather_nav: Option<Nav>,
     exit_load_metadata: Option<&str>,
 ) -> Result<SellSimulation, PortfolioError> {
+    if units_to_sell <= Units::ZERO {
+        return Err(PortfolioError::InvalidTransaction {
+            reason: "units_to_sell must be greater than zero".to_string(),
+        });
+    }
+
     let (active_lots, _) = process_fifo_lots(transactions);
     let total_units: Units = active_lots.iter().map(|l| l.remaining_units).sum();
 

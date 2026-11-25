@@ -631,11 +631,11 @@ mod tests {
         assert_eq!(metrics.xirr, Some(dec("0.5")));
 
         // Post-tax metrics
-        // Gain = 5,000; LTCG rate (pre-budget 2024) = 10% -> Tax = 500
-        // Post-tax value = 14,500 -> Post-tax return = 45% (0.45)
-        assert_eq!(metrics.estimated_tax, Some(money("500")));
-        assert_eq!(metrics.post_tax_absolute_return, Some(dec("0.45")));
-        assert_eq!(metrics.post_tax_xirr, Some(dec("0.45")));
+        // Gain = 5,000; LTCG rate (pre-budget 2024) = 10% -> Tax = 500 + 4% cess = 520
+        // Post-tax value = 14,480 -> Post-tax return = 44.80% (0.448)
+        assert_eq!(metrics.estimated_tax, Some(money("520")));
+        assert_eq!(metrics.post_tax_absolute_return, Some(dec("0.448")));
+        assert_eq!(metrics.post_tax_xirr, Some(dec("0.448")));
     }
 
     #[test]

@@ -53,6 +53,57 @@ impl AssetCategory {
     }
 }
 
+/// Non-domestic-equity mutual fund keywords (debt, money market, commodity, hybrid, international).
+const NON_DOMESTIC_EQUITY_KEYWORDS: &[&str] = &[
+    "debt",
+    "bond",
+    "liquid",
+    "gilt",
+    "money market",
+    "overnight",
+    "floating rate",
+    "banking & psu",
+    "banking and psu",
+    "dynamic bond",
+    "credit risk",
+    "conservative",
+    "income",
+    "duration",
+    "treasury",
+    "multi asset",
+    "dynamic asset",
+    "equity savings",
+    "gold",
+    "silver",
+    "commodity",
+    "fof",
+    "fund of fund",
+    "fund of funds",
+    "international",
+    "overseas",
+    "global",
+    "greater china",
+    "emerging markets",
+    "fang+",
+    "hang seng",
+    "nasdaq",
+    "s&p 500",
+    "us equity",
+];
+
+/// Returns `true` if a mutual fund scheme name qualifies as a domestic equity-oriented scheme
+/// for Indian capital gains taxation (Section 112A / 111A).
+///
+/// Arbitrage, ELSS, flexi-cap, and domestic index funds return `true`.
+/// Debt, liquid, overnight, floating rate, banking & PSU, dynamic bond, credit risk,
+/// multi-asset, dynamic asset, equity savings, gold/silver, FoF, and international funds return `false`.
+pub fn is_domestic_equity_scheme(name: &str) -> bool {
+    let lower = name.trim().to_lowercase();
+    !NON_DOMESTIC_EQUITY_KEYWORDS
+        .iter()
+        .any(|keyword| lower.contains(keyword))
+}
+
 /// Classifies an asset by its statutory/declared asset type and name string.
 ///
 /// Pure deterministic function with zero I/O.
