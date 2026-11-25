@@ -80,12 +80,12 @@ describe('analytics-service', () => {
 
     expect(xrayData.marketCap).toBeDefined();
     expect(xrayData.marketCap.large).toBeDefined();
-    expect(xrayData.marketCap.large.percentage).toBeGreaterThan(0);
-    expect(xrayData.marketCap.large.value).toBeGreaterThan(0);
+    expect(xrayData.marketCap.large.percentage).toBe(0);
+    expect(xrayData.marketCap.large.value).toBe(0);
     expect(xrayData.marketCap.mid).toBeDefined();
-    expect(xrayData.marketCap.mid.percentage).toBeGreaterThan(0);
+    expect(xrayData.marketCap.mid.percentage).toBe(0);
     expect(xrayData.marketCap.small).toBeDefined();
-    expect(xrayData.marketCap.small.percentage).toBeGreaterThan(0);
+    expect(xrayData.marketCap.small.percentage).toBe(0);
   });
 
   it('produces assetAllocation with arbitrage category breakdown', () => {

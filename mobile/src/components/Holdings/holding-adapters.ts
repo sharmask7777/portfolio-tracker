@@ -7,6 +7,14 @@ import type { FolioInput } from '@portfolio/core-view';
 import type { EnrichedHolding } from '../../services/portfolio-service';
 import type { FolioEntity } from '../../services/family-service';
 
+function normalizeAssetClass(raw?: string | null): 'EQUITY' | 'DEBT' | 'HYBRID' | 'GOLD' {
+  const upper = (raw || 'EQUITY').toUpperCase();
+  if (upper === 'COMMODITY' || upper === 'GOLD') return 'GOLD';
+  if (upper === 'DEBT' || upper === 'LIQUID' || upper === 'FIXED_INCOME') return 'DEBT';
+  if (upper === 'HYBRID') return 'HYBRID';
+  return 'EQUITY';
+}
+
 /**
  * Builds a lookup map of folio numbers to FolioEntity records.
  *
@@ -68,7 +76,7 @@ export function adaptHoldingToFolioInput(
     asset: {
       id: holding.id,
       name: holding.scheme_name,
-      type: holding.asset_class || 'EQUITY',
+      type: normalizeAssetClass(holding.asset_class),
       isin: holding.isin || undefined,
       amfiCode: holding.amfi_code || undefined,
       schemeCode: holding.amfi_code || undefined,

@@ -207,7 +207,7 @@ export async function getDashboardSummary(
  * @returns Normalized decimal rate (e.g. 0.15 for 15%)
  */
 function extractHoldingReturnRate(holding: EnrichedHolding): number {
-  if (typeof holding.xirr === 'number' && !Number.isNaN(holding.xirr) && holding.xirr !== 0) {
+  if (holding.xirr !== undefined && holding.xirr !== null && typeof holding.xirr === 'number' && !Number.isNaN(holding.xirr)) {
     return holding.xirr;
   }
   if (typeof holding.absolute_return === 'number' && !Number.isNaN(holding.absolute_return)) {

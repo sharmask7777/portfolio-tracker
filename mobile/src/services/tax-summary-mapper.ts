@@ -152,10 +152,10 @@ export function mapServerSummaryToResult(
   const secTotals = (serverSummary['sectionTotals'] ?? {}) as Record<string, Record<string, unknown>>;
   const totals = extractSectionTotals(secTotals);
 
-  const ltcgLimit = selectedFY === '2024-25' ? 125000 : 100000;
+  const ltcgLimit = selectedFY >= '2024-25' ? 125000 : 100000;
   const totalEquityLTCG = totals.ltcg10Gain + totals.ltcg12_5Gain;
   const totalDebtLTCG = totals.debtLtcg20Gain + totals.debtLtcg12_5Gain;
-  const ltcgExemptClaimed = Math.min(totalEquityLTCG, ltcgLimit);
+  const ltcgExemptClaimed = Math.min(Math.max(0, totalEquityLTCG), ltcgLimit);
   const grandTotalTax = totals.ltcgTotalTax + totals.stcgTotalTax + totals.debtTotalTax + totals.slabTotalTax;
   const cessTotal = grandTotalTax - totals.baseTaxTotal;
 

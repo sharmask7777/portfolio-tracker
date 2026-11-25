@@ -158,7 +158,7 @@ export interface StockRowProps {
  */
 export function StockRow({ item, index, onPress }: StockRowProps): React.ReactElement {
   const isMultiFund = (item.contributions?.length || 0) > 1;
-  const pct = (item.percentage * (item.percentage <= 1 ? 100 : 1)).toFixed(2);
+  const pct = item.percentage.toFixed(2);
 
   return (
     <TouchableOpacity

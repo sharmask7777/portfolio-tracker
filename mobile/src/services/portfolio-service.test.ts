@@ -520,9 +520,9 @@ describe('portfolio-service', () => {
         gainLossPct: 6, // 6% -> 0.06
       };
 
-      // (50000 * 0.12 + 50000 * 0.08 + 50000 * 0.06) / 150000 = (6000 + 4000 + 3000) / 150000 = 13000 / 150000 ≈ 0.08667
+      // (50000 * 0.12 + 50000 * 0 + 50000 * 0.06) / 150000 = (6000 + 0 + 3000) / 150000 = 0.06
       const result = computeOverallPortfolioXirr([h1, h2, h3]);
-      expect(result).toBeCloseTo(0.08667, 4);
+      expect(result).toBeCloseTo(0.06, 4);
     });
   });
 });

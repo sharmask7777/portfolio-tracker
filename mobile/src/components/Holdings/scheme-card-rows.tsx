@@ -125,8 +125,9 @@ const styles = StyleSheet.create({
 
 function formatDayChange(dayChange: number, dayChangePct: number | undefined): string {
   const isDayPositive = dayChange >= 0;
+  const isPctPositive = (dayChangePct ?? 0) >= 0;
   const pct = dayChangePct !== undefined ? formatPercent(dayChangePct / 100) : '0.00%';
-  return `${isDayPositive ? '+' : ''}${formatIndianRupee(dayChange)} (${isDayPositive ? '+' : ''}${pct})`;
+  return `${isDayPositive ? '+' : ''}${formatIndianRupee(dayChange)} (${isPctPositive ? '+' : ''}${pct})`;
 }
 
 /**

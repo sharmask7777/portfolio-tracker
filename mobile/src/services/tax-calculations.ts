@@ -240,6 +240,44 @@ function buildBreakdownResult(acc: GainsAcc, exemptionRes: Exemption112AResult, 
   };
 }
 
+function applyBreakdownLossSetOff(acc: GainsAcc): { netLtcg10: number; netLtcg12_5: number } {
+  const totalStcg = acc.stcg15 + acc.stcg20;
+  const totalLtcg = acc.ltcg10 + acc.ltcg12_5;
+  const totalSlab = acc.slab;
+  const [taxableStcg, taxableLtcg, taxableSlab] = applyCapitalLossSetOffWithSlab(
+    totalStcg,
+    totalLtcg,
+    totalSlab
+  );
+
+  if (totalStcg > 0 && taxableStcg < totalStcg) {
+    const stcgRatio = Math.max(0, taxableStcg) / totalStcg;
+    acc.stcg15Tax *= stcgRatio;
+    acc.stcg20Tax *= stcgRatio;
+  } else if (totalStcg <= 0) {
+    acc.stcg15Tax = 0;
+    acc.stcg20Tax = 0;
+  }
+
+  if (totalSlab > 0 && taxableSlab < totalSlab) {
+    acc.slabTax *= Math.max(0, taxableSlab) / totalSlab;
+  } else if (totalSlab <= 0) {
+    acc.slabTax = 0;
+  }
+
+  if (totalLtcg <= 0) {
+    return { netLtcg10: 0, netLtcg12_5: 0 };
+  }
+  if (taxableLtcg < totalLtcg) {
+    const ratio = taxableLtcg / totalLtcg;
+    return {
+      netLtcg10: Math.max(0, acc.ltcg10 * ratio),
+      netLtcg12_5: Math.max(0, acc.ltcg12_5 * ratio),
+    };
+  }
+  return { netLtcg10: acc.ltcg10, netLtcg12_5: acc.ltcg12_5 };
+}
+
 export function computeTaxBreakdowns(
   filteredDetails: GainInputSlice[],
   selectedFY: string
@@ -262,23 +300,7 @@ export function computeTaxBreakdowns(
     accumulateBreakdownGain(acc, g);
   }
 
-  // Apply Section 70 loss set-offs before calculating exemptions
-  const totalStcg = acc.stcg15 + acc.stcg20;
-  const totalLtcg = acc.ltcg10 + acc.ltcg12_5;
-  const totalSlab = acc.slab;
-  const [, taxableLtcg] = applyCapitalLossSetOffWithSlab(totalStcg, totalLtcg, totalSlab);
-
-  let netLtcg10 = acc.ltcg10;
-  let netLtcg12_5 = acc.ltcg12_5;
-  if (totalLtcg > 0 && taxableLtcg < totalLtcg) {
-    const ratio = taxableLtcg / totalLtcg;
-    netLtcg10 = Math.max(0, netLtcg10 * ratio);
-    netLtcg12_5 = Math.max(0, netLtcg12_5 * ratio);
-  } else if (totalLtcg <= 0) {
-    netLtcg10 = 0;
-    netLtcg12_5 = 0;
-  }
-
+  const { netLtcg10, netLtcg12_5 } = applyBreakdownLossSetOff(acc);
   const exemptionRes = calculate112AExemption(netLtcg10, netLtcg12_5, selectedFY);
   return buildBreakdownResult(acc, exemptionRes, selectedFY);
 }

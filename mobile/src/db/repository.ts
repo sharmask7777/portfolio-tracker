@@ -141,12 +141,12 @@ export async function getPortfolioHoldings(
 ): Promise<HoldingEntity[]> {
   if (folioNumber) {
     return db.getAllAsync<HoldingEntity>(
-      'SELECT * FROM holdings WHERE units > 0 AND folio_number = ? ORDER BY scheme_name ASC;',
+      'SELECT * FROM holdings WHERE units > 0.0001 AND folio_number = ? ORDER BY scheme_name ASC;',
       [folioNumber],
     );
   }
   return db.getAllAsync<HoldingEntity>(
-    'SELECT * FROM holdings WHERE units > 0 ORDER BY scheme_name ASC;',
+    'SELECT * FROM holdings WHERE units > 0.0001 ORDER BY scheme_name ASC;',
   );
 }
 
@@ -154,7 +154,7 @@ export async function getClosedHoldings(
   db: SQLiteDatabase,
 ): Promise<HoldingEntity[]> {
   return db.getAllAsync<HoldingEntity>(
-    'SELECT * FROM holdings WHERE units = 0 ORDER BY scheme_name ASC;',
+    'SELECT * FROM holdings WHERE units <= 0.0001 ORDER BY scheme_name ASC;',
   );
 }
 
@@ -168,7 +168,7 @@ export async function updateHoldingNav(
     await db.runAsync(
       `UPDATE holdings 
        SET current_nav = ?, current_value = units * ?, nav_date = ?, updated_at = ? 
-       WHERE amfi_code = ?;`,
+       WHERE amfi_code = ? AND units > 0.0001;`,
       [update.nav, update.nav, update.navDate, updatedAt, amfiCode],
     );
     await db.runAsync(

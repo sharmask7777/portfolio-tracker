@@ -1,5 +1,5 @@
 import type { EnrichedHolding } from './portfolio-service';
-import type { XRayData, StockExposure, StockContribution } from './hierarchy-types';
+import type { XRayData, StockExposure } from './hierarchy-types';
 
 interface AllocationAccumulator {
   equity: number;
@@ -89,56 +89,9 @@ function classifyHoldingAmounts(holdings: EnrichedHolding[]): AllocationAccumula
   return acc;
 }
 
-const TOP_STOCKS_BLUEPRINT: Array<{ name: string; sector: string; weightShare: number }> = [
-  { name: 'HDFC Bank Ltd.', sector: 'Financial Services', weightShare: 0.28 },
-  { name: 'ICICI Bank Ltd.', sector: 'Financial Services', weightShare: 0.22 },
-  { name: 'Infosys Ltd.', sector: 'Technology', weightShare: 0.20 },
-  { name: 'Reliance Industries Ltd.', sector: 'Energy', weightShare: 0.18 },
-  { name: 'Tata Consultancy Services Ltd.', sector: 'Technology', weightShare: 0.12 },
-];
-
-function buildStockExposuresFromEquity(
-  equityValue: number,
-  equityHoldings: EnrichedHolding[],
-  totalValue: number,
-): StockExposure[] {
-  if (equityValue <= 0 || equityHoldings.length === 0) return [];
-
-  return TOP_STOCKS_BLUEPRINT.map((bp) => {
-    const stockAbsoluteValue = Math.round(equityValue * bp.weightShare * 100) / 100;
-    const stockPercentage = totalValue > 0 ? stockAbsoluteValue / totalValue : 0;
-
-    const contributions: StockContribution[] = equityHoldings.map((h) => {
-      const schemeEquityShare = equityValue > 0 ? h.current_value / equityValue : 0;
-      const contribVal = Math.round(stockAbsoluteValue * schemeEquityShare * 100) / 100;
-      const weightInScheme = h.current_value > 0 ? (contribVal / h.current_value) * 100 : 0;
-      return {
-        schemeName: h.scheme_name,
-        value: contribVal,
-        weight: Math.round(weightInScheme * 100) / 100,
-      };
-    }).filter((c) => c.value > 0);
-
-    return {
-      name: bp.name,
-      sector: bp.sector,
-      absoluteValue: stockAbsoluteValue,
-      percentage: stockPercentage,
-      contributions,
-    };
-  });
-}
-
 function buildXRayData(totalValue: number, acc: AllocationAccumulator): XRayData {
   const toPct = (val: number) => (totalValue > 0 ? (val / totalValue) * 100 : 0);
   const eq = acc.equity;
-  const sectors = eq > 0
-    ? [
-        { name: 'Financial Services', percentage: 50, value: Math.round(eq * 0.5 * 100) / 100 },
-        { name: 'Technology', percentage: 32, value: Math.round(eq * 0.32 * 100) / 100 },
-        { name: 'Energy', percentage: 18, value: Math.round(eq * 0.18 * 100) / 100 },
-      ]
-    : [];
 
   return {
     totalValue,
@@ -150,11 +103,11 @@ function buildXRayData(totalValue: number, acc: AllocationAccumulator): XRayData
       arbitrage: { percentage: toPct(acc.arbitrage), value: acc.arbitrage },
       other: { percentage: toPct(acc.other), value: acc.other },
     },
-    sectors,
+    sectors: [],
     marketCap: {
-      large: { percentage: eq > 0 ? 65 : 0, value: Math.round(eq * 0.65 * 100) / 100 },
-      mid: { percentage: eq > 0 ? 25 : 0, value: Math.round(eq * 0.25 * 100) / 100 },
-      small: { percentage: eq > 0 ? 10 : 0, value: Math.round(eq * 0.10 * 100) / 100 },
+      large: { percentage: 0, value: 0 },
+      mid: { percentage: 0, value: 0 },
+      small: { percentage: 0, value: 0 },
     },
     exArbitrage: {
       assetAllocation: {
@@ -165,21 +118,22 @@ function buildXRayData(totalValue: number, acc: AllocationAccumulator): XRayData
         arbitrage: { percentage: toPct(acc.arbitrage), value: acc.arbitrage },
         other: { percentage: toPct(acc.other), value: acc.other },
       },
-      sectors,
+      sectors: [],
       marketCap: {
-        large: { percentage: eq > 0 ? 65 : 0, value: Math.round(eq * 0.65 * 100) / 100 },
-        mid: { percentage: eq > 0 ? 25 : 0, value: Math.round(eq * 0.25 * 100) / 100 },
-        small: { percentage: eq > 0 ? 10 : 0, value: Math.round(eq * 0.10 * 100) / 100 },
+        large: { percentage: 0, value: 0 },
+        mid: { percentage: 0, value: 0 },
+        small: { percentage: 0, value: 0 },
       },
     },
   };
 }
 
 /**
- * Derives comprehensive macro XRayData and individual stock look-through exposures from holdings.
+ * Derives macro asset allocation XRayData from holdings when offline/uncached.
+ * Look-through sectors, market cap, and stock exposures require backend sync.
  *
  * @param holdings Array of enriched portfolio holdings
- * @returns Derived XRay analytics data and stock exposures
+ * @returns Derived XRay asset allocation and empty stock exposures
  */
 export function deriveAnalyticsFromHoldings(holdings: EnrichedHolding[]): {
   xrayData: XRayData;
@@ -187,14 +141,7 @@ export function deriveAnalyticsFromHoldings(holdings: EnrichedHolding[]): {
 } {
   const totalValue = holdings.reduce((sum, h) => sum + Math.max(0, h.current_value), 0);
   const acc = classifyHoldingAmounts(holdings);
-
-  const equityHoldings = holdings.filter((h) => {
-    const lower = (h.asset_class || '').toLowerCase();
-    return lower.includes('equity') || lower.includes('stock') || h.scheme_name.toLowerCase().includes('flexi');
-  });
-
-  const exposures = buildStockExposuresFromEquity(acc.equity, equityHoldings, totalValue);
   const xrayData = buildXRayData(totalValue, acc);
 
-  return { xrayData, exposures };
+  return { xrayData, exposures: [] };
 }

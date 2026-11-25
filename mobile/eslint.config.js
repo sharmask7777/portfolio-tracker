@@ -3,6 +3,7 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 import boundaries from 'eslint-plugin-boundaries'
 import jsdoc from 'eslint-plugin-jsdoc'
+import reactHooks from 'eslint-plugin-react-hooks'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 const boundaryPolicies = [
@@ -90,6 +91,7 @@ export default defineConfig([
     plugins: {
       boundaries,
       jsdoc,
+      'react-hooks': reactHooks,
     },
     languageOptions: {
       globals: {
@@ -138,6 +140,8 @@ export default defineConfig([
         { max: 50, skipBlankLines: true, skipComments: true },
       ],
       'max-params': ['error', 3],
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
     },
   },
   {

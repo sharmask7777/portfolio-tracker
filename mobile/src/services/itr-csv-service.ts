@@ -41,7 +41,7 @@ function buildHeaderLines(selectedFY: string, taxResult: TaxCalculationsResult):
     `# Base Tax: Rs ${taxResult.baseTaxTotal.toFixed(2)} | Health & Education Cess (4%): Rs ${taxResult.cessTotal.toFixed(2)} | Net Tax: Rs ${taxResult.grandTotalTax.toFixed(2)}`,
     '# ----------------------------------------------------------------------------------------------------',
     '# ADVANCE TAX ACCRUAL MATRIX (SECTION 234C / SCHEDULE CG TABLE F)',
-    '# Quarter,Due Date,Sec 111A STCG,Sec 112A LTCG,Sec 50AA Slab,Total Quarter Gain',
+    '# Quarter,Due Date,Sec 111A STCG,Sec 112A LTCG,Sec 112 Debt LTCG,Sec 50AA Slab,Total Quarter Gain',
   ];
 }
 
@@ -54,12 +54,19 @@ const QUARTERS = [
   AdvanceTaxQuarter.Q5,
 ] as const;
 
-function extractQuarterGainSum(q: TableFQuarterData): { stcg: number; ltcg: number; slab: number; total: number } {
+function extractQuarterGainSum(q: TableFQuarterData): {
+  stcg: number;
+  ltcg: number;
+  debtLtcg: number;
+  slab: number;
+  total: number;
+} {
   const stcg = q.stcg15 + q.stcg20;
   const ltcg = q.ltcg10 + q.ltcg12_5;
+  const debtLtcg = q.debtLtcg12_5 + q.debtLtcg20;
   const slab = q.slab;
   const total = q.totalGain;
-  return { stcg, ltcg, slab, total };
+  return { stcg, ltcg, debtLtcg, slab, total };
 }
 
 const DEFAULT_Q_DATA: TableFQuarterData = {
@@ -84,7 +91,7 @@ function buildQuarterLine(
   const data = matrix.quarters[q] ?? DEFAULT_Q_DATA;
   const vals = extractQuarterGainSum(data);
   const date = dueDates[q] ?? '';
-  return `# ${q},${date},${vals.stcg.toFixed(2)},${vals.ltcg.toFixed(2)},${vals.slab.toFixed(2)},${vals.total.toFixed(2)}`;
+  return `# ${escapeCsvField(q)},${escapeCsvField(date)},${vals.stcg.toFixed(2)},${vals.ltcg.toFixed(2)},${vals.debtLtcg.toFixed(2)},${vals.slab.toFixed(2)},${vals.total.toFixed(2)}`;
 }
 
 function buildTableFRows(matrix: AdvanceTaxAccrualMatrix, startYear: number): string[] {
@@ -105,9 +112,9 @@ function buildDetailSection(taxResult: TaxCalculationsResult): string[] {
   return [
     '# ----------------------------------------------------------------------------------------------------',
     'Category,Tax Section,Applicable Rate,Realized Gain (Rs),Exemption Claimed (Rs),Tax Payable (Rs)',
-    `Equity LTCG,Section 112A,12.5% statutory,${taxResult.totalEquityLTCG.toFixed(2)},${taxResult.ltcgExemptClaimed.toFixed(2)},${taxResult.ltcgTotalTax.toFixed(2)}`,
-    `Equity STCG,Section 111A,20% statutory,${taxResult.totalSTCG111A.toFixed(2)},0.00,${taxResult.stcgTotalTax.toFixed(2)}`,
-    `Specified Debt / MLD,Section 50AA,Slab rate,${taxResult.slabGain.toFixed(2)},0.00,${taxResult.slabTotalTax.toFixed(2)}`,
+    `${escapeCsvField('Equity LTCG')},${escapeCsvField('Section 112A')},${escapeCsvField('12.5% statutory')},${taxResult.totalEquityLTCG.toFixed(2)},${taxResult.ltcgExemptClaimed.toFixed(2)},${taxResult.ltcgTotalTax.toFixed(2)}`,
+    `${escapeCsvField('Equity STCG')},${escapeCsvField('Section 111A')},${escapeCsvField('20% statutory')},${taxResult.totalSTCG111A.toFixed(2)},0.00,${taxResult.stcgTotalTax.toFixed(2)}`,
+    `${escapeCsvField('Specified Debt / MLD')},${escapeCsvField('Section 50AA')},${escapeCsvField('Slab rate')},${taxResult.slabGain.toFixed(2)},0.00,${taxResult.slabTotalTax.toFixed(2)}`,
   ];
 }
 

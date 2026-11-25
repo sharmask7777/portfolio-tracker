@@ -15,7 +15,7 @@ export const ASSET_TYPES = [
   { id: 'EQUITY', label: 'Equity' },
   { id: 'DEBT', label: 'Debt' },
   { id: 'HYBRID', label: 'Hybrid' },
-  { id: 'COMMODITY', label: 'Gold' },
+  { id: 'GOLD', label: 'Gold' },
 ] as const;
 
 /** Available sort options */

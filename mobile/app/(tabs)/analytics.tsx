@@ -67,12 +67,11 @@ export interface AllocationCardProps {
 }
 
 export function AllocationCard({ name, value, pct, color }: AllocationCardProps): React.ReactElement {
-  const displayPct = pct <= 1 && pct > 0 ? pct * 100 : pct;
   return (
     <View style={styles.allocationCard} key={name}>
       <Text style={styles.allocationName}>{name}</Text>
       <Text style={styles.allocationValue}>{formatIndianRupee(value)}</Text>
-      <Text style={[styles.allocationPct, { color }]}>{displayPct.toFixed(1)}%</Text>
+      <Text style={[styles.allocationPct, { color }]}>{pct.toFixed(1)}%</Text>
     </View>
   );
 }
@@ -82,11 +81,20 @@ export function AllocationCard({ name, value, pct, color }: AllocationCardProps)
  *
  * Dynamically displays all non-zero categories (Equity, Debt, Arbitrage, Cash, Gold, Other).
  *
- * @param props - Component properties containing XRayData
+ * @param props - Component properties containing XRayData and excludeArbitrage flag
  * @returns React Native element
  */
-export function AllocationCardsGrid({ xrayData }: { xrayData: XRayData }): React.ReactElement {
-  const alloc = xrayData.assetAllocation;
+export function AllocationCardsGrid({
+  xrayData,
+  excludeArbitrage = false,
+}: {
+  xrayData: XRayData;
+  excludeArbitrage?: boolean;
+}): React.ReactElement {
+  const alloc =
+    excludeArbitrage && xrayData.exArbitrage
+      ? xrayData.exArbitrage.assetAllocation
+      : xrayData.assetAllocation;
   const rawItems: AllocationCardProps[] = [
     { name: 'Equity', value: alloc.equity.value, pct: alloc.equity.percentage, color: '#38bdf8' },
     { name: 'Debt', value: alloc.debt.value, pct: alloc.debt.percentage, color: '#10b981' },
@@ -101,7 +109,7 @@ export function AllocationCardsGrid({ xrayData }: { xrayData: XRayData }): React
 
   return (
     <View style={styles.allocationSection} testID="allocation-cards-grid">
-      <Text style={styles.sectionTitle}>Asset Allocation</Text>
+      <Text style={styles.sectionTitle}>Asset Allocation (% of Portfolio)</Text>
       <View style={styles.allocationGrid}>
         {items.map((it) => (
           <AllocationCard key={it.name} {...it} />
@@ -143,7 +151,7 @@ export function MarketCapSection({ marketCap }: MarketCapSectionProps): React.Re
 
   return (
     <View style={styles.allocationSection} testID="market-cap-section">
-      <Text style={styles.sectionTitle}>Market Cap Breakdown</Text>
+      <Text style={styles.sectionTitle}>Market Cap Breakdown (% of Equity)</Text>
       <View style={styles.allocationGrid}>
         {items.map((it) => (
           <AllocationCard key={it.name} {...it} />
@@ -283,8 +291,14 @@ export default function AnalyticsScreen(): React.ReactElement {
       />
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38bdf8" />}>
         <AnalyticsHeader />
-        <AllocationCardsGrid xrayData={xrayData} />
-        <MarketCapSection marketCap={xrayData.marketCap} />
+        <AllocationCardsGrid xrayData={xrayData} excludeArbitrage={excludeArbitrage} />
+        <MarketCapSection
+          marketCap={
+            excludeArbitrage && xrayData.exArbitrage
+              ? xrayData.exArbitrage.marketCap
+              : xrayData.marketCap
+          }
+        />
         <ExpenseAnalysisCard {...expenseAnalysis} />
         <Text style={styles.sectionTitle}>Visual Treemap</Text>
         <SvgTreemap rootNode={rootHierarchyNode} onSelectStock={handleSelectFromTreemap} />

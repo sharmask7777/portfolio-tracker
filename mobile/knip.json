@@ -2,9 +2,6 @@
   "$schema": "https://unpkg.com/knip@5/overview/configuration-schema.json",
   "entry": [
     "app/**/*.{ts,tsx}!",
-    "src/db/index.ts!",
-    "src/feeds/index.ts!",
-    "src/services/index.ts!",
     "src/env.ts!"
   ],
   "project": [
@@ -34,7 +31,17 @@
   "ignoreIssues": {
     "src/components/HoldingCard.tsx": ["exports", "types"],
     "src/components/Family/FamilyMetricsSummary.tsx": ["exports", "types"],
-    "src/components/Family/ProfileSwitcher.tsx": ["exports", "types"]
+    "src/components/Family/ProfileSwitcher.tsx": ["exports", "types"],
+    "src/db/client.ts": ["exports"],
+    "src/db/repository.ts": ["exports", "types"],
+    "src/db/upload-repository.ts": ["exports"],
+    "src/feeds/types.ts": ["types"],
+    "src/services/goals-service.ts": ["types"],
+    "src/services/hierarchy-builder.ts": ["exports", "types"],
+    "src/services/portfolio-calculations.ts": ["exports"],
+    "src/services/portfolio-service.ts": ["exports"],
+    "src/services/settings-service.ts": ["exports"],
+    "src/services/tax-harvesting.ts": ["exports", "types"]
   },
   "ignoreExportsUsedInFile": true
 }

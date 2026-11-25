@@ -417,7 +417,7 @@ describe('Hermetic Mobile E2E Integration Runner', () => {
       expect(screen.getByText('Portfolio X-Ray')).toBeDefined();
       expect(screen.getByText('Asset Allocation')).toBeDefined();
       expect(screen.getByTestId('svg-treemap')).toBeDefined();
-      expect(screen.getByTestId('stock-overlap-table')).toBeDefined();
+      expect(screen.getByTestId('stock-overlap-table-empty')).toBeDefined();
     });
 
     // Stage 8: Family Profiles & Multi-PAN Management

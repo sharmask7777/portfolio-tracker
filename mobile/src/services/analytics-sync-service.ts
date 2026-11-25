@@ -43,6 +43,12 @@ async function fetchEndpointText(url: string, headers: Record<string, string>): 
  *
  * @param params - Request and database parameters
  */
+function getCurrentFinancialYear(): string {
+  const now = new Date();
+  const startYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${startYear}-${String(startYear + 1).slice(-2)}`;
+}
+
 export async function syncPortfolioAnalyticsFromServer(
   params: SyncAnalyticsParams,
 ): Promise<void> {
@@ -51,19 +57,20 @@ export async function syncPortfolioAnalyticsFromServer(
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
 
   try {
+    const currentFy = getCurrentFinancialYear();
     const [xrayJson, expJson, expExArbJson, taxSummaryJson] = await Promise.all([
       fetchEndpointText(`${trimmed}/api/portfolio/${portfolioId}/xray`, headers),
       fetchEndpointText(`${trimmed}/api/portfolio/${portfolioId}/exposures?excludeArbitrage=false`, headers),
       fetchEndpointText(`${trimmed}/api/portfolio/${portfolioId}/exposures?excludeArbitrage=true`, headers),
-      fetchEndpointText(`${trimmed}/api/portfolio/${portfolioId}/tax-summary?fy=2024-25`, headers),
+      fetchEndpointText(`${trimmed}/api/portfolio/${portfolioId}/tax-summary?fy=${currentFy}`, headers),
     ]);
 
-    if (xrayJson && expJson) {
+    if (xrayJson || expJson || taxSummaryJson) {
       await savePortfolioAnalytics(db, {
         portfolio_id: portfolioId,
-        xray_json: xrayJson,
-        exposures_json: expJson,
-        exposures_ex_arb_json: expExArbJson || expJson,
+        xray_json: xrayJson || '',
+        exposures_json: expJson || '[]',
+        exposures_ex_arb_json: expExArbJson || expJson || '[]',
         tax_summary_json: taxSummaryJson || null,
         updated_at: new Date().toISOString(),
       });
