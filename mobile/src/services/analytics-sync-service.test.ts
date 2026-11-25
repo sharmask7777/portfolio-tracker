@@ -142,4 +142,21 @@ describe('analytics-sync-service', () => {
     expect(defaultEntity).not.toBeNull();
     expect(defaultEntity?.portfolio_id).toBe('port-direct');
   });
+
+  it('guards JSON.parse on empty strings so partial sync failures do not wipe out cached analytics', async () => {
+    await savePortfolioAnalytics(db, {
+      portfolio_id: 'port-partial',
+      xray_json: '',
+      exposures_json: '',
+      exposures_ex_arb_json: '',
+      tax_summary_json: JSON.stringify({ totalTax: 5000 }),
+      updated_at: '2026-01-01T00:00:00.000Z',
+    });
+
+    const cached = await getCachedPortfolioAnalytics(db, 'port-partial');
+    expect(cached.xrayData).toBeNull();
+    expect(cached.exposures).toBeNull();
+    expect(cached.exposuresExArb).toBeNull();
+    expect(cached.taxSummary).toEqual({ totalTax: 5000 });
+  });
 });

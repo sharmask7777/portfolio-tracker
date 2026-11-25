@@ -108,8 +108,10 @@ export async function getCachedPortfolioAnalytics(
       return { xrayData: null, exposures: null, exposuresExArb: null, taxSummary: null };
     }
 
-    const xrayData = JSON.parse(row.xray_json) as XRayData;
-    const exposures = JSON.parse(row.exposures_json) as StockExposure[];
+    const xrayData = row.xray_json ? (JSON.parse(row.xray_json) as XRayData) : null;
+    const exposures = row.exposures_json
+      ? (JSON.parse(row.exposures_json) as StockExposure[])
+      : null;
     const exposuresExArb = row.exposures_ex_arb_json
       ? (JSON.parse(row.exposures_ex_arb_json) as StockExposure[])
       : exposures;
