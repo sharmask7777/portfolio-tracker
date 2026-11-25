@@ -168,31 +168,107 @@ impl std::fmt::Display for AdvanceTaxQuarter {
     }
 }
 
+/// Serializes and deserializes [`Money`] as a JSON number (`f64`) so API contracts match
+/// `#[ts(type = "number")]` and prevent JavaScript string concatenation / `NaN` in Table F views.
+mod money_float {
+    use crate::Money;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    /// Serializes a [`Money`] value as a JSON floating-point number.
+    pub(super) fn serialize<S>(val: &Money, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        rust_decimal::serde::float::serialize(val.as_decimal(), serializer)
+    }
+
+    /// Deserializes a [`Money`] value from either a JSON number or numeric string.
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Money, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Money::deserialize(deserializer)
+    }
+}
+
+/// Serializes and deserializes `HashMap<String, Money>` values as JSON numbers (`f64`)
+/// using `rust_decimal::serde::float` to propagate conversion errors strictly.
+mod money_map_float {
+    use crate::Money;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
+    use std::collections::HashMap;
+
+    struct MoneyFloat<'a>(&'a Money);
+
+    impl Serialize for MoneyFloat<'_> {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            rust_decimal::serde::float::serialize(self.0.as_decimal(), serializer)
+        }
+    }
+
+    /// Serializes a map of [`Money`] values as JSON floating-point numbers.
+    pub(super) fn serialize<S>(
+        map: &HashMap<String, Money>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser_map = serializer.serialize_map(Some(map.len()))?;
+        for (quarter_key, amount) in map {
+            ser_map.serialize_entry(quarter_key, &MoneyFloat(amount))?;
+        }
+        ser_map.end()
+    }
+
+    /// Deserializes a map of [`Money`] values from JSON numbers or numeric strings.
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<String, Money>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        HashMap::<String, Money>::deserialize(deserializer)
+    }
+}
+
 /// Data for a single quarter in Schedule CG Table F.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TableFQuarterData {
     /// Section 111A STCG realized at 15%.
+    #[serde(with = "money_float")]
     pub stcg15: Money,
     /// Section 111A STCG realized at 20%.
+    #[serde(with = "money_float")]
     pub stcg20: Money,
     /// Section 112A LTCG realized at 10%.
+    #[serde(with = "money_float")]
     pub ltcg10: Money,
     /// Section 112A LTCG realized at 12.5%.
+    #[serde(rename = "ltcg12_5", with = "money_float")]
     pub ltcg12_5: Money,
     /// Section 112 debt LTCG realized at 12.5% unindexed.
+    #[serde(rename = "debtLtcg12_5", with = "money_float")]
     pub debt_ltcg12_5: Money,
     /// Section 112 debt LTCG realized at 20% indexed.
+    #[serde(with = "money_float")]
     pub debt_ltcg20: Money,
     /// Short-term debt gains taxed at slab rates (Section 50AA).
+    #[serde(with = "money_float")]
     pub slab: Money,
     /// Total net capital gain accrued in this quarter.
+    #[serde(with = "money_float")]
     pub total_gain: Money,
     /// Base tax liability before health and education cess.
+    #[serde(with = "money_float")]
     pub tax_before_cess: Money,
     /// 4% Health and Education Cess.
+    #[serde(with = "money_float")]
     pub cess: Money,
     /// Total estimated advance tax due for this quarter.
+    #[serde(with = "money_float")]
     pub estimated_tax: Money,
 }
 
@@ -202,7 +278,8 @@ pub struct TableFQuarterData {
 pub struct AdvanceTaxAccrualMatrix {
     /// Detailed quarterly accruals mapped by quarter key (e.g. "Q1 (01/04 - 15/06)").
     pub quarters: std::collections::HashMap<String, TableFQuarterData>,
-    /// Cumulative tax total per quarter for advance tax payment tracking.
+    /// Per-quarter estimated advance tax total (gross pre-exemption) mapped by quarter key.
+    #[serde(with = "money_map_float")]
     pub quarter_totals: std::collections::HashMap<String, Money>,
 }
 
@@ -213,22 +290,31 @@ pub struct SectionTotalData {
     /// Statutory section label (e.g. "112A (12.5%)").
     pub section: String,
     /// Total full value of consideration received on sale of assets.
+    #[serde(with = "money_float")]
     pub gross_consideration: Money,
     /// Original cost of acquisition before any deemed cost adjustment.
+    #[serde(with = "money_float")]
     pub cost_of_acquisition: Money,
     /// Statutory cost of acquisition (adjusted for Section 55(2)(ac) grandfathering).
+    #[serde(with = "money_float")]
     pub deemed_cost_of_acquisition: Money,
     /// Allowable expenditure wholly and exclusively incurred in connection with transfer.
+    #[serde(with = "money_float")]
     pub transfer_expenses: Money,
     /// Net capital gain or loss under this section.
+    #[serde(with = "money_float")]
     pub total_gain: Money,
     /// Applicable nominal statutory tax rate.
+    #[serde(with = "rust_decimal::serde::float")]
     pub tax_rate: Decimal,
     /// Base tax liability before cess.
+    #[serde(with = "money_float")]
     pub tax_before_cess: Money,
     /// 4% Health and Education Cess.
+    #[serde(with = "money_float")]
     pub cess: Money,
     /// Total tax liability under this section.
+    #[serde(with = "money_float")]
     pub total_tax: Money,
 }
 

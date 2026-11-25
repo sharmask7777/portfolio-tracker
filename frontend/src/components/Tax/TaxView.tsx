@@ -25,11 +25,15 @@ interface TaxViewProps {
 }
 
 const formatCurrency = (val: number): string => {
+  const numeric = typeof val === 'number' ? val : Number(val);
+  if (!Number.isFinite(numeric)) {
+    return '—';
+  }
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0,
-  }).format(val);
+  }).format(numeric);
 };
 
 export const TaxView: React.FC<TaxViewProps> = ({
@@ -45,7 +49,7 @@ export const TaxView: React.FC<TaxViewProps> = ({
     recentFYs,
     filteredDetails,
     tax,
-    advanceTaxMatrix,
+    advanceTaxDisplay,
     fyEndInfo,
     showExemptionWarning,
     copySuccess,
@@ -119,8 +123,7 @@ export const TaxView: React.FC<TaxViewProps> = ({
       />
 
       <AdvanceTaxMatrixTable
-        selectedFY={selectedFY}
-        advanceTaxMatrix={advanceTaxMatrix}
+        advanceTaxDisplay={advanceTaxDisplay}
         formatCurrency={formatCurrency}
       />
 

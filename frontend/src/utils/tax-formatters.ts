@@ -7,11 +7,26 @@
 import { TaxSectionName, type ITRGainDetail } from './itr-report-types';
 
 /**
+ * Normalizes a Financial Year selector string into a clean display label (e.g. `"FY 2024-25"` or `"All FYs"`).
+ */
+export function formatFiscalYearLabel(selectedFY: string): string {
+  const trimmed = selectedFY.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'all') {
+    return 'All FYs';
+  }
+  return /^fy\s+/i.test(trimmed) ? trimmed.replace(/^fy\s+/i, 'FY ') : `FY ${trimmed}`;
+}
+
+/**
  * Computes the official Assessment Year (AY) string corresponding to a Financial Year (FY).
  * Example: '2024-25' -> '2025-26'
  */
 export function computeAY(fy: string): string {
-  const startYear = parseInt(fy.split('-')[0] ?? '', 10);
+  const yearMatch = fy.match(/(\d{4})/);
+  const startYear = yearMatch ? parseInt(yearMatch[1] ?? '', 10) : NaN;
+  if (!Number.isFinite(startYear)) {
+    return '—';
+  }
   const ayStartYear = startYear + 1;
   const ayEndYear = (startYear + 2).toString().slice(-2);
   return `${ayStartYear}-${ayEndYear}`;

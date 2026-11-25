@@ -9,6 +9,7 @@ interface RealityCheckDragBannerProps {
   drags: DragDecompositionDto | null | undefined;
   cpiInflationRate: number;
   marginalTaxBracket: number;
+  formatCurrency?: ((val: unknown) => string) | undefined;
   formatPercent: (val: unknown) => string;
   onNavigateToTax?: (() => void) | undefined;
 }
@@ -18,11 +19,14 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
   drags,
   cpiInflationRate,
   marginalTaxBracket,
+  formatCurrency,
   formatPercent,
   onNavigateToTax,
 }) => {
   const spread = drags?.benchmarkSpread ?? 0;
   const isPositiveSpread = drags?.benchmarkSpread && drags.benchmarkSpread > 0;
+  const purchasingPowerValue = drags?.purchasingPowerValue;
+  const purchasingPowerLoss = drags?.purchasingPowerLoss;
 
   return (
     <div
@@ -59,7 +63,7 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
               fontWeight: 700,
             }}
           >
-            <Zap size={18} color="#f59e0b" />
+            <Zap size={18} color="#f59e0b" aria-hidden="true" />
             Return Drag Teardown: From Nominal Gain to Real Wealth
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -86,10 +90,40 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
               transition: 'opacity 0.15s ease',
             }}
           >
-            View Harvesting Ticket <ArrowRight size={14} />
+            View Harvesting Ticket <ArrowRight size={14} aria-hidden="true" />
           </button>
         )}
       </div>
+
+      {typeof purchasingPowerValue === 'number' && Number.isFinite(purchasingPowerValue) && formatCurrency && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            padding: '0.85rem 1rem',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '10px',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Real Post-Tax Purchasing Power (3Y Horizon)
+            </div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              {formatCurrency(purchasingPowerValue)}
+            </div>
+          </div>
+          {typeof purchasingPowerLoss === 'number' && Number.isFinite(purchasingPowerLoss) && (
+            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--danger-color)' }}>
+              -{formatCurrency(purchasingPowerLoss)} Tax + CPI Drag
+            </div>
+          )}
+        </div>
+      )}
 
       <DragWaterfall
         metrics={metrics}
@@ -112,7 +146,7 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <ShieldAlert size={15} color="var(--accent-color)" />
+          <ShieldAlert size={15} color="var(--accent-color)" aria-hidden="true" />
           <span>
             <strong>Safe-Asset Benchmark Comparison:</strong> Real risk-free rate (~6.5% FD minus 30% slab & {(cpiInflationRate * 100).toFixed(0)}% CPI).
           </span>
