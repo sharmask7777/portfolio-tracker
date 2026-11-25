@@ -63,7 +63,7 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
               fontWeight: 700,
             }}
           >
-            <Zap size={18} color="#f59e0b" />
+            <Zap size={18} color="#f59e0b" aria-hidden="true" />
             Return Drag Teardown: From Nominal Gain to Real Wealth
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -90,12 +90,12 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
               transition: 'opacity 0.15s ease',
             }}
           >
-            View Harvesting Ticket <ArrowRight size={14} />
+            View Harvesting Ticket <ArrowRight size={14} aria-hidden="true" />
           </button>
         )}
       </div>
 
-      {typeof purchasingPowerValue === 'number' && !isNaN(purchasingPowerValue) && formatCurrency && (
+      {typeof purchasingPowerValue === 'number' && Number.isFinite(purchasingPowerValue) && formatCurrency && (
         <div
           style={{
             display: 'flex',
@@ -117,7 +117,7 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
               {formatCurrency(purchasingPowerValue)}
             </div>
           </div>
-          {typeof purchasingPowerLoss === 'number' && !isNaN(purchasingPowerLoss) && (
+          {typeof purchasingPowerLoss === 'number' && Number.isFinite(purchasingPowerLoss) && (
             <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--danger-color)' }}>
               -{formatCurrency(purchasingPowerLoss)} Tax + CPI Drag
             </div>
@@ -146,7 +146,7 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <ShieldAlert size={15} color="var(--accent-color)" />
+          <ShieldAlert size={15} color="var(--accent-color)" aria-hidden="true" />
           <span>
             <strong>Safe-Asset Benchmark Comparison:</strong> Real risk-free rate (~6.5% FD minus 30% slab & {(cpiInflationRate * 100).toFixed(0)}% CPI).
           </span>

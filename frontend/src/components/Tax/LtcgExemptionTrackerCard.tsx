@@ -1,5 +1,5 @@
 import React from 'react';
-import { computeAY } from '../../utils/tax-formatters';
+import { computeAY, formatFiscalYearLabel } from '../../utils/tax-formatters';
 
 interface LtcgExemptionTrackerCardProps {
   selectedFY: string;
@@ -20,7 +20,7 @@ export const LtcgExemptionTrackerCard: React.FC<LtcgExemptionTrackerCardProps> =
 }) => (
   <div className="card">
     <h3>
-      LTCG Exemption Tracker (FY {selectedFY} / AY {computeAY(selectedFY)})
+      LTCG Exemption Tracker ({formatFiscalYearLabel(selectedFY)} / AY {computeAY(selectedFY)})
     </h3>
     <div style={{ marginTop: '1.5rem' }}>
       <div

@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import {
+  AdvanceTaxQuarter,
   TaxSectionName,
   type ITRGainDetail,
   type ITRSummary,
@@ -17,7 +18,7 @@ import {
   generateITRReportCSV,
   buildAdvanceTaxMatrix,
 } from './utils/itr-report-generator';
-import { computeAY } from './utils/tax-formatters';
+import { computeAY, formatFiscalYearLabel } from './utils/tax-formatters';
 import { computeTaxBreakdowns, type TaxCalculationsResult } from './utils/tax-calculations';
 import { getDaysUntilFYEndIST, formatHarvestInstructions } from './components/Tax/tax-harvest-instructions';
 
@@ -219,6 +220,113 @@ function downloadITRReport(
   document.body.removeChild(link);
 }
 
+/**
+ * Display-ready row for a single Advance Tax Table F quarter.
+ */
+export interface AdvanceTaxDisplayRow {
+  quarter: AdvanceTaxQuarter;
+  dueDate: string;
+  isCombinedInstallmentDate: boolean;
+  stcg15: number;
+  stcg20: number;
+  ltcg10: number;
+  ltcg12_5: number;
+  slab: number;
+  debtTotal: number;
+  totalGain: number;
+  estimatedTax: number;
+  cumulativeTax: number;
+}
+
+/**
+ * Display-ready Advance Tax Table F model with normalized FY label, due dates, and cumulative accruals.
+ */
+export interface AdvanceTaxDisplayModel {
+  fyLabel: string;
+  rows: AdvanceTaxDisplayRow[];
+  totalGains: number;
+  totalTax: number;
+}
+
+function toFiniteNumber(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+/**
+ * Builds the display-ready Advance Tax Table F rows, due dates, and running cumulative totals.
+ */
+export function buildAdvanceTaxDisplayModel(
+  matrix: AdvanceTaxAccrualMatrix,
+  selectedFY: string
+): AdvanceTaxDisplayModel {
+  const yearMatch = selectedFY.match(/(\d{4})/);
+  const startYear = yearMatch ? parseInt(yearMatch[1] ?? '', 10) : NaN;
+  const hasValidYear = Number.isFinite(startYear);
+  const endYear = hasValidYear ? startYear + 1 : NaN;
+
+  const dueDates: Record<AdvanceTaxQuarter, string> = {
+    [AdvanceTaxQuarter.Q1]: hasValidYear ? `15/06/${startYear}` : '15/06',
+    [AdvanceTaxQuarter.Q2A]: hasValidYear ? `15/09/${startYear}` : '15/09',
+    [AdvanceTaxQuarter.Q2B]: hasValidYear ? `15/09/${startYear}` : '15/09',
+    [AdvanceTaxQuarter.Q3]: hasValidYear ? `15/12/${startYear}` : '15/12',
+    [AdvanceTaxQuarter.Q4]: hasValidYear ? `15/03/${endYear}` : '15/03',
+    [AdvanceTaxQuarter.Q5]: hasValidYear ? `31/03/${endYear}` : '31/03',
+  };
+
+  const quartersOrder: AdvanceTaxQuarter[] = [
+    AdvanceTaxQuarter.Q1,
+    AdvanceTaxQuarter.Q2A,
+    AdvanceTaxQuarter.Q2B,
+    AdvanceTaxQuarter.Q3,
+    AdvanceTaxQuarter.Q4,
+    AdvanceTaxQuarter.Q5,
+  ];
+
+  let runningCumulativeTax = 0;
+  let totalGains = 0;
+
+  const rows: AdvanceTaxDisplayRow[] = quartersOrder.map((quarter) => {
+    const quarterData = matrix.quarters[quarter];
+    const stcg15 = toFiniteNumber(quarterData?.stcg15);
+    const stcg20 = toFiniteNumber(quarterData?.stcg20);
+    const ltcg10 = toFiniteNumber(quarterData?.ltcg10);
+    const ltcg12_5 = toFiniteNumber(quarterData?.ltcg12_5);
+    const slab = toFiniteNumber(quarterData?.slab);
+    const debtTotal = toFiniteNumber(quarterData?.debtLtcg12_5) + toFiniteNumber(quarterData?.debtLtcg20);
+    const sectionSum = stcg15 + stcg20 + ltcg10 + ltcg12_5 + slab + debtTotal;
+    const rawTotalGain = quarterData?.totalGain;
+    const totalGain =
+      typeof rawTotalGain === 'number' && Number.isFinite(rawTotalGain) ? rawTotalGain : sectionSum;
+    const estimatedTax = toFiniteNumber(quarterData?.estimatedTax);
+
+    runningCumulativeTax += estimatedTax;
+    totalGains += totalGain;
+
+    return {
+      quarter,
+      dueDate: dueDates[quarter],
+      isCombinedInstallmentDate: quarter === AdvanceTaxQuarter.Q2B,
+      stcg15,
+      stcg20,
+      ltcg10,
+      ltcg12_5,
+      slab,
+      debtTotal,
+      totalGain,
+      estimatedTax,
+      cumulativeTax: runningCumulativeTax,
+    };
+  });
+
+  return {
+    fyLabel: formatFiscalYearLabel(selectedFY),
+    rows,
+    totalGains,
+    totalTax: runningCumulativeTax,
+  };
+}
+
 export interface UseTaxViewModelOptions {
   selectedFY?: string | null | undefined;
   onFYChange?: ((fy: string) => void) | undefined;
@@ -231,6 +339,7 @@ export interface TaxViewModel {
   filteredDetails: ITRGainDetail[];
   tax: TaxCalculationsResult;
   advanceTaxMatrix: AdvanceTaxAccrualMatrix;
+  advanceTaxDisplay: AdvanceTaxDisplayModel;
   fyEndInfo: { daysRemaining: number; fyString: string };
   showExemptionWarning: boolean;
   copySuccess: boolean;
@@ -282,6 +391,7 @@ export function useTaxViewModel(
     : computeTaxBreakdowns(filteredDetails, selectedFY);
 
   const advanceTaxMatrix = backendTableF ?? buildAdvanceTaxMatrix(filteredDetails);
+  const advanceTaxDisplay = buildAdvanceTaxDisplayModel(advanceTaxMatrix, selectedFY);
 
   const handleCopyInstructions = async () => {
     if (!harvesting) return;
@@ -318,6 +428,7 @@ export function useTaxViewModel(
     filteredDetails,
     tax,
     advanceTaxMatrix,
+    advanceTaxDisplay,
     fyEndInfo,
     showExemptionWarning,
     copySuccess,

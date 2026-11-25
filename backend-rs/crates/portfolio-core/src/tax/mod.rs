@@ -168,10 +168,13 @@ impl std::fmt::Display for AdvanceTaxQuarter {
     }
 }
 
+/// Serializes and deserializes [`Money`] as a JSON number (`f64`) so API contracts match
+/// `#[ts(type = "number")]` and prevent JavaScript string concatenation / `NaN` in Table F views.
 mod money_float {
     use crate::Money;
-    use serde::{Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serializer};
 
+    /// Serializes a [`Money`] value as a JSON floating-point number.
     pub(super) fn serialize<S>(val: &Money, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -179,20 +182,34 @@ mod money_float {
         rust_decimal::serde::float::serialize(val.as_decimal(), serializer)
     }
 
+    /// Deserializes a [`Money`] value from either a JSON number or numeric string.
     pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Money, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let dec = rust_decimal::serde::float::deserialize(deserializer)?;
-        Ok(Money::new(dec))
+        Money::deserialize(deserializer)
     }
 }
 
+/// Serializes and deserializes `HashMap<String, Money>` values as JSON numbers (`f64`)
+/// using `rust_decimal::serde::float` to propagate conversion errors strictly.
 mod money_map_float {
     use crate::Money;
-    use serde::{Deserialize, Deserializer, Serializer, ser::SerializeMap};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
     use std::collections::HashMap;
 
+    struct MoneyFloat<'a>(&'a Money);
+
+    impl Serialize for MoneyFloat<'_> {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            rust_decimal::serde::float::serialize(self.0.as_decimal(), serializer)
+        }
+    }
+
+    /// Serializes a map of [`Money`] values as JSON floating-point numbers.
     pub(super) fn serialize<S>(
         map: &HashMap<String, Money>,
         serializer: S,
@@ -200,14 +217,14 @@ mod money_map_float {
     where
         S: Serializer,
     {
-        use rust_decimal::prelude::ToPrimitive;
         let mut ser_map = serializer.serialize_map(Some(map.len()))?;
-        for (k, v) in map {
-            ser_map.serialize_entry(k, &v.to_decimal().to_f64().unwrap_or(0.0))?;
+        for (quarter_key, amount) in map {
+            ser_map.serialize_entry(quarter_key, &MoneyFloat(amount))?;
         }
         ser_map.end()
     }
 
+    /// Deserializes a map of [`Money`] values from JSON numbers or numeric strings.
     pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<String, Money>, D::Error>
     where
         D: Deserializer<'de>,
@@ -230,10 +247,10 @@ pub struct TableFQuarterData {
     #[serde(with = "money_float")]
     pub ltcg10: Money,
     /// Section 112A LTCG realized at 12.5%.
-    #[serde(with = "money_float")]
+    #[serde(rename = "ltcg12_5", with = "money_float")]
     pub ltcg12_5: Money,
     /// Section 112 debt LTCG realized at 12.5% unindexed.
-    #[serde(with = "money_float")]
+    #[serde(rename = "debtLtcg12_5", with = "money_float")]
     pub debt_ltcg12_5: Money,
     /// Section 112 debt LTCG realized at 20% indexed.
     #[serde(with = "money_float")]
@@ -261,7 +278,7 @@ pub struct TableFQuarterData {
 pub struct AdvanceTaxAccrualMatrix {
     /// Detailed quarterly accruals mapped by quarter key (e.g. "Q1 (01/04 - 15/06)").
     pub quarters: std::collections::HashMap<String, TableFQuarterData>,
-    /// Cumulative tax total per quarter for advance tax payment tracking.
+    /// Per-quarter estimated advance tax total (gross pre-exemption) mapped by quarter key.
     #[serde(with = "money_map_float")]
     pub quarter_totals: std::collections::HashMap<String, Money>,
 }

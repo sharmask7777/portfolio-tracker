@@ -144,3 +144,101 @@ export function buildAdvanceTaxMatrix(details: GainItemInput[]): AdvanceTaxAccru
 
   return { quarters, quarterTotals };
 }
+
+/**
+ * Display-ready row for a single Advance Tax Table F quarter on mobile.
+ */
+export interface MobileAdvanceTaxDisplayRow {
+  quarterKey: AdvanceTaxQuarter;
+  code: string;
+  period: string;
+  dueDate: string;
+  totalGain: number;
+  estimatedTax: number;
+  cumulativeTax: number;
+}
+
+/**
+ * Display-ready Advance Tax Table F summary and rows for mobile presentation.
+ */
+export interface MobileAdvanceTaxDisplayModel {
+  fyLabel: string;
+  rows: MobileAdvanceTaxDisplayRow[];
+  totalTaxAllQuarters: number;
+}
+
+const QUARTER_KEYS_ORDER: readonly AdvanceTaxQuarter[] = [
+  AdvanceTaxQuarter.Q1,
+  AdvanceTaxQuarter.Q2A,
+  AdvanceTaxQuarter.Q2B,
+  AdvanceTaxQuarter.Q3,
+  AdvanceTaxQuarter.Q4,
+  AdvanceTaxQuarter.Q5,
+];
+
+function toFiniteAmount(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function resolveQuarterDueDates(selectedFY: string): Record<AdvanceTaxQuarter, string> {
+  const yearMatch = selectedFY.match(/(\d{4})/);
+  const startYear = yearMatch ? parseInt(yearMatch[1] ?? '', 10) : NaN;
+  const hasValidYear = Number.isFinite(startYear);
+  const endYear = hasValidYear ? startYear + 1 : NaN;
+
+  return {
+    [AdvanceTaxQuarter.Q1]: hasValidYear ? `15/06/${startYear}` : '15/06',
+    [AdvanceTaxQuarter.Q2A]: hasValidYear ? `15/09/${startYear}` : '15/09',
+    [AdvanceTaxQuarter.Q2B]: hasValidYear ? `15/09/${startYear}` : '15/09',
+    [AdvanceTaxQuarter.Q3]: hasValidYear ? `15/12/${startYear}` : '15/12',
+    [AdvanceTaxQuarter.Q4]: hasValidYear ? `15/03/${endYear}` : '15/03',
+    [AdvanceTaxQuarter.Q5]: hasValidYear ? `31/03/${endYear}` : '31/03',
+  };
+}
+
+function normalizeFyDisplayLabel(selectedFY: string): string {
+  const trimmed = selectedFY.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'all') return 'All FYs';
+  return /^fy\s+/i.test(trimmed) ? trimmed.replace(/^fy\s+/i, 'FY ') : `FY ${trimmed}`;
+}
+
+/**
+ * Maps an {@link AdvanceTaxAccrualMatrix} and FY string into null-safe, display-ready
+ * quarterly rows with due dates and running cumulative pre-exemption tax totals.
+ *
+ * @param matrix - Advance tax matrix from backend or offline fallback
+ * @param selectedFY - Selected financial year label
+ * @returns Display-ready mobile advance tax model
+ */
+export function buildMobileAdvanceTaxDisplayModel(
+  matrix: AdvanceTaxAccrualMatrix,
+  selectedFY: string
+): MobileAdvanceTaxDisplayModel {
+  const dueDates = resolveQuarterDueDates(selectedFY);
+  let runningCumulativeTax = 0;
+
+  const rows: MobileAdvanceTaxDisplayRow[] = QUARTER_KEYS_ORDER.map((quarterKey) => {
+    const parts = quarterKey.split(' ');
+    const quarterData = matrix.quarters[quarterKey];
+    const totalGain = toFiniteAmount(quarterData?.totalGain);
+    const estimatedTax = toFiniteAmount(quarterData?.estimatedTax);
+    runningCumulativeTax += estimatedTax;
+
+    return {
+      quarterKey,
+      code: parts[0] ?? quarterKey,
+      period: parts.slice(1).join(' '),
+      dueDate: dueDates[quarterKey],
+      totalGain,
+      estimatedTax,
+      cumulativeTax: runningCumulativeTax,
+    };
+  });
+
+  return {
+    fyLabel: normalizeFyDisplayLabel(selectedFY),
+    rows,
+    totalTaxAllQuarters: runningCumulativeTax,
+  };
+}
