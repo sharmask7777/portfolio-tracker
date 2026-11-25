@@ -160,6 +160,7 @@ export const StatsGrid: React.FC<StatsGridProps> = ({
             drags={metrics.drags}
             cpiInflationRate={cpiInflationRate}
             marginalTaxBracket={marginalTaxBracket}
+            formatCurrency={formatCurrency}
             formatPercent={formatPercent}
             onNavigateToTax={onNavigateToTax}
           />
