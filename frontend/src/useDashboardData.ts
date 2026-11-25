@@ -37,13 +37,14 @@ export function useDashboardData({
   const [loading, setLoading] = useState(true);
   const [isRefetching, setIsRefetching] = useState(false);
 
-  const fetchSupplementaryData = useCallback(async (scopeId: string) => {
+  const fetchSupplementaryData = useCallback(async (scopeId: string, signal: AbortSignal) => {
     const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.allSettled([
-      api.get<XRayData>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/xray`),
-      api.get<StockExposure[]>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/exposures?excludeArbitrage=${excludeArbitrage}`),
-      api.get<ITRSummary>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/tax-summary`),
-      api.get<HarvestTicketResponse>(`${API_ENDPOINTS.TAX}/harvesting-opportunities`, { params: { scopeId } }),
+      api.get<XRayData>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/xray`, { signal }),
+      api.get<StockExposure[]>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/exposures?excludeArbitrage=${excludeArbitrage}`, { signal }),
+      api.get<ITRSummary>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/tax-summary`, { signal }),
+      api.get<HarvestTicketResponse>(`${API_ENDPOINTS.TAX}/harvesting-opportunities`, { params: { scopeId }, signal }),
     ]);
+    if (signal.aborted) return;
     if (xrayRes.status === 'fulfilled') setXRayData(xrayRes.value.data);
     if (exposuresRes.status === 'fulfilled') setExposures(exposuresRes.value.data || []);
     if (taxRes.status === 'fulfilled') setTaxSummary(taxRes.value.data);
@@ -51,13 +52,13 @@ export function useDashboardData({
   }, [excludeArbitrage]);
 
   const fetchSummary = useCallback(async () => {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       if (!hasLoadedOnceRef.current) setLoading(true);
       else setIsRefetching(true);
-
-      if (abortControllerRef.current) abortControllerRef.current.abort();
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
 
       const [summaryRes, profilesRes] = await Promise.all([
         api.get<PortfolioSummaryResponse>(`${API_ENDPOINTS.PORTFOLIO}/summary`, {
@@ -73,15 +74,17 @@ export function useDashboardData({
       onResetScopeIfMissing(profilesRes.data);
 
       if (summaryRes.data?.id) {
-        await fetchSupplementaryData(summaryRes.data.id);
+        await fetchSupplementaryData(summaryRes.data.id, controller.signal);
       }
     } catch (err: unknown) {
       if (!axios.isCancel(err) && !(err instanceof Error && err.name === 'CanceledError')) {
         console.error('Failed to fetch data:', err);
       }
     } finally {
-      setLoading(false);
-      setIsRefetching(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setIsRefetching(false);
+      }
     }
   }, [selectedFamilyId, selectedProfileId, cpiInflationRate, marginalTaxBracket, onResetScopeIfMissing, fetchSupplementaryData]);
 

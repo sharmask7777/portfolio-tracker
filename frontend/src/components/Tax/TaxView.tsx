@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   generateITRReportCSV,
   computeAY,
@@ -124,16 +124,28 @@ function downloadITRReport(summary: ITRSummary, selectedFY: string, filteredDeta
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulateHarvest }) => {
   const [copySuccess, setCopySuccess] = useState(false);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [clipboardText, setClipboardText] = useState('');
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fyEndInfo = getDaysUntilFYEndIST();
   const recentFYs = getRecentFYs(summary);
   const [selectedFY, setSelectedFY] = useState<string>(() => getInitialFY(summary, recentFYs));
+
+  useEffect(() => {
+    setSelectedFY(getInitialFY(summary, getRecentFYs(summary)));
+  }, [summary]);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   if (!summary) return <div>Loading tax data...</div>;
 
@@ -148,7 +160,8 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(instructions);
         setCopySuccess(true);
-        setTimeout(() => setCopySuccess(false), 2500);
+        if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = setTimeout(() => setCopySuccess(false), 2500);
       } else {
         throw new Error('Clipboard API unavailable');
       }

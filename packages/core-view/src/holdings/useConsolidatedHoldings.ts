@@ -65,11 +65,10 @@ function filterFoliosByScope(
 
   // Filter to matching profile/PAN
   return folios.filter((folio) => {
-    if (scope.pan && folio.pan) {
-      return folio.pan.toUpperCase() === scope.pan.toUpperCase();
+    if (!scope.pan || !folio.pan) {
+      return false;
     }
-    // If no PAN specified, could match profileId if present
-    return true;
+    return folio.pan.toUpperCase() === scope.pan.toUpperCase();
   });
 }
 

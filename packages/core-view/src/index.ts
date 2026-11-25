@@ -10,6 +10,7 @@ export * from './formatters/returns';
 // Consolidation and Types
 export * from './consolidation/types';
 export * from './consolidation/scheme-consolidator';
+export * from './consolidation/sorting';
 
 // Scope Management
 export * from './scope/usePortfolioScope';

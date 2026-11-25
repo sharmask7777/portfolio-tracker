@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
 import { X, AlertCircle } from 'lucide-react';
 import type { SimulationSellResponse, FolioView } from '../../types/generated';
@@ -85,8 +85,11 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({
     [unitsToSell, folio.id, taxSlab, currentPrice]
   );
 
+  const hasAutoSimulatedRef = useRef(false);
+
   useEffect(() => {
-    if (initialUnits && currentPrice > 0) {
+    if (initialUnits && currentPrice > 0 && !hasAutoSimulatedRef.current) {
+      hasAutoSimulatedRef.current = true;
       setAmount((initialUnits * currentPrice).toFixed(2));
       handleSimulate(initialUnits);
     }

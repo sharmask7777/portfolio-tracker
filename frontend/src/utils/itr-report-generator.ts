@@ -114,8 +114,20 @@ export function calculate112AExemption(
   const isPostBudget = !isNaN(startYear) ? startYear >= 2024 : fy >= '2024-25';
   const statutoryLimit = isPostBudget ? 125000 : 100000;
 
-  const positiveLtcg10 = Math.max(0, ltcg10);
-  const positiveLtcg12_5 = Math.max(0, ltcg12_5);
+  let net10 = ltcg10;
+  let net12_5 = ltcg12_5;
+  if (net10 < 0 && net12_5 > 0) {
+    const offset = Math.min(-net10, net12_5);
+    net10 += offset;
+    net12_5 -= offset;
+  } else if (net12_5 < 0 && net10 > 0) {
+    const offset = Math.min(-net12_5, net10);
+    net12_5 += offset;
+    net10 -= offset;
+  }
+
+  const positiveLtcg10 = Math.max(0, net10);
+  const positiveLtcg12_5 = Math.max(0, net12_5);
 
   const exempt10 = Math.min(positiveLtcg10, statutoryLimit);
   const remainingExemption = statutoryLimit - exempt10;
@@ -144,7 +156,8 @@ export function calculate112AExemption(
 
 function isPostBudgetSell(sellDate: Date | string | undefined): boolean {
   if (!sellDate) return false;
-  return String(sellDate) >= '2024-07-23';
+  const iso = sellDate instanceof Date ? sellDate.toISOString().slice(0, 10) : String(sellDate).slice(0, 10);
+  return iso >= '2024-07-23';
 }
 
 /**

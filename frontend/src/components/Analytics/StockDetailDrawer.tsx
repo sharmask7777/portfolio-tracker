@@ -53,8 +53,8 @@ export const StockDetailDrawer: React.FC<StockDetailDrawerProps> = ({
   const schemeCount = node.schemeCount ?? node.contributions?.length ?? 0;
   const contributions: StockContribution[] = node.contributions ?? [];
 
-  const maxSchemeValue = contributions.reduce(
-    (max, item) => (item.value > max ? item.value : max),
+  const totalStockValue = contributions.reduce(
+    (sum, item) => sum + item.value,
     0
   );
 
@@ -105,7 +105,7 @@ export const StockDetailDrawer: React.FC<StockDetailDrawerProps> = ({
 
             <StockContributionsList
               contributions={contributions}
-              maxSchemeValue={maxSchemeValue}
+              totalStockValue={totalStockValue}
             />
           </div>
 

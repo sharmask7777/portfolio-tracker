@@ -18,7 +18,7 @@ function renderSimulationModal(ctrl: ReturnType<typeof useDashboardController>) 
       <SimulationModal
         folio={ctrl.simFolio}
         initialUnits={ctrl.simUnits || undefined}
-        taxSlab={ctrl.portfolio?.taxSlab || 0.3}
+        taxSlab={ctrl.portfolio?.taxSlab ?? 0.3}
         onClose={() => {
           ctrl.setSimFolio(null);
           ctrl.setSimUnits(null);
