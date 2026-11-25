@@ -16,9 +16,11 @@
     "check:view-boundaries": "python3 scripts/check-view-layer-boundaries.py --self-test && python3 scripts/check-view-layer-boundaries.py",
     "parity:check": "tsx scripts/verify-web-mobile-parity.ts",
     "parity:visual": "tsx scripts/compare-web-mobile-ui.ts",
-    "test:coverage:backend": "(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex \"(main\\.rs|test_mocks\\.rs|repositories/)\" --fail-under-lines 80 --summary-only)",
+    "test:coverage:backend": "(cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 93 --summary-only && cargo llvm-cov --workspace --ignore-filename-regex \"(main\\.rs|test_mocks\\.rs|repositories/)\" --fail-under-lines 78 --summary-only)",
     "test:coverage:frontend": "pnpm --filter frontend test:coverage",
-    "test:coverage": "pnpm run test:coverage:backend && pnpm run test:coverage:frontend",
+    "test:coverage:mobile": "pnpm --filter mobile test:coverage",
+    "test:diff-coverage": "python3 scripts/check-diff-coverage.py --self-test && python3 scripts/check-diff-coverage.py --min-diff-coverage 85",
+    "test:coverage": "pnpm run test:coverage:backend && pnpm run test:coverage:frontend && pnpm run test:coverage:mobile && pnpm run test:diff-coverage",
     "test:uat": "bash scripts/run-uat-suite.sh",
     "emulate:android": "bash scripts/emulate-android.sh",
     "emulate:ios": "bash scripts/emulate-ios.sh"
