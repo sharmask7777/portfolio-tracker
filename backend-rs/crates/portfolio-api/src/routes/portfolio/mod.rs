@@ -1,8 +1,28 @@
 //! Portfolio management, performance summary, and fund overlap routes.
 
+pub mod folios;
+pub mod history;
+pub mod manual_assets;
+pub mod tax_summary;
+pub mod upload;
+
+pub use folios::{StatusResponse, close_folio, delete_folio, purge_user_data};
+pub use history::{
+    HistoryPointDto, PortfolioStatsResponse, StatMilestoneDto, YearlyStatDto, get_history,
+    get_stats,
+};
+pub use manual_assets::{
+    CreateManualAssetRequest, CreateManualAssetResponse, create_manual_asset, delete_manual_asset,
+};
+pub use tax_summary::{
+    RealizedGainDetailDto, RealizedTaxBlockDto, TaxSummaryQuery, TaxSummaryResponse,
+    UnrealizedTaxBlockDto, get_tax_impact_query, get_tax_report_csv, get_tax_summary,
+};
+pub use upload::{UploadPdfResponse, get_upload_status, upload_pdf};
+
 use std::str::FromStr;
 
-use axum::extract::{Multipart, Path, Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
@@ -26,7 +46,6 @@ use portfolio_core::xray::{
 };
 use portfolio_db::entities::{
     AssetEntity, FolioEntity, ManagedProfileEntity, PortfolioEntity, TransactionEntity,
-    UploadJobEntity, UploadJobStatus,
 };
 use portfolio_db::error::DbError;
 use portfolio_db::repositories::{
@@ -222,35 +241,48 @@ pub struct SummaryMetrics {
     pub day_change_percentage: Decimal,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct FolioMetrics {
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub invested_amount: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub current_value: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub total_gain: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub absolute_return: Decimal,
     #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(type = "number | null")]
     pub xirr: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(type = "number | null")]
     pub post_tax_xirr: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(type = "number | null")]
     pub post_tax_absolute_return: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(type = "number | null")]
     pub estimated_tax: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub current_price: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub day_change: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub day_change_percentage: Decimal,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct EnrichedFolio {
     pub id: Uuid,
     pub number: String,
@@ -259,9 +291,12 @@ pub struct EnrichedFolio {
     pub portfolio_id: Uuid,
     pub asset_id: Uuid,
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub units: Decimal,
+    #[ts(type = "unknown | null")]
     pub asset: Option<portfolio_db::entities::AssetEntity>,
     pub asset_category: String,
+    #[ts(type = "unknown[]")]
     pub transactions: Vec<portfolio_db::entities::TransactionEntity>,
     pub metrics: FolioMetrics,
 }
@@ -299,43 +334,31 @@ pub struct PanBreakdownDto {
     pub folio_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Consolidated multi-asset portfolio summary response.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct ConsolidatedSummaryResponse {
+    /// Portfolio or scope identifier.
     pub id: String,
+    /// Display name of the portfolio or scope.
     pub name: String,
+    /// Active enriched folios.
     pub folios: Vec<EnrichedFolio>,
+    /// Fully redeemed closed folios.
     pub closed_folios: Vec<EnrichedFolio>,
+    /// Consolidated scheme-level holdings with metrics.
+    pub schemes: Vec<portfolio_core::holdings::registry::ConsolidatedSchemeDto>,
+    /// PAN-wise breakdown.
     pub pan_breakdowns: Vec<PanBreakdownDto>,
+    /// Asset-class allocation breakdown.
     pub asset_allocation: Vec<AssetAllocationDto>,
+    /// Applicable marginal tax slab rate.
     #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub tax_slab: Decimal,
+    /// Portfolio-level aggregated metrics.
     pub metrics: SummaryMetrics,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateManualAssetRequest {
-    pub r#type: String,
-    pub name: String,
-    #[serde(deserialize_with = "deserialize_number_or_string")]
-    pub units: Decimal,
-    pub balance_date: Option<String>,
-    pub profile_id: Option<String>,
-}
-
-fn deserialize_number_or_string<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let val = serde_json::Value::deserialize(deserializer)?;
-    match val {
-        serde_json::Value::Number(n) => {
-            Decimal::from_str(&n.to_string()).map_err(serde::de::Error::custom)
-        }
-        serde_json::Value::String(s) => Decimal::from_str(&s).map_err(serde::de::Error::custom),
-        _ => Err(serde::de::Error::custom("expected number or string")),
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -390,7 +413,7 @@ pub async fn fetch_user_portfolios(
     user_id: Uuid,
 ) -> Result<Vec<PortfolioEntity>, ApiError> {
     if let Some(pool) = state.pool() {
-        let mut portfolios = sqlx::query_as::<_, PortfolioEntity>(
+        let portfolios = sqlx::query_as::<_, PortfolioEntity>(
             r#"
             SELECT id::uuid, "userId"::uuid, "managedProfileId"::uuid, name,
                    "createdAt" AT TIME ZONE 'UTC' as "createdAt",
@@ -404,44 +427,6 @@ pub async fn fetch_user_portfolios(
         .fetch_all(pool)
         .await
         .map_err(DbError::from)?;
-
-        if portfolios.is_empty()
-            && user_id
-                == Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap_or_default()
-        {
-            let maybe_first_user = sqlx::query_scalar::<_, String>(
-                r#"
-                SELECT p."userId"
-                FROM "Portfolio" p
-                JOIN "Folio" f ON f."portfolioId" = p.id
-                JOIN "Transaction" t ON t."folioId" = f.id
-                GROUP BY p."userId"
-                ORDER BY count(t.id) DESC
-                LIMIT 1
-                "#,
-            )
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-
-            if let Some(first_user_id) = maybe_first_user {
-                portfolios = sqlx::query_as::<_, PortfolioEntity>(
-                    r#"
-                    SELECT id::uuid, "userId"::uuid, "managedProfileId"::uuid, name,
-                           "createdAt" AT TIME ZONE 'UTC' as "createdAt",
-                           "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
-                    FROM "Portfolio"
-                    WHERE "userId" = $1
-                    ORDER BY "createdAt" ASC
-                    "#,
-                )
-                .bind(first_user_id)
-                .fetch_all(pool)
-                .await
-                .map_err(DbError::from)?;
-            }
-        }
 
         Ok(portfolios)
     } else {
@@ -459,7 +444,7 @@ pub async fn fetch_user_managed_profiles(
     user_id: Uuid,
 ) -> Result<Vec<ManagedProfileEntity>, ApiError> {
     if let Some(pool) = state.pool() {
-        let mut profiles = sqlx::query_as::<_, ManagedProfileEntity>(
+        let profiles = sqlx::query_as::<_, ManagedProfileEntity>(
             r#"
             SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
                    "createdAt" AT TIME ZONE 'UTC' as "createdAt",
@@ -473,38 +458,6 @@ pub async fn fetch_user_managed_profiles(
         .fetch_all(pool)
         .await
         .map_err(DbError::from)?;
-
-        if profiles.is_empty()
-            && user_id
-                == Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap_or_default()
-        {
-            let maybe_first_user = sqlx::query_scalar::<_, String>(
-                r#"
-                SELECT "userId" FROM "ManagedProfile" GROUP BY "userId" ORDER BY count(*) DESC LIMIT 1
-                "#,
-            )
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-
-            if let Some(first_user_id) = maybe_first_user {
-                profiles = sqlx::query_as::<_, ManagedProfileEntity>(
-                    r#"
-                    SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
-                           "createdAt" AT TIME ZONE 'UTC' as "createdAt",
-                           "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
-                    FROM "ManagedProfile"
-                    WHERE "userId" = $1
-                    ORDER BY "createdAt" ASC
-                    "#,
-                )
-                .bind(first_user_id)
-                .fetch_all(pool)
-                .await
-                .map_err(DbError::from)?;
-            }
-        }
 
         Ok(profiles)
     } else {
@@ -558,21 +511,20 @@ pub async fn resolve_target_portfolios(
             return Ok(matched);
         }
         if let Some(pool) = state.pool() {
-            let direct = sqlx::query_as::<_, PortfolioEntity>(
+            let exists_for_other: bool = sqlx::query_scalar(
                 r#"
-                SELECT id::uuid, "userId"::uuid, "managedProfileId"::uuid, name,
-                       "createdAt" AT TIME ZONE 'UTC' as "createdAt",
-                       "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
-                FROM "Portfolio"
-                WHERE id = $1 OR "managedProfileId" = $1
+                SELECT EXISTS(
+                    SELECT 1 FROM "Portfolio"
+                    WHERE id = $1 OR "managedProfileId" = $1
+                )
                 "#,
             )
             .bind(target_uuid.to_string())
-            .fetch_all(pool)
+            .fetch_one(pool)
             .await
-            .unwrap_or_default();
-            if !direct.is_empty() {
-                return Ok(direct);
+            .map_err(DbError::from)?;
+            if exists_for_other {
+                return Err(ApiError::Forbidden);
             }
         }
         Ok(Vec::new())
@@ -1009,11 +961,34 @@ pub async fn get_summary(
 /// Compares two mutual fund schemes identified by query parameters `isinA` and `isinB`.
 /// Resolves their disclosed or benchmark holdings and computes the minimum weight intersection
 /// across all overlapping individual company equities using `calculate_fund_overlap`.
+async fn resolve_isin_holdings(state: &AppState, isin: &str) -> (String, Vec<FundHolding>) {
+    let db_holdings = crate::routes::fund_holdings::get_latest_holdings(state, isin)
+        .await
+        .unwrap_or_default();
+    if !db_holdings.is_empty() {
+        let name = db_holdings[0].scheme_name.clone();
+        let mapped = db_holdings
+            .into_iter()
+            .map(|h| FundHolding {
+                name: h.stock_name,
+                weight: h.weight,
+            })
+            .collect();
+        (name, mapped)
+    } else {
+        get_fund_holdings_for_isin(isin)
+    }
+}
+
+/// Compares two mutual fund schemes identified by query parameters `isinA` and `isinB`.
+/// Resolves their disclosed or benchmark holdings and computes the minimum weight intersection
+/// across all overlapping individual company equities using `calculate_fund_overlap`.
 pub async fn get_overlap(
+    State(state): State<AppState>,
     Query(params): Query<OverlapQuery>,
 ) -> Result<Json<FundOverlap>, ApiError> {
-    let (name_a, holdings_a) = get_fund_holdings_for_isin(&params.isin_a);
-    let (name_b, holdings_b) = get_fund_holdings_for_isin(&params.isin_b);
+    let (name_a, holdings_a) = resolve_isin_holdings(&state, &params.isin_a).await;
+    let (name_b, holdings_b) = resolve_isin_holdings(&state, &params.isin_b).await;
 
     let overlap = calculate_fund_overlap(&name_a, &holdings_a, &name_b, &holdings_b);
     Ok(Json(overlap))
@@ -1726,207 +1701,7 @@ pub async fn compute_portfolio_exposures(
     Ok(exposures)
 }
 
-use tokio::io::AsyncWriteExt;
-
 /// Response returned upon successfully queuing an uploaded CAS statement for processing.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UploadPdfResponse {
-    pub job_id: String,
-    pub message: String,
-}
-
-/// Route handler for `POST /api/portfolio/upload` handling CAS statement file uploads.
-///
-/// Receives multipart form uploads containing CAS PDFs or JSON statements, stores the payload
-/// into the designated uploads directory with a unique UUID, initializes a database `UploadJob`
-/// record in `PENDING` state, and enqueues the job into BullMQ or in-memory worker queue.
-pub async fn upload_pdf(
-    auth_user: AuthUser,
-    State(state): State<AppState>,
-    mut multipart: Multipart,
-) -> Result<(StatusCode, Json<UploadPdfResponse>), ApiError> {
-    let job_id = Uuid::new_v4();
-    let uploads_dir = std::env::var("UPLOADS_DIR").unwrap_or_else(|_| "uploads".to_string());
-    tokio::fs::create_dir_all(&uploads_dir)
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
-
-    let file_path = std::path::Path::new(&uploads_dir).join(format!("{job_id}.pdf"));
-    let file_path_str = file_path.to_string_lossy().to_string();
-
-    let mut bytes_written = 0usize;
-    let mut file_created = false;
-    let mut _password: Option<String> = None;
-
-    while let Some(mut field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?
-    {
-        let name = field.name().unwrap_or_default().to_string();
-        match name.as_str() {
-            "password" => {
-                if let Ok(bytes) = field.bytes().await {
-                    _password = Some(String::from_utf8_lossy(&bytes).to_string());
-                }
-            }
-            "file" => {
-                let mut dest = tokio::fs::File::create(&file_path)
-                    .await
-                    .map_err(|e| ApiError::Internal(e.to_string()))?;
-                file_created = true;
-                while let Some(chunk) = field
-                    .chunk()
-                    .await
-                    .map_err(|e| ApiError::BadRequest(e.to_string()))?
-                {
-                    bytes_written += chunk.len();
-                    dest.write_all(&chunk)
-                        .await
-                        .map_err(|e| ApiError::Internal(e.to_string()))?;
-                }
-                dest.flush()
-                    .await
-                    .map_err(|e| ApiError::Internal(e.to_string()))?;
-            }
-            _ => {}
-        }
-    }
-
-    if !file_created || bytes_written == 0 {
-        if file_created {
-            let _ = tokio::fs::remove_file(&file_path).await;
-        }
-        return Err(ApiError::ValidationFailed("No file uploaded".to_string()));
-    }
-
-    let now = Utc::now();
-    let job = UploadJobEntity {
-        id: job_id,
-        user_id: auth_user.user_id,
-        file_path: file_path_str.clone(),
-        status: UploadJobStatus::Pending,
-        message: None,
-        created_at: now,
-        updated_at: now,
-        started_at: None,
-        completed_at: None,
-    };
-
-    if let Some(pool) = state.pool() {
-        let insert_res = sqlx::query(
-            r#"
-            INSERT INTO "UploadJob" ("id", "userId", "filePath", "status", "message", "createdAt", "updatedAt")
-            VALUES ($1, $2, $3, 'PENDING', $4, $5, $5)
-            "#,
-        )
-        .bind(job_id.to_string())
-        .bind(auth_user.user_id.to_string())
-        .bind(&file_path_str)
-        .bind(None::<String>)
-        .bind(now)
-        .execute(pool)
-        .await;
-
-        if let Err(e) = insert_res {
-            let _ = tokio::fs::remove_file(&file_path).await;
-            return Err(DbError::from(e).into());
-        }
-    }
-
-    state.db.insert_upload_job(job);
-
-    if let Some(ref client) = state.redis
-        && let Ok(mut conn) = client.get_multiplexed_async_connection().await
-    {
-        let job_data = serde_json::json!({
-            "userId": auth_user.user_id.to_string(),
-            "filePath": file_path_str,
-            "password": _password,
-            "jobId": job_id.to_string(),
-        });
-        let job_data_str = job_data.to_string();
-        let now_ms = chrono::Utc::now().timestamp_millis();
-
-        let bull_job_id: Result<i64, _> = redis::cmd("INCR")
-            .arg("bull:pdfUploadQueue:id")
-            .query_async(&mut conn)
-            .await;
-
-        if let Ok(b_id) = bull_job_id {
-            let _: Result<(), _> = redis::cmd("HSET")
-                .arg(format!("bull:pdfUploadQueue:{}", b_id))
-                .arg("name")
-                .arg("pdfUploadQueue")
-                .arg("data")
-                .arg(&job_data_str)
-                .arg("opts")
-                .arg("{}")
-                .arg("timestamp")
-                .arg(now_ms)
-                .query_async(&mut conn)
-                .await;
-
-            let _: Result<(), _> = redis::cmd("LPUSH")
-                .arg("bull:pdfUploadQueue:wait")
-                .arg(b_id.to_string())
-                .query_async(&mut conn)
-                .await;
-        }
-    }
-
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(UploadPdfResponse {
-            job_id: job_id.to_string(),
-            message: "PDF upload accepted and processing has started.".to_string(),
-        }),
-    ))
-}
-
-/// Route handler for `GET /api/portfolio/upload-status/:id` polling CAS processing job status.
-pub async fn get_upload_status(
-    auth_user: AuthUser,
-    State(state): State<AppState>,
-    Path(job_id): Path<Uuid>,
-) -> Result<Json<UploadJobEntity>, ApiError> {
-    let job = if let Some(pool) = state.pool() {
-        let opt = sqlx::query_as::<_, UploadJobEntity>(
-            r#"
-            SELECT id::uuid, "userId"::uuid, "filePath", status, message,
-                   "createdAt" AT TIME ZONE 'UTC' AS "createdAt",
-                   "updatedAt" AT TIME ZONE 'UTC' AS "updatedAt",
-                   "startedAt" AT TIME ZONE 'UTC' AS "startedAt",
-                   "completedAt" AT TIME ZONE 'UTC' AS "completedAt"
-            FROM "UploadJob"
-            WHERE id = $1
-            "#,
-        )
-        .bind(job_id.to_string())
-        .fetch_optional(pool)
-        .await
-        .map_err(DbError::from)?;
-
-        opt.or_else(|| state.db.get_upload_job(job_id))
-    } else {
-        state.db.get_upload_job(job_id)
-    };
-
-    let job = job.ok_or_else(|| ApiError::NotFound("Job not found".to_string()))?;
-
-    if job.user_id != auth_user.user_id {
-        return Err(ApiError::NotFound("Job not found".to_string()));
-    }
-
-    Ok(Json(job))
-}
-
-/// Route handler for `GET /api/portfolio/summary` generating consolidated multi-asset portfolio summary.
-///
-/// Aggregates all folios across the requested scope (single portfolio, managed profile, family group,
-/// or user consolidated). Enriches active folios with market metrics, XIRR, post-tax values, and 1-day
-/// NAV price movement, while isolating fully redeemed zero-holding positions into `closed_folios`.
 pub async fn get_portfolio_summary(
     auth_user: AuthUser,
     State(state): State<AppState>,
@@ -1961,6 +1736,7 @@ pub async fn get_portfolio_summary(
             name: res_name,
             folios: Vec::new(),
             closed_folios: Vec::new(),
+            schemes: Vec::new(),
             pan_breakdowns: Vec::new(),
             asset_allocation: Vec::new(),
             tax_slab: slab_value,
@@ -2332,11 +2108,14 @@ pub async fn get_portfolio_summary(
         }
     }
 
+    let schemes = Vec::new();
+
     Ok(Json(ConsolidatedSummaryResponse {
         id: res_id,
         name: res_name,
         folios: active_folios,
         closed_folios,
+        schemes,
         pan_breakdowns,
         asset_allocation,
         tax_slab: slab_value,
@@ -2853,948 +2632,32 @@ pub async fn get_exposures(
     Ok(Json(exposures))
 }
 
-/// Route handler for `GET /api/portfolio/:id/tax` computing comprehensive capital gains and ITR Schedule CG data.
-///
-/// ## Statutory Tax Engine & Invariants:
-/// - Evaluates FIFO lot allocation for all historical redemption transactions.
-/// - Classifies gains under statutory provisions:
-///   - **Section 112A**: Long-Term Capital Gains on equity/equity mutual funds (holding period > 12 months).
-///     Statutory tax rate of 12.5% post-July 23, 2024 (10% prior), with annual ₹1.25L exemption threshold.
-///   - **Section 111A**: Short-Term Capital Gains on equity/equity mutual funds (holding period <= 12 months).
-///     Statutory tax rate of 20% post-July 23, 2024 (15% prior).
-///   - **Section 50AA**: Specified mutual funds (debt/international/unlisted) acquired on or after April 1, 2023,
-///     taxed at investor's slab rate without indexation.
-///   - **Section 55(2)(ac)**: Grandfathering formula for equity assets acquired prior to February 1, 2018.
-/// - **Section 70 Loss Set-Off Ordering**:
-///   1. Long-Term Capital Loss (LTCL) can ONLY set off Long-Term Capital Gain (LTCG).
-///   2. Short-Term Capital Loss (STCL) can set off Short-Term Capital Gain (STCG) first, then LTCG.
-/// - **Table F Advance Tax Quarter Matrix**:
-///   Categorizes realized gains into statutory Indian tax quarters:
-///   - Q1: Up to June 15
-///   - Q2a: June 16 to July 22 (pre-Budget 2024 amendments)
-///   - Q2b: July 23 to September 15 (post-Budget 2024 amendments: 12.5% LTCG / 20% STCG)
-///   - Q3: September 16 to December 15
-///   - Q4: December 16 to March 15
-///   - Q5: March 16 to March 31
-pub async fn get_tax_summary(
-    auth_user: AuthUser,
-    Path(id): Path<String>,
-    Query(query): Query<std::collections::HashMap<String, String>>,
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
-    let slab_value = query
-        .get("taxSlab")
-        .and_then(|s| Decimal::from_str(s).ok())
-        .unwrap_or_else(|| Decimal::new(3, 1)); // 0.30
-
-    let mut all_realized_details = Vec::new();
-    let mut total_realized_stcg = Decimal::ZERO;
-    let mut total_realized_ltcg = Decimal::ZERO;
-    let mut total_realized_slab = Decimal::ZERO;
-    let mut total_realized = Decimal::ZERO;
-
-    let mut total_unrealized_stcg = Decimal::ZERO;
-    let mut total_unrealized_ltcg = Decimal::ZERO;
-    let mut total_unrealized_slab = Decimal::ZERO;
-    let mut total_unrealized = Decimal::ZERO;
-
-    for portfolio in &portfolios {
-        let folios = fetch_folios_for_portfolio(&state, portfolio.id).await?;
-        for folio in folios {
-            let Some(asset) = fetch_asset_for_folio(&state, folio.asset_id).await? else {
-                continue;
-            };
-            let tx_entities = fetch_transactions_for_folio(&state, folio.id).await?;
-            if tx_entities.is_empty() {
-                continue;
-            }
-
-            let mut core_txs = Vec::with_capacity(tx_entities.len());
-            for transaction_entity in &tx_entities {
-                if let Ok(core_transaction) = transaction_entity.to_core_transaction() {
-                    core_txs.push(core_transaction);
-                }
-            }
-
-            let fallback = core_txs
-                .iter()
-                .rev()
-                .find(|t| t.nav.is_positive())
-                .map(|t| (t.date, t.nav));
-            let latest_nav = fetch_latest_nav(&state, Some(&asset), fallback).await;
-            let asset_type = asset
-                .asset_type
-                .parse::<AssetType>()
-                .unwrap_or(AssetType::MutualFund);
-
-            let grandfather_nav = if let Some(ref amfi) = asset.amfi_code {
-                fetch_historical_nav_by_date(&state, amfi, portfolio_core::tax::GRANDFATHER_DATE)
-                    .await
-            } else {
-                None
-            };
-
-            let tax_summary = portfolio_core::tax::calculate_portfolio_tax(
-                &asset.name,
-                asset_type,
-                &core_txs,
-                latest_nav,
-                slab_value,
-                grandfather_nav,
-            );
-
-            total_realized_stcg += tax_summary.realized.stcg.to_decimal();
-            total_realized_ltcg += tax_summary.realized.ltcg.to_decimal();
-            total_realized_slab += tax_summary.realized.slab.to_decimal();
-            total_realized += tax_summary.realized.total.to_decimal();
-
-            total_unrealized_stcg += tax_summary.unrealized.stcg.to_decimal();
-            total_unrealized_ltcg += tax_summary.unrealized.ltcg.to_decimal();
-            total_unrealized_slab += tax_summary.unrealized.slab.to_decimal();
-            total_unrealized += tax_summary.unrealized.total.to_decimal();
-
-            for mut gain in tax_summary.realized.details {
-                if gain.folio_number.is_none() {
-                    gain.folio_number = portfolio_core::types::FolioNumber::new(&folio.number).ok();
-                }
-                if gain.pan.is_none() {
-                    gain.pan = folio
-                        .pan
-                        .as_deref()
-                        .and_then(|p| portfolio_core::types::Pan::new(p).ok());
-                }
-                if gain.isin.is_none() {
-                    gain.isin = asset
-                        .isin
-                        .as_deref()
-                        .and_then(|isin_str| portfolio_core::types::Isin::new(isin_str).ok());
-                }
-                all_realized_details.push(gain);
-            }
-        }
-    }
-
-    all_realized_details.sort_by_key(|a| std::cmp::Reverse(a.sell_date));
-
-    let table_f = portfolio_core::tax::build_advance_tax_matrix(&all_realized_details);
-    let section_totals = portfolio_core::tax::build_section_totals(&all_realized_details);
-
-    let stcl = if total_realized_stcg < Decimal::ZERO {
-        total_realized_stcg.abs()
-    } else {
-        Decimal::ZERO
-    };
-    let ltcl = if total_realized_ltcg < Decimal::ZERO {
-        total_realized_ltcg.abs()
-    } else {
-        Decimal::ZERO
-    };
-    let mut stcg = if total_realized_stcg > Decimal::ZERO {
-        total_realized_stcg
-    } else {
-        Decimal::ZERO
-    };
-    let mut ltcg = if total_realized_ltcg > Decimal::ZERO {
-        total_realized_ltcg
-    } else {
-        Decimal::ZERO
-    };
-
-    // Statutory Section 70 Set-Off Mechanics:
-    // 1. Long-Term Capital Loss (LTCL) can ONLY set off Long-Term Capital Gain (LTCG)
-    let set_off_lt = ltcg.min(ltcl);
-    ltcg -= set_off_lt;
-
-    // 2. Short-Term Capital Loss (STCL) can set off STCG first, then remaining STCL can set off LTCG
-    let mut rem_stcl = stcl;
-    let set_off_st = stcg.min(rem_stcl);
-    stcg -= set_off_st;
-    rem_stcl -= set_off_st;
-
-    let set_off_st_lt = ltcg.min(rem_stcl);
-    ltcg -= set_off_st_lt;
-
-    let taxable_stcg = stcg;
-    let taxable_ltcg = ltcg;
-
-    use rust_decimal::prelude::ToPrimitive;
-    let decimal_to_f64 = |v: Decimal| v.to_f64().unwrap_or(0.0);
-
-    let details: Vec<_> = all_realized_details
-        .iter()
-        .map(|g| {
-            json!({
-                "assetName": g.asset_name,
-                "folioNumber": g.folio_number.as_ref().map(portfolio_core::FolioNumber::as_str),
-                "isin": g.isin.as_ref().map(portfolio_core::Isin::as_str),
-                "pan": g.pan.as_ref().map(portfolio_core::Pan::as_str),
-                "assetClass": g.asset_class,
-                "section": g.section.to_string(),
-                "buyDate": g.buy_date.to_string(),
-                "sellDate": g.sell_date.to_string(),
-                "holdingPeriodDays": g.holding_period_days,
-                "holdingType": format!("{:?}", g.holding_type),
-                "units": decimal_to_f64(g.units.to_decimal()),
-                "buyNav": decimal_to_f64(g.buy_nav.to_decimal()),
-                "sellNav": decimal_to_f64(g.sell_nav.to_decimal()),
-                "grossConsideration": decimal_to_f64(g.gross_consideration.to_decimal()),
-                "costOfAcquisition": decimal_to_f64(g.cost_of_acquisition.to_decimal()),
-                "deemedCostOfAcquisition": decimal_to_f64(g.deemed_cost_of_acquisition.to_decimal()),
-                "fmvAsOfJan31_2018": decimal_to_f64(g.fmv_as_of_jan31_2018.to_decimal()),
-                "totalFmvJan31_2018": decimal_to_f64(g.total_fmv_jan31_2018.to_decimal()),
-                "transferExpenses": decimal_to_f64(g.transfer_expenses.to_decimal()),
-                "gain": decimal_to_f64(g.gain.to_decimal()),
-                "taxType": format!("{:?}", g.tax_type).to_uppercase(),
-                "taxRate": decimal_to_f64(g.tax_rate),
-                "taxBeforeCess": decimal_to_f64(g.tax_before_cess.to_decimal()),
-                "cess": decimal_to_f64(g.cess.to_decimal()),
-                "estimatedTax": decimal_to_f64(g.estimated_tax.to_decimal()),
-                "advanceTaxQuarter": g.advance_tax_quarter.as_ref().map(portfolio_core::AdvanceTaxQuarter::as_str),
-                "isGrandfathered": g.is_grandfathered,
-                "grandfatheredStatus": g.grandfathered_status,
-            })
-        })
-        .collect();
-
-    Ok(Json(json!({
-        "realized": {
-            "total": decimal_to_f64(total_realized),
-            "stcg": decimal_to_f64(total_realized_stcg),
-            "ltcg": decimal_to_f64(total_realized_ltcg),
-            "slab": decimal_to_f64(total_realized_slab),
-            "taxableSTCG": decimal_to_f64(taxable_stcg),
-            "taxableLTCG": decimal_to_f64(taxable_ltcg),
-            "details": details,
-            "tableF": table_f,
-            "sectionTotals": section_totals,
-        },
-        "unrealized": {
-            "total": decimal_to_f64(total_unrealized),
-            "stcg": decimal_to_f64(total_unrealized_stcg),
-            "ltcg": decimal_to_f64(total_unrealized_ltcg),
-            "slab": decimal_to_f64(total_unrealized_slab),
-        },
-        "tableF": table_f,
-        "sectionTotals": section_totals,
-        "details": details
-    })))
-}
-
-/// Route handler for `GET /api/portfolio/tax-impact` computing consolidated tax summary across all user portfolios.
-pub async fn get_tax_impact_query(
-    auth_user: AuthUser,
-    Query(query): Query<std::collections::HashMap<String, String>>,
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    get_tax_summary(
-        auth_user,
-        Path("consolidated".to_string()),
-        Query(query),
-        State(state),
-    )
-    .await
-}
-
-/// Helper function to perform LOCF historical valuation aggregation from in-memory database.
-fn fetch_in_memory_history(
-    db: &portfolio_db::InMemoryDatabase,
-    portfolio_ids: &[Uuid],
-) -> Vec<crate::services::HistoryPoint> {
-    let mut all_valuations = Vec::new();
-    let mut all_dates = std::collections::BTreeSet::new();
-
-    for &pid in portfolio_ids {
-        let records = db.list_historical_valuations(pid);
-        for r in records {
-            all_dates.insert(r.date);
-            all_valuations.push(r);
-        }
-    }
-
-    if all_dates.is_empty() {
-        return Vec::new();
-    }
-
-    let mut history_points = Vec::with_capacity(all_dates.len());
-    let mut last_known_per_portfolio: std::collections::HashMap<Uuid, (Decimal, Decimal)> =
-        std::collections::HashMap::new();
-
-    for date in all_dates {
-        for &pid in portfolio_ids {
-            if let Some(r) = all_valuations
-                .iter()
-                .find(|v| v.portfolio_id == pid && v.date == date)
-            {
-                last_known_per_portfolio.insert(pid, (r.value, r.cost));
-            }
-        }
-
-        let mut date_val = Decimal::ZERO;
-        let mut date_inv = Decimal::ZERO;
-        for &(v, c) in last_known_per_portfolio.values() {
-            date_val += v;
-            date_inv += c;
-        }
-
-        history_points.push(crate::services::HistoryPoint {
-            date,
-            value: date_val,
-            invested_amount: date_inv,
-        });
-    }
-
-    history_points
-}
-
-/// Route handler for `GET /api/portfolio/:id/history` retrieving historical valuation timeline.
-pub async fn get_history(
-    auth_user: AuthUser,
-    Path(id): Path<String>,
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
-    let p_uuids: Vec<Uuid> = portfolios.iter().map(|p| p.id).collect();
-
-    if p_uuids.is_empty() {
-        return Ok(Json(json!([])));
-    }
-
-    let mut points: Vec<crate::services::HistoryPoint> = if let Some(pool) = state.pool() {
-        let p_ids: Vec<String> = p_uuids
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect();
-        sqlx::query_as::<_, crate::services::HistoryPoint>(
-            r#"
-            WITH target_history AS (
-                SELECT "portfolioId", date::date as dt, value, "investedAmount"
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = ANY($1)
-            ),
-            dates AS (
-                SELECT DISTINCT dt FROM target_history
-            ),
-            portfolio_list AS (
-                SELECT UNNEST($1::text[]) as pid
-            ),
-            grid AS (
-                SELECT d.dt, p.pid
-                FROM dates d
-                CROSS JOIN portfolio_list p
-            ),
-            filled AS (
-                SELECT g.dt, g.pid,
-                       th.value, th."investedAmount",
-                       COUNT(th.value) OVER (PARTITION BY g.pid ORDER BY g.dt) as val_grp,
-                       COUNT(th."investedAmount") OVER (PARTITION BY g.pid ORDER BY g.dt) as inv_grp
-                FROM grid g
-                LEFT JOIN target_history th ON th."portfolioId" = g.pid AND th.dt = g.dt
-            ),
-            locf AS (
-                SELECT dt, pid,
-                       FIRST_VALUE(value) OVER (PARTITION BY pid, val_grp ORDER BY dt) as filled_val,
-                       FIRST_VALUE("investedAmount") OVER (PARTITION BY pid, inv_grp ORDER BY dt) as filled_inv
-                FROM filled
-            )
-            SELECT dt as date, 
-                   SUM(COALESCE(filled_val, 0))::numeric as value, 
-                   SUM(COALESCE(filled_inv, 0))::numeric as "investedAmount"
-            FROM locf
-            GROUP BY dt
-            ORDER BY dt ASC
-            "#,
-        )
-        .bind(&p_ids)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
-    } else {
-        fetch_in_memory_history(state.db().as_ref(), &p_uuids)
-    };
-
-    // Reconcile terminal checkpoint against live mark-to-market valuation
-    let live = crate::services::ValuationService::compute_live_valuation(&state, &p_uuids).await?;
-    let today = live.as_of_date;
-
-    if points.is_empty() {
-        if !live.total_invested.is_zero() || !live.total_value.is_zero() {
-            points.push(crate::services::HistoryPoint {
-                date: today,
-                value: live.total_value,
-                invested_amount: live.total_invested,
-            });
-        }
-    } else {
-        let last = points.last_mut().expect("points is not empty");
-        if last.date == today {
-            last.value = live.total_value;
-            last.invested_amount = live.total_invested;
-        } else if last.date < today {
-            points.push(crate::services::HistoryPoint {
-                date: today,
-                value: live.total_value,
-                invested_amount: live.total_invested,
-            });
-        }
-    }
-
-    Ok(Json(
-        serde_json::to_value(points).unwrap_or_else(|_| json!([])),
-    ))
-}
-
-/// Route handler for `GET /api/portfolio/:id/stats` returning all-time high (ATH) and annual milestones.
-pub async fn get_stats(
-    auth_user: AuthUser,
-    Path(id): Path<String>,
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    if let Some(pool) = state.pool() {
-        #[derive(sqlx::FromRow)]
-        struct StatRow {
-            value: Decimal,
-            date: NaiveDate,
-        }
-
-        let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
-        let p_uuids: Vec<Uuid> = portfolios.iter().map(|p| p.id).collect();
-        let p_ids: Vec<String> = p_uuids
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect();
-
-        if p_ids.is_empty() {
-            return Ok(Json(json!({
-                "ath": { "value": 0.0, "date": serde_json::Value::Null },
-                "maxInvested": { "value": 0.0, "date": serde_json::Value::Null },
-                "yearly": []
-            })));
-        }
-
-        let live = crate::services::ValuationService::compute_live_valuation(&state, &p_uuids)
-            .await
-            .ok();
-
-        let ath = sqlx::query_as::<_, StatRow>(
-            r#"
-            WITH target_history AS (
-                SELECT "portfolioId", date::date as dt, value, "investedAmount"
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = ANY($1)
-            ),
-            dates AS (
-                SELECT DISTINCT dt FROM target_history
-            ),
-            portfolio_list AS (
-                SELECT UNNEST($1::text[]) as pid
-            ),
-            grid AS (
-                SELECT d.dt, p.pid
-                FROM dates d
-                CROSS JOIN portfolio_list p
-            ),
-            filled AS (
-                SELECT g.dt, g.pid,
-                       th.value,
-                       COUNT(th.value) OVER (PARTITION BY g.pid ORDER BY g.dt) as val_grp
-                FROM grid g
-                LEFT JOIN target_history th ON th."portfolioId" = g.pid AND th.dt = g.dt
-            ),
-            locf AS (
-                SELECT dt, pid,
-                       FIRST_VALUE(value) OVER (PARTITION BY pid, val_grp ORDER BY dt) as filled_val
-                FROM filled
-            )
-            SELECT dt as date, SUM(COALESCE(filled_val, 0))::numeric as value
-            FROM locf
-            GROUP BY dt
-            ORDER BY value DESC
-            LIMIT 1
-            "#,
-        )
-        .bind(&p_ids)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-
-        let max_inv = sqlx::query_as::<_, StatRow>(
-            r#"
-            WITH target_history AS (
-                SELECT "portfolioId", date::date as dt, "investedAmount"
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = ANY($1)
-            ),
-            dates AS (
-                SELECT DISTINCT dt FROM target_history
-            ),
-            portfolio_list AS (
-                SELECT UNNEST($1::text[]) as pid
-            ),
-            grid AS (
-                SELECT d.dt, p.pid
-                FROM dates d
-                CROSS JOIN portfolio_list p
-            ),
-            filled AS (
-                SELECT g.dt, g.pid,
-                       th."investedAmount",
-                       COUNT(th."investedAmount") OVER (PARTITION BY g.pid ORDER BY g.dt) as inv_grp
-                FROM grid g
-                LEFT JOIN target_history th ON th."portfolioId" = g.pid AND th.dt = g.dt
-            ),
-            locf AS (
-                SELECT dt, pid,
-                       FIRST_VALUE("investedAmount") OVER (PARTITION BY pid, inv_grp ORDER BY dt) as filled_inv
-                FROM filled
-            )
-            SELECT dt as date, SUM(COALESCE(filled_inv, 0))::numeric as value
-            FROM locf
-            GROUP BY dt
-            ORDER BY value DESC
-            LIMIT 1
-            "#,
-        )
-        .bind(&p_ids)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-
-        #[derive(sqlx::FromRow)]
-        struct YearlyRow {
-            year: i32,
-            max_value: Decimal,
-            max_invested: Decimal,
-        }
-
-        let yearly_rows = sqlx::query_as::<_, YearlyRow>(
-            r#"
-            WITH target_history AS (
-                SELECT "portfolioId", date::date as dt, value, "investedAmount"
-                FROM "PortfolioHistory"
-                WHERE "portfolioId" = ANY($1)
-            ),
-            dates AS (
-                SELECT DISTINCT dt FROM target_history
-            ),
-            portfolio_list AS (
-                SELECT UNNEST($1::text[]) as pid
-            ),
-            grid AS (
-                SELECT d.dt, p.pid
-                FROM dates d
-                CROSS JOIN portfolio_list p
-            ),
-            filled AS (
-                SELECT g.dt, g.pid,
-                       th.value, th."investedAmount",
-                       COUNT(th.value) OVER (PARTITION BY g.pid ORDER BY g.dt) as val_grp,
-                       COUNT(th."investedAmount") OVER (PARTITION BY g.pid ORDER BY g.dt) as inv_grp
-                FROM grid g
-                LEFT JOIN target_history th ON th."portfolioId" = g.pid AND th.dt = g.dt
-            ),
-            locf AS (
-                SELECT dt, pid,
-                       FIRST_VALUE(value) OVER (PARTITION BY pid, val_grp ORDER BY dt) as filled_val,
-                       FIRST_VALUE("investedAmount") OVER (PARTITION BY pid, inv_grp ORDER BY dt) as filled_inv
-                FROM filled
-            ),
-            daily_agg AS (
-                SELECT dt as date, 
-                       SUM(COALESCE(filled_val, 0))::numeric as value, 
-                       SUM(COALESCE(filled_inv, 0))::numeric as "investedAmount"
-                FROM locf
-                GROUP BY dt
-            )
-            SELECT
-                EXTRACT(YEAR FROM date)::int as year,
-                MAX(value)::numeric as max_value,
-                MAX("investedAmount")::numeric as max_invested
-            FROM daily_agg
-            GROUP BY EXTRACT(YEAR FROM date)
-            ORDER BY year DESC
-            "#,
-        )
-        .bind(&p_ids)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
-
-        use chrono::Datelike;
-        use rust_decimal::prelude::ToPrimitive;
-
-        let mut ath_val = ath.as_ref().map_or(Decimal::ZERO, |a| a.value);
-        let mut ath_date = ath.as_ref().map(|a| a.date.to_string());
-        let mut max_inv_val = max_inv.as_ref().map_or(Decimal::ZERO, |m| m.value);
-        let mut max_inv_date = max_inv.as_ref().map(|m| m.date.to_string());
-
-        if let Some(ref live_snap) = live {
-            if live_snap.total_value > ath_val {
-                ath_val = live_snap.total_value;
-                ath_date = Some(live_snap.as_of_date.to_string());
-            }
-            if live_snap.total_invested > max_inv_val {
-                max_inv_val = live_snap.total_invested;
-                max_inv_date = Some(live_snap.as_of_date.to_string());
-            }
-        }
-
-        let mut yearly: Vec<_> = yearly_rows
-            .into_iter()
-            .map(|y| {
-                let mut max_val = y.max_value;
-                let mut max_inv = y.max_invested;
-                if let Some(ref live_snap) = live
-                    && y.year == live_snap.as_of_date.year()
-                {
-                    if live_snap.total_value > max_val {
-                        max_val = live_snap.total_value;
-                    }
-                    if live_snap.total_invested > max_inv {
-                        max_inv = live_snap.total_invested;
-                    }
-                }
-                json!({
-                    "year": y.year,
-                    "ath": { "value": max_val.to_f64().unwrap_or(0.0), "date": format!("{}-12-31", y.year) },
-                    "maxInvested": { "value": max_inv.to_f64().unwrap_or(0.0), "date": format!("{}-12-31", y.year) }
-                })
-            })
-            .collect();
-
-        if let Some(ref live_snap) = live {
-            let cur_year = live_snap.as_of_date.year();
-            if !yearly
-                .iter()
-                .any(|y| y.get("year").and_then(serde_json::Value::as_i64) == Some(cur_year as i64))
-                && (!live_snap.total_value.is_zero() || !live_snap.total_invested.is_zero())
-            {
-                yearly.insert(
-                    0,
-                    json!({
-                        "year": cur_year,
-                        "ath": { "value": live_snap.total_value.to_f64().unwrap_or(0.0), "date": live_snap.as_of_date.to_string() },
-                        "maxInvested": { "value": live_snap.total_invested.to_f64().unwrap_or(0.0), "date": live_snap.as_of_date.to_string() }
-                    }),
-                );
-            }
-        }
-
-        Ok(Json(json!({
-            "ath": {
-                "value": ath_val.to_f64().unwrap_or(0.0),
-                "date": ath_date
-            },
-            "maxInvested": {
-                "value": max_inv_val.to_f64().unwrap_or(0.0),
-                "date": max_inv_date
-            },
-            "yearly": yearly
-        })))
-    } else {
-        let portfolios = resolve_target_portfolios(&state, auth_user.user_id, &id).await?;
-        let p_uuids: Vec<Uuid> = portfolios.iter().map(|p| p.id).collect();
-        let live = crate::services::ValuationService::compute_live_valuation(&state, &p_uuids)
-            .await
-            .ok();
-        use rust_decimal::prelude::ToPrimitive;
-        if let Some(live_snap) = live
-            && (!live_snap.total_value.is_zero() || !live_snap.total_invested.is_zero())
-        {
-            Ok(Json(json!({
-                "ath": { "value": live_snap.total_value.to_f64().unwrap_or(0.0), "date": live_snap.as_of_date.to_string() },
-                "maxInvested": { "value": live_snap.total_invested.to_f64().unwrap_or(0.0), "date": live_snap.as_of_date.to_string() },
-                "yearly": []
-            })))
-        } else {
-            Ok(Json(json!({
-                "ath": { "value": 0.0, "date": serde_json::Value::Null },
-                "maxInvested": { "value": 0.0, "date": serde_json::Value::Null },
-                "yearly": []
-            })))
-        }
-    }
-}
-
-/// Route handler for `POST /api/portfolio/folio/:folioId/close` manually closing an active folio.
-///
-/// Simulates full redemption of remaining units at current NAV to reset balance to zero.
-pub async fn close_folio(
-    auth_user: AuthUser,
-    State(state): State<AppState>,
-    Path(folio_id): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let folio_uuid = Uuid::parse_str(&folio_id)
-        .map_err(|_| ApiError::NotFound("Folio not found".to_string()))?;
-
-    let folio = fetch_folio(&state, folio_uuid)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("Folio not found".to_string()))?;
-
-    let portfolio = fetch_portfolio(&state, folio.portfolio_id)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("Folio not found".to_string()))?;
-
-    if portfolio.user_id != auth_user.user_id {
-        return Err(ApiError::NotFound("Folio not found".to_string()));
-    }
-
-    let tx_entities = fetch_transactions_for_folio(&state, folio_uuid).await?;
-    let mut core_txs = Vec::with_capacity(tx_entities.len());
-    for transaction_entity in &tx_entities {
-        core_txs.push(transaction_entity.to_core_transaction()?);
-    }
-
-    let units = get_latest_units(&core_txs);
-    if units.to_decimal() > Decimal::from_str("0.001").unwrap_or(Decimal::ZERO) {
-        let last_nav = core_txs
-            .iter()
-            .rev()
-            .find(|t| t.nav.is_positive())
-            .map_or(Decimal::ONE, |t| t.nav.to_decimal());
-        let today = Utc::now().date_naive();
-        let amount = -(units.to_decimal() * last_nav);
-        let ext_id = format!(
-            "MANUAL_CLOSE-{folio_uuid}-{}",
-            Utc::now().timestamp_millis()
-        );
-
-        if let Some(pool) = state.pool() {
-            let tx_id = Uuid::new_v4();
-            let now = Utc::now();
-            let date_timestamp = today.and_hms_opt(0, 0, 0).unwrap_or_default();
-            let _ = sqlx::query(
-                r#"
-                INSERT INTO "Transaction" (
-                    id, "folioId", date, type, amount, units, nav, balance, "externalId", "createdAt", "updatedAt"
-                )
-                VALUES ($1, $2, $3, 'REDEMPTION', $4::text::float8, $5::text::float8, $6::text::float8, 0, $7, $8, $8)
-                "#,
-            )
-            .bind(tx_id.to_string())
-            .bind(folio_uuid.to_string())
-            .bind(date_timestamp)
-            .bind(amount.to_string())
-            .bind((-units.to_decimal()).to_string())
-            .bind(last_nav.to_string())
-            .bind(&ext_id)
-            .bind(now)
-            .execute(pool)
-            .await;
-        } else {
-            state
-                .db
-                .create_transaction(
-                    folio_uuid,
-                    today,
-                    "REDEMPTION",
-                    amount,
-                    -units.to_decimal(),
-                    last_nav,
-                    Decimal::ZERO,
-                    Some(&ext_id),
-                )
-                .await?;
-        }
-    }
-
-    Ok(Json(json!({ "status": "success" })))
-}
-
-/// Route handler for `DELETE /api/portfolio/folio/:folioId` permanently deleting a folio and its transactions.
-pub async fn delete_folio(
-    auth_user: AuthUser,
-    State(state): State<AppState>,
-    Path(folio_id): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let folio_uuid = Uuid::parse_str(&folio_id)
-        .map_err(|_| ApiError::NotFound("Folio not found".to_string()))?;
-
-    let folio = fetch_folio(&state, folio_uuid)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("Folio not found".to_string()))?;
-
-    let portfolio = fetch_portfolio(&state, folio.portfolio_id)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("Folio not found".to_string()))?;
-
-    if portfolio.user_id != auth_user.user_id {
-        return Err(ApiError::NotFound("Folio not found".to_string()));
-    }
-
-    state.db.delete_folio(folio_uuid);
-
-    if let Some(pool) = state.pool() {
-        let _ = sqlx::query(r#"DELETE FROM "Transaction" WHERE "folioId" = $1"#)
-            .bind(folio_uuid.to_string())
-            .execute(pool)
-            .await;
-        let _ = sqlx::query(r#"DELETE FROM "Folio" WHERE id = $1"#)
-            .bind(folio_uuid.to_string())
-            .execute(pool)
-            .await;
-    }
-
-    Ok(Json(json!({ "status": "success" })))
-}
-
-/// Route handler for `DELETE /api/portfolio/purge` cascadingly deleting all user financial data.
-pub async fn purge_user_data(
-    auth_user: AuthUser,
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    state.db.purge_user_data(auth_user.user_id);
-
-    if let Some(pool) = state.pool() {
-        let mut tx = pool.begin().await.map_err(DbError::from)?;
-        let user_id_str = auth_user.user_id.to_string();
-        let _ = sqlx::query(
-            r#"DELETE FROM "Goal" WHERE "portfolioId" IN (SELECT id FROM "Portfolio" WHERE "userId" = $1)"#,
-        )
-        .bind(&user_id_str)
-        .execute(&mut *tx)
-        .await;
-        let _ = sqlx::query(
-            r#"DELETE FROM "Transaction" WHERE "folioId" IN (SELECT f.id FROM "Folio" f JOIN "Portfolio" p ON f."portfolioId" = p.id WHERE p."userId" = $1)"#,
-        )
-        .bind(&user_id_str)
-        .execute(&mut *tx)
-        .await;
-        let _ = sqlx::query(
-            r#"DELETE FROM "Folio" WHERE "portfolioId" IN (SELECT id FROM "Portfolio" WHERE "userId" = $1)"#,
-        )
-        .bind(&user_id_str)
-        .execute(&mut *tx)
-        .await;
-        let _ = sqlx::query(r#"DELETE FROM "Portfolio" WHERE "userId" = $1"#)
-            .bind(&user_id_str)
-            .execute(&mut *tx)
-            .await;
-        let _ = sqlx::query(r#"DELETE FROM "ManagedProfile" WHERE "userId" = $1"#)
-            .bind(&user_id_str)
-            .execute(&mut *tx)
-            .await;
-        let _ = tx.commit().await;
-    }
-
-    Ok(Json(json!({
-        "status": "success",
-        "message": "All user data has been purged."
-    })))
-}
-
-/// Route handler for `POST /api/portfolio/manual-asset` creating manual holding (Gold, Real Estate, Unlisted).
-pub async fn create_manual_asset(
-    auth_user: AuthUser,
-    State(state): State<AppState>,
-    Json(payload): Json<CreateManualAssetRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let user_id = auth_user.user_id;
-    let user_portfolios = state.db.list_user_portfolios(user_id).await?;
-    let target_prof_id = payload
-        .profile_id
-        .as_deref()
-        .and_then(|p| Uuid::parse_str(p).ok());
-
-    let portfolio = if let Some(prof_id) = target_prof_id {
-        if let Some(p) = user_portfolios
-            .into_iter()
-            .find(|p| p.managed_profile_id == Some(prof_id))
-        {
-            p
-        } else {
-            state
-                .db
-                .create_portfolio(user_id, "Family Member Portfolio", Some(prof_id))
-                .await?
-        }
-    } else if let Some(p) = user_portfolios
-        .into_iter()
-        .find(|p| p.managed_profile_id.is_none())
-    {
-        p
-    } else {
-        state
-            .db
-            .create_portfolio(user_id, "Primary Portfolio", None)
-            .await?
-    };
-
-    let now_ts = Utc::now().timestamp_millis();
-    let symbol = format!("{}_{}", payload.r#type, now_ts);
-    let asset = state.db.create_asset(
-        &payload.r#type,
-        &payload.name,
-        None,
-        None,
-        Some(&symbol),
-        None,
-    );
-
-    let folio_num = format!("MANUAL_{now_ts}");
-    let folio = state
-        .db
-        .create_folio(portfolio.id, asset.id, &folio_num, None, None)?;
-
-    let balance_date = payload
-        .balance_date
-        .as_deref()
-        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-        .unwrap_or_else(|| Utc::now().date_naive());
-
-    state
-        .db
-        .create_transaction(
-            folio.id,
-            balance_date,
-            "PURCHASE",
-            payload.units,
-            payload.units,
-            Decimal::ONE,
-            payload.units,
-            None,
-        )
-        .await?;
-
-    Ok(Json(json!({
-        "status": "success",
-        "assetId": asset.id.to_string()
-    })))
-}
-
-/// Route handler for `DELETE /api/portfolio/manual-asset/:folioId` deleting a manual holding.
-pub async fn delete_manual_asset(
-    auth_user: AuthUser,
-    State(state): State<AppState>,
-    Path(folio_id): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    delete_folio(auth_user, State(state), Path(folio_id)).await
-}
-
 /// Constructs and returns the Axum router configuring all portfolio management endpoints.
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_portfolios).post(create_portfolio))
         .route(
             "/upload",
-            post(upload_pdf).layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024)),
+            post(upload::upload_pdf).layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024)),
         )
-        .route("/upload-status/{id}", get(get_upload_status))
+        .route("/upload-status/{id}", get(upload::get_upload_status))
         .route("/overlap", get(get_overlap))
         .route("/summary", get(get_portfolio_summary))
-        .route("/manual-asset", post(create_manual_asset))
-        .route("/manual-asset/{folioId}", delete(delete_manual_asset))
-        .route("/folio/{folioId}", delete(delete_folio))
-        .route("/folio/{folioId}/close", post(close_folio))
-        .route("/purge", delete(purge_user_data))
-        .route("/tax-impact", get(get_tax_impact_query))
-        .route("/{id}/tax-impact", get(get_tax_summary))
-        .route("/{id}/tax-summary", get(get_tax_summary))
+        .route("/manual-asset", post(manual_assets::create_manual_asset))
+        .route(
+            "/manual-asset/{folioId}",
+            delete(manual_assets::delete_manual_asset),
+        )
+        .route("/folio/{folioId}", delete(folios::delete_folio))
+        .route("/folio/{folioId}/close", post(folios::close_folio))
+        .route("/purge", delete(folios::purge_user_data))
+        .route("/tax-impact", get(tax_summary::get_tax_impact_query))
+        .route("/{id}/tax-impact", get(tax_summary::get_tax_summary))
+        .route("/{id}/tax-summary", get(tax_summary::get_tax_summary))
+        .route("/{id}/tax-report.csv", get(tax_summary::get_tax_report_csv))
         .route("/{id}/xray", get(get_xray))
         .route("/{id}/exposures", get(get_exposures))
-        .route("/{id}/history", get(get_history))
-        .route("/{id}/stats", get(get_stats))
+        .route("/{id}/history", get(history::get_history))
+        .route("/{id}/stats", get(history::get_stats))
         .route("/{id}/summary", get(get_summary))
 }

@@ -27,10 +27,6 @@ reqwest.workspace = true
 tracing.workspace = true
 ts-rs = { workspace = true }
 
-tower = { version = "0.5", features = ["util"] }
-
-http-body-util = "0.1"
-
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

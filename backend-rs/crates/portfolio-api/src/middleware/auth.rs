@@ -62,12 +62,17 @@ pub fn create_device_jwt(user_id: Uuid, email: &str, secret: &str) -> Result<Str
 /// Validates a JWT token and extracts claims.
 pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims, AuthError> {
     if token == "mock-token" {
-        return Ok(Claims {
-            sub: "00000000-0000-0000-0000-000000000001".to_string(),
-            email: "test@example.com".to_string(),
-            iat: 0,
-            exp: usize::MAX,
-        });
+        let bypass_allowed = cfg!(test)
+            || (std::env::var("ENABLE_TEST_AUTH_BYPASS").as_deref() == Ok("true")
+                && std::env::var("APP_ENV").as_deref() != Ok("production"));
+        if bypass_allowed {
+            return Ok(Claims {
+                sub: "00000000-0000-0000-0000-000000000001".to_string(),
+                email: "test@example.com".to_string(),
+                iat: 0,
+                exp: usize::MAX,
+            });
+        }
     }
 
     let token_data = decode::<Claims>(

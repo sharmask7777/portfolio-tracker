@@ -1308,9 +1308,19 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let goals_json = parse_json(goals_res.into_body()).await;
     assert!(goals_json.is_array());
 
-    // 13. Call POST /api/health/test-id/goals with string targetAmount. Assert 200 OK.
+    // 13. Create a portfolio for the user, then call POST /api/health/{portfolioId}/goals with string targetAmount. Assert 200 OK.
+    let create_p_req = Request::builder()
+        .uri("/api/portfolio")
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "name": "Goal Portfolio" }).to_string()))
+        .unwrap();
+    let create_p_res = app.clone().oneshot(create_p_req).await.unwrap();
+    let create_p_json = parse_json(create_p_res.into_body()).await;
+    let goal_portfolio_id = create_p_json["id"].as_str().unwrap();
     let goal_create_req = Request::builder()
-        .uri("/api/health/test-id/goals")
+        .uri(format!("/api/health/{goal_portfolio_id}/goals"))
         .method("POST")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .header(header::CONTENT_TYPE, "application/json")
@@ -1705,6 +1715,21 @@ async fn test_exposures_exclude_arbitrage_query_param() {
     );
 }
 
+async fn get_test_token(app: &axum::Router) -> String {
+    let email = format!("fh_{}@example.com", Uuid::new_v4());
+    let req = Request::builder()
+        .uri("/api/auth/register")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({ "email": email, "password": "Password123!" }).to_string(),
+        ))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let body = parse_json(res.into_body()).await;
+    body["token"].as_str().unwrap().to_string()
+}
+
 #[tokio::test]
 async fn test_ingest_fund_holdings_success() {
     let (app, _, _) = setup_test_app();
@@ -1731,6 +1756,10 @@ async fn test_ingest_fund_holdings_success() {
 
     let req = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(payload.to_string()))
@@ -1765,6 +1794,10 @@ async fn test_ingest_fund_holdings_validation_failure() {
 
     let req1 = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(empty_isin_payload.to_string()))
@@ -1783,6 +1816,10 @@ async fn test_ingest_fund_holdings_validation_failure() {
 
     let req2 = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(empty_holdings_payload.to_string()))
@@ -1806,6 +1843,10 @@ async fn test_ingest_fund_holdings_validation_failure() {
 
     let req3 = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(zero_weight_payload.to_string()))
@@ -1841,6 +1882,10 @@ async fn test_get_fund_holdings_by_isin() {
 
     let ingest_req = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(payload.to_string()))
@@ -1851,6 +1896,10 @@ async fn test_get_fund_holdings_by_isin() {
 
     let get_req = Request::builder()
         .uri("/api/fund-holdings/INF209K01157")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("GET")
         .body(Body::empty())
         .unwrap();
@@ -1878,6 +1927,10 @@ async fn test_get_fund_holdings_empty_when_not_found() {
 
     let req = Request::builder()
         .uri("/api/fund-holdings/INF999999999")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("GET")
         .body(Body::empty())
         .unwrap();
@@ -2033,6 +2086,10 @@ async fn test_dynamic_exposure_uses_db_holdings_when_available() {
     });
     let ingest_req = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(ingest_payload.to_string()))

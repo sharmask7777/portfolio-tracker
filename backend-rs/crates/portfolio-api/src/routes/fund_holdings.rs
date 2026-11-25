@@ -14,6 +14,7 @@ use portfolio_db::error::DbError;
 use portfolio_db::repositories::{FundHoldingsRepository, SqlxFundHoldingsRepo};
 
 use crate::errors::ApiError;
+use crate::middleware::AuthUser;
 use crate::state::{AppState, DbBackend};
 
 fn default_sector() -> String {
@@ -89,7 +90,7 @@ async fn upsert_holdings(state: &AppState, holdings: &[FundHoldingEntity]) -> Re
 }
 
 /// Dispatches fund holdings retrieval to the active database backend (in-memory or postgres).
-async fn get_latest_holdings(
+pub(crate) async fn get_latest_holdings(
     state: &AppState,
     isin: &str,
 ) -> Result<Vec<FundHoldingEntity>, DbError> {
@@ -111,6 +112,7 @@ async fn get_latest_holdings(
 ///
 /// Upserts records into PostgreSQL `FundHolding` or in-memory mock store.
 pub async fn ingest_fund_holdings(
+    _auth_user: AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<IngestFundHoldingsRequest>,
 ) -> Result<Json<IngestFundHoldingsResponse>, ApiError> {
@@ -161,6 +163,7 @@ pub async fn ingest_fund_holdings(
 
 /// Route handler for `GET /api/fund-holdings/:isin` retrieving latest disclosed holdings for a mutual fund scheme.
 pub async fn get_fund_holdings(
+    _auth_user: AuthUser,
     State(state): State<AppState>,
     Path(isin): Path<String>,
 ) -> Result<Json<Vec<FundHoldingDto>>, ApiError> {

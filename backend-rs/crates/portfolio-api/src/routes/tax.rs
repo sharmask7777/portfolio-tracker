@@ -498,7 +498,6 @@ pub async fn get_harvesting(
     Query(query): Query<HarvestingQuery>,
 ) -> Result<Json<HarvestTicketResponse>, ApiError> {
     let as_of = query.as_of.unwrap_or_else(|| Utc::now().date_naive());
-    let realized_ltcg = Money::new(query.realized_ltcg.unwrap_or(Decimal::ZERO));
 
     let portfolios = if let Some(ref scope_id) = query.scope_id {
         resolve_target_portfolios(&state, auth_user.user_id, scope_id).await?
@@ -506,9 +505,28 @@ pub async fn get_harvesting(
         fetch_user_portfolios(&state, auth_user.user_id).await?
     };
 
+    let profiles = crate::routes::portfolio::fetch_user_managed_profiles(&state, auth_user.user_id)
+        .await
+        .unwrap_or_default();
+    let default_slab = Decimal::new(30, 2);
+
+    let fy_start_year = if chrono::Datelike::month(&as_of) >= 4 {
+        chrono::Datelike::year(&as_of)
+    } else {
+        chrono::Datelike::year(&as_of) - 1
+    };
+    let fy_start = chrono::NaiveDate::from_ymd_opt(fy_start_year, 4, 1).unwrap_or(as_of);
+    let fy_end = chrono::NaiveDate::from_ymd_opt(fy_start_year + 1, 3, 31).unwrap_or(as_of);
+
+    let mut computed_realized_ltcg = Decimal::ZERO;
     let mut folio_data = Vec::new();
 
     for portfolio in &portfolios {
+        let tax_slab = portfolio
+            .managed_profile_id
+            .and_then(|pid| profiles.iter().find(|p| p.id == pid))
+            .map_or(default_slab, |p| p.tax_slab);
+
         let folios = fetch_folios_for_portfolio(&state, portfolio.id).await?;
         for folio in folios {
             let Some(asset) = fetch_asset_for_folio(&state, folio.asset_id).await? else {
@@ -534,6 +552,25 @@ pub async fn get_harvesting(
                 .parse::<AssetType>()
                 .unwrap_or(AssetType::MutualFund);
 
+            if query.realized_ltcg.is_none() && !core_txs.is_empty() {
+                let tax_summary = portfolio_core::tax::calculate_portfolio_tax(
+                    &asset.name,
+                    asset_type,
+                    &core_txs,
+                    current_nav,
+                    tax_slab,
+                    None,
+                );
+                for detail in tax_summary.realized.details {
+                    if detail.sell_date >= fy_start
+                        && detail.sell_date <= fy_end
+                        && detail.tax_type == portfolio_core::tax::TaxType::Ltcg
+                    {
+                        computed_realized_ltcg += detail.gain.to_decimal();
+                    }
+                }
+            }
+
             folio_data.push((
                 folio.id.to_string(),
                 folio.number,
@@ -545,6 +582,8 @@ pub async fn get_harvesting(
             ));
         }
     }
+
+    let realized_ltcg = Money::new(query.realized_ltcg.unwrap_or(computed_realized_ltcg));
 
     let inputs: Vec<FolioHarvestingInput<'_>> = folio_data
         .iter()

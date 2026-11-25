@@ -4,7 +4,6 @@
 //! hermetic contract parity, and integration with `portfolio-core` and `portfolio-db`.
 
 #![forbid(unsafe_code)]
-#![allow(missing_docs)]
 
 pub mod errors;
 pub mod middleware;

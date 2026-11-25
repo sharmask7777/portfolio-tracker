@@ -252,8 +252,9 @@ pub fn consolidate_by_scheme(folios: &[Folio], current_nav: Nav) -> Vec<Consolid
 
 /// Consolidated scheme DTO with true multi-folio cash-flow XIRR, post-tax XIRR,
 /// active/closed status, day change, and deterministic sorting keys for web & mobile clients.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct ConsolidatedSchemeDto {
     /// Optional ISIN of the scheme.
     pub isin: Option<Isin>,
@@ -268,8 +269,10 @@ pub struct ConsolidatedSchemeDto {
     /// Absolute unrealized/total gain (`total_current_value - total_invested_amount`).
     pub absolute_gain: Money,
     /// True multi-folio cash-flow XIRR (percentage, e.g. `12.5` for `12.5%`).
+    #[ts(type = "number | null")]
     pub xirr: Option<rust_decimal::Decimal>,
     /// Post-tax XIRR (percentage) after accounting for unrealized/realized tax drag.
+    #[ts(type = "number | null")]
     pub post_tax_xirr: Option<rust_decimal::Decimal>,
     /// Whether the scheme is currently active (`total_units > 0`).
     pub is_active: bool,
@@ -280,6 +283,7 @@ pub struct ConsolidatedSchemeDto {
     /// Number of constituent folios.
     pub folio_count: usize,
     /// Constituent folios.
+    #[ts(type = "unknown[]")]
     pub folios: Vec<Folio>,
 }
 

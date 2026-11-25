@@ -35,7 +35,7 @@ pub async fn list_profiles(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ManagedProfileEntity>>, ApiError> {
     if let Some(pool) = state.pool() {
-        let mut profiles = sqlx::query_as::<_, ManagedProfileEntity>(
+        let profiles = sqlx::query_as::<_, ManagedProfileEntity>(
             r#"
             SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
                    "createdAt" AT TIME ZONE 'UTC' as "createdAt",
@@ -49,39 +49,6 @@ pub async fn list_profiles(
         .fetch_all(pool)
         .await
         .map_err(portfolio_db::error::DbError::from)?;
-
-        // If mock user has no profiles in Postgres, fallback to primary user's profiles
-        if profiles.is_empty()
-            && auth_user.user_id
-                == Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap_or_default()
-        {
-            let maybe_first_user = sqlx::query_scalar::<_, String>(
-                r#"
-                SELECT "userId" FROM "ManagedProfile" GROUP BY "userId" ORDER BY count(*) DESC LIMIT 1
-                "#,
-            )
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-
-            if let Some(first_user_id) = maybe_first_user {
-                profiles = sqlx::query_as::<_, ManagedProfileEntity>(
-                    r#"
-                    SELECT id::uuid, "userId"::uuid, name, pan, "taxSlab"::numeric as "taxSlab",
-                           "createdAt" AT TIME ZONE 'UTC' as "createdAt",
-                           "updatedAt" AT TIME ZONE 'UTC' as "updatedAt"
-                    FROM "ManagedProfile"
-                    WHERE "userId" = $1
-                    ORDER BY "createdAt" ASC
-                    "#,
-                )
-                .bind(first_user_id)
-                .fetch_all(pool)
-                .await
-                .map_err(portfolio_db::error::DbError::from)?;
-            }
-        }
 
         Ok(Json(profiles))
     } else {
