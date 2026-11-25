@@ -38,7 +38,6 @@ pub async fn upsert_postgres_profile(
     }
 
     let new_id = Uuid::new_v4();
-    let slab_f64 = tax_slab.to_string().parse::<f64>().unwrap_or(0.3);
 
     let profile_id_str = sqlx::query_scalar::<_, String>(
         r#"
@@ -52,7 +51,7 @@ pub async fn upsert_postgres_profile(
     .bind(name)
     .bind(pan)
     .bind(user_id.to_string())
-    .bind(slab_f64)
+    .bind(tax_slab)
     .fetch_one(pool)
     .await?;
 
@@ -306,10 +305,6 @@ pub async fn insert_postgres_transaction(
     external_id: &str,
 ) -> Result<(), DbError> {
     let date_timestamp = date.and_hms_opt(0, 0, 0).unwrap_or_default();
-    let amount_f64 = amount.to_string().parse::<f64>().unwrap_or(0.0);
-    let units_f64 = units.to_string().parse::<f64>().unwrap_or(0.0);
-    let nav_f64 = nav.to_string().parse::<f64>().unwrap_or(0.0);
-    let balance_f64 = balance.to_string().parse::<f64>().unwrap_or(0.0);
 
     // Deduplication check: verify if an identical transaction already exists for this folio on this date
     // with the same type and magnitude of amount, units, and balance (handling positive vs negative signs across legacy imports and CAS formats).
@@ -328,9 +323,9 @@ pub async fn insert_postgres_transaction(
     .bind(folio_id.to_string())
     .bind(date_timestamp)
     .bind(tx_type)
-    .bind(amount_f64)
-    .bind(units_f64)
-    .bind(balance_f64)
+    .bind(amount)
+    .bind(units)
+    .bind(balance)
     .fetch_optional(pool)
     .await?;
 
@@ -351,10 +346,10 @@ pub async fn insert_postgres_transaction(
     .bind(new_id.to_string())
     .bind(date_timestamp)
     .bind(tx_type)
-    .bind(amount_f64)
-    .bind(units_f64)
-    .bind(nav_f64)
-    .bind(balance_f64)
+    .bind(amount)
+    .bind(units)
+    .bind(nav)
+    .bind(balance)
     .bind(folio_id.to_string())
     .bind(external_id)
     .execute(pool)
@@ -414,8 +409,6 @@ pub async fn upsert_portfolio_history(
     value: Decimal,
     cost: Decimal,
 ) -> Result<(), DbError> {
-    let val_f64 = value.to_string().parse::<f64>().unwrap_or(0.0);
-    let cost_f64 = cost.to_string().parse::<f64>().unwrap_or(0.0);
     let date_timestamp = date.and_hms_opt(0, 0, 0).unwrap_or_default();
 
     sqlx::query(
@@ -430,8 +423,8 @@ pub async fn upsert_portfolio_history(
     .bind(id.to_string())
     .bind(portfolio_id.to_string())
     .bind(date_timestamp)
-    .bind(val_f64)
-    .bind(cost_f64)
+    .bind(value)
+    .bind(cost)
     .execute(pool)
     .await?;
 

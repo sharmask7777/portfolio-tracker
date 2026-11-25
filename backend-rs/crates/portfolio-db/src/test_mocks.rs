@@ -18,18 +18,20 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::entities::{
-    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, FundHoldingEntity,
-    HistoricalNavEntity, HistoricalValuationEntity, ManagedProfileEntity, PortfolioEntity,
-    StockMetadataEntity, TransactionEntity, UploadJobEntity, UploadJobStatus, UserEntity,
+    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, FundHoldingEntity, GoalEntity,
+    HistoricalNavEntity, HistoricalValuationEntity, ManagedProfileEntity, PortfolioBundle,
+    PortfolioEntity, StockMetadataEntity, TransactionEntity, UploadJobEntity, UploadJobStatus,
+    UserEntity,
 };
 use crate::error::DbError;
 use crate::repositories::{
-    FamilyRepository, FundHoldingsRepository, PortfolioRepository, StockMetadataRepository,
+    FamilyRepository, FundHoldingsRepository, GoalRepository, PeakValuation,
+    PortfolioHistoryRepository, PortfolioRepository, StockMetadataRepository,
     TransactionRepository,
 };
 
@@ -62,6 +64,8 @@ pub struct InMemoryDatabaseState {
     pub fund_holdings: HashMap<(String, NaiveDate, String), FundHoldingEntity>,
     /// Table storing equity classification master data keyed by ISIN.
     pub stock_metadata: HashMap<String, StockMetadataEntity>,
+    /// Table storing financial goals keyed by goal ID.
+    pub goals: HashMap<String, GoalEntity>,
 }
 
 /// Thread-safe in-memory database mock.
@@ -744,7 +748,110 @@ impl PortfolioRepository for InMemoryDatabase {
         // Delete folios
         state.folios.retain(|_, folio| folio.portfolio_id != id);
 
+        // Delete historical valuations and goals for this portfolio
+        state.historical_valuations.retain(|(pid, _), _| *pid != id);
+        let id_str = id.to_string();
+        state.goals.retain(|_, goal| goal.portfolio_id != id_str);
+
         Ok(())
+    }
+
+    async fn fetch_portfolio_bundle(&self, id: Uuid) -> Result<Option<PortfolioBundle>, DbError> {
+        let state = self.state.read().expect("lock poisoned");
+        let Some(portfolio) = state.portfolios.get(&id).cloned() else {
+            return Ok(None);
+        };
+
+        let folios: Vec<FolioEntity> = state
+            .folios
+            .values()
+            .filter(|f| f.portfolio_id == id)
+            .cloned()
+            .collect();
+
+        let asset_ids: HashSet<Uuid> = folios.iter().map(|f| f.asset_id).collect();
+        let folio_ids: HashSet<Uuid> = folios.iter().map(|f| f.id).collect();
+
+        let assets: Vec<AssetEntity> = state
+            .assets
+            .values()
+            .filter(|a| asset_ids.contains(&a.id))
+            .cloned()
+            .collect();
+
+        let mut transactions: Vec<TransactionEntity> = state
+            .transactions
+            .values()
+            .filter(|t| folio_ids.contains(&t.folio_id))
+            .cloned()
+            .collect();
+        transactions.sort_by_key(|t| t.date);
+
+        Ok(Some(PortfolioBundle {
+            portfolio,
+            folios,
+            assets,
+            transactions,
+        }))
+    }
+
+    async fn create_manual_asset(
+        &self,
+        portfolio_id: Uuid,
+        asset_type: &str,
+        name: &str,
+        amount: Decimal,
+        units: Decimal,
+        nav: Decimal,
+        date: DateTime<Utc>,
+    ) -> Result<(AssetEntity, FolioEntity, TransactionEntity), DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        let now = Utc::now();
+        let asset_id = Uuid::new_v4();
+        let folio_id = Uuid::new_v4();
+        let tx_id = Uuid::new_v4();
+        let folio_number = format!("MANUAL-{}", &asset_id.to_string()[..8]);
+
+        let asset = AssetEntity {
+            id: asset_id,
+            asset_type: asset_type.to_string(),
+            name: name.to_string(),
+            isin: None,
+            amfi_code: None,
+            symbol: None,
+            exit_load_metadata: None,
+            created_at: now,
+            updated_at: now,
+        };
+        let folio = FolioEntity {
+            id: folio_id,
+            number: folio_number,
+            amc: None,
+            pan: None,
+            portfolio_id,
+            asset_id,
+            created_at: now,
+            updated_at: now,
+        };
+        let transaction = TransactionEntity {
+            id: tx_id,
+            date: date.date_naive(),
+            tx_type: "PURCHASE".to_string(),
+            amount,
+            units,
+            nav,
+            balance: amount,
+            folio_id,
+            external_id: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        state.assets.insert(asset_id, asset.clone());
+        state.folios.insert(folio_id, folio.clone());
+        state.transactions.insert(tx_id, transaction.clone());
+
+        Ok((asset, folio, transaction))
     }
 }
 
@@ -1039,5 +1146,154 @@ impl StockMetadataRepository for InMemoryDatabase {
     async fn get_all_as_map(&self) -> Result<HashMap<String, StockMetadataEntity>, DbError> {
         let state = self.state.read().expect("lock poisoned");
         Ok(state.stock_metadata.clone())
+    }
+}
+
+#[async_trait]
+impl GoalRepository for InMemoryDatabase {
+    async fn create_goal(
+        &self,
+        portfolio_id: &str,
+        name: &str,
+        target_amount: Decimal,
+        target_date: DateTime<Utc>,
+    ) -> Result<GoalEntity, DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        let now = Utc::now();
+        let goal = GoalEntity {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            target_amount,
+            target_date,
+            portfolio_id: portfolio_id.to_string(),
+            created_at: now,
+            updated_at: now,
+        };
+        state.goals.insert(goal.id.clone(), goal.clone());
+        Ok(goal)
+    }
+
+    async fn list_goals(&self, portfolio_id: &str) -> Result<Vec<GoalEntity>, DbError> {
+        let state = self.state.read().expect("lock poisoned");
+        let mut goals: Vec<GoalEntity> = state
+            .goals
+            .values()
+            .filter(|g| g.portfolio_id == portfolio_id)
+            .cloned()
+            .collect();
+        goals.sort_by(|a, b| {
+            a.target_date
+                .cmp(&b.target_date)
+                .then_with(|| a.created_at.cmp(&b.created_at))
+        });
+        Ok(goals)
+    }
+
+    async fn update_goal(
+        &self,
+        goal_id: &str,
+        name: &str,
+        target_amount: Decimal,
+        target_date: DateTime<Utc>,
+    ) -> Result<GoalEntity, DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        let goal = state
+            .goals
+            .get_mut(goal_id)
+            .ok_or_else(|| DbError::NotFound(format!("Goal {goal_id} not found")))?;
+        goal.name = name.to_string();
+        goal.target_amount = target_amount;
+        goal.target_date = target_date;
+        goal.updated_at = Utc::now();
+        Ok(goal.clone())
+    }
+
+    async fn delete_goal(&self, goal_id: &str) -> Result<bool, DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        Ok(state.goals.remove(goal_id).is_some())
+    }
+}
+
+#[async_trait]
+impl PortfolioHistoryRepository for InMemoryDatabase {
+    async fn get_aggregated_history(
+        &self,
+        portfolio_ids: &[String],
+        from_date: Option<NaiveDate>,
+        to_date: Option<NaiveDate>,
+    ) -> Result<Vec<HistoricalValuationEntity>, DbError> {
+        if portfolio_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let state = self.state.read().expect("lock poisoned");
+        let pids: Vec<Uuid> = portfolio_ids
+            .iter()
+            .filter_map(|s| Uuid::parse_str(s).ok())
+            .collect();
+
+        let mut dates: Vec<NaiveDate> = state
+            .historical_valuations
+            .iter()
+            .filter(|((pid, _), val)| {
+                pids.contains(pid)
+                    && from_date.is_none_or(|f| val.date >= f)
+                    && to_date.is_none_or(|t| val.date <= t)
+            })
+            .map(|((_, d), _)| *d)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        dates.sort();
+
+        let mut result = Vec::with_capacity(dates.len());
+        for d in dates {
+            let mut total_val = Decimal::ZERO;
+            let mut total_inv = Decimal::ZERO;
+            let mut latest_created = Utc::now();
+            let mut first_id = Uuid::nil();
+
+            for pid in &pids {
+                if let Some((_, v)) = state
+                    .historical_valuations
+                    .iter()
+                    .filter(|((p, vd), _)| p == pid && *vd <= d)
+                    .max_by_key(|((_, vd), _)| *vd)
+                {
+                    if first_id.is_nil() {
+                        first_id = v.id;
+                    }
+                    total_val += v.value;
+                    total_inv += v.cost;
+                    latest_created = v.created_at;
+                }
+            }
+
+            result.push(HistoricalValuationEntity {
+                id: first_id,
+                portfolio_id: pids.first().copied().unwrap_or_else(Uuid::nil),
+                date: d,
+                value: total_val,
+                cost: total_inv,
+                created_at: latest_created,
+            });
+        }
+
+        Ok(result)
+    }
+
+    async fn get_peak_valuation(
+        &self,
+        portfolio_ids: &[String],
+    ) -> Result<Option<PeakValuation>, DbError> {
+        let history = self
+            .get_aggregated_history(portfolio_ids, None, None)
+            .await?;
+        Ok(history
+            .into_iter()
+            .max_by(|a, b| a.value.cmp(&b.value).then_with(|| a.date.cmp(&b.date)))
+            .map(|h| PeakValuation {
+                value: h.value,
+                date: h.date,
+            }))
     }
 }

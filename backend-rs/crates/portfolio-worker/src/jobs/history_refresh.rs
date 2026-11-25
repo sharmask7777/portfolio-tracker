@@ -20,6 +20,7 @@ use crate::jobs::timeline_policy::is_checkpoint_date;
 pub struct FolioTrackingState {
     pub active_units: Units,
     pub latest_nav: Nav,
+    pub latest_nav_date: Option<NaiveDate>,
     pub fifo_lots: Vec<TaxLot>,
     pub invested_cost: Money,
 }
@@ -190,6 +191,7 @@ pub async fn process_history_refresh_job_with_pool(
 
                 if tx_nav.is_positive() {
                     folio_state.latest_nav = tx_nav;
+                    folio_state.latest_nav_date = Some(tx.date);
                 }
 
                 if is_inflow {
@@ -242,10 +244,13 @@ pub async fn process_history_refresh_job_with_pool(
                 if state.active_units.is_positive()
                     && let Some(amfi_code) = folio_amfi_map.get(folio_id)
                     && let Some(nav_map) = scheme_nav_history.get(amfi_code)
-                    && let Some((_, &market_nav)) = nav_map.range(..=current_date).next_back()
+                    && let Some((&nav_date, &market_nav)) =
+                        nav_map.range(..=current_date).next_back()
                     && market_nav > Decimal::ZERO
+                    && state.latest_nav_date.is_none_or(|d| nav_date >= d)
                 {
                     state.latest_nav = Nav::new(market_nav);
+                    state.latest_nav_date = Some(nav_date);
                 }
             }
 

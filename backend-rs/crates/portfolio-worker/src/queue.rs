@@ -155,7 +155,9 @@ impl RedisBullQueue {
 impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> JobQueue<T> for RedisBullQueue {
     async fn enqueue(&self, job: T) -> Result<String, WorkerError> {
         let mut guard = self.get_connection().await?;
-        let conn = guard.as_mut().expect("multiplexed connection initialized");
+        let conn = guard.as_mut().ok_or_else(|| {
+            WorkerError::Redis("multiplexed connection not initialized".to_string())
+        })?;
 
         let job_id: i64 = redis::cmd("INCR")
             .arg(self.id_key())
@@ -191,7 +193,9 @@ impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> JobQueue<T> for Re
 
     async fn dequeue(&self) -> Result<Option<T>, WorkerError> {
         let mut guard = self.get_connection().await?;
-        let conn = guard.as_mut().expect("multiplexed connection initialized");
+        let conn = guard.as_mut().ok_or_else(|| {
+            WorkerError::Redis("multiplexed connection not initialized".to_string())
+        })?;
 
         // BullMQ FIFO convention: RPOP on dequeue
         let job_id_opt: Option<String> = redis::cmd("RPOP")

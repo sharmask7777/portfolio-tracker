@@ -450,6 +450,50 @@ pub struct StockMetadataEntity {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Database entity for the `"Goal"` table representing a financial goal.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalEntity {
+    /// Unique identifier for the goal.
+    pub id: String,
+    /// Human-readable goal name.
+    pub name: String,
+    /// Target monetary amount in INR.
+    #[sqlx(rename = "targetAmount")]
+    #[serde(rename = "targetAmount", alias = "target_amount")]
+    pub target_amount: Decimal,
+    /// Target date by which the goal should be achieved.
+    #[sqlx(rename = "targetDate")]
+    #[serde(rename = "targetDate", alias = "target_date")]
+    pub target_date: DateTime<Utc>,
+    /// Foreign key to the owning `Portfolio`.
+    #[sqlx(rename = "portfolioId")]
+    #[serde(rename = "portfolioId", alias = "portfolio_id")]
+    pub portfolio_id: String,
+    /// Timestamp when record was created.
+    #[sqlx(rename = "createdAt")]
+    #[serde(rename = "createdAt", alias = "created_at")]
+    pub created_at: DateTime<Utc>,
+    /// Timestamp when record was last updated.
+    #[sqlx(rename = "updatedAt")]
+    #[serde(rename = "updatedAt", alias = "updated_at")]
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Batched portfolio data bundle fetched in a single round-trip or minimal queries.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioBundle {
+    /// The portfolio entity.
+    pub portfolio: PortfolioEntity,
+    /// All folios belonging to this portfolio.
+    pub folios: Vec<FolioEntity>,
+    /// All assets referenced by the folios.
+    pub assets: Vec<AssetEntity>,
+    /// All transactions across the portfolio's folios.
+    pub transactions: Vec<TransactionEntity>,
+}
+
 // ---------------------------------------------------------------------------
 // Conversion to / from portfolio-core domain models
 // ---------------------------------------------------------------------------

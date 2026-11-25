@@ -199,7 +199,7 @@ async fn test_cas_upload_job_processing_success() {
     assert_eq!(txs1.len(), 2);
     assert_eq!(txs1[0].tx_type, "PURCHASE");
     assert_eq!(txs1[0].units, dec("100.0"));
-    assert_eq!(txs1[1].tx_type, "PURCHASE_SIP");
+    assert_eq!(txs1[1].tx_type, "SIP");
     assert_eq!(txs1[1].units, dec("50.0"));
 
     // Family Member profile (ALPAC1001A)
@@ -328,11 +328,12 @@ async fn test_nav_refresh_job_processing() {
         }
     }
     let job_default = NavRefreshJobData::new("120716");
-    let rec_default = process_nav_refresh_job(&job_default, &db)
-        .await
-        .expect("Default NAV refresh should succeed");
-    assert_eq!(rec_default.amfi_code, "120716");
-    assert_eq!(rec_default.nav, dec("100.00"));
+    let err_default = process_nav_refresh_job(&job_default, &db).await;
+    assert!(
+        err_default.is_err(),
+        "Should fail rather than fabricating 100.00 NAV"
+    );
+    assert!(db.list_navs("120716").is_empty());
 
     // 3. Validation: Non-numeric AMFI code must fail
     let invalid_job = NavRefreshJobData::new("AMFI_INVALID_ABC");
@@ -439,13 +440,13 @@ async fn test_process_nav_refresh_job_fallback_when_http_fails() {
     let db = InMemoryDatabase::new();
     let job_data = NavRefreshJobData::new("118989");
 
-    // Must fallback gracefully to default 100.00 without panicking
-    let record = process_nav_refresh_job(&job_data, &db)
-        .await
-        .expect("NAV refresh fallback should succeed");
-
-    assert_eq!(record.amfi_code, "118989");
-    assert_eq!(record.nav, dec("100.00"));
+    // Must fail without fabricating synthetic 100.00 NAV
+    let res = process_nav_refresh_job(&job_data, &db).await;
+    assert!(
+        res.is_err(),
+        "Should fail instead of writing synthetic 100.00 NAV"
+    );
+    assert!(db.list_navs("118989").is_empty());
 }
 
 #[tokio::test]
@@ -1065,7 +1066,7 @@ async fn test_cas_upload_deduplication_and_sub_account_normalization() {
         .iter()
         .find(|t| t.amount == rust_decimal::Decimal::new(25, 2))
         .expect("stamp duty tx exists");
-    assert_eq!(stamp_tx.tx_type, "STAMP_DUTY_TAX");
+    assert_eq!(stamp_tx.tx_type, "STAMP_DUTY");
 
     // Verify deduplication resilience against sign discrepancies (negative vs positive amounts/units)
     let has_dup = db.has_duplicate_transaction(
@@ -1505,5 +1506,28 @@ async fn test_cas_upload_preserves_legitimate_same_day_sips_with_distinct_balanc
         units.to_decimal(),
         dec("100.0"),
         "Total active units from both SIPs must be 100"
+    );
+}
+
+#[test]
+fn test_cas_tx_type_normalization_edge_cases() {
+    use portfolio_core::parser::normalize_cas_tx_type;
+    assert_eq!(normalize_cas_tx_type("SIP REVERSAL"), "REVERSAL");
+    assert_eq!(normalize_cas_tx_type("SWP"), "SWP");
+    assert_eq!(normalize_cas_tx_type("STP IN"), "STP_IN");
+    assert_eq!(normalize_cas_tx_type("STP"), "OTHER");
+    assert_eq!(normalize_cas_tx_type("BONUS"), "BONUS");
+    assert_eq!(
+        normalize_cas_tx_type("Purchase - Reinvest"),
+        "DIVIDEND_REINVEST"
+    );
+}
+
+#[test]
+fn test_validate_file_path_rejects_etc_uploads_traversal() {
+    let err = validate_file_path("/etc/uploads/passwd").unwrap_err();
+    assert!(
+        matches!(err, WorkerError::ValidationError(_)),
+        "Expected ValidationError for /etc/uploads/passwd, got {err:?}"
     );
 }
