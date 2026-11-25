@@ -56,6 +56,7 @@ export function useDashboardController() {
     data.setXRayData(null);
     data.setExposures([]);
     data.setTaxSummary(null);
+    data.setSelectedTaxFY(null);
     data.setHarvesting(null);
     sel.setSelectedFamilyId(null);
   }, [data, sel]);

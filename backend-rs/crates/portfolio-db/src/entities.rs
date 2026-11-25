@@ -372,6 +372,46 @@ pub struct HistoricalValuationEntity {
     pub created_at: DateTime<Utc>,
 }
 
+/// Database entity for the `"Goal"` table representing a financial target linked to a portfolio.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalEntity {
+    /// Unique goal UUID primary key.
+    pub id: Uuid,
+    /// Foreign key referencing the parent `"Portfolio"`.
+    #[sqlx(rename = "portfolioId")]
+    #[serde(rename = "portfolioId", alias = "portfolio_id")]
+    pub portfolio_id: Uuid,
+    /// Descriptive name of the financial goal (e.g., "Retirement", "Child Education").
+    pub name: String,
+    /// Target corpus amount in INR.
+    #[sqlx(rename = "targetAmount")]
+    #[serde(rename = "targetAmount", alias = "target_amount")]
+    pub target_amount: Decimal,
+    /// Target achievement date.
+    #[sqlx(rename = "targetDate")]
+    #[serde(rename = "targetDate", alias = "target_date")]
+    pub target_date: NaiveDate,
+    /// Planned monthly SIP contribution in INR.
+    #[sqlx(rename = "monthlySip")]
+    #[serde(rename = "monthlySip", alias = "monthly_sip")]
+    pub monthly_sip: Decimal,
+    /// Goal priority tier (e.g., "HIGH", "MEDIUM", "LOW").
+    pub priority: String,
+    /// Percentage of the parent portfolio's value allocated to this goal (0..=100).
+    #[sqlx(rename = "allocatedPercentage")]
+    #[serde(rename = "allocatedPercentage", alias = "allocated_percentage")]
+    pub allocated_percentage: Decimal,
+    /// Timestamp when goal record was created.
+    #[sqlx(rename = "createdAt")]
+    #[serde(rename = "createdAt", alias = "created_at")]
+    pub created_at: DateTime<Utc>,
+    /// Timestamp when goal record was last updated.
+    #[sqlx(rename = "updatedAt")]
+    #[serde(rename = "updatedAt", alias = "updated_at")]
+    pub updated_at: DateTime<Utc>,
+}
+
 /// Default fallback sector designation when unclassified in AMC disclosures.
 fn default_fund_holding_sector() -> String {
     "Other".to_string()

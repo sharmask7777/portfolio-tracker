@@ -70,8 +70,13 @@ export interface ServerFolioData {
     currentPrice?: number | undefined;
     dayChange?: number | undefined;
     dayChangePercentage?: number | undefined;
-    xirr?: number | undefined;
+    xirr?: number | null | undefined;
     absoluteReturn?: number | undefined;
+    totalGain?: number | undefined;
+    postTaxXirr?: number | null | undefined;
+    postTaxAbsoluteReturn?: number | null | undefined;
+    estimatedTax?: number | null | undefined;
+    netRealizableValue?: number | null | undefined;
   } | undefined;
   transactions?: ServerTransactionData[] | undefined;
 }
@@ -231,23 +236,31 @@ function extractAssetMeta(serverFolio: ServerFolioData): {
   };
 }
 
-function extractHoldingMetrics(metrics?: ServerFolioData['metrics']): {
-  investedCost: number;
-  dayChange: number;
-  dayChangePct: number;
-  xirr: number;
-  absoluteReturn: number;
-} {
-  if (!metrics) {
-    return { investedCost: 0, dayChange: 0, dayChangePct: 0, xirr: 0, absoluteReturn: 0 };
-  }
+type RawFolioMetrics = NonNullable<ServerFolioData['metrics']>;
+
+function extractBaseMetrics(m: RawFolioMetrics) {
   return {
-    investedCost: Number(metrics.investedAmount || 0),
-    dayChange: metrics.dayChange ?? 0,
-    dayChangePct: metrics.dayChangePercentage ?? 0,
-    xirr: metrics.xirr ?? 0,
-    absoluteReturn: metrics.absoluteReturn ?? 0,
+    investedCost: Number(m.investedAmount || 0),
+    dayChange: m.dayChange ?? 0,
+    dayChangePct: m.dayChangePercentage ?? 0,
+    xirr: m.xirr ?? null,
+    absoluteReturn: m.absoluteReturn ?? 0,
   };
+}
+
+function extractTaxMetrics(m: RawFolioMetrics) {
+  return {
+    totalGain: m.totalGain ?? null,
+    postTaxXirr: m.postTaxXirr ?? null,
+    postTaxAbsoluteReturn: m.postTaxAbsoluteReturn ?? null,
+    estimatedTax: m.estimatedTax ?? null,
+    netRealizableValue: m.netRealizableValue ?? null,
+  };
+}
+
+function extractHoldingMetrics(metrics?: ServerFolioData['metrics']) {
+  const m = metrics ?? {};
+  return { ...extractBaseMetrics(m), ...extractTaxMetrics(m) };
 }
 
 /**
@@ -286,6 +299,11 @@ export function mapRawFolioToHolding(
     xirr: metrics.xirr,
     absolute_return: metrics.absoluteReturn,
     asset_category: serverFolio.assetCategory ?? meta.assetClass,
+    total_gain: metrics.totalGain,
+    post_tax_xirr: metrics.postTaxXirr,
+    post_tax_absolute_return: metrics.postTaxAbsoluteReturn,
+    estimated_tax: metrics.estimatedTax,
+    net_realizable_value: metrics.netRealizableValue,
   };
 }
 

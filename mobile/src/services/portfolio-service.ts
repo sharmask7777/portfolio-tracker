@@ -19,8 +19,21 @@ import {
   type AssetAllocationItem,
   type EnrichedHolding,
 } from './portfolio-calculations';
-import { syncWithServer } from './portfolio-sync-service';
-export { syncWithServer, parseServerPayload, setCachedDrags, getCachedDrags } from './portfolio-sync-service';
+import {
+  syncWithServerWithOptions,
+  type SyncServerOptions,
+} from './portfolio-sync-service';
+export {
+  syncWithServer,
+  parseServerPayload,
+  setCachedDrags,
+  getCachedDrags,
+  getStoredDashboardMetrics,
+  getStoredDashboardBundle,
+  mergeServerMetricsIntoSummary,
+  type SyncServerOptions,
+} from './portfolio-sync-service';
+export type { StoredSummaryEnvelope } from '../db/repository';
 export {
   simulateWithdrawal,
   type WithdrawalSimulationParams,
@@ -43,6 +56,11 @@ export interface DashboardSummary {
   lastUpdated: string | null;
   isOfflineFallback: boolean;
   overallXirr?: number | undefined;
+  postTaxXirr?: number | null | undefined;
+  netRealizableValue?: number | undefined;
+  postTaxTotalValue?: number | undefined;
+  estimatedTax?: number | undefined;
+  realPostTaxXirr?: number | null | undefined;
   drags?: DragDecompositionDto | null | undefined;
   metrics?: SummaryMetrics | undefined;
 }
@@ -305,6 +323,7 @@ export async function syncWithPublicFeed(
 
 export async function refreshPortfolio(
   db?: SQLiteDatabase,
+  options?: SyncServerOptions,
 ): Promise<RefreshResult> {
   try {
     const targetDb = await resolveDb(db);
@@ -316,7 +335,12 @@ export async function refreshPortfolio(
       const isReachable = await checkServerReachable(creds.serverUrl);
       if (isReachable) {
         await flushUploadQueue(creds.serverUrl, creds.token, { db: targetDb }).catch(() => {});
-        const synced = await syncWithServer(creds.serverUrl, creds.token, targetDb);
+        const synced = await syncWithServerWithOptions({
+          serverUrl: creds.serverUrl,
+          token: creds.token,
+          targetDb,
+          options,
+        });
         if (synced) return { success: true, source: 'server' };
       }
     }

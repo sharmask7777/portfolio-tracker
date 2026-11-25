@@ -78,6 +78,19 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 4,
   },
+  errorBanner: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    color: '#fca5a5',
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });
 
 function computeUnits(mode: 'units' | 'amount', val: string, price: number): number {
@@ -146,12 +159,14 @@ function useSellSimulation(props: SimulationModalProps) {
   const [mode, setMode] = useState<'units' | 'amount'>('units');
   const [inputVal, setInputVal] = useState(initialUnits ? initialUnits.toString() : '');
   const [result, setResult] = useState<SimulationSellResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (initialUnits) {
       setInputVal(initialUnits.toString());
       setMode('units');
+      setError(null);
     }
   }, [initialUnits]);
 
@@ -160,6 +175,7 @@ function useSellSimulation(props: SimulationModalProps) {
   const handleSimulate = async () => {
     const activeLots = resolveLots({ lots, isElss, unitsToSell, currentNav });
     setLoading(true);
+    setError(null);
     try {
       const res = await simulateWithdrawal({
         folioId,
@@ -172,12 +188,14 @@ function useSellSimulation(props: SimulationModalProps) {
         taxSlab,
       });
       setResult(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Simulation failed');
     } finally {
       setLoading(false);
     }
   };
 
-  return { mode, setMode, inputVal, setInputVal, result, setResult, unitsToSell, handleSimulate, loading };
+  return { mode, setMode, inputVal, setInputVal, result, setResult, error, setError, unitsToSell, handleSimulate, loading };
 }
 
 /**
@@ -187,7 +205,7 @@ function useSellSimulation(props: SimulationModalProps) {
  * @returns React Native modal
  */
 export function SimulationModal(props: SimulationModalProps): React.ReactElement {
-  const { mode, setMode, inputVal, setInputVal, result, setResult, unitsToSell, handleSimulate, loading } =
+  const { mode, setMode, inputVal, setInputVal, result, setResult, error, setError, unitsToSell, handleSimulate, loading } =
     useSellSimulation(props);
 
   return (
@@ -199,6 +217,11 @@ export function SimulationModal(props: SimulationModalProps): React.ReactElement
         >
           <SimulationHeader schemeName={props.schemeName ?? 'Mutual Fund Scheme'} onClose={props.onClose} />
           <ScrollView>
+            {error ? (
+              <View style={styles.errorBanner} testID="simulation-error-banner">
+                <Text style={styles.errorBannerText}>{error}</Text>
+              </View>
+            ) : null}
             {!result ? (
               <SimulationForm
                 mode={mode}
@@ -211,7 +234,13 @@ export function SimulationModal(props: SimulationModalProps): React.ReactElement
                 loading={loading}
               />
             ) : (
-              <SimulationResultView result={result} onReset={() => setResult(null)} />
+              <SimulationResultView
+                result={result}
+                onReset={() => {
+                  setResult(null);
+                  setError(null);
+                }}
+              />
             )}
           </ScrollView>
         </KeyboardAvoidingView>

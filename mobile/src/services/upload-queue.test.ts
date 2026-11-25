@@ -266,6 +266,98 @@ describe('upload-queue service & CAS upload workflow', () => {
       expect(pending).toHaveLength(0);
     });
 
+    it('polls GET /api/portfolio/upload-status/:jobId on 202 Accepted with jobId until COMPLETED', async () => {
+      const item = await enqueueCasUpload(
+        {
+          filePath: 'file:///var/mobile/cas_polled.pdf',
+          fileName: 'cas_polled.pdf',
+          password: 'POLL_SECRET',
+        },
+        db,
+      );
+
+      // 1. POST /api/portfolio/upload -> 202 Accepted with jobId
+      mockFetch.mockResolvedValueOnce({
+        status: 202,
+        ok: true,
+        json: async () => ({ jobId: 'job-uuid-123' }),
+      });
+      // 2. GET /api/portfolio/upload-status/job-uuid-123 -> PROCESSING
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({ id: 'job-uuid-123', status: 'PROCESSING' }),
+      });
+      // 3. GET /api/portfolio/upload-status/job-uuid-123 -> COMPLETED
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({ id: 'job-uuid-123', status: 'COMPLETED' }),
+      });
+
+      const result = await flushUploadQueue(
+        'https://portfolio.test',
+        'device-jwt-token',
+        { db, pollIntervalMs: 0, maxPollAttempts: 5 },
+      );
+
+      expect(result.processed).toBe(1);
+      expect(result.succeeded).toBe(1);
+      expect(result.failed).toBe(0);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch.mock.calls[1]?.[0]).toBe(
+        'https://portfolio.test/api/portfolio/upload-status/job-uuid-123',
+      );
+      expect(mockFetch.mock.calls[2]?.[0]).toBe(
+        'https://portfolio.test/api/portfolio/upload-status/job-uuid-123',
+      );
+
+      const updated = await getQueueItemById(db, item.id);
+      expect(updated?.status).toBe('COMPLETED');
+      expect(mockStorage.has(item.password_key!)).toBe(false);
+    });
+
+    it('marks item FAILED when 202 polling returns FAILED job status', async () => {
+      const item = await enqueueCasUpload(
+        {
+          filePath: 'file:///var/mobile/cas_bad_pwd.pdf',
+          fileName: 'cas_bad_pwd.pdf',
+          password: 'WRONG_PASSWORD',
+        },
+        db,
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        status: 202,
+        ok: true,
+        json: async () => ({ jobId: 'job-uuid-fail' }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          id: 'job-uuid-fail',
+          status: 'FAILED',
+          message: 'Incorrect CAS PDF password',
+        }),
+      });
+
+      const result = await flushUploadQueue(
+        'https://portfolio.test',
+        'device-jwt-token',
+        { db, pollIntervalMs: 0, maxPollAttempts: 5 },
+      );
+
+      expect(result.processed).toBe(1);
+      expect(result.succeeded).toBe(0);
+      expect(result.failed).toBe(1);
+      expect(result.errors[0]).toBe('Incorrect CAS PDF password');
+
+      const updated = await getQueueItemById(db, item.id);
+      expect(updated?.status).toBe('FAILED');
+      expect(mockStorage.get(item.password_key!)).toBe('WRONG_PASSWORD');
+    });
+
     it('flushes pending upload and marks COMPLETED when server responds with 202 Accepted', async () => {
       const item = await enqueueCasUpload(
         {
@@ -302,6 +394,98 @@ describe('upload-queue service & CAS upload workflow', () => {
       // Verify queue is now empty of pending items
       const pending = await getPendingUploads(db);
       expect(pending).toHaveLength(0);
+    });
+
+    it('polls GET /api/portfolio/upload-status/:jobId on 202 Accepted with jobId until COMPLETED', async () => {
+      const item = await enqueueCasUpload(
+        {
+          filePath: 'file:///var/mobile/cas_polled.pdf',
+          fileName: 'cas_polled.pdf',
+          password: 'POLL_SECRET',
+        },
+        db,
+      );
+
+      // 1. POST /api/portfolio/upload -> 202 Accepted with jobId
+      mockFetch.mockResolvedValueOnce({
+        status: 202,
+        ok: true,
+        json: async () => ({ jobId: 'job-uuid-123' }),
+      });
+      // 2. GET /api/portfolio/upload-status/job-uuid-123 -> PROCESSING
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({ id: 'job-uuid-123', status: 'PROCESSING' }),
+      });
+      // 3. GET /api/portfolio/upload-status/job-uuid-123 -> COMPLETED
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({ id: 'job-uuid-123', status: 'COMPLETED' }),
+      });
+
+      const result = await flushUploadQueue(
+        'https://portfolio.test',
+        'device-jwt-token',
+        { db, pollIntervalMs: 0, maxPollAttempts: 5 },
+      );
+
+      expect(result.processed).toBe(1);
+      expect(result.succeeded).toBe(1);
+      expect(result.failed).toBe(0);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch.mock.calls[1]?.[0]).toBe(
+        'https://portfolio.test/api/portfolio/upload-status/job-uuid-123',
+      );
+      expect(mockFetch.mock.calls[2]?.[0]).toBe(
+        'https://portfolio.test/api/portfolio/upload-status/job-uuid-123',
+      );
+
+      const updated = await getQueueItemById(db, item.id);
+      expect(updated?.status).toBe('COMPLETED');
+      expect(mockStorage.has(item.password_key!)).toBe(false);
+    });
+
+    it('marks item FAILED when 202 polling returns FAILED job status', async () => {
+      const item = await enqueueCasUpload(
+        {
+          filePath: 'file:///var/mobile/cas_bad_pwd.pdf',
+          fileName: 'cas_bad_pwd.pdf',
+          password: 'WRONG_PASSWORD',
+        },
+        db,
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        status: 202,
+        ok: true,
+        json: async () => ({ jobId: 'job-uuid-fail' }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          id: 'job-uuid-fail',
+          status: 'FAILED',
+          message: 'Incorrect CAS PDF password',
+        }),
+      });
+
+      const result = await flushUploadQueue(
+        'https://portfolio.test',
+        'device-jwt-token',
+        { db, pollIntervalMs: 0, maxPollAttempts: 5 },
+      );
+
+      expect(result.processed).toBe(1);
+      expect(result.succeeded).toBe(0);
+      expect(result.failed).toBe(1);
+      expect(result.errors[0]).toBe('Incorrect CAS PDF password');
+
+      const updated = await getQueueItemById(db, item.id);
+      expect(updated?.status).toBe('FAILED');
+      expect(mockStorage.get(item.password_key!)).toBe('WRONG_PASSWORD');
     });
 
     it('uses fallback credentials from auth-service if not explicitly provided', async () => {

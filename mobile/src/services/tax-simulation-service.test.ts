@@ -32,7 +32,7 @@ vi.mock('expo-secure-store', () => ({
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-import { simulateWithdrawal } from './tax-simulation-service';
+import { simulateWithdrawal, SimulationBackendError } from './tax-simulation-service';
 
 function createMockRealizedGain(overrides: Partial<RealizedGain> = {}): RealizedGain {
   return {
@@ -315,6 +315,55 @@ describe('Tax Simulation Service (Backend-Shared with Offline Fallback)', () => 
       expect(result.lockedUnits).toBe(100);
       expect(result.unitsSold).toBe(0);
       expect(result.warnings.length).toBeGreaterThan(0);
+    });
+
+    it('surfaces backend HTTP 400 UnitsLocked error instead of falling back to offline simulation', async () => {
+      mockStorage.set('PORTFOLIO_SERVER_URL', 'http://localhost:8080');
+      mockStorage.set('PORTFOLIO_DEVICE_TOKEN', 'token-locked');
+
+      mockFetch.mockResolvedValueOnce({ status: 200, ok: true });
+      mockFetch.mockResolvedValueOnce({
+        status: 400,
+        ok: false,
+        json: async () => ({
+          error: 'Cannot redeem locked ELSS units. Available: 0, Locked: 100',
+          code: 'UNITS_LOCKED',
+        }),
+      });
+
+      await expect(
+        simulateWithdrawal({
+          folioId: 'uuid-elss-folio-1',
+          schemeName: 'Mirae Asset ELSS Tax Saver Fund',
+          unitsToSell: 50,
+          currentNav: 80,
+          assetClass: 'EQUITY',
+          isElss: true,
+        }),
+      ).rejects.toThrowError(SimulationBackendError);
+    });
+
+    it('surfaces backend HTTP 422 validation error instead of falling back to offline simulation', async () => {
+      mockStorage.set('PORTFOLIO_SERVER_URL', 'http://localhost:8080');
+      mockStorage.set('PORTFOLIO_DEVICE_TOKEN', 'token-422');
+
+      mockFetch.mockResolvedValueOnce({ status: 200, ok: true });
+      mockFetch.mockResolvedValueOnce({
+        status: 422,
+        ok: false,
+        json: async () => ({
+          message: 'Units to sell must be greater than zero',
+        }),
+      });
+
+      await expect(
+        simulateWithdrawal({
+          folioId: 'uuid-folio-2',
+          schemeName: 'HDFC Top 100 Fund',
+          unitsToSell: 0,
+          currentNav: 100,
+        }),
+      ).rejects.toThrow('Units to sell must be greater than zero');
     });
   });
 });

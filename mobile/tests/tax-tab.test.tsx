@@ -105,6 +105,10 @@ import {
   type HarvestPlan,
   AdvanceTaxQuarter,
 } from '../src/services/tax-harvesting';
+import {
+  mapServerSummaryToResult,
+  mapHarvestTicketToPlan,
+} from '../src/services/tax-summary-mapper';
 
 function getProps(element: React.ReactElement): Record<string, unknown> {
   return element.props as Record<string, unknown>;
@@ -496,6 +500,61 @@ describe('Tax Tab & Statutory Compliance Suite', () => {
       const children = props['children'] as Array<React.ReactElement<{ name: string }>>;
       const taxTab = children.find(child => child.props.name === 'tax');
       expect(taxTab).toBeDefined();
+    });
+  });
+
+  describe('Tax Summary FY & Harvesting SSOT', () => {
+    it('applies ₹1.25L exemption limit for FY >= 2024-25 and ₹1L for earlier FYs', () => {
+      const serverSummary = {
+        sectionTotals: {
+          '112A (12.5%)': { totalGain: 150000, taxBeforeCess: 3125, totalTax: 3250 },
+        },
+      };
+
+      const fy2526 = mapServerSummaryToResult(serverSummary, '2025-26');
+      expect(fy2526.ltcgLimit).toBe(125000);
+      expect(fy2526.ltcgExemptClaimed).toBe(125000);
+
+      const fy2425 = mapServerSummaryToResult(serverSummary, '2024-25');
+      expect(fy2425.ltcgLimit).toBe(125000);
+
+      const fy2324 = mapServerSummaryToResult(serverSummary, '2023-24');
+      expect(fy2324.ltcgLimit).toBe(100000);
+      expect(fy2324.ltcgExemptClaimed).toBe(100000);
+    });
+
+    it('maps backend HarvestTicketResponse directly without fabricating lots or 4% cess', () => {
+      const plan = mapHarvestTicketToPlan(
+        {
+          realizedLtcgFy: 25000,
+          remainingExemption: 100000,
+          totalPotentialHarvest: 80000,
+          estimatedTaxSavings: 10000,
+          opportunities: [
+            {
+              folioId: 'f-1',
+              folioNumber: 'FOLIO-999',
+              schemeName: 'Parag Parikh Flexi Cap Fund',
+              unitsToHarvest: 100,
+              unrealizedGain: 80000,
+              currentValue: 200000,
+              lotsCount: 2,
+              firstLotDate: '2022-01-10',
+              lastLotDate: '2022-06-15',
+            },
+          ],
+          unrealizedSummary: { stcg: 0, ltcg: 80000, losses: 0, netGain: 80000, lots: [] },
+        },
+        '2025-26',
+      );
+
+      expect(plan.fy).toBe('2025-26');
+      expect(plan.ltcgLimit).toBe(125000);
+      expect(plan.remainingExemption).toBe(100000);
+      expect(plan.estimatedTaxSavings).toBe(10000);
+      expect(plan.opportunities).toHaveLength(1);
+      expect(plan.opportunities[0]?.folioId).toBe('FOLIO-999');
+      expect(plan.opportunities[0]?.lotsCount).toBe(2);
     });
   });
 });

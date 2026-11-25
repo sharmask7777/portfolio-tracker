@@ -19,6 +19,8 @@ import { ClipboardModal } from './ClipboardModal';
 interface TaxViewProps {
   summary: ITRSummary;
   harvesting: HarvestTicketResponse | null;
+  selectedFY?: string | null | undefined;
+  onFYChange?: ((fy: string) => void) | undefined;
   onSimulateHarvest?: ((folioId: string, units: number) => void) | undefined;
 }
 
@@ -30,7 +32,13 @@ const formatCurrency = (val: number): string => {
   }).format(val);
 };
 
-export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulateHarvest }) => {
+export const TaxView: React.FC<TaxViewProps> = ({
+  summary,
+  harvesting,
+  selectedFY: controlledFY,
+  onFYChange,
+  onSimulateHarvest,
+}) => {
   const {
     selectedFY,
     setSelectedFY,
@@ -46,7 +54,10 @@ export const TaxView: React.FC<TaxViewProps> = ({ summary, harvesting, onSimulat
     clipboardText,
     handleCopyInstructions,
     handleDownloadReport,
-  } = useTaxViewModel(summary, harvesting);
+  } = useTaxViewModel(summary, harvesting, {
+    selectedFY: controlledFY,
+    onFYChange,
+  });
 
   if (!summary) return <div>Loading tax data...</div>;
 

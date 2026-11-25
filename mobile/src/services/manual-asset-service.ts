@@ -11,11 +11,12 @@ import { getStoredCredentials } from './auth-service';
  * Input parameters for creating a manual asset.
  */
 export interface AddManualAssetPayload {
-  type: 'EPF' | 'PPF' | 'SGB' | 'PHYSICAL_GOLD' | 'REAL_ESTATE';
+  type: 'EPF' | 'PPF' | 'SGB' | 'PHYSICAL_GOLD' | 'REAL_ESTATE' | 'FIXED_DEPOSIT';
   name: string;
   units: number;
   balanceDate: string;
   pan?: string | undefined;
+  profileId?: string | undefined;
 }
 
 function resolveAssetClass(type: string): string {
@@ -29,9 +30,8 @@ function buildManualHolding(
   payload: AddManualAssetPayload,
   now: string,
 ): HoldingEntity {
-  const isGold = payload.type === 'SGB' || payload.type === 'PHYSICAL_GOLD';
-  const nav = isGold ? 7000 : 1;
-  const val = isGold ? payload.units * 7000 : payload.units;
+  const nav = 1;
+  const val = payload.units;
 
   return {
     id: `holding-${folioNumber}`,
@@ -66,23 +66,34 @@ function buildManualTransaction(
   };
 }
 
-async function postToServerIfReachable(payload: AddManualAssetPayload): Promise<void> {
+async function postToServerIfReachable(
+  payload: AddManualAssetPayload,
+): Promise<{ folioNumber?: string } | null> {
   const creds = await getStoredCredentials();
-  if (!creds.serverUrl || !creds.token) return;
+  if (!creds.serverUrl || !creds.token) return null;
   const trimmed = creds.serverUrl.trim().replace(/\/+$/, '');
-  await fetch(`${trimmed}/api/portfolio/manual-asset`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${creds.token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      type: payload.type,
-      name: payload.name,
-      units: payload.units,
-      balanceDate: payload.balanceDate,
-    }),
-  }).catch(() => {});
+  try {
+    const res = await fetch(`${trimmed}/api/portfolio/manual-asset`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${creds.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: payload.type,
+        name: payload.name,
+        units: payload.units,
+        balanceDate: payload.balanceDate,
+        profileId: payload.profileId ?? null,
+      }),
+    });
+    if (res.ok && typeof res.json === 'function') {
+      return (await res.json().catch(() => null)) as { folioNumber?: string } | null;
+    }
+  } catch {
+    // Offline fallback: local snapshot is still saved
+  }
+  return null;
 }
 
 /**
@@ -98,7 +109,8 @@ export async function addManualAsset(
   const targetDb = db ?? getDatabaseInstance() ?? (await initDatabase());
   const now = new Date().toISOString();
   const nowTs = Date.now();
-  const folioNumber = `MANUAL_${payload.type}_${nowTs}`;
+  const serverResult = await postToServerIfReachable(payload);
+  const folioNumber = serverResult?.folioNumber ?? `MANUAL_${nowTs}`;
   const pan = payload.pan || 'NA';
 
   const holding = buildManualHolding(folioNumber, payload, now);
@@ -121,5 +133,4 @@ export async function addManualAsset(
   };
 
   await savePortfolioSnapshot(targetDb, snapshot);
-  await postToServerIfReachable(payload);
 }

@@ -86,6 +86,19 @@ export interface ITRGainDetail {
   isAnchorDependent?: boolean;
 }
 
+export interface SectionTotalData {
+  section: string;
+  grossConsideration: number;
+  costOfAcquisition: number;
+  deemedCostOfAcquisition: number;
+  transferExpenses: number;
+  totalGain: number;
+  taxRate: number;
+  taxBeforeCess: number;
+  cess: number;
+  totalTax: number;
+}
+
 export interface ITRSummary {
   assesseeName?: string;
   userName?: string;
@@ -93,16 +106,22 @@ export interface ITRSummary {
   details?: ITRGainDetail[];
   hasSyntheticAnchors?: boolean;
   tableF?: AdvanceTaxAccrualMatrix;
-  sectionTotals?: Record<string, unknown>;
+  sectionTotals?: Record<string, SectionTotalData>;
   realized?: {
     stcg?: number;
     ltcg?: number;
     slab?: number;
     total?: number;
+    taxableSTCG?: number;
     taxableStcg?: number;
+    taxableLTCG?: number;
     taxableLtcg?: number;
     taxableSlab?: number;
+    sec112aExemption?: number;
+    sec112aExemptionLimit?: number;
     details?: ITRGainDetail[];
+    tableF?: AdvanceTaxAccrualMatrix;
+    sectionTotals?: Record<string, SectionTotalData>;
   };
 }
 

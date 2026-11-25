@@ -11,9 +11,9 @@ import { Calculator } from 'lucide-react-native';
 import {
   formatIndianRupee,
   formatPercent,
-  type FolioInput,
   type PerformanceMode,
 } from '@portfolio/core-view';
+import type { MobileFolioInput } from './holding-adapters';
 import { TransactionLedgerSheet } from './TransactionLedgerSheet';
 
 /**
@@ -21,15 +21,15 @@ import { TransactionLedgerSheet } from './TransactionLedgerSheet';
  */
 export interface FolioChildRowProps {
   /** Folio data item */
-  readonly folio: FolioInput;
+  readonly folio: MobileFolioInput;
   /** Performance display mode: 'XIRR' or 'ABS' */
   readonly performanceMode?: PerformanceMode | undefined;
   /** Optional callback invoked when folio is pressed */
-  readonly onPress?: ((folio: FolioInput) => void) | undefined;
+  readonly onPress?: ((folio: MobileFolioInput) => void) | undefined;
   /** Optional callback invoked when simulation button is pressed */
-  readonly onSimulate?: ((folio: FolioInput) => void) | undefined;
+  readonly onSimulate?: ((folio: MobileFolioInput) => void) | undefined;
   /** Optional callback invoked when simulation button is pressed */
-  readonly onSimulateWithdrawal?: ((folio: FolioInput) => void) | undefined;
+  readonly onSimulateWithdrawal?: ((folio: MobileFolioInput) => void) | undefined;
 }
 
 const styles = StyleSheet.create({
@@ -125,22 +125,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  positive: {
-    color: '#22c55e',
+  postTaxRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingLeft: 18,
+    marginTop: 4,
   },
-  negative: {
-    color: '#ef4444',
+  postTaxText: {
+    fontSize: 10,
+    color: '#a1a1aa',
   },
+  dayChangeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  positive: { color: '#22c55e' },
+  negative: { color: '#ef4444' },
+  neutral: { color: '#a1a1aa' },
 });
 
-function getReturnRate(folio: FolioInput, mode: PerformanceMode): number | undefined {
+function getReturnRate(folio: MobileFolioInput, mode: PerformanceMode): number | undefined {
   if (mode === 'XIRR') {
     return folio.metrics?.xirr ?? folio.metrics?.absoluteReturn;
   }
   return folio.metrics?.absoluteReturn ?? folio.metrics?.xirr;
 }
 
-function resolveUnitsNavText(folio: FolioInput, folioNum: string): string {
+function resolveUnitsNavText(folio: MobileFolioInput, folioNum: string): string {
   const units = folio.units;
   const currentNav = folio.currentNav ?? folio.metrics?.currentPrice;
   if (units !== undefined && currentNav !== undefined && units > 0 && currentNav > 0) {
@@ -204,14 +216,26 @@ interface FolioMetricsSubRowProps {
   unitsNavFormatted: string;
   investedAmount: number;
   returnRate: number | undefined;
+  dayChange?: number | undefined;
+}
+
+function resolveDayChangeColor(dayChange: number) {
+  if (dayChange > 0) return styles.positive;
+  if (dayChange < 0) return styles.negative;
+  return styles.neutral;
 }
 
 function FolioMetricsSubRow(props: FolioMetricsSubRowProps): React.ReactElement {
-  const { unitsNavFormatted, investedAmount, returnRate } = props;
+  const { unitsNavFormatted, investedAmount, returnRate, dayChange } = props;
   return (
     <View style={styles.metricsRow}>
       <Text style={styles.unitsNav}>{unitsNavFormatted}</Text>
       <View style={styles.subValueRow}>
+        {dayChange !== undefined ? (
+          <Text style={[styles.dayChangeText, resolveDayChangeColor(dayChange)]}>
+            {dayChange > 0 ? '+' : ''}{formatIndianRupee(dayChange)}
+          </Text>
+        ) : null}
         {investedAmount > 0 ? (
           <Text style={styles.investedCost}>
             Cost: {formatIndianRupee(investedAmount)}
@@ -223,7 +247,26 @@ function FolioMetricsSubRow(props: FolioMetricsSubRowProps): React.ReactElement 
   );
 }
 
-function resolveFolioValues(folio: FolioInput) {
+interface FolioPostTaxSubRowProps {
+  postTaxXirr?: number | undefined;
+  netRealizableValue?: number | undefined;
+}
+
+function FolioPostTaxSubRow({ postTaxXirr, netRealizableValue }: FolioPostTaxSubRowProps): React.ReactElement | null {
+  if (postTaxXirr === undefined && netRealizableValue === undefined) return null;
+  return (
+    <View style={styles.postTaxRow}>
+      {netRealizableValue !== undefined ? (
+        <Text style={styles.postTaxText}>Net: {formatIndianRupee(netRealizableValue)}</Text>
+      ) : <View />}
+      {postTaxXirr !== undefined ? (
+        <Text style={styles.postTaxText}>Post-Tax XIRR: {formatPercent(postTaxXirr)}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function resolveFolioValues(folio: MobileFolioInput) {
   const folioNum = folio.number ?? folio.folioNumber ?? 'UNKNOWN';
   const amcName = folio.amcName ?? folio.amc;
   const currentValue = folio.metrics?.currentValue ?? (folio.units ?? 0) * (folio.currentNav ?? 0);
@@ -232,9 +275,9 @@ function resolveFolioValues(folio: FolioInput) {
 }
 
 function fireSimulate(
-  folio: FolioInput,
-  onSim?: ((f: FolioInput) => void) | undefined,
-  onSimWith?: ((f: FolioInput) => void) | undefined,
+  folio: MobileFolioInput,
+  onSim?: ((f: MobileFolioInput) => void) | undefined,
+  onSimWith?: ((f: MobileFolioInput) => void) | undefined,
 ): void {
   onSim?.(folio);
   onSimWith?.(folio);
@@ -268,23 +311,15 @@ export function FolioChildRow({
         onPress={handlePress}
         activeOpacity={0.7}
       >
-        <FolioHeaderInfo
-          folioNum={folioNum}
-          pan={folio.pan}
-          currentValue={currentValue}
-          folioId={folio.id}
-          onSimulate={handleSimulate}
-        />
-        {amcName ? (
-          <Text style={styles.amcText} numberOfLines={1}>
-            {amcName}
-          </Text>
-        ) : null}
+        <FolioHeaderInfo folioNum={folioNum} pan={folio.pan} currentValue={currentValue} folioId={folio.id} onSimulate={handleSimulate} />
+        {amcName ? <Text style={styles.amcText} numberOfLines={1}>{amcName}</Text> : null}
         <FolioMetricsSubRow
           unitsNavFormatted={unitsNavFormatted}
           investedAmount={investedAmount}
           returnRate={returnRate}
+          dayChange={folio.metrics?.dayChange}
         />
+        <FolioPostTaxSubRow postTaxXirr={folio.metrics?.postTaxXirr} netRealizableValue={folio.metrics?.netRealizableValue} />
       </TouchableOpacity>
       <TransactionLedgerSheet
         visible={showLedger}

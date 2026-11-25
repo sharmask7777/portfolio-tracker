@@ -20,7 +20,7 @@ import { X } from 'lucide-react-native';
  */
 export interface ManualAssetInput {
   /** Asset category type */
-  type: 'EPF' | 'PPF' | 'SGB' | 'PHYSICAL_GOLD' | 'REAL_ESTATE';
+  type: 'EPF' | 'PPF' | 'SGB' | 'PHYSICAL_GOLD' | 'REAL_ESTATE' | 'FIXED_DEPOSIT';
   /** Descriptive asset name */
   name: string;
   /** Units or monetary balance */
@@ -129,12 +129,12 @@ const ASSET_TYPES: Array<{ key: ManualAssetInput['type']; label: string }> = [
   { key: 'SGB', label: 'SGB (Gold Bonds)' },
   { key: 'PHYSICAL_GOLD', label: 'Physical Gold' },
   { key: 'REAL_ESTATE', label: 'Real Estate' },
+  { key: 'FIXED_DEPOSIT', label: 'Fixed Deposit' },
   { key: 'EPF', label: 'EPF (8.25%)' },
   { key: 'PPF', label: 'PPF (7.1%)' },
 ];
 
 interface FormFieldsProps {
-  type: ManualAssetInput['type'];
   name: string;
   units: string;
   onNameChange: (text: string) => void;
@@ -142,8 +142,7 @@ interface FormFieldsProps {
 }
 
 function FormFields(props: FormFieldsProps): React.ReactElement {
-  const { type, name, units, onNameChange, onUnitsChange } = props;
-  const isGold = type === 'SGB' || type === 'PHYSICAL_GOLD';
+  const { name, units, onNameChange, onUnitsChange } = props;
 
   return (
     <>
@@ -156,7 +155,7 @@ function FormFields(props: FormFieldsProps): React.ReactElement {
         onChangeText={onNameChange}
         testID="manual-asset-name-input"
       />
-      <Text style={styles.label}>{isGold ? 'Grams / Units' : 'Current Value / Balance (INR)'}</Text>
+      <Text style={styles.label}>Current Value / Balance (INR)</Text>
       <TextInput
         style={styles.input}
         placeholder="0.00"
@@ -230,7 +229,7 @@ export function AddAssetModal(props: AddAssetModalProps): React.ReactElement {
           <ScrollView>
             <Text style={styles.label}>Select Asset Type</Text>
             <TypeChips currentType={type} onSelect={setType} />
-            <FormFields type={type} name={name} units={units} onNameChange={setName} onUnitsChange={setUnits} />
+            <FormFields name={name} units={units} onNameChange={setName} onUnitsChange={setUnits} />
             <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} disabled={loading} testID="submit-manual-asset">
               <Text style={styles.submitBtnText}>{loading ? 'Saving...' : 'Add to Portfolio'}</Text>
             </TouchableOpacity>

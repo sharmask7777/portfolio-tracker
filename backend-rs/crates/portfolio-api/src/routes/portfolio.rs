@@ -57,9 +57,13 @@ pub struct OverlapQuery {
 #[serde(rename_all = "camelCase")]
 pub struct SummaryParams {
     pub profile_id: Option<String>,
-    #[serde(alias = "tax_slab", alias = "marginal_tax_bracket")]
+    #[serde(
+        alias = "tax_slab",
+        alias = "marginal_tax_bracket",
+        alias = "taxBracket"
+    )]
     pub marginal_tax_bracket: Option<Decimal>,
-    #[serde(alias = "cpi_inflation_rate")]
+    #[serde(alias = "cpi_inflation_rate", alias = "cpi")]
     pub cpi_inflation_rate: Option<Decimal>,
     pub family_group_id: Option<String>,
 }
@@ -2360,16 +2364,17 @@ pub async fn get_portfolio_summary(
         .await
         .unwrap_or_default();
 
+    let normalize_pan_key = |pan: Option<&str>| -> String {
+        pan.map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("PAN_NOT_SPECIFIED")
+            .to_uppercase()
+    };
+
     let mut pan_groups: std::collections::BTreeMap<String, Vec<&EnrichedFolio>> =
         std::collections::BTreeMap::new();
     for folio in &active_folios {
-        let pan_key = folio
-            .pan
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("PAN_NOT_SPECIFIED")
-            .to_uppercase();
+        let pan_key = normalize_pan_key(folio.pan.as_deref());
         pan_groups.entry(pan_key).or_default().push(folio);
     }
 
@@ -2403,6 +2408,17 @@ pub async fn get_portfolio_summary(
             for tx in &folio.transactions {
                 if let Ok(core_tx) = tx.to_core_transaction() {
                     pan_cash_flows.push(core_tx.to_cash_flow());
+                }
+            }
+        }
+
+        // Include closed folios matching this PAN so PanBreakdownDto.xirr matches profile-scoped SummaryMetrics.xirr
+        for folio in &closed_folios {
+            if normalize_pan_key(folio.pan.as_deref()) == pan {
+                for tx in &folio.transactions {
+                    if let Ok(core_tx) = tx.to_core_transaction() {
+                        pan_cash_flows.push(core_tx.to_cash_flow());
+                    }
                 }
             }
         }
@@ -2647,6 +2663,7 @@ pub async fn get_xray(
                 && !is_debt
                 && !is_gold
                 && !is_cash
+                && category != portfolio_core::classification::AssetCategory::Other
             {
                 active_equity_folios.push((asset_entity, holding_market_value, is_arbitrage));
             }
@@ -3008,6 +3025,39 @@ pub async fn get_exposures(
     Ok(Json(exposures))
 }
 
+/// Parses an Indian Financial Year string (e.g. `"2024-25"`) into `(start_date, end_date, start_year)`.
+fn parse_indian_fy(fy: &str) -> Result<(chrono::NaiveDate, chrono::NaiveDate, i32), ApiError> {
+    let parts: Vec<&str> = fy.split('-').collect();
+    if parts.len() != 2 {
+        return Err(ApiError::BadRequest(format!(
+            "Invalid financial year format: {fy}. Expected YYYY-YY (e.g., 2024-25)"
+        )));
+    }
+    let start_year = parts[0].parse::<i32>().map_err(|_| {
+        ApiError::BadRequest(format!(
+            "Invalid financial year format: {fy}. Expected YYYY-YY (e.g., 2024-25)"
+        ))
+    })?;
+    let end_suffix = parts[1].parse::<i32>().map_err(|_| {
+        ApiError::BadRequest(format!(
+            "Invalid financial year format: {fy}. Expected YYYY-YY (e.g., 2024-25)"
+        ))
+    })?;
+    let expected_short = (start_year + 1) % 100;
+    if !(1900..=2200).contains(&start_year)
+        || (end_suffix != expected_short && end_suffix != start_year + 1)
+    {
+        return Err(ApiError::BadRequest(format!(
+            "Invalid financial year format: {fy}. Expected YYYY-YY (e.g., 2024-25)"
+        )));
+    }
+    let start_date = chrono::NaiveDate::from_ymd_opt(start_year, 4, 1)
+        .ok_or_else(|| ApiError::BadRequest(format!("Invalid financial year start: {fy}")))?;
+    let end_date = chrono::NaiveDate::from_ymd_opt(start_year + 1, 3, 31)
+        .ok_or_else(|| ApiError::BadRequest(format!("Invalid financial year end: {fy}")))?;
+    Ok((start_date, end_date, start_year))
+}
+
 /// Route handler for `GET /api/portfolio/:id/tax` computing comprehensive capital gains and ITR Schedule CG data.
 ///
 /// ## Statutory Tax Engine & Invariants:
@@ -3043,11 +3093,14 @@ pub async fn get_tax_summary(
         .and_then(|s| Decimal::from_str(s).ok())
         .unwrap_or_else(|| Decimal::new(3, 1)); // 0.30
 
+    let fy_range = query
+        .get("fy")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("ALL"))
+        .map(parse_indian_fy)
+        .transpose()?;
+
     let mut all_realized_details = Vec::new();
-    let mut total_realized_stcg = Decimal::ZERO;
-    let mut total_realized_ltcg = Decimal::ZERO;
-    let mut total_realized_slab = Decimal::ZERO;
-    let mut total_realized = Decimal::ZERO;
 
     let mut total_unrealized_stcg = Decimal::ZERO;
     let mut total_unrealized_ltcg = Decimal::ZERO;
@@ -3099,11 +3152,6 @@ pub async fn get_tax_summary(
                 grandfather_nav,
             );
 
-            total_realized_stcg += tax_summary.realized.stcg.to_decimal();
-            total_realized_ltcg += tax_summary.realized.ltcg.to_decimal();
-            total_realized_slab += tax_summary.realized.slab.to_decimal();
-            total_realized += tax_summary.realized.total.to_decimal();
-
             total_unrealized_stcg += tax_summary.unrealized.stcg.to_decimal();
             total_unrealized_ltcg += tax_summary.unrealized.ltcg.to_decimal();
             total_unrealized_slab += tax_summary.unrealized.slab.to_decimal();
@@ -3130,48 +3178,45 @@ pub async fn get_tax_summary(
         }
     }
 
+    if let Some((fy_start, fy_end, _)) = fy_range {
+        all_realized_details.retain(|g| g.sell_date >= fy_start && g.sell_date <= fy_end);
+    }
+
     all_realized_details.sort_by_key(|a| std::cmp::Reverse(a.sell_date));
+
+    let mut total_realized_stcg = Decimal::ZERO;
+    let mut total_realized_ltcg = Decimal::ZERO;
+    let mut total_realized_slab = Decimal::ZERO;
+    for gain in &all_realized_details {
+        match gain.tax_type {
+            portfolio_core::tax::TaxType::Stcg => total_realized_stcg += gain.gain.to_decimal(),
+            portfolio_core::tax::TaxType::Ltcg => total_realized_ltcg += gain.gain.to_decimal(),
+            portfolio_core::tax::TaxType::Slab => total_realized_slab += gain.gain.to_decimal(),
+        }
+    }
+    let total_realized = total_realized_stcg + total_realized_ltcg + total_realized_slab;
 
     let table_f = portfolio_core::tax::build_advance_tax_matrix(&all_realized_details);
     let section_totals = portfolio_core::tax::build_section_totals(&all_realized_details);
 
-    let stcl = if total_realized_stcg < Decimal::ZERO {
-        total_realized_stcg.abs()
-    } else {
-        Decimal::ZERO
-    };
-    let ltcl = if total_realized_ltcg < Decimal::ZERO {
-        total_realized_ltcg.abs()
-    } else {
-        Decimal::ZERO
-    };
-    let mut stcg = if total_realized_stcg > Decimal::ZERO {
-        total_realized_stcg
-    } else {
-        Decimal::ZERO
-    };
-    let mut ltcg = if total_realized_ltcg > Decimal::ZERO {
-        total_realized_ltcg
-    } else {
-        Decimal::ZERO
-    };
+    // Statutory Section 70 set-off (including negative Section 50AA slab losses as STCL)
+    let (taxable_stcg_money, taxable_ltcg_before_exemption, taxable_slab_money) =
+        portfolio_core::tax::apply_capital_loss_set_off_with_slab(
+            Money::new(total_realized_stcg),
+            Money::new(total_realized_ltcg),
+            Money::new(total_realized_slab),
+        );
+    let taxable_stcg = taxable_stcg_money.to_decimal();
+    let taxable_slab = taxable_slab_money.to_decimal();
+    let ltcg_after_set_off = taxable_ltcg_before_exemption.to_decimal();
 
-    // Statutory Section 70 Set-Off Mechanics:
-    // 1. Long-Term Capital Loss (LTCL) can ONLY set off Long-Term Capital Gain (LTCG)
-    let set_off_lt = ltcg.min(ltcl);
-    ltcg -= set_off_lt;
-
-    // 2. Short-Term Capital Loss (STCL) can set off STCG first, then remaining STCL can set off LTCG
-    let mut rem_stcl = stcl;
-    let set_off_st = stcg.min(rem_stcl);
-    stcg -= set_off_st;
-    rem_stcl -= set_off_st;
-
-    let set_off_st_lt = ltcg.min(rem_stcl);
-    ltcg -= set_off_st_lt;
-
-    let taxable_stcg = stcg;
-    let taxable_ltcg = ltcg;
+    // Statutory Section 112A annual exemption: ₹1,25,000 for FY 2024-25 onwards, ₹1,00,000 prior
+    let exemption_limit = match fy_range {
+        Some((_, _, start_year)) if start_year < 2024 => Decimal::from(100_000),
+        _ => Decimal::from(125_000),
+    };
+    let sec112a_exemption = ltcg_after_set_off.min(exemption_limit);
+    let taxable_ltcg = (ltcg_after_set_off - sec112a_exemption).max(Decimal::ZERO);
 
     use rust_decimal::prelude::ToPrimitive;
     let decimal_to_f64 = |v: Decimal| v.to_f64().unwrap_or(0.0);
@@ -3220,6 +3265,9 @@ pub async fn get_tax_summary(
             "slab": decimal_to_f64(total_realized_slab),
             "taxableSTCG": decimal_to_f64(taxable_stcg),
             "taxableLTCG": decimal_to_f64(taxable_ltcg),
+            "taxableSlab": decimal_to_f64(taxable_slab),
+            "sec112aExemption": decimal_to_f64(sec112a_exemption),
+            "sec112aExemptionLimit": decimal_to_f64(exemption_limit),
             "details": details,
             "tableF": table_f,
             "sectionTotals": section_totals,

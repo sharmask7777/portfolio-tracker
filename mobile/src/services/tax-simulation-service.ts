@@ -25,6 +25,20 @@ export interface WithdrawalSimulationParams {
 }
 
 /**
+ * Error thrown when the backend rejects a simulation request with HTTP 400 or 422
+ * (for example, ELSS statutory lock-in or insufficient units).
+ */
+export class SimulationBackendError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'SimulationBackendError';
+    this.status = status;
+  }
+}
+
+/**
  * Type alias for compatibility with request specifications.
  */
 export type WithdrawalSimulationRequest = WithdrawalSimulationParams;
@@ -131,6 +145,17 @@ function buildSimulationRequestBody(
   };
 }
 
+async function extractBackendErrorMessage(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: string; message?: string } | null;
+    if (body?.error) return body.error;
+    if (body?.message) return body.message;
+  } catch {
+    // Ignore JSON parse errors on error body
+  }
+  return `Simulation rejected by server (HTTP ${response.status})`;
+}
+
 async function executeBackendSimulation(
   serverUrl: string,
   token: string,
@@ -148,6 +173,11 @@ async function executeBackendSimulation(
     },
     body: JSON.stringify(requestBody),
   });
+
+  if (response.status === 400 || response.status === 422) {
+    const msg = await extractBackendErrorMessage(response);
+    throw new SimulationBackendError(msg, response.status);
+  }
 
   if (!response.ok) {
     return null;
@@ -213,7 +243,10 @@ export async function simulateWithdrawal(
         }
       }
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof SimulationBackendError) {
+      throw err;
+    }
     // Graceful offline fallback on any network/parsing failure
   }
 

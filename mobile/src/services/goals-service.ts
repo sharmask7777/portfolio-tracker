@@ -1,4 +1,9 @@
 import * as SecureStore from 'expo-secure-store';
+import {
+  fetchGoalsFromServer,
+  mutateGoalOnServer,
+  deleteGoalOnServer,
+} from './analytics-sync-service';
 import type { EnrichedHolding } from './portfolio-service';
 export {
   generateSmartInsights,
@@ -31,6 +36,7 @@ export interface FinancialGoal {
   targetDate: string;
   allocatedFolioNumbers?: string[] | undefined;
   allocatedPercentage?: number | undefined;
+  serverMetrics?: GoalProgressMetrics | undefined;
   createdAt: string;
   updatedAt: string;
 }
@@ -83,39 +89,9 @@ export interface SipCalculationOptions {
 }
 
 export const DEFAULT_GOALS: FinancialGoal[] = [
-  {
-    id: 'goal-retirement-2045',
-    name: 'Retirement Corpus 2045',
-    category: 'Retirement',
-    priority: 'High',
-    targetAmount: 20000000,
-    targetDate: '2045-12-31',
-    allocatedPercentage: 60,
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-  },
-  {
-    id: 'goal-emergency-fund',
-    name: '6-Month Emergency Fund',
-    category: 'Emergency Fund',
-    priority: 'High',
-    targetAmount: 500000,
-    targetDate: '2027-12-31',
-    allocatedPercentage: 15,
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-  },
-  {
-    id: 'goal-house-downpayment',
-    name: 'Home Down Payment',
-    category: 'House Down Payment',
-    priority: 'Medium',
-    targetAmount: 3500000,
-    targetDate: '2029-06-30',
-    allocatedPercentage: 25,
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-  },
+  { id: 'goal-retirement-2045', name: 'Retirement Corpus 2045', category: 'Retirement', priority: 'High', targetAmount: 20000000, targetDate: '2045-12-31', allocatedPercentage: 60, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+  { id: 'goal-emergency-fund', name: '6-Month Emergency Fund', category: 'Emergency Fund', priority: 'High', targetAmount: 500000, targetDate: '2027-12-31', allocatedPercentage: 15, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+  { id: 'goal-house-downpayment', name: 'Home Down Payment', category: 'House Down Payment', priority: 'Medium', targetAmount: 3500000, targetDate: '2029-06-30', allocatedPercentage: 25, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
 ];
 
 /**
@@ -301,20 +277,23 @@ export function calculateGoalProgress(
   };
 }
 
+function getGoalsCacheKey(portfolioId?: string): string {
+  if (!portfolioId || portfolioId === 'consolidated') return SECURE_STORE_GOALS_KEY;
+  return `${SECURE_STORE_GOALS_KEY}_${portfolioId.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+}
+
 /**
  * Retrieves all stored financial goals from hardware secure storage.
  *
+ * @param portfolioId - Optional scope identifier
  * @returns Array of saved goals or default starter goals
  */
-export async function getStoredGoals(): Promise<FinancialGoal[]> {
+export async function getStoredGoals(portfolioId?: string): Promise<FinancialGoal[]> {
   try {
-    const raw = await SecureStore.getItemAsync(SECURE_STORE_GOALS_KEY);
+    const raw = await SecureStore.getItemAsync(getGoalsCacheKey(portfolioId));
     if (!raw) return DEFAULT_GOALS;
     const parsed: unknown = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed as FinancialGoal[];
-    }
-    return DEFAULT_GOALS;
+    return Array.isArray(parsed) && parsed.length > 0 ? (parsed as FinancialGoal[]) : DEFAULT_GOALS;
   } catch {
     return DEFAULT_GOALS;
   }
@@ -324,19 +303,63 @@ export async function getStoredGoals(): Promise<FinancialGoal[]> {
  * Persists an array of financial goals to secure storage.
  *
  * @param goals - Goals array to persist
+ * @param portfolioId - Optional scope identifier
  */
-export async function saveGoals(goals: FinancialGoal[]): Promise<void> {
-  await SecureStore.setItemAsync(SECURE_STORE_GOALS_KEY, JSON.stringify(goals));
+export async function saveGoals(goals: FinancialGoal[], portfolioId?: string): Promise<void> {
+  await SecureStore.setItemAsync(getGoalsCacheKey(portfolioId), JSON.stringify(goals));
 }
 
 /**
- * Creates and persists a new financial goal.
+ * Fetches financial goals and server-computed `GoalMetricsDto` from `/api/health/:portfolioId/goals`,
+ * caching them locally and falling back to local cache when offline.
+ *
+ * @param portfolioId - Portfolio or scope identifier (`'consolidated'` or member UUID)
+ * @returns Array of financial goals
+ */
+export async function syncGoalsForScope(
+  portfolioId: string = 'consolidated',
+): Promise<FinancialGoal[]> {
+  const remote = await fetchGoalsFromServer(portfolioId);
+  if (remote) {
+    await saveGoals(remote, portfolioId);
+    return remote;
+  }
+  return getStoredGoals(portfolioId);
+}
+
+function mergeGoalUpdates(current: FinancialGoal, updates: UpdateGoalInput): FinancialGoal {
+  return {
+    ...current,
+    name: updates.name ?? current.name,
+    category: updates.category ?? current.category,
+    priority: updates.priority ?? current.priority,
+    targetAmount: updates.targetAmount ?? current.targetAmount,
+    targetDate: updates.targetDate ?? current.targetDate,
+    allocatedFolioNumbers: updates.allocatedFolioNumbers ?? current.allocatedFolioNumbers,
+    allocatedPercentage: updates.allocatedPercentage ?? current.allocatedPercentage,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Creates and persists a new financial goal (syncing to backend when online).
  *
  * @param input - Properties of the new goal
+ * @param portfolioId - Optional scope identifier
  * @returns Newly created financial goal
  */
-export async function addGoal(input: CreateGoalInput): Promise<FinancialGoal> {
-  const existing = await getStoredGoals();
+export async function addGoal(
+  input: CreateGoalInput,
+  portfolioId: string = 'consolidated',
+): Promise<FinancialGoal> {
+  const existing = await getStoredGoals(portfolioId);
+  const body = { name: input.name.trim(), targetAmount: Math.max(0, input.targetAmount), targetDate: input.targetDate.trim(), priority: input.priority.toUpperCase(), allocatedPercentage: input.allocatedPercentage };
+  const serverGoal = await mutateGoalOnServer(`/api/health/${encodeURIComponent(portfolioId)}/goals`, 'POST', body);
+  if (serverGoal) {
+    await saveGoals([...existing, serverGoal], portfolioId);
+    return serverGoal;
+  }
+
   const now = new Date().toISOString();
   const newGoal: FinancialGoal = {
     id: `goal-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -350,55 +373,39 @@ export async function addGoal(input: CreateGoalInput): Promise<FinancialGoal> {
     createdAt: now,
     updatedAt: now,
   };
-
-  await saveGoals([...existing, newGoal]);
+  await saveGoals([...existing, newGoal], portfolioId);
   return newGoal;
 }
 
-/**
- * Updates an existing goal by ID.
- *
- * @param id - Goal identifier
- * @param updates - Partial properties to modify
- * @returns Updated financial goal
- */
 export async function updateGoal(
   id: string,
   updates: UpdateGoalInput,
+  portfolioId: string = 'consolidated',
 ): Promise<FinancialGoal> {
-  const existing = await getStoredGoals();
+  const existing = await getStoredGoals(portfolioId);
   const index = existing.findIndex((g) => g.id === id);
-  if (index === -1) {
-    throw new Error(`Goal with ID ${id} not found`);
-  }
+  if (index === -1) throw new Error(`Goal with ID ${id} not found`);
 
-  const current = existing[index]!;
-  const updated: FinancialGoal = {
-    id: current.id,
-    name: updates.name ?? current.name,
-    category: updates.category ?? current.category,
-    priority: updates.priority ?? current.priority,
-    targetAmount: updates.targetAmount ?? current.targetAmount,
-    targetDate: updates.targetDate ?? current.targetDate,
-    allocatedFolioNumbers: updates.allocatedFolioNumbers ?? current.allocatedFolioNumbers,
-    allocatedPercentage: updates.allocatedPercentage ?? current.allocatedPercentage,
-    createdAt: current.createdAt,
-    updatedAt: new Date().toISOString(),
-  };
-
+  const body = { name: updates.name, targetAmount: updates.targetAmount, targetDate: updates.targetDate, priority: updates.priority?.toUpperCase(), allocatedPercentage: updates.allocatedPercentage };
+  const serverUpdated = await mutateGoalOnServer(`/api/health/${encodeURIComponent(portfolioId)}/goals/${encodeURIComponent(id)}`, 'PUT', body);
+  const updated = serverUpdated ?? mergeGoalUpdates(existing[index]!, updates);
   const next = [...existing];
   next[index] = updated;
-  await saveGoals(next);
+  await saveGoals(next, portfolioId);
   return updated;
 }
 
 /**
- * Deletes a financial goal by ID.
+ * Deletes a financial goal by ID (syncing to backend when online).
  *
  * @param id - Goal identifier to remove
+ * @param portfolioId - Optional scope identifier
  */
-export async function deleteGoal(id: string): Promise<void> {
-  const existing = await getStoredGoals();
-  const filtered = existing.filter((g) => g.id !== id);
-  await saveGoals(filtered);
+export async function deleteGoal(
+  id: string,
+  portfolioId: string = 'consolidated',
+): Promise<void> {
+  await deleteGoalOnServer(id, portfolioId);
+  const existing = await getStoredGoals(portfolioId);
+  await saveGoals(existing.filter((g) => g.id !== id), portfolioId);
 }

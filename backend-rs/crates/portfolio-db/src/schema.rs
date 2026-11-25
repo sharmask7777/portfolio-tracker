@@ -207,10 +207,16 @@ pub fn generate_ddl() -> &'static str {
         "name" TEXT NOT NULL,
         "targetAmount" DOUBLE PRECISION NOT NULL,
         "targetDate" TIMESTAMP(3) NOT NULL,
+        "monthlySip" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "priority" TEXT NOT NULL DEFAULT 'MEDIUM',
+        "allocatedPercentage" DOUBLE PRECISION NOT NULL DEFAULT 100,
         "portfolioId" TEXT NOT NULL REFERENCES "Portfolio"("id") ON DELETE CASCADE,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE "Goal" ADD COLUMN IF NOT EXISTS "monthlySip" DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE "Goal" ADD COLUMN IF NOT EXISTS "priority" TEXT NOT NULL DEFAULT 'MEDIUM';
+    ALTER TABLE "Goal" ADD COLUMN IF NOT EXISTS "allocatedPercentage" DOUBLE PRECISION NOT NULL DEFAULT 100;
     CREATE INDEX IF NOT EXISTS "Goal_portfolioId_idx" ON "Goal"("portfolioId");
 
     CREATE TABLE IF NOT EXISTS "_GoalAssets" (

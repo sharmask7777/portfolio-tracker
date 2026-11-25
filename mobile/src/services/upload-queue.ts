@@ -26,6 +26,8 @@ export interface EnqueueCasUploadInput {
 export interface FlushUploadOptions {
   db?: SQLiteDatabase;
   endpoint?: string;
+  pollIntervalMs?: number;
+  maxPollAttempts?: number;
 }
 
 export interface FlushResult {
@@ -47,11 +49,13 @@ interface ServerUploadAuth {
   serverUrl: string;
   token?: string | null;
   endpoint?: string | undefined;
+  pollIntervalMs?: number | undefined;
+  maxPollAttempts?: number | undefined;
 }
 
 interface ItemUploadResult {
   success: boolean;
-  error?: string;
+  error?: string | undefined;
 }
 
 async function resolveDb(db?: SQLiteDatabase): Promise<SQLiteDatabase> {
@@ -83,7 +87,7 @@ async function executeUploadRequest(
   item: SyncQueueItem,
   auth: ServerUploadAuth,
   password: string,
-): Promise<{ status: number; ok: boolean }> {
+): Promise<{ status: number; ok: boolean; jobId?: string | undefined }> {
   const formData = new FormData();
   formData.append('file', {
     uri: item.file_path,
@@ -108,7 +112,55 @@ async function executeUploadRequest(
     body: formData,
   });
 
-  return { status: res.status, ok: res.status >= 200 && res.status < 300 };
+  let jobId: string | undefined;
+  if (res.status === 202 && typeof res.json === 'function') {
+    const body = (await res.json().catch(() => null)) as { jobId?: string; job_id?: string } | null;
+    jobId = body?.jobId ?? body?.job_id;
+  }
+
+  return { status: res.status, ok: res.status >= 200 && res.status < 300, jobId };
+}
+
+async function fetchPollStatus(
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ status: 'COMPLETED' | 'FAILED' | 'PENDING'; error?: string | undefined }> {
+  const res = await fetch(url, { method: 'GET', headers });
+  if (!res.ok || typeof res.json !== 'function') return { status: 'PENDING' };
+  const job = (await res.json().catch(() => null)) as { status?: string; message?: string } | null;
+  const status = job?.status?.toUpperCase();
+  if (status === 'COMPLETED') return { status: 'COMPLETED' };
+  if (status === 'FAILED') return { status: 'FAILED', error: job?.message || 'CAS processing failed on server' };
+  return { status: 'PENDING' };
+}
+
+async function pollUploadJobStatus(
+  jobId: string,
+  auth: ServerUploadAuth,
+): Promise<{ status: 'COMPLETED' | 'FAILED' | 'TIMEOUT'; error?: string | undefined }> {
+  const intervalMs = auth.pollIntervalMs ?? 1000;
+  const maxAttempts = auth.maxPollAttempts ?? 60;
+  const headers: Record<string, string> = auth.token ? { Authorization: `Bearer ${auth.token}` } : {};
+  const url = buildUploadUrl(auth.serverUrl, `/api/portfolio/upload-status/${jobId}`);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const result = await fetchPollStatus(url, headers);
+    if (result.status === 'COMPLETED') return { status: 'COMPLETED' };
+    if (result.status === 'FAILED') return { status: 'FAILED', error: result.error };
+    if (attempt + 1 < maxAttempts && intervalMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  return { status: 'TIMEOUT', error: 'CAS upload processing timed out' };
+}
+
+async function markCompleted(item: SyncQueueItem, db: SQLiteDatabase): Promise<ItemUploadResult> {
+  await updateQueueStatus(db, item.id, 'COMPLETED');
+  if (item.password_key) {
+    await SecureStore.deleteItemAsync(item.password_key).catch(() => {});
+  }
+  return { success: true };
 }
 
 async function uploadSingleItem(
@@ -121,13 +173,14 @@ async function uploadSingleItem(
 
   try {
     const res = await executeUploadRequest(item, auth, password);
-    if (res.ok) {
-      await updateQueueStatus(db, item.id, 'COMPLETED');
-      if (item.password_key) {
-        await SecureStore.deleteItemAsync(item.password_key).catch(() => {});
-      }
-      return { success: true };
+    if (res.status === 202 && res.jobId) {
+      const poll = await pollUploadJobStatus(res.jobId, auth);
+      if (poll.status === 'COMPLETED') return markCompleted(item, db);
+      const nextStatus = poll.status === 'FAILED' ? 'FAILED' : 'PENDING';
+      await updateQueueStatus(db, item.id, { status: nextStatus, incrementRetry: true });
+      return { success: false, error: poll.error };
     }
+    if (res.ok) return markCompleted(item, db);
 
     const nextStatus = res.status >= 400 && res.status < 500 ? 'FAILED' : 'PENDING';
     await updateQueueStatus(db, item.id, { status: nextStatus, incrementRetry: true });
@@ -235,6 +288,8 @@ export async function flushUploadQueue(
       errors: ['Server URL not configured'],
     };
   }
+  auth.pollIntervalMs = options?.pollIntervalMs;
+  auth.maxPollAttempts = options?.maxPollAttempts;
 
   const database = await resolveDb(options?.db);
   const pendingItems = await getPendingUploads(database);

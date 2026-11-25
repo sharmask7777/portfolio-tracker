@@ -68,6 +68,13 @@ export async function submitCasUpload(
       });
       return;
     }
+    if (res.failed > 0) {
+      onStatus({
+        type: 'error',
+        text: res.errors[0] ?? 'Statement processing failed.',
+      });
+      return;
+    }
   }
 
   onStatus({

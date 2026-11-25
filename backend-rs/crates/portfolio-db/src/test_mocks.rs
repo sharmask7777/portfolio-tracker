@@ -23,14 +23,14 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::entities::{
-    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, FundHoldingEntity,
+    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, FundHoldingEntity, GoalEntity,
     HistoricalNavEntity, HistoricalValuationEntity, ManagedProfileEntity, PortfolioEntity,
     StockMetadataEntity, TransactionEntity, UploadJobEntity, UploadJobStatus, UserEntity,
 };
 use crate::error::DbError;
 use crate::repositories::{
-    FamilyRepository, FundHoldingsRepository, PortfolioRepository, StockMetadataRepository,
-    TransactionRepository,
+    CreateGoalParams, FamilyRepository, FundHoldingsRepository, GoalRepository,
+    PortfolioRepository, StockMetadataRepository, TransactionRepository, UpdateGoalParams,
 };
 
 /// In-memory storage state holding entity tables as hash maps.
@@ -62,6 +62,8 @@ pub struct InMemoryDatabaseState {
     pub fund_holdings: HashMap<(String, NaiveDate, String), FundHoldingEntity>,
     /// Table storing equity classification master data keyed by ISIN.
     pub stock_metadata: HashMap<String, StockMetadataEntity>,
+    /// Table storing financial goals keyed by goal UUID.
+    pub goals: HashMap<Uuid, GoalEntity>,
 }
 
 /// Thread-safe in-memory database mock.
@@ -781,6 +783,9 @@ impl PortfolioRepository for InMemoryDatabase {
         // Delete folios
         state.folios.retain(|_, folio| folio.portfolio_id != id);
 
+        // Delete goals
+        state.goals.retain(|_, goal| goal.portfolio_id != id);
+
         Ok(())
     }
 }
@@ -1076,5 +1081,107 @@ impl StockMetadataRepository for InMemoryDatabase {
     async fn get_all_as_map(&self) -> Result<HashMap<String, StockMetadataEntity>, DbError> {
         let state = self.state.read().expect("lock poisoned");
         Ok(state.stock_metadata.clone())
+    }
+}
+
+#[async_trait]
+impl GoalRepository for InMemoryDatabase {
+    async fn list_goals(&self, portfolio_id: Uuid) -> Result<Vec<GoalEntity>, DbError> {
+        let state = self.state.read().expect("lock poisoned");
+        let mut goals: Vec<GoalEntity> = state
+            .goals
+            .values()
+            .filter(|goal| goal.portfolio_id == portfolio_id)
+            .cloned()
+            .collect();
+        goals.sort_by(|a, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        Ok(goals)
+    }
+
+    async fn get_goal(&self, id: Uuid) -> Result<Option<GoalEntity>, DbError> {
+        let state = self.state.read().expect("lock poisoned");
+        Ok(state.goals.get(&id).cloned())
+    }
+
+    async fn create_goal(&self, params: CreateGoalParams<'_>) -> Result<GoalEntity, DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        if !state.portfolios.contains_key(&params.portfolio_id) {
+            return Err(DbError::NotFound(format!(
+                "Portfolio {} not found",
+                params.portfolio_id
+            )));
+        }
+
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        let goal = GoalEntity {
+            id,
+            portfolio_id: params.portfolio_id,
+            name: params.name.to_string(),
+            target_amount: params.target_amount,
+            target_date: params.target_date,
+            monthly_sip: params.monthly_sip,
+            priority: params.priority.to_string(),
+            allocated_percentage: params.allocated_percentage,
+            created_at: now,
+            updated_at: now,
+        };
+        state.goals.insert(id, goal.clone());
+        Ok(goal)
+    }
+
+    async fn update_goal(
+        &self,
+        id: Uuid,
+        portfolio_id: Uuid,
+        params: UpdateGoalParams<'_>,
+    ) -> Result<Option<GoalEntity>, DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        let Some(goal) = state.goals.get_mut(&id) else {
+            return Ok(None);
+        };
+        if goal.portfolio_id != portfolio_id {
+            return Ok(None);
+        }
+
+        if let Some(name) = params.name {
+            goal.name = name.to_string();
+        }
+        if let Some(target_amount) = params.target_amount {
+            goal.target_amount = target_amount;
+        }
+        if let Some(target_date) = params.target_date {
+            goal.target_date = target_date;
+        }
+        if let Some(monthly_sip) = params.monthly_sip {
+            goal.monthly_sip = monthly_sip;
+        }
+        if let Some(priority) = params.priority {
+            goal.priority = priority.to_string();
+        }
+        if let Some(allocated_percentage) = params.allocated_percentage {
+            goal.allocated_percentage = allocated_percentage;
+        }
+        goal.updated_at = Utc::now();
+
+        Ok(Some(goal.clone()))
+    }
+
+    async fn delete_goal(&self, id: Uuid, portfolio_id: Uuid) -> Result<bool, DbError> {
+        let mut state = self.state.write().expect("lock poisoned");
+        let matches = state
+            .goals
+            .get(&id)
+            .is_some_and(|goal| goal.portfolio_id == portfolio_id);
+        if matches {
+            state.goals.remove(&id);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }

@@ -171,7 +171,7 @@ vi.mock('../../src/services/portfolio-service', async (importOriginal) => {
   };
 });
 
-import AnalyticsScreen from '../../app/(tabs)/analytics';
+import AnalyticsScreen, { AllocationCard } from '../../app/(tabs)/analytics';
 
 describe('Maestro Flow 05: Analytics Treemap & Stock Overlap Simulation', () => {
   beforeEach(() => {
@@ -239,5 +239,17 @@ describe('Maestro Flow 05: Analytics Treemap & Stock Overlap Simulation', () => 
     await waitFor(() => {
       expect(screen.queryByTestId('stock-detail-modal')).toBeNull();
     });
+  });
+
+  it('renders AllocationCard with explicit isFraction scale without turning 0.5% into 50.0%', () => {
+    render(() => (
+      <AllocationCard name="Small Cap" value={5000} pct={0.5} color="#f59e0b" isFraction={false} />
+    ));
+    expect(screen.getByText('0.5%')).toBeDefined();
+
+    render(() => (
+      <AllocationCard name="Gold" value={5000} pct={0.005} color="#f59e0b" isFraction={true} />
+    ));
+    expect(screen.getByText('0.5%')).toBeDefined();
   });
 });

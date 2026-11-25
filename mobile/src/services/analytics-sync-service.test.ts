@@ -1,8 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 
+const { mockSecureStore } = vi.hoisted(() => ({
+  mockSecureStore: new Map<string, string>(),
+}));
+
 vi.mock('expo-sqlite', () => ({
   openDatabaseAsync: vi.fn(async () => createInMemoryDatabase()),
+}));
+
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: vi.fn(async (key: string) => mockSecureStore.get(key) ?? null),
+  setItemAsync: vi.fn(async (key: string, val: string) => {
+    mockSecureStore.set(key, val);
+  }),
+  deleteItemAsync: vi.fn(async (key: string) => {
+    mockSecureStore.delete(key);
+  }),
+}));
+
+vi.mock('./auth-service', () => ({
+  getStoredCredentials: vi.fn(async () => ({ serverUrl: null, token: null, user: null })),
 }));
 
 import type { SQLiteDatabase } from 'expo-sqlite';

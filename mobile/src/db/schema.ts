@@ -2,6 +2,7 @@ export interface PortfolioEntity {
   id: string;
   name: string;
   updated_at: string;
+  summary_metrics_json?: string | null | undefined;
 }
 
 export interface FolioEntity {
@@ -26,9 +27,14 @@ export interface HoldingEntity {
   updated_at: string;
   day_change?: number | undefined;
   day_change_pct?: number | undefined;
-  xirr?: number | undefined;
+  xirr?: number | null | undefined;
   absolute_return?: number | undefined;
   asset_category?: string | null | undefined;
+  total_gain?: number | null | undefined;
+  post_tax_xirr?: number | null | undefined;
+  post_tax_absolute_return?: number | null | undefined;
+  estimated_tax?: number | null | undefined;
+  net_realizable_value?: number | null | undefined;
 }
 
 export interface TransactionEntity {
@@ -66,6 +72,17 @@ export interface PortfolioHistoryEntity {
   date: string;
   value: number;
   invested_amount: number;
+  unrealized_gain?: number | null | undefined;
+  gain_percentage?: number | null | undefined;
+  is_ath?: number | null | undefined;
+  ath_value?: number | null | undefined;
+  drawdown_percentage?: number | null | undefined;
+}
+
+export interface SummaryCacheEntity {
+  scope_id: string;
+  summary_json: string;
+  updated_at: string;
 }
 
 export interface PortfolioAnalyticsEntity {
@@ -81,7 +98,8 @@ export const CREATE_PORTFOLIOS_TABLE = `
 CREATE TABLE IF NOT EXISTS portfolios (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  summary_metrics_json TEXT
 );
 `.trim();
 
@@ -110,9 +128,14 @@ CREATE TABLE IF NOT EXISTS holdings (
   updated_at TEXT NOT NULL,
   day_change REAL DEFAULT 0,
   day_change_pct REAL DEFAULT 0,
-  xirr REAL DEFAULT 0,
+  xirr REAL,
   absolute_return REAL DEFAULT 0,
-  asset_category TEXT
+  asset_category TEXT,
+  total_gain REAL,
+  post_tax_xirr REAL,
+  post_tax_absolute_return REAL,
+  estimated_tax REAL,
+  net_realizable_value REAL
 );
 `.trim();
 
@@ -144,7 +167,20 @@ CREATE TABLE IF NOT EXISTS portfolio_history (
   date TEXT NOT NULL,
   value REAL NOT NULL,
   invested_amount REAL NOT NULL,
+  unrealized_gain REAL,
+  gain_percentage REAL,
+  is_ath INTEGER,
+  ath_value REAL,
+  drawdown_percentage REAL,
   PRIMARY KEY (portfolio_id, date)
+);
+`.trim();
+
+export const CREATE_SUMMARY_CACHE_TABLE = `
+CREATE TABLE IF NOT EXISTS summary_cache (
+  scope_id TEXT PRIMARY KEY,
+  summary_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 `.trim();
 
@@ -188,6 +224,7 @@ export const MIGRATION_STATEMENTS = [
   CREATE_NAV_HISTORY_TABLE,
   CREATE_SYNC_QUEUE_TABLE,
   CREATE_PORTFOLIO_HISTORY_TABLE,
+  CREATE_SUMMARY_CACHE_TABLE,
   CREATE_PORTFOLIO_ANALYTICS_TABLE,
   CREATE_TRANSACTIONS_TABLE,
   CREATE_INDEXES,

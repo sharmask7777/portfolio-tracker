@@ -17,7 +17,7 @@ export interface RealityCheckAssumptions {
 
 export const DEFAULT_ASSUMPTIONS: RealityCheckAssumptions = {
   inflationRate: 0.06,
-  taxRate: 0.15,
+  taxRate: 0.30,
   horizonYears: 3,
 };
 

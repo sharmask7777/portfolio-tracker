@@ -30,6 +30,11 @@ export function useDashboardData({
   const [xrayData, setXRayData] = useState<XRayData | null>(null);
   const [exposures, setExposures] = useState<StockExposure[]>([]);
   const [taxSummary, setTaxSummary] = useState<ITRSummary | null>(null);
+  const [selectedTaxFY, setSelectedTaxFY] = useState<string | null>(null);
+  const selectedTaxFYRef = useRef<string | null>(selectedTaxFY);
+  useEffect(() => {
+    selectedTaxFYRef.current = selectedTaxFY;
+  }, [selectedTaxFY]);
   const [harvesting, setHarvesting] = useState<HarvestTicketResponse | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -38,17 +43,44 @@ export function useDashboardData({
   const [isRefetching, setIsRefetching] = useState(false);
 
   const fetchSupplementaryData = useCallback(async (scopeId: string) => {
+    const taxParams: Record<string, string | number> = { taxSlab: marginalTaxBracket };
+    if (selectedTaxFYRef.current) {
+      taxParams.fy = selectedTaxFYRef.current;
+    }
     const [xrayRes, exposuresRes, taxRes, harvestingRes] = await Promise.allSettled([
       api.get<XRayData>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/xray`),
       api.get<StockExposure[]>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/exposures?excludeArbitrage=${excludeArbitrage}`),
-      api.get<ITRSummary>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/tax-summary`),
+      api.get<ITRSummary>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/tax-summary`, { params: taxParams }),
       api.get<HarvestTicketResponse>(`${API_ENDPOINTS.TAX}/harvesting-opportunities`, { params: { scopeId } }),
     ]);
     if (xrayRes.status === 'fulfilled') setXRayData(xrayRes.value.data);
     if (exposuresRes.status === 'fulfilled') setExposures(exposuresRes.value.data || []);
     if (taxRes.status === 'fulfilled') setTaxSummary(taxRes.value.data);
     if (harvestingRes.status === 'fulfilled') setHarvesting(harvestingRes.value.data);
-  }, [excludeArbitrage]);
+  }, [excludeArbitrage, marginalTaxBracket]);
+
+  useEffect(() => {
+    const scopeId = portfolio?.id;
+    if (!scopeId || !selectedTaxFY) return;
+    let cancelled = false;
+    api
+      .get<ITRSummary>(`${API_ENDPOINTS.PORTFOLIO}/${scopeId}/tax-summary`, {
+        params: { fy: selectedTaxFY, taxSlab: marginalTaxBracket },
+      })
+      .then((res) => {
+        if (!cancelled && res.data) {
+          setTaxSummary(res.data);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!axios.isCancel(err) && !(err instanceof Error && err.name === 'CanceledError')) {
+          console.error('Failed to fetch tax summary for FY:', err);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [portfolio?.id, selectedTaxFY, marginalTaxBracket]);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -100,6 +132,8 @@ export function useDashboardData({
     setExposures,
     taxSummary,
     setTaxSummary,
+    selectedTaxFY,
+    setSelectedTaxFY,
     harvesting,
     setHarvesting,
     loading,

@@ -6,9 +6,20 @@ export const DEFAULT_DATABASE_NAME = 'portfolio.db';
 const MIGRATION_ALTERS = [
   'ALTER TABLE holdings ADD COLUMN day_change REAL DEFAULT 0;',
   'ALTER TABLE holdings ADD COLUMN day_change_pct REAL DEFAULT 0;',
-  'ALTER TABLE holdings ADD COLUMN xirr REAL DEFAULT 0;',
+  'ALTER TABLE holdings ADD COLUMN xirr REAL;',
   'ALTER TABLE holdings ADD COLUMN absolute_return REAL DEFAULT 0;',
   'ALTER TABLE holdings ADD COLUMN asset_category TEXT;',
+  'ALTER TABLE holdings ADD COLUMN total_gain REAL;',
+  'ALTER TABLE holdings ADD COLUMN post_tax_xirr REAL;',
+  'ALTER TABLE holdings ADD COLUMN post_tax_absolute_return REAL;',
+  'ALTER TABLE holdings ADD COLUMN estimated_tax REAL;',
+  'ALTER TABLE holdings ADD COLUMN net_realizable_value REAL;',
+  'ALTER TABLE portfolios ADD COLUMN summary_metrics_json TEXT;',
+  'ALTER TABLE portfolio_history ADD COLUMN unrealized_gain REAL;',
+  'ALTER TABLE portfolio_history ADD COLUMN gain_percentage REAL;',
+  'ALTER TABLE portfolio_history ADD COLUMN is_ath INTEGER;',
+  'ALTER TABLE portfolio_history ADD COLUMN ath_value REAL;',
+  'ALTER TABLE portfolio_history ADD COLUMN drawdown_percentage REAL;',
 ] as const;
 
 let databaseInstance: SQLiteDatabase | null = null;
