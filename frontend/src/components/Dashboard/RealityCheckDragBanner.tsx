@@ -9,6 +9,7 @@ interface RealityCheckDragBannerProps {
   drags: DragDecompositionDto | null | undefined;
   cpiInflationRate: number;
   marginalTaxBracket: number;
+  formatCurrency?: ((val: unknown) => string) | undefined;
   formatPercent: (val: unknown) => string;
   onNavigateToTax?: (() => void) | undefined;
 }
@@ -18,11 +19,14 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
   drags,
   cpiInflationRate,
   marginalTaxBracket,
+  formatCurrency,
   formatPercent,
   onNavigateToTax,
 }) => {
   const spread = drags?.benchmarkSpread ?? 0;
   const isPositiveSpread = drags?.benchmarkSpread && drags.benchmarkSpread > 0;
+  const purchasingPowerValue = drags?.purchasingPowerValue;
+  const purchasingPowerLoss = drags?.purchasingPowerLoss;
 
   return (
     <div
@@ -90,6 +94,36 @@ export const RealityCheckDragBanner: React.FC<RealityCheckDragBannerProps> = ({
           </button>
         )}
       </div>
+
+      {typeof purchasingPowerValue === 'number' && !isNaN(purchasingPowerValue) && formatCurrency && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            padding: '0.85rem 1rem',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '10px',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Real Post-Tax Purchasing Power (3Y Horizon)
+            </div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              {formatCurrency(purchasingPowerValue)}
+            </div>
+          </div>
+          {typeof purchasingPowerLoss === 'number' && !isNaN(purchasingPowerLoss) && (
+            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--danger-color)' }}>
+              -{formatCurrency(purchasingPowerLoss)} Tax + CPI Drag
+            </div>
+          )}
+        </div>
+      )}
 
       <DragWaterfall
         metrics={metrics}

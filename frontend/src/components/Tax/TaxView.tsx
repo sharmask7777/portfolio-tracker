@@ -25,11 +25,13 @@ interface TaxViewProps {
 }
 
 const formatCurrency = (val: number): string => {
+  const numeric = typeof val === 'number' ? val : Number(val);
+  const safeVal = Number.isFinite(numeric) ? numeric : 0;
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0,
-  }).format(val);
+  }).format(safeVal);
 };
 
 export const TaxView: React.FC<TaxViewProps> = ({
