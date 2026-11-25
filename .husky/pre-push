@@ -22,10 +22,10 @@ echo "Verifying TypeScript contracts parity..."
 (cd backend-rs && cargo test --package portfolio-api --test export_bindings)
 git diff --exit-code frontend/src/types/generated mobile/src/types/generated || (echo "❌ Frontend or mobile types drift detected! Commit updated generated types." && exit 1)
 
-echo "Enforcing backend test coverage threshold (fail-under-lines 80%)..."
-(cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 80 --summary-only)
+echo "Enforcing backend test coverage thresholds (portfolio-core >= 93%, workspace >= 78%)..."
+(cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 93 --summary-only && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|test_mocks\.rs|repositories/)" --fail-under-lines 78 --json --output-path coverage.json)
 
-echo "Verifying mobile build, lints, knip, and coverage..."
+echo "Verifying mobile build, lints, knip, and coverage (lines 89%, statements 87%, funcs 86%, branches 76%)..."
 pnpm --filter mobile build:verify
 
 echo "Running mobile E2E simulation suites..."
@@ -37,8 +37,13 @@ pnpm parity:check
 echo "Verifying cross-platform visual parity & invariants..."
 pnpm parity:visual
 
-echo "Running frontend hermetic unit tests with coverage gate (lines 88%, statements 86%, funcs 85%, branches 65%)..."
+echo "Running frontend hermetic unit tests with coverage gate (lines 89%, statements 87%, funcs 86%, branches 72%)..."
 pnpm --filter frontend test:unit
+
+echo "Enforcing incremental diff coverage guardrail (>= 85% of changed lines covered)..."
+python3 scripts/check-diff-coverage.py --self-test
+python3 scripts/check-diff-coverage.py --min-diff-coverage 85 --backend-cov backend-rs/coverage.json
+rm -f backend-rs/coverage.json
 
 echo "Building frontend distribution..."
 pnpm --filter frontend build

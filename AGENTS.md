@@ -37,7 +37,7 @@ Before committing or creating a PR, you MUST run and pass the full hermetic veri
 8. `(cd backend-rs && cargo run --package portfolio-parity)`
 9. `pnpm --filter frontend build && pnpm --filter frontend test:unit`
 10. `pnpm --filter mobile build:verify && pnpm --filter mobile test:e2e`
-11. `pnpm test:coverage` (Blocking coverage gates: Backend $\ge$ 80% line coverage via `cargo llvm-cov`; Frontend: Lines $\ge$ 88%, Statements $\ge$ 86%, Funcs $\ge$ 85%, Branches $\ge$ 65% via `vitest`; Mobile: Lines $\ge$ 85%, Statements $\ge$ 85%, Funcs $\ge$ 80%, Branches $\ge$ 70% via `vitest`)
+11. `pnpm test:coverage` (Blocking coverage gates: Backend `portfolio-core` $\ge$ 93% & workspace $\ge$ 78% line coverage via `cargo llvm-cov`; Frontend: Lines $\ge$ 89%, Statements $\ge$ 87%, Funcs $\ge$ 86%, Branches $\ge$ 72% via `vitest`; Mobile: Lines $\ge$ 89%, Statements $\ge$ 87%, Funcs $\ge$ 86%, Branches $\ge$ 76% via `vitest`; Incremental Diff Coverage $\ge$ 85% via `scripts/check-diff-coverage.py`)
 
 ### 5. Mandatory Tax Specialist Subagent (`tax-statutory-auditor`)
 - For any changes affecting tax calculation logic, statutory rates, exemptions, Schedule CG ITR reports, or files under `backend-rs/crates/portfolio-core/src/tax/`, agents MUST consult or invoke the specialized `tax-statutory-auditor` subagent role.
