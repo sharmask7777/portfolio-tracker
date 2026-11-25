@@ -180,6 +180,7 @@ describe('Maestro Flow 04: Tax & Statutory Harvesting Simulation', () => {
     // 3. Verify Table F Advance Tax Matrix Card and Statutory Accrual Quarters
     expect(screen.getByTestId('advance-tax-matrix-card')).toBeDefined();
     expect(screen.getByText('Advance Tax Table F')).toBeDefined();
+    expect(screen.getByText('Total Gross Advance Tax (Pre-Exemption)')).toBeDefined();
     expect(screen.getByTestId('advance-tax-quarter-Q1')).toBeDefined();
     expect(screen.getByTestId('advance-tax-quarter-Q2a')).toBeDefined();
     expect(screen.getByTestId('advance-tax-quarter-Q3')).toBeDefined();

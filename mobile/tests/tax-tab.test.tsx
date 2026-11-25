@@ -336,13 +336,30 @@ describe('Tax Tab & Statutory Compliance Suite', () => {
   });
 
   describe('AdvanceTaxMatrixCard', () => {
-    it('renders Table F Advance Tax accrual matrix for all 6 quarters', () => {
+    it('renders Table F Advance Tax accrual matrix with due dates, cumulative tax, and FY fallback', () => {
       const element = AdvanceTaxMatrixCard({
         selectedFY: '2024-25',
         matrix: mockAdvanceTaxMatrix,
       });
 
       expect(getProps(element)['testID']).toBe('advance-tax-matrix-card');
+      expect(getProps(element)['accessibilityLabel']).toBe('Advance Tax Matrix for FY 2024-25');
+
+      const allText = JSON.stringify(element);
+      expect(allText).toContain('15/06/2024');
+      expect(allText).toContain('15/09/2024');
+      expect(allText).toContain('31/03/2025');
+      expect(allText).toContain('Total Gross Advance Tax (Pre-Exemption)');
+      expect(allText).toContain('"cumulativeTax":23140');
+
+      const allFyElement = AdvanceTaxMatrixCard({
+        selectedFY: 'All',
+        matrix: mockAdvanceTaxMatrix,
+      });
+      const allFyText = JSON.stringify(allFyElement);
+      expect(getProps(allFyElement)['accessibilityLabel']).toBe('Advance Tax Matrix for All FYs');
+      expect(allFyText).toContain('15/06');
+      expect(allFyText).not.toContain('NaN');
     });
   });
 

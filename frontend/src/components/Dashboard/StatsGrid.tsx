@@ -30,7 +30,7 @@ export interface StatsGridProps {
   onNavigateToTax?: (() => void) | undefined;
 }
 
-const isValidNumber = (val: unknown): val is number => typeof val === 'number' && !isNaN(val);
+const isValidNumber = (val: unknown): val is number => typeof val === 'number' && Number.isFinite(val);
 
 const formatCurrency = (val: unknown) => {
   if (!isValidNumber(val)) return '—';

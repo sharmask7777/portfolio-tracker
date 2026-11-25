@@ -2,10 +2,12 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Calculator } from 'lucide-react-native';
 import {
-  AdvanceTaxQuarter,
   type AdvanceTaxAccrualMatrix,
-  type TableFQuarterData,
 } from '../../services/tax-harvesting';
+import {
+  buildMobileAdvanceTaxDisplayModel,
+  type MobileAdvanceTaxDisplayRow,
+} from '../../services/advance-tax-service';
 import { formatInr } from '../../services/portfolio-service';
 
 /**
@@ -101,71 +103,44 @@ const styles = StyleSheet.create({
   },
 });
 
-const QUARTER_KEYS = [
-  AdvanceTaxQuarter.Q1,
-  AdvanceTaxQuarter.Q2A,
-  AdvanceTaxQuarter.Q2B,
-  AdvanceTaxQuarter.Q3,
-  AdvanceTaxQuarter.Q4,
-  AdvanceTaxQuarter.Q5,
-] as const;
-
+/**
+ * Props for {@link QuarterRowItem}.
+ */
 interface QuarterRowItemProps {
-  quarterKey: AdvanceTaxQuarter;
-  dueDate: string;
-  data: TableFQuarterData;
-  cumulativeTax: number;
+  /** Pre-normalized display row for a single Advance Tax quarter */
+  row: MobileAdvanceTaxDisplayRow;
 }
 
-function QuarterRowItem({
-  quarterKey,
-  dueDate,
-  data,
-  cumulativeTax,
-}: QuarterRowItemProps): React.ReactElement {
-  const parts = quarterKey.split(' ');
-  const code = parts[0] ?? quarterKey;
-  const period = parts.slice(1).join(' ');
-
+/**
+ * Pure presentation row rendering a single Table F quarter, due date, gain, and tax accrual.
+ *
+ * @param props - Component properties {@link QuarterRowItemProps}
+ * @returns React Native row element
+ */
+function QuarterRowItem({ row }: QuarterRowItemProps): React.ReactElement {
   return (
     <View
       style={styles.quarterRow}
-      testID={`advance-tax-quarter-${code}`}
+      testID={`advance-tax-quarter-${row.code}`}
       accessible
       accessibilityRole="text"
-      accessibilityLabel={`${code}, due ${dueDate}: Gain ${formatInr(data.totalGain)}, Tax ${formatInr(data.estimatedTax)}, Cumulative ${formatInr(cumulativeTax)}`}
+      accessibilityLabel={`${row.code}, due ${row.dueDate}: Gain ${formatInr(row.totalGain)}, Tax ${formatInr(row.estimatedTax)}, Cumulative ${formatInr(row.cumulativeTax)}`}
     >
       <View style={styles.quarterInfo}>
-        <Text style={styles.quarterName}>{code} · Due {dueDate}</Text>
-        <Text style={styles.quarterDates}>{period}</Text>
+        <Text style={styles.quarterName}>{row.code} · Due {row.dueDate}</Text>
+        <Text style={styles.quarterDates}>{row.period}</Text>
       </View>
       <View style={styles.quarterMetrics}>
-        <Text style={styles.gainText}>Gain: {formatInr(data.totalGain)}</Text>
+        <Text style={styles.gainText}>Gain: {formatInr(row.totalGain)}</Text>
         <Text style={styles.taxText}>
-          {data.estimatedTax > 0 ? `Tax: ${formatInr(data.estimatedTax)}` : 'Nil'}
+          {row.estimatedTax > 0 ? `Tax: ${formatInr(row.estimatedTax)}` : 'Nil'}
         </Text>
-        {cumulativeTax > 0 && (
-          <Text style={styles.quarterDates}>Cumul: {formatInr(cumulativeTax)}</Text>
+        {row.cumulativeTax > 0 && (
+          <Text style={styles.quarterDates}>Cumul: {formatInr(row.cumulativeTax)}</Text>
         )}
       </View>
     </View>
   );
-}
-
-function resolveQuarterDueDates(selectedFY: string): Record<AdvanceTaxQuarter, string> {
-  const yearMatch = selectedFY.match(/(\d{4})/);
-  const startYear = yearMatch ? parseInt(yearMatch[1] ?? '', 10) : NaN;
-  const hasValidYear = Number.isFinite(startYear);
-  const endYear = hasValidYear ? startYear + 1 : NaN;
-
-  return {
-    [AdvanceTaxQuarter.Q1]: hasValidYear ? `15/06/${startYear}` : '15/06',
-    [AdvanceTaxQuarter.Q2A]: hasValidYear ? `15/09/${startYear}` : '15/09',
-    [AdvanceTaxQuarter.Q2B]: hasValidYear ? `15/09/${startYear}` : '15/09',
-    [AdvanceTaxQuarter.Q3]: hasValidYear ? `15/12/${startYear}` : '15/12',
-    [AdvanceTaxQuarter.Q4]: hasValidYear ? `15/03/${endYear}` : '15/03',
-    [AdvanceTaxQuarter.Q5]: hasValidYear ? `31/03/${endYear}` : '31/03',
-  };
 }
 
 /**
@@ -178,19 +153,7 @@ export function AdvanceTaxMatrixCard({
   selectedFY,
   matrix,
 }: AdvanceTaxMatrixCardProps): React.ReactElement {
-  const dueDates = resolveQuarterDueDates(selectedFY);
-  let runningCumulativeTax = 0;
-  const rows = QUARTER_KEYS.map((quarterKey) => {
-    const qData = matrix.quarters[quarterKey];
-    const tax = Number.isFinite(qData?.estimatedTax) ? qData.estimatedTax : 0;
-    runningCumulativeTax += tax;
-    return {
-      quarterKey,
-      dueDate: dueDates[quarterKey],
-      qData,
-      cumul: runningCumulativeTax,
-    };
-  });
+  const { fyLabel, rows, totalTaxAllQuarters } = buildMobileAdvanceTaxDisplayModel(matrix, selectedFY);
 
   return (
     <View
@@ -198,31 +161,25 @@ export function AdvanceTaxMatrixCard({
       testID="advance-tax-matrix-card"
       accessible
       accessibilityRole="summary"
-      accessibilityLabel={`Advance Tax Matrix for FY ${selectedFY}`}
+      accessibilityLabel={`Advance Tax Matrix for ${fyLabel}`}
     >
       <View style={styles.headerRow}>
         <Calculator size={18} color="#f59e0b" />
         <Text style={styles.title}>Advance Tax Table F</Text>
       </View>
       <Text style={styles.subtitle}>
-        Quarterly Schedule CG Accruals · FY {selectedFY}
+        Gross Pre-Exemption Schedule CG Accruals · {fyLabel}
       </Text>
 
       <View style={styles.quarterList}>
         {rows.map((row) => (
-          <QuarterRowItem
-            key={row.quarterKey}
-            quarterKey={row.quarterKey}
-            dueDate={row.dueDate}
-            data={row.qData}
-            cumulativeTax={row.cumul}
-          />
+          <QuarterRowItem key={row.quarterKey} row={row} />
         ))}
       </View>
 
       <View style={styles.totalFooter}>
-        <Text style={styles.totalLabel}>Total Advance Tax Payable</Text>
-        <Text style={styles.totalTax}>{formatInr(runningCumulativeTax)}</Text>
+        <Text style={styles.totalLabel}>Total Gross Advance Tax (Pre-Exemption)</Text>
+        <Text style={styles.totalTax}>{formatInr(totalTaxAllQuarters)}</Text>
       </View>
     </View>
   );

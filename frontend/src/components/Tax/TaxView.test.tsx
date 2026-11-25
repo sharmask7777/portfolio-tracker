@@ -3,6 +3,7 @@ import { TaxView } from './TaxView';
 import { getDaysUntilFYEndIST, formatHarvestInstructions } from './tax-harvest-instructions';
 import type { HarvestTicketResponse } from '../../types/generated/HarvestTicketResponse';
 import type { UnrealizedSummaryDto } from '../../types/generated/UnrealizedSummaryDto';
+import type { ITRSummary } from '../../utils/itr-report-types';
 import { describe, it, expect, vi } from 'vitest';
 
 const dummyUnrealizedSummary: UnrealizedSummaryDto = {
@@ -626,6 +627,56 @@ describe('TaxView', () => {
 
       computeSpy.mockRestore();
       matrixSpy.mockRestore();
+    });
+
+    it('renders due dates, cumulative payable, combined 15/09 note, and handles "FY 2024-25" & "All" without NaN', () => {
+      const { rerender } = render(
+        <TaxView summary={mockSummary} harvesting={null} selectedFY="FY 2024-25" />
+      );
+
+      expect(screen.getByText(/Total Gross Advance Tax \(Pre-Exemption\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Cumulative Payable/i)).toBeInTheDocument();
+      expect(screen.getByText(/Combined 15\/09 total/i)).toBeInTheDocument();
+      expect(screen.getByText('15/06/2024')).toBeInTheDocument();
+      expect(screen.getAllByText('15/09/2024').length).toBe(2);
+      expect(screen.getByText('15/12/2024')).toBeInTheDocument();
+      expect(screen.getByText('15/03/2025')).toBeInTheDocument();
+      expect(screen.getByText('31/03/2025')).toBeInTheDocument();
+      expect(screen.queryByText(/FY FY/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+
+      rerender(<TaxView summary={mockSummary} harvesting={null} selectedFY="All" />);
+      expect(screen.getByText('15/06')).toBeInTheDocument();
+      expect(screen.getAllByText('15/09').length).toBe(2);
+      expect(screen.getByText(/Total \(All FYs\)/i)).toBeInTheDocument();
+      expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    });
+
+    it('renders non-finite values safely as em-dash without NaN in TaxView', () => {
+      const nanSummary = {
+        ...mockSummary,
+        tableF: {
+          quarters: {
+            'Q1 (01/04 - 15/06)': {
+              stcg15: Number.NaN,
+              stcg20: 0,
+              ltcg10: 0,
+              ltcg12_5: 0,
+              debtLtcg12_5: 0,
+              debtLtcg20: 0,
+              slab: 0,
+              totalGain: Number.NaN,
+              taxBeforeCess: 0,
+              cess: 0,
+              estimatedTax: Number.NaN,
+            },
+          },
+          quarterTotals: {},
+        },
+      } as unknown as ITRSummary;
+
+      render(<TaxView summary={nanSummary} harvesting={null} selectedFY="2024-25" />);
+      expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
     });
   });
 });
