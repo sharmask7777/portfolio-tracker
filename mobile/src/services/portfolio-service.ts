@@ -29,9 +29,11 @@ export {
   setCachedDrags,
   getCachedDrags,
   getStoredDashboardMetrics,
+  getStoredDashboardBundle,
   mergeServerMetricsIntoSummary,
   type SyncServerOptions,
 } from './portfolio-sync-service';
+export type { StoredSummaryEnvelope } from '../db/repository';
 export {
   simulateWithdrawal,
   type WithdrawalSimulationParams,
@@ -54,6 +56,7 @@ export interface DashboardSummary {
   lastUpdated: string | null;
   isOfflineFallback: boolean;
   overallXirr?: number | undefined;
+  postTaxXirr?: number | null | undefined;
   netRealizableValue?: number | undefined;
   postTaxTotalValue?: number | undefined;
   estimatedTax?: number | undefined;

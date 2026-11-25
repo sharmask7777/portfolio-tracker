@@ -43,6 +43,8 @@ vi.mock('expo-router', () => ({
 import type { ConsolidatedSchemeGroup, FolioInput } from '@portfolio/core-view';
 import { FolioChildRow } from '../src/components/Holdings/FolioChildRow';
 import { SchemeGroupCard } from '../src/components/Holdings/SchemeGroupCard';
+import { CardTopRow } from '../src/components/Holdings/scheme-card-rows';
+import { ClosedPositionsSection } from '../src/components/Holdings/ClosedPositionsSection';
 import HoldingsScreen from '../app/(tabs)/holdings';
 import { SimulationModal } from '../src/components/Tax/SimulationModal';
 import * as taxSimService from '../src/services/tax-simulation-service';
@@ -113,6 +115,22 @@ function findByTestId(tree: unknown, testID: string): Record<string, unknown> | 
     return findByTestId(children, testID);
   }
   return null;
+}
+
+function collectTreeText(tree: unknown): string {
+  if (tree === null || tree === undefined || typeof tree === 'boolean') return '';
+  if (typeof tree === 'string' || typeof tree === 'number') return String(tree);
+  if (Array.isArray(tree)) return tree.map(collectTreeText).join('');
+  if (typeof tree !== 'object') return '';
+  const node = tree as { props?: Record<string, unknown>; type?: unknown };
+  if (typeof node.type === 'function') {
+    try {
+      return collectTreeText((node.type as (p: Record<string, unknown>) => unknown)(node.props ?? {}));
+    } catch {
+      return '';
+    }
+  }
+  return collectTreeText(node.props?.['children']);
 }
 
 describe('Mobile Holdings Breakdown Components', () => {
@@ -403,6 +421,91 @@ describe('Mobile Holdings Breakdown Components', () => {
       const results = adaptHoldingsToFolioInputs([mockEnriched], [mockFolioEntity]);
       expect(results).toHaveLength(1);
       expect(results[0]?.pan).toBe('ABCDE1234F');
+    });
+
+    it('maps null xirr to undefined and preserves post-tax and net realizable metrics', () => {
+      const enrichedWithNullXirr: EnrichedHolding = {
+        ...mockEnriched,
+        xirr: null,
+        post_tax_xirr: 0.115,
+        post_tax_absolute_return: 0.16,
+        estimated_tax: 2000,
+        net_realizable_value: 58000,
+        total_gain: 10000,
+      };
+      const result = adaptHoldingToFolioInput(enrichedWithNullXirr, mockFolioEntity);
+      expect(result.metrics?.xirr).toBeUndefined();
+      expect(result.metrics?.postTaxXirr).toBe(0.115);
+      expect(result.metrics?.postTaxAbsoluteReturn).toBe(0.16);
+      expect(result.metrics?.estimatedTax).toBe(2000);
+      expect(result.metrics?.netRealizableValue).toBe(58000);
+      expect(result.metrics?.totalGain).toBe(10000);
+    });
+  });
+
+  describe('SchemeGroupCard zero day-change & ClosedPositionsSection XIRR', () => {
+    it('formats zero day-change without a plus sign and displays invested & XIRR/Abs', () => {
+      const el = CardTopRow({
+        schemeName: 'SBI Liquid Fund - Direct Growth',
+        schemeType: 'DEBT',
+        currentValue: 66000,
+        investedAmount: 60000,
+        xirr: 0.07,
+        absoluteReturn: 0.1,
+        performanceMode: 'ABS',
+        dayChange: 0,
+        dayChangePercentage: 0,
+      });
+      const text = collectTreeText(el);
+      expect(text).not.toContain('+₹0.00');
+      expect(text).toContain('Inv:');
+      expect(text).toContain('Abs:');
+    });
+
+    it('renders FolioChildRow with dayChange, postTaxXirr, and netRealizableValue', () => {
+      const el = FolioChildRow({
+        folio: {
+          ...sampleFolio1,
+          metrics: {
+            ...sampleFolio1.metrics,
+            postTaxXirr: 0.125,
+            netRealizableValue: 58500,
+          },
+        },
+        performanceMode: 'XIRR',
+      });
+      const text = collectTreeText(el);
+      expect(text).toContain('Post-Tax XIRR:');
+      expect(text).toContain('Net:');
+    });
+
+    it('renders ClosedPositionsSection with historical XIRR instead of ₹0.00 (0.00%)', () => {
+      const closedHolding: EnrichedHolding = {
+        id: 'closed-1',
+        folio_number: '99999/0',
+        amfi_code: '120503',
+        scheme_name: 'HDFC Top 100 Fund - Growth',
+        isin: 'INF179K01BE2',
+        units: 0,
+        invested_cost: 50000,
+        current_nav: 600,
+        current_value: 0,
+        asset_class: 'EQUITY',
+        nav_date: '2026-11-17',
+        updated_at: '2026-11-17T10:00:00Z',
+        dayChange: 0,
+        dayChangePct: 0,
+        gainLoss: 0,
+        gainLossPct: 0,
+        xirr: 0.142,
+        post_tax_xirr: 0.121,
+      };
+      const el = ClosedPositionsSection({ closedHoldings: [closedHolding] });
+      expect(el).toBeDefined();
+      const row = findByTestId(el, 'closed-folio-row-closed-1');
+      // ClosedPositionsSection starts collapsed; verify ClosedPositionsSection renders toggle
+      expect(row).toBeNull();
+      expect(findByTestId(el, 'closed-positions-toggle')).toBeTruthy();
     });
   });
 

@@ -115,9 +115,9 @@ describe('Task 5: Reality Check & Historical Checkpoints Suite', () => {
   });
 
   describe('1. Reality Check Calculation Service', () => {
-    it('uses standard default assumptions (6% CPI inflation, 15% tax rate, 3y horizon)', () => {
+    it('uses standard default assumptions (6% CPI inflation, 30% tax rate, 3y horizon)', () => {
       expect(DEFAULT_ASSUMPTIONS.inflationRate).toBe(0.06);
-      expect(DEFAULT_ASSUMPTIONS.taxRate).toBe(0.15);
+      expect(DEFAULT_ASSUMPTIONS.taxRate).toBe(0.30);
       expect(DEFAULT_ASSUMPTIONS.horizonYears).toBe(3);
     });
 

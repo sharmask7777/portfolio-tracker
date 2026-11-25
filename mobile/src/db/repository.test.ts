@@ -11,7 +11,10 @@ import {
   savePortfolioSnapshot,
   reconcileServerSnapshot,
   getStoredSummaryMetrics,
+  getStoredSummaryBundle,
+  saveScopedSummaryBundle,
   getPortfolioHoldings,
+  getClosedHoldings,
   updateHoldingNav,
   getPendingUploads,
   enqueueUpload,
@@ -698,6 +701,128 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
       expect(storedMetrics?.netRealizableValue).toBe(92000);
       expect(storedMetrics?.realPostTaxXirr).toBe(0.061);
       expect(storedMetrics?.drags?.purchasingPowerValue).toBe(77245);
+    });
+
+    it('persists and retrieves portfolio_history ATH and drawdown fields', async () => {
+      await savePortfolioHistory(db, 'p-hist', [
+        {
+          date: '2026-11-20',
+          value: 120000,
+          investedAmount: 100000,
+          unrealizedGain: 20000,
+          gainPercentage: 20,
+          isAth: true,
+          athValue: 120000,
+          drawdownPercentage: 0,
+        },
+        {
+          date: '2026-11-21',
+          value: 108000,
+          investedAmount: 100000,
+          unrealizedGain: 8000,
+          gainPercentage: 8,
+          isAth: false,
+          athValue: 120000,
+          drawdownPercentage: -10,
+        },
+      ]);
+
+      const history = await getPortfolioHistory(db, 'p-hist');
+      expect(history).toHaveLength(2);
+      expect(history[0]?.isAth).toBe(true);
+      expect(history[0]?.athValue).toBe(120000);
+      expect(history[1]?.isAth).toBe(false);
+      expect(history[1]?.athValue).toBe(120000);
+      expect(history[1]?.drawdownPercentage).toBe(-10);
+      expect(history[1]?.unrealizedGain).toBe(8000);
+      expect(history[1]?.gainPercentage).toBe(8);
+    });
+
+    it('enforces 0.001 units threshold for active vs closed holdings and preserves null xirr', async () => {
+      await savePortfolioSnapshot(db, {
+        portfolio: { id: 'p-thresh', name: 'Threshold', updated_at: '2026-11-25T00:00:00Z' },
+        folios: [{ folio_number: 'F-TH', amc_name: 'AMC', pan: 'ABCDE1234F', updated_at: '2026-11-25T00:00:00Z' }],
+        holdings: [
+          {
+            id: 'h-active',
+            folio_number: 'F-TH',
+            amfi_code: '100',
+            scheme_name: 'Active Scheme',
+            isin: null,
+            units: 0.001,
+            invested_cost: 10,
+            current_nav: 100,
+            current_value: 0.1,
+            asset_class: 'EQUITY',
+            nav_date: '2026-11-25',
+            updated_at: '2026-11-25T00:00:00Z',
+            xirr: null,
+            total_gain: 5,
+            post_tax_xirr: 0.11,
+            post_tax_absolute_return: 0.09,
+            estimated_tax: 1.5,
+            net_realizable_value: 8.5,
+          },
+          {
+            id: 'h-closed',
+            folio_number: 'F-TH',
+            amfi_code: '101',
+            scheme_name: 'Dust Closed Scheme',
+            isin: null,
+            units: 0.0005,
+            invested_cost: 0,
+            current_nav: 100,
+            current_value: 0.05,
+            asset_class: 'EQUITY',
+            nav_date: '2026-11-25',
+            updated_at: '2026-11-25T00:00:00Z',
+          },
+        ],
+      });
+
+      const active = await getPortfolioHoldings(db);
+      const closed = await getClosedHoldings(db);
+      expect(active.map((h) => h.id)).toEqual(['h-active']);
+      expect(active[0]?.xirr).toBeNull();
+      expect(active[0]?.post_tax_xirr).toBe(0.11);
+      expect(active[0]?.net_realizable_value).toBe(8.5);
+      expect(closed.map((h) => h.id)).toEqual(['h-closed']);
+    });
+
+    it('stores and retrieves scope-keyed summary bundles with panBreakdowns and assetAllocation', async () => {
+      await saveScopedSummaryBundle(db, 'member-1', {
+        metrics: {
+          totalInvested: 50000,
+          totalValue: 60000,
+          postTaxTotalValue: 58500,
+          netRealizableValue: 58500,
+          totalGain: 10000,
+          absoluteReturn: 0.2,
+          xirr: 0.14,
+          postTaxXirr: 0.12,
+          estimatedTax: 1500,
+          dayChange: 100,
+          dayChangePercentage: 0.17,
+        },
+        panBreakdowns: [
+          {
+            pan: 'ABCDE1234F',
+            memberName: 'Aarav Sharma',
+            investedAmount: 50000,
+            currentValue: 60000,
+            dayChange: 100,
+            dayChangePercentage: 0.17,
+            xirr: 0.14,
+            folioCount: 1,
+          },
+        ],
+        assetAllocation: [{ name: 'Hybrid', amount: 60000, percentage: 100, color: '#8b5cf6' }],
+      });
+
+      const bundle = await getStoredSummaryBundle(db, 'member-1');
+      expect(bundle?.metrics.postTaxXirr).toBe(0.12);
+      expect(bundle?.panBreakdowns?.[0]?.memberName).toBe('Aarav Sharma');
+      expect(bundle?.assetAllocation?.[0]?.name).toBe('Hybrid');
     });
   });
 });

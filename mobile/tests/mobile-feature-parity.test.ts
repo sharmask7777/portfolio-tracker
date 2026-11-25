@@ -287,7 +287,7 @@ describe('Mobile Feature Parity Unit Tests', () => {
       expect(holdings.length).toBe(1);
       expect(holdings[0]?.asset_class).toBe('GOLD');
       expect(holdings[0]?.units).toBe(10);
-      expect(holdings[0]?.folio_number).toContain('MANUAL_SGB_');
+      expect(holdings[0]?.folio_number).toMatch(/^MANUAL_\d+/);
 
       const txs = await getTransactionsByFolio(db, holdings[0]!.folio_number);
       expect(txs.length).toBe(1);

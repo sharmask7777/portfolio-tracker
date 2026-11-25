@@ -149,6 +149,11 @@ const mockFlushUploadQueue = vi.fn(async () => {
 });
 
 const mockIsServerReachable = vi.fn(async (_url?: string): Promise<boolean> => false);
+const mockRefreshPortfolio = vi.fn(async () => ({ success: true, source: 'server' as const }));
+
+vi.mock('../../src/services/portfolio-service', () => ({
+  refreshPortfolio: vi.fn(async () => mockRefreshPortfolio()),
+}));
 
 vi.mock('../../src/services/upload-queue', () => ({
   enqueueCasUpload: vi.fn(async () => mockEnqueueCasUpload()),
@@ -336,10 +341,34 @@ describe('Maestro Flow 03: CAS Upload Queue Simulation', () => {
 
     await waitFor(() => {
       expect(mockFlushUploadQueue).toHaveBeenCalled();
+      expect(mockRefreshPortfolio).toHaveBeenCalled();
       expect(
         screen.getByText('Synced 1 statement(s) successfully!'),
       ).toBeDefined();
       expect(screen.getByText('COMPLETED')).toBeDefined();
+    });
+  });
+
+  it('surfaces error status when async 202 polling ends in FAILED job status', async () => {
+    mockIsServerReachable.mockResolvedValue(true);
+    mockFlushUploadQueue.mockResolvedValueOnce({
+      succeeded: 0,
+      failed: 1,
+      errors: ['Incorrect CAS PDF password'],
+    } as never);
+
+    render(() => <UploadTabScreen />);
+    fireEvent.press(screen.getByText('Choose CAS PDF File'));
+    await waitFor(() => {
+      expect(screen.getByText('synthetic_cas_statement.pdf')).toBeDefined();
+    });
+
+    fireEvent.changeText(screen.getByTestId('password-input'), 'ABCDE1234F');
+    fireEvent.press(screen.getByText('Upload Statement'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Incorrect CAS PDF password')).toBeDefined();
+      expect(mockRefreshPortfolio).not.toHaveBeenCalled();
     });
   });
 });

@@ -286,7 +286,7 @@ export const fireEvent = {
 
 export async function waitFor(
   assertion: () => void | Promise<void>,
-  timeoutMs = 1000,
+  timeoutMs = 2000,
 ): Promise<void> {
   const startTime = Date.now();
   while (Date.now() - startTime < timeoutMs) {

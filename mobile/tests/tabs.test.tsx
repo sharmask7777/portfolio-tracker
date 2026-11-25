@@ -203,6 +203,30 @@ describe('Tabs Screens & Components', () => {
       expect(gainBlock[1]?.props?.children).toContain('+14.55%');
     });
 
+    it('renders After-Tax value and After-Tax XIRR in Nominal mode when provided', () => {
+      const element = NetWorthCard({
+        totalCurrentValue: 126000,
+        totalInvestedCost: 110000,
+        unrealizedGain: 16000,
+        unrealizedGainPct: 14.55,
+        performanceMode: 'XIRR',
+        overallXirr: 0.165,
+        postTaxTotalValue: 124000,
+        postTaxXirr: 0.142,
+      });
+
+      const children = getProps(element)['children'] as Array<{ props?: Record<string, unknown> }>;
+      const valueWrapper = children[1]?.props?.children as Array<{ props?: Record<string, unknown> }>;
+      const subValueText = (valueWrapper[1]?.props?.children as unknown[])?.join('');
+      expect(subValueText).toContain('After-Tax:');
+
+      const metricsRow = children[2]?.props?.children as Array<{ props?: Record<string, unknown> }>;
+      const gainBlock = metricsRow[1]?.props?.children as Array<{ props?: Record<string, unknown> }>;
+      const subXirrText = (gainBlock[2]?.props?.children as unknown[])?.join('');
+      expect(subXirrText).toContain('After-Tax XIRR:');
+      expect(subXirrText).toContain('+14.20%');
+    });
+
     it('renders DayReturnBanner with positive gain and offline badge', () => {
       const element = DayReturnBanner({
         dayGain: 2100,

@@ -97,10 +97,16 @@ import {
   addGoal,
   updateGoal,
   deleteGoal,
+  syncGoalsForScope,
   generateSmartInsights,
   DEFAULT_GOALS,
   type FinancialGoal,
 } from '../src/services/goals-service';
+import { mapBackendGoalToFinancialGoal } from '../src/services/analytics-sync-service';
+import {
+  mapBackendInsightsToSmartInsights,
+  fetchInsightsForScope,
+} from '../src/services/insights-generator';
 import type { EnrichedHolding } from '../src/services/portfolio-service';
 import { GoalProgressCard } from '../src/components/Insights/GoalProgressCard';
 import { AddGoalModal, validateGoalInput } from '../src/components/Insights/AddGoalModal';
@@ -697,6 +703,59 @@ describe('Goal Tracker & Financial Insights Domain', () => {
     it('registers the Insights tab with Target icon in TabsLayout', () => {
       const layout = TabsLayout();
       expect(layout).toBeDefined();
+    });
+  });
+
+  describe('Goals & Insights SSOT Mapping & Offline Fallback', () => {
+    it('maps backend GoalResponse with GoalMetricsDto into FinancialGoal', () => {
+      const mapped = mapBackendGoalToFinancialGoal({
+        id: 'g-srv-1',
+        portfolioId: 'p-1',
+        name: 'House Fund',
+        targetAmount: 2000000,
+        targetDate: '2030-01-01',
+        monthlySip: 15000,
+        priority: 'HIGH',
+        allocatedPercentage: 50,
+        metrics: {
+          currentValue: 500000,
+          progressPercentage: 25.0,
+          projectedValue: 1800000,
+          shortfall: 200000,
+          surplus: 0,
+          requiredMonthlySip: 18500,
+          remainingDays: 1460,
+          remainingMonths: 48,
+          status: 'Needs Attention',
+        },
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      });
+
+      expect(mapped.priority).toBe('High');
+      expect(mapped.serverMetrics?.currentValue).toBe(500000);
+      expect(mapped.serverMetrics?.requiredMonthlySip).toBe(18500);
+      expect(mapped.serverMetrics?.status).toBe('Behind');
+    });
+
+    it('maps backend InsightDto[] and falls back gracefully when offline', async () => {
+      const mapped = mapBackendInsightsToSmartInsights([
+        {
+          type: 'CONCENTRATION',
+          severity: 'HIGH',
+          message: 'High concentration in Financial Services sector (48.0%).',
+          recommendation: 'Diversify across sectors.',
+        },
+      ]);
+      expect(mapped).toHaveLength(1);
+      expect(mapped[0]?.type).toBe('CONCENTRATION_RISK');
+      expect(mapped[0]?.severity).toBe('HIGH');
+
+      const offlineGoals = await syncGoalsForScope('consolidated');
+      expect(offlineGoals.length).toBeGreaterThan(0);
+
+      const offlineInsights = await fetchInsightsForScope('consolidated');
+      expect(offlineInsights).toBeNull();
     });
   });
 });

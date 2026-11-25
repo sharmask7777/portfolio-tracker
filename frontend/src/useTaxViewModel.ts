@@ -4,8 +4,14 @@
  * @description Presentation controller hook for Tax tab, orchestrating FY selection, tax calculations, and ITR CSV export.
  */
 
-import { useState } from 'react';
-import type { ITRGainDetail, ITRSummary, AdvanceTaxAccrualMatrix } from './utils/itr-report-types';
+import { useState, useEffect } from 'react';
+import {
+  TaxSectionName,
+  type ITRGainDetail,
+  type ITRSummary,
+  type AdvanceTaxAccrualMatrix,
+  type SectionTotalData,
+} from './utils/itr-report-types';
 import type { HarvestTicketResponse } from './types/generated/HarvestTicketResponse';
 import {
   generateITRReportCSV,
@@ -15,7 +21,7 @@ import { computeAY } from './utils/tax-formatters';
 import { computeTaxBreakdowns, type TaxCalculationsResult } from './utils/tax-calculations';
 import { getDaysUntilFYEndIST, formatHarvestInstructions } from './components/Tax/tax-harvest-instructions';
 
-function getRecentFYs(summary: ITRSummary | null | undefined): string[] {
+function getRecentFYs(summary: ITRSummary | null | undefined, selectedFY?: string | null): string[] {
   const set = new Set<string>();
   const now = new Date();
   const year = now.getFullYear();
@@ -25,8 +31,12 @@ function getRecentFYs(summary: ITRSummary | null | undefined): string[] {
     set.add(`${currStartYear}-${(currStartYear + 1).toString().slice(-2)}`);
     currStartYear--;
   }
-  if (summary?.details) {
-    for (const d of summary.details) {
+  if (selectedFY) {
+    set.add(selectedFY);
+  }
+  const details = summary?.details ?? summary?.realized?.details;
+  if (details) {
+    for (const d of details) {
       if (d.sellDate) {
         const sd = new Date(d.sellDate);
         if (!isNaN(sd.getTime())) {
@@ -42,9 +52,10 @@ function getRecentFYs(summary: ITRSummary | null | undefined): string[] {
 }
 
 function getInitialFY(summary: ITRSummary | null | undefined, recentFYs: string[]): string {
-  if (summary?.details && summary.details.length > 0) {
+  const details = summary?.details ?? summary?.realized?.details;
+  if (details && details.length > 0) {
     let latestDate: Date | null = null;
-    for (const d of summary.details) {
+    for (const d of details) {
       const sd = new Date(d.sellDate);
       if (!isNaN(sd.getTime()) && (!latestDate || sd > latestDate)) {
         latestDate = sd;
@@ -78,13 +89,112 @@ function filterDetailsByFY(details: ITRGainDetail[] | undefined, fy: string): IT
   });
 }
 
-function downloadITRReport(summary: ITRSummary, selectedFY: string, filteredDetails: ITRGainDetail[]): void {
+/**
+ * Maps backend-computed `sectionTotals` and `realized` fields into `TaxCalculationsResult`
+ * without duplicating statutory tax math on the client.
+ */
+function buildTaxBreakdownsFromBackend(
+  sectionTotals: Record<string, SectionTotalData>,
+  realized: ITRSummary['realized'],
+  selectedFY: string
+): TaxCalculationsResult {
+  const sec111a15 = sectionTotals[TaxSectionName.SEC_111A_15];
+  const sec111a20 = sectionTotals[TaxSectionName.SEC_111A_20];
+  const sec112a10 = sectionTotals[TaxSectionName.SEC_112A_10];
+  const sec112a12_5 = sectionTotals[TaxSectionName.SEC_112A_12_5];
+  const sec112Debt12_5 = sectionTotals[TaxSectionName.SEC_112_DEBT_12_5];
+  const sec112Debt20 = sectionTotals[TaxSectionName.SEC_112_DEBT_20];
+  const sec50aa = sectionTotals[TaxSectionName.SEC_50AA];
+  const secSlab = sectionTotals[TaxSectionName.SLAB];
+
+  const stcg15Gain = sec111a15?.totalGain ?? 0;
+  const stcg20Gain = sec111a20?.totalGain ?? 0;
+  const ltcg10Gain = sec112a10?.totalGain ?? 0;
+  const ltcg12_5Gain = sec112a12_5?.totalGain ?? 0;
+  const debtLtcg12_5Gain = sec112Debt12_5?.totalGain ?? 0;
+  const debtLtcg20Gain = sec112Debt20?.totalGain ?? 0;
+  const slabGain =
+    realized?.taxableSlab ??
+    (sec50aa?.totalGain ?? 0) + (secSlab?.totalGain ?? 0);
+
+  const totalEquityLTCG = ltcg10Gain + ltcg12_5Gain;
+  const totalSTCG111A = stcg15Gain + stcg20Gain;
+  const totalDebtLTCG = debtLtcg20Gain + debtLtcg12_5Gain;
+
+  const ltcgLimit =
+    realized?.sec112aExemptionLimit ?? (selectedFY >= '2024-25' ? 125000 : 100000);
+  const ltcgExemptClaimed = realized?.sec112aExemption ?? 0;
+
+  const ltcgTaxBeforeCess =
+    (sec112a10?.taxBeforeCess ?? 0) + (sec112a12_5?.taxBeforeCess ?? 0);
+  const ltcgCess = (sec112a10?.cess ?? 0) + (sec112a12_5?.cess ?? 0);
+  const ltcgTotalTax =
+    (sec112a10?.totalTax ?? 0) + (sec112a12_5?.totalTax ?? 0);
+
+  const stcgTaxBeforeCess =
+    (sec111a15?.taxBeforeCess ?? 0) + (sec111a20?.taxBeforeCess ?? 0);
+  const stcgCess = (sec111a15?.cess ?? 0) + (sec111a20?.cess ?? 0);
+  const stcgTotalTax =
+    (sec111a15?.totalTax ?? 0) + (sec111a20?.totalTax ?? 0);
+
+  const debtTaxBeforeCess =
+    (sec112Debt12_5?.taxBeforeCess ?? 0) + (sec112Debt20?.taxBeforeCess ?? 0);
+  const debtCess =
+    (sec112Debt12_5?.cess ?? 0) + (sec112Debt20?.cess ?? 0);
+  const debtTotalTax =
+    (sec112Debt12_5?.totalTax ?? 0) + (sec112Debt20?.totalTax ?? 0);
+
+  const slabTaxBeforeCess =
+    (sec50aa?.taxBeforeCess ?? 0) + (secSlab?.taxBeforeCess ?? 0);
+  const slabCess = (sec50aa?.cess ?? 0) + (secSlab?.cess ?? 0);
+  const slabTotalTax = (sec50aa?.totalTax ?? 0) + (secSlab?.totalTax ?? 0);
+
+  const baseTaxTotal =
+    ltcgTaxBeforeCess + stcgTaxBeforeCess + debtTaxBeforeCess + slabTaxBeforeCess;
+  const cessTotal = ltcgCess + stcgCess + debtCess + slabCess;
+  const grandTotalTax = ltcgTotalTax + stcgTotalTax + debtTotalTax + slabTotalTax;
+
+  const ltcgUsed = Math.max(0, totalEquityLTCG);
+  const ltcgPercent = ltcgLimit > 0 ? Math.min(100, (ltcgUsed / ltcgLimit) * 100) : 0;
+
+  return {
+    totalEquityLTCG,
+    totalSTCG111A,
+    totalDebtLTCG,
+    ltcg10Gain,
+    ltcg12_5Gain,
+    stcg15Gain,
+    stcg20Gain,
+    debtLtcg20Gain,
+    debtLtcg12_5Gain,
+    slabGain,
+    ltcgLimit,
+    ltcgExemptClaimed,
+    ltcgTaxBeforeCess,
+    ltcgTotalTax,
+    stcgTotalTax,
+    debtTotalTax,
+    slabTaxBeforeCess,
+    slabTotalTax,
+    baseTaxTotal,
+    cessTotal,
+    grandTotalTax,
+    ltcgUsed,
+    ltcgPercent,
+  };
+}
+
+function downloadITRReport(
+  summary: ITRSummary,
+  selectedFY: string,
+  filteredDetails: ITRGainDetail[],
+  advanceTaxMatrix: AdvanceTaxAccrualMatrix
+): void {
   if (filteredDetails.length === 0) {
     alert('No realized gains found for this period to export.');
     return;
   }
   const ay = computeAY(selectedFY);
-  const advanceTaxMatrix = buildAdvanceTaxMatrix(filteredDetails);
   const csvContent = generateITRReportCSV({
     assesseeName:
       summary.assesseeName ||
@@ -109,6 +219,11 @@ function downloadITRReport(summary: ITRSummary, selectedFY: string, filteredDeta
   document.body.removeChild(link);
 }
 
+export interface UseTaxViewModelOptions {
+  selectedFY?: string | null | undefined;
+  onFYChange?: ((fy: string) => void) | undefined;
+}
+
 export interface TaxViewModel {
   selectedFY: string;
   setSelectedFY: (fy: string) => void;
@@ -128,19 +243,45 @@ export interface TaxViewModel {
 
 export function useTaxViewModel(
   summary: ITRSummary | null | undefined,
-  harvesting: HarvestTicketResponse | null
+  harvesting: HarvestTicketResponse | null,
+  options?: UseTaxViewModelOptions
 ): TaxViewModel {
   const [copySuccess, setCopySuccess] = useState(false);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [clipboardText, setClipboardText] = useState('');
 
   const fyEndInfo = getDaysUntilFYEndIST();
-  const recentFYs = getRecentFYs(summary);
-  const [selectedFY, setSelectedFY] = useState<string>(() => getInitialFY(summary, recentFYs));
+  const recentFYs = getRecentFYs(summary, options?.selectedFY);
+  const [internalFY, setInternalFY] = useState<string>(() => getInitialFY(summary, recentFYs));
+  const selectedFY = options?.selectedFY ?? internalFY;
 
-  const filteredDetails = filterDetailsByFY(summary?.details, selectedFY);
-  const tax = computeTaxBreakdowns(filteredDetails, selectedFY);
-  const advanceTaxMatrix = buildAdvanceTaxMatrix(filteredDetails);
+  const onFYChange = options?.onFYChange;
+
+  useEffect(() => {
+    if (!options?.selectedFY && onFYChange) {
+      onFYChange(internalFY);
+    }
+  }, [options?.selectedFY, internalFY, onFYChange]);
+
+  const setSelectedFY = (fy: string) => {
+    setInternalFY(fy);
+    options?.onFYChange?.(fy);
+  };
+
+  const backendSectionTotals = summary?.sectionTotals ?? summary?.realized?.sectionTotals;
+  const backendTableF = summary?.tableF ?? summary?.realized?.tableF;
+  const hasBackendTaxModel = Boolean(backendSectionTotals && backendTableF);
+
+  const rawDetails = summary?.details ?? summary?.realized?.details;
+  const filteredDetails = hasBackendTaxModel
+    ? (rawDetails ?? [])
+    : filterDetailsByFY(rawDetails, selectedFY);
+
+  const tax = backendSectionTotals
+    ? buildTaxBreakdownsFromBackend(backendSectionTotals, summary?.realized, selectedFY)
+    : computeTaxBreakdowns(filteredDetails, selectedFY);
+
+  const advanceTaxMatrix = backendTableF ?? buildAdvanceTaxMatrix(filteredDetails);
 
   const handleCopyInstructions = async () => {
     if (!harvesting) return;
@@ -161,7 +302,7 @@ export function useTaxViewModel(
 
   const handleDownloadReport = () => {
     if (summary) {
-      downloadITRReport(summary, selectedFY, filteredDetails);
+      downloadITRReport(summary, selectedFY, filteredDetails, advanceTaxMatrix);
     }
   };
 

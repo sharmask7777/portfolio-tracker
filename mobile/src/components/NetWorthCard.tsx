@@ -35,6 +35,10 @@ export interface NetWorthCardProps {
   estimatedTax?: number | undefined;
   /** Backend-computed Real Post-Tax XIRR (decimal) */
   realPostTaxXirr?: number | null | undefined;
+  /** Backend-computed post-tax total value in INR */
+  postTaxTotalValue?: number | undefined;
+  /** Backend-computed post-tax XIRR (decimal) */
+  postTaxXirr?: number | null | undefined;
 }
 
 const styles = StyleSheet.create({
@@ -90,6 +94,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#e4e4e7',
+  },
+  subMetricLabel: {
+    fontSize: 11,
+    color: '#a1a1aa',
+    marginTop: 3,
   },
   positive: {
     color: '#22c55e',
@@ -147,6 +156,35 @@ function resolveDisplayedReturn(props: NetWorthCardProps): { label: string; form
   return { label, formatted: `${formatInr(props.unrealizedGain)} (${formatPct(returnPct)})` };
 }
 
+function renderSubValueRow(props: NetWorthCardProps): React.ReactElement | null {
+  if (props.realityCheckMode && props.estimatedTax !== undefined) {
+    return (
+      <Text style={styles.subValueRow}>
+        Gross: {formatInr(props.totalCurrentValue)} · Est. Tax: -{formatInr(props.estimatedTax)}
+      </Text>
+    );
+  }
+  if (!props.realityCheckMode && typeof props.postTaxTotalValue === 'number') {
+    return (
+      <Text style={styles.subValueRow}>
+        After-Tax: {formatInr(props.postTaxTotalValue)}
+      </Text>
+    );
+  }
+  return null;
+}
+
+function renderPostTaxXirr(props: NetWorthCardProps): React.ReactElement | null {
+  if (props.realityCheckMode || typeof props.postTaxXirr !== 'number' || Number.isNaN(props.postTaxXirr)) {
+    return null;
+  }
+  return (
+    <Text style={styles.subMetricLabel}>
+      After-Tax XIRR: {formatPct(props.postTaxXirr * 100)}
+    </Text>
+  );
+}
+
 /**
  * Overview card showing total portfolio net worth, invested principal, and unrealized returns.
  *
@@ -169,11 +207,7 @@ export function NetWorthCard(props: NetWorthCardProps): React.ReactElement {
       </View>
       <View>
         <Text style={styles.value}>{formatInr(value)}</Text>
-        {props.realityCheckMode && props.estimatedTax !== undefined ? (
-          <Text style={styles.subValueRow}>
-            Gross: {formatInr(totalCurrentValue)} · Est. Tax: -{formatInr(props.estimatedTax)}
-          </Text>
-        ) : null}
+        {renderSubValueRow(props)}
       </View>
 
       <View style={styles.metricsRow}>
@@ -185,6 +219,7 @@ export function NetWorthCard(props: NetWorthCardProps): React.ReactElement {
         <View style={styles.metricBlock}>
           <Text style={styles.metricLabel}>{returnLabel}</Text>
           <Text style={[styles.metricValue, gainStyle]}>{gainFormatted}</Text>
+          {renderPostTaxXirr(props)}
         </View>
       </View>
     </View>

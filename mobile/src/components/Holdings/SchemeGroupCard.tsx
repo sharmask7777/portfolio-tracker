@@ -62,13 +62,24 @@ interface SchemeHeaderProps {
   isMultiFolio: boolean;
   isExpanded: boolean;
   showPanBadges: boolean;
+  performanceMode: PerformanceMode;
   onPress: () => void;
   onToggleExpand: (id: string) => void;
   onSimulate?: (() => void) | undefined;
 }
 
 function SchemeHeader(props: SchemeHeaderProps): React.ReactElement {
-  const { group, singleFolioNum, isMultiFolio, isExpanded, showPanBadges, onPress, onToggleExpand, onSimulate } = props;
+  const {
+    group,
+    singleFolioNum,
+    isMultiFolio,
+    isExpanded,
+    showPanBadges,
+    performanceMode,
+    onPress,
+    onToggleExpand,
+    onSimulate,
+  } = props;
   return (
     <TouchableOpacity
       style={styles.headerTouchable}
@@ -80,6 +91,10 @@ function SchemeHeader(props: SchemeHeaderProps): React.ReactElement {
         schemeName={group.schemeName}
         schemeType={group.type}
         currentValue={group.metrics.currentValue}
+        investedAmount={group.metrics.investedAmount}
+        xirr={group.metrics.xirr}
+        absoluteReturn={group.metrics.absoluteReturn}
+        performanceMode={performanceMode}
         dayChange={group.metrics.dayChange}
         dayChangePercentage={group.metrics.dayChangePercentage}
       />
@@ -141,6 +156,7 @@ export function SchemeGroupCard(props: SchemeGroupCardProps): React.ReactElement
         isMultiFolio={isMultiFolio}
         isExpanded={isExpanded}
         showPanBadges={showPanBadges}
+        performanceMode={performanceMode}
         onPress={handleHeaderPress}
         onToggleExpand={onToggleExpand}
         onSimulate={handleQuickSimulate}

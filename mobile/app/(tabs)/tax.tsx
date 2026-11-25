@@ -24,25 +24,21 @@ import {
   type AdvanceTaxAccrualMatrix,
   type HarvestPlan,
   type HarvestOpportunity,
-  type HoldingHarvestInput,
 } from '../../src/services/tax-harvesting';
-import {
-  getEnrichedHoldings,
-  refreshPortfolio,
-  type EnrichedHolding,
-} from '../../src/services/portfolio-service';
+import { refreshPortfolio } from '../../src/services/portfolio-service';
 import {
   getCachedPortfolioAnalytics,
+  syncScopedAnalytics,
   type CachedAnalyticsResult,
 } from '../../src/services/analytics-sync-service';
 import {
   mapServerTableFToMatrix,
   mapServerSummaryToResult,
+  mapHarvestTicketToPlan,
 } from '../../src/services/tax-summary-mapper';
 import {
   getStoredFamilyProfiles,
   getStoredFolios,
-  filterHoldingsForProfile,
   type FamilyProfile,
   type FolioEntity,
 } from '../../src/services/family-service';
@@ -58,34 +54,6 @@ const styles = StyleSheet.create({
   simBtn: { backgroundColor: '#27272a', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: '#3f3f46', flexDirection: 'row', alignItems: 'center', gap: 6 },
   simBtnText: { fontSize: 12, fontWeight: '600', color: '#f4f4f5' },
 });
-
-function mapHoldingsToHarvestInputs(holdings: EnrichedHolding[]): HoldingHarvestInput[] {
-  return holdings.map((h) => {
-    const buyPrice = h.invested_cost > 0 && h.units > 0 ? h.invested_cost / h.units : h.current_nav * 0.8;
-    const buyDate = h.nav_date && !isNaN(Date.parse(h.nav_date))
-      ? h.nav_date
-      : new Date().toISOString().split('T')[0] ?? '2024-04-01';
-    const isElss = h.scheme_name.toLowerCase().includes('elss');
-
-    return {
-      folioId: h.folio_number,
-      schemeName: h.scheme_name,
-      isin: h.isin ?? undefined,
-      isElss,
-      currentUnits: h.units,
-      currentNav: h.current_nav,
-      lots: [
-        {
-          lotId: `LOT-${h.id}`,
-          buyDate,
-          units: h.units,
-          buyPrice,
-          isElss,
-        },
-      ],
-    };
-  });
-}
 
 interface ActiveSimulationTarget {
   schemeName: string;
@@ -116,44 +84,49 @@ function TaxHeader({ onSimulate }: { onSimulate: () => void }): React.ReactEleme
   );
 }
 
-function useTaxData() {
+function useTaxData(scopeId: string, selectedFY: string) {
   const [refreshing, setRefreshing] = useState(false);
-  const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
   const [folios, setFolios] = useState<FolioEntity[]>([]);
   const [cachedAnalytics, setCachedAnalytics] = useState<CachedAnalyticsResult | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [enriched, storedProfiles, storedFolios, analytics] = await Promise.all([
-        getEnrichedHoldings(),
+      const [storedProfiles, storedFolios, analytics] = await Promise.all([
         getStoredFamilyProfiles(),
         getStoredFolios(),
-        getCachedPortfolioAnalytics(),
+        getCachedPortfolioAnalytics(undefined, scopeId, selectedFY),
       ]);
-      setHoldings(enriched);
       setProfiles(storedProfiles);
       setFolios(storedFolios);
       setCachedAnalytics(analytics);
     } catch {
       // Retain state
     }
-  }, []);
+  }, [scopeId, selectedFY]);
 
   useEffect(() => {
     void loadData();
-    void refreshPortfolio().then(() => {
-      void loadData();
-    });
-  }, [loadData]);
+    void Promise.all([refreshPortfolio(), syncScopedAnalytics(scopeId, selectedFY)]).then(
+      ([, synced]) => {
+        setCachedAnalytics(synced);
+        void loadData();
+      },
+    );
+  }, [loadData, scopeId, selectedFY]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refreshPortfolio();
+    const [, synced] = await Promise.all([
+      refreshPortfolio(),
+      syncScopedAnalytics(scopeId, selectedFY),
+    ]);
+    setCachedAnalytics(synced);
     await loadData();
     setRefreshing(false);
-  }, [loadData]);
+  }, [loadData, scopeId, selectedFY]);
 
-  return { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics };
+  return { refreshing, onRefresh, profiles, folios, cachedAnalytics };
 }
 
 interface TaxDerivedCalculations {
@@ -163,7 +136,6 @@ interface TaxDerivedCalculations {
 }
 
 function useTaxCalculations(
-  filteredHoldings: EnrichedHolding[],
   selectedFY: string,
   cachedAnalytics: CachedAnalyticsResult | null,
 ): TaxDerivedCalculations {
@@ -175,10 +147,12 @@ function useTaxCalculations(
   }, [cachedAnalytics, selectedFY]);
 
   const harvestPlan = useMemo(() => {
-    const harvestInputs = mapHoldingsToHarvestInputs(filteredHoldings);
+    if (cachedAnalytics?.harvestTicket) {
+      return mapHarvestTicketToPlan(cachedAnalytics.harvestTicket, selectedFY);
+    }
     const realizedLtcg = Math.max(0, taxResult.totalEquityLTCG);
-    return buildTaxHarvestPlan(harvestInputs, realizedLtcg);
-  }, [filteredHoldings, taxResult.totalEquityLTCG]);
+    return buildTaxHarvestPlan([], realizedLtcg);
+  }, [cachedAnalytics, selectedFY, taxResult.totalEquityLTCG]);
 
   const advanceMatrix = useMemo(() => {
     if (cachedAnalytics?.taxSummary) {
@@ -229,21 +203,6 @@ function MainContent(props: MainContentProps): React.ReactElement {
   );
 }
 
-function useTaxScopeFilter(holdings: EnrichedHolding[], profiles: FamilyProfile[], folios: FolioEntity[]) {
-  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
-  const activeProfile = useMemo(() => {
-    if (!scopeState.activeProfileId) return null;
-    return profiles.find((p) => p.id === scopeState.activeProfileId) ?? null;
-  }, [scopeState.activeProfileId, profiles]);
-
-  const filteredHoldings = useMemo(
-    () => filterHoldingsForProfile(activeProfile, holdings, folios),
-    [activeProfile, holdings, folios],
-  );
-
-  return { scopeState, filteredHoldings };
-}
-
 function useTaxSimulation() {
   const [simModalOpen, setSimModalOpen] = useState<boolean>(false);
   const [simTarget, setSimTarget] = useState<ActiveSimulationTarget | null>(null);
@@ -267,6 +226,16 @@ function useTaxSimulation() {
   return { simModalOpen, setSimModalOpen, simTarget, handleSimulateHarvest, openBlankSimulate };
 }
 
+function resolveSimDefaults(simTarget: ActiveSimulationTarget | null) {
+  return {
+    schemeName: simTarget?.schemeName ?? 'Portfolio Mutual Fund',
+    folioId: simTarget?.folioId ?? 'FOLIO-1',
+    initialUnits: simTarget?.units,
+    currentNav: simTarget?.currentNav ?? 100,
+    isElss: simTarget?.isElss ?? false,
+  };
+}
+
 /**
  * Tax & Statutory Compliance Tab screen.
  *
@@ -274,10 +243,12 @@ function useTaxSimulation() {
  */
 export default function TaxScreen(): React.ReactElement {
   const [selectedFY, setSelectedFY] = useState<string>('2024-25');
+  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+  const scopeId = scopeState.activeProfileId ?? 'consolidated';
   const { simModalOpen, setSimModalOpen, simTarget, handleSimulateHarvest, openBlankSimulate } = useTaxSimulation();
-  const { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics } = useTaxData();
-  const { scopeState, filteredHoldings } = useTaxScopeFilter(holdings, profiles, folios);
-  const calcs = useTaxCalculations(filteredHoldings, selectedFY, cachedAnalytics);
+  const { refreshing, onRefresh, profiles, folios, cachedAnalytics } = useTaxData(scopeId, selectedFY);
+  const calcs = useTaxCalculations(selectedFY, cachedAnalytics);
+  const simProps = resolveSimDefaults(simTarget);
 
   const handleExportScheduleCg = useCallback(() => {
     void exportScheduleCgCsv(selectedFY, calcs.taxResult, calcs.advanceMatrix);
@@ -305,11 +276,7 @@ export default function TaxScreen(): React.ReactElement {
       <SimulationModal
         visible={simModalOpen}
         onClose={() => setSimModalOpen(false)}
-        schemeName={simTarget?.schemeName ?? 'Portfolio Mutual Fund'}
-        folioId={simTarget?.folioId ?? 'FOLIO-1'}
-        initialUnits={simTarget?.units}
-        currentNav={simTarget?.currentNav ?? 100}
-        isElss={simTarget?.isElss ?? false}
+        {...simProps}
       />
     </View>
   );

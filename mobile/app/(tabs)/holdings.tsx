@@ -196,7 +196,7 @@ function resolveIsElss(schemeName: string, assetType?: string): boolean {
 }
 
 function resolveFolioId(folio: FolioInput): string {
-  return folio.number || folio.folioNumber || folio.id;
+  return folio.id;
 }
 
 function resolveCurrentNav(folio: FolioInput): number {

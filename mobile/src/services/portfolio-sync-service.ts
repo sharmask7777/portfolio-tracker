@@ -1,10 +1,17 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { DragDecompositionDto, SummaryMetrics } from '../types/generated';
+import type {
+  AssetAllocationDto,
+  DragDecompositionDto,
+  PanBreakdownDto,
+  SummaryMetrics,
+} from '../types/generated';
 import { getDatabaseInstance, initDatabase } from '../db/client';
 import {
   reconcileServerSnapshot,
-  getStoredSummaryMetrics,
+  getStoredSummaryBundle,
+  saveScopedSummaryBundle,
   type PortfolioSnapshotInput,
+  type StoredSummaryEnvelope,
 } from '../db/repository';
 import type { DashboardSummary } from './portfolio-service';
 import type { FolioEntity, HoldingEntity, TransactionEntity } from '../db/schema';
@@ -12,13 +19,14 @@ import { syncPortfolioHistoryFromServer } from './history-service';
 import { syncPortfolioAnalyticsFromServer } from './analytics-sync-service';
 import {
   mapRawFolioToHolding,
+  normalizeAssetClass,
   type ServerFolioData,
   type ServerTransactionData,
 } from './portfolio-calculations';
 import { saveFamilyProfiles, type FamilyProfile } from './family-service';
 
 let cachedDrags: DragDecompositionDto | null = null;
-let cachedSummaryMetrics: SummaryMetrics | null = null;
+const cachedBundlesByScope = new Map<string, StoredSummaryEnvelope>();
 
 export function setCachedDrags(drags: DragDecompositionDto | null): void {
   cachedDrags = drags;
@@ -28,38 +36,59 @@ export function getCachedDrags(): DragDecompositionDto | null {
   return cachedDrags;
 }
 
-export function setCachedSummaryMetrics(metrics: SummaryMetrics | null): void {
-  cachedSummaryMetrics = metrics;
-  cachedDrags = metrics?.drags ?? null;
+function setCachedSummaryBundle(
+  bundle: StoredSummaryEnvelope | null,
+  scopeId: string = 'consolidated',
+): void {
+  if (bundle) {
+    cachedBundlesByScope.set(scopeId, bundle);
+    cachedDrags = bundle.metrics.drags ?? null;
+  } else {
+    cachedBundlesByScope.delete(scopeId);
+    if (scopeId === 'consolidated') cachedDrags = null;
+  }
 }
 
-export async function loadCachedSummaryMetrics(
-  targetDb: SQLiteDatabase,
-): Promise<SummaryMetrics | null> {
-  if (cachedSummaryMetrics) {
-    return cachedSummaryMetrics;
+export async function getStoredDashboardBundle(
+  db?: SQLiteDatabase,
+  scopeId: string = 'consolidated',
+): Promise<StoredSummaryEnvelope | null> {
+  const memCached = cachedBundlesByScope.get(scopeId);
+  if (memCached) return memCached;
+  const targetDb = db ?? getDatabaseInstance() ?? (await initDatabase());
+  if (!targetDb || typeof targetDb.getFirstAsync !== 'function') {
+    return null;
   }
-  const stored = await getStoredSummaryMetrics(targetDb);
+  const stored = await getStoredSummaryBundle(targetDb, scopeId);
   if (stored) {
-    setCachedSummaryMetrics(stored);
+    setCachedSummaryBundle(stored, scopeId);
   }
   return stored;
 }
 
 export async function getStoredDashboardMetrics(
   db?: SQLiteDatabase,
+  scopeId: string = 'consolidated',
 ): Promise<SummaryMetrics | null> {
-  const targetDb = db ?? getDatabaseInstance() ?? (await initDatabase());
-  if (!targetDb || typeof targetDb.getFirstAsync !== 'function') {
-    return null;
-  }
-  return loadCachedSummaryMetrics(targetDb);
+  const bundle = await getStoredDashboardBundle(db, scopeId);
+  return bundle?.metrics ?? null;
 }
 
 export function mergeServerMetricsIntoSummary(
   base: Omit<DashboardSummary, 'isOfflineFallback'>,
   serverMetrics: SummaryMetrics,
+  backendAssetAllocation?: AssetAllocationDto[],
 ): DashboardSummary {
+  const assetAllocation =
+    backendAssetAllocation && backendAssetAllocation.length > 0
+      ? backendAssetAllocation.map((item) => ({
+          name: normalizeAssetClass(item.name, item.name),
+          amount: item.amount,
+          percentage: item.percentage,
+          color: item.color,
+        }))
+      : base.assetAllocation;
+
   return {
     ...base,
     totalCurrentValue: serverMetrics.totalValue,
@@ -69,11 +98,13 @@ export function mergeServerMetricsIntoSummary(
     dayGain: serverMetrics.dayChange,
     dayGainPct: serverMetrics.dayChangePercentage,
     overallXirr: serverMetrics.xirr,
+    postTaxXirr: serverMetrics.postTaxXirr ?? null,
     netRealizableValue: serverMetrics.netRealizableValue ?? serverMetrics.postTaxTotalValue,
     postTaxTotalValue: serverMetrics.postTaxTotalValue,
     estimatedTax: serverMetrics.estimatedTax,
     realPostTaxXirr: serverMetrics.realPostTaxXirr ?? null,
     drags: serverMetrics.drags ?? null,
+    assetAllocation,
     metrics: serverMetrics,
     isOfflineFallback: false,
   };
@@ -180,15 +211,24 @@ async function syncFamilyProfilesFromServer(profilesUrl: string, token: string):
 export interface SyncServerOptions {
   cpi?: number | undefined;
   taxBracket?: number | undefined;
+  profileId?: string | undefined;
+}
+
+function isValidNum(val: number | undefined): val is number {
+  return typeof val === 'number' && !Number.isNaN(val);
 }
 
 function buildSummaryUrl(trimmedBase: string, options?: SyncServerOptions): string {
   const params = new URLSearchParams();
-  if (typeof options?.cpi === 'number' && !Number.isNaN(options.cpi)) {
-    params.set('cpi', String(options.cpi));
+  if (isValidNum(options?.cpi)) {
+    params.set('cpiInflationRate', String(options.cpi));
   }
-  if (typeof options?.taxBracket === 'number' && !Number.isNaN(options.taxBracket)) {
-    params.set('taxBracket', String(options.taxBracket));
+  if (isValidNum(options?.taxBracket)) {
+    params.set('marginalTaxBracket', String(options.taxBracket));
+  }
+  const pid = options?.profileId?.trim();
+  if (pid) {
+    params.set('profileId', pid);
   }
   const qs = params.toString();
   return qs ? `${trimmedBase}/api/portfolio/summary?${qs}` : `${trimmedBase}/api/portfolio/summary`;
@@ -201,6 +241,21 @@ export interface SyncServerParams {
   options?: SyncServerOptions | undefined;
 }
 
+function extractSummaryBundle(json: Record<string, unknown>): StoredSummaryEnvelope | null {
+  if (!json['metrics'] || typeof json['metrics'] !== 'object') {
+    return null;
+  }
+  return {
+    metrics: json['metrics'] as SummaryMetrics,
+    panBreakdowns: Array.isArray(json['panBreakdowns'])
+      ? (json['panBreakdowns'] as PanBreakdownDto[])
+      : undefined,
+    assetAllocation: Array.isArray(json['assetAllocation'])
+      ? (json['assetAllocation'] as AssetAllocationDto[])
+      : undefined,
+  };
+}
+
 export async function syncWithServerWithOptions({
   serverUrl,
   token,
@@ -210,6 +265,8 @@ export async function syncWithServerWithOptions({
   const trimmed = serverUrl.trim().replace(/\/+$/, '');
   const url = buildSummaryUrl(trimmed, options);
   const profilesUrl = `${trimmed}/api/family/profiles`;
+  const profileId = options?.profileId?.trim() || undefined;
+  const scopeId = profileId ?? 'consolidated';
 
   try {
     const res = await fetch(url, {
@@ -218,14 +275,20 @@ export async function syncWithServerWithOptions({
     });
     if (!res.ok) return false;
     const json = (await res.json()) as Record<string, unknown>;
-    const snapshot = parseServerPayload(json);
-    let metricsJson: string | null = null;
-    if (json['metrics'] && typeof json['metrics'] === 'object') {
-      const metrics = json['metrics'] as SummaryMetrics;
-      setCachedSummaryMetrics(metrics);
-      metricsJson = JSON.stringify(metrics);
+    const bundle = extractSummaryBundle(json);
+    if (bundle) {
+      setCachedSummaryBundle(bundle, scopeId);
+      await saveScopedSummaryBundle(targetDb, scopeId, bundle);
     }
-    await reconcileServerSnapshot(targetDb, snapshot, metricsJson);
+
+    if (profileId) {
+      const historyUrl = `${trimmed}/api/portfolio/${profileId}/history`;
+      await syncPortfolioHistoryFromServer({ historyUrl, portfolioId: profileId, token, db: targetDb });
+      return true;
+    }
+
+    const snapshot = parseServerPayload(json);
+    await reconcileServerSnapshot(targetDb, snapshot, bundle ? JSON.stringify(bundle) : null);
     await syncFamilyProfilesFromServer(profilesUrl, token);
     const historyUrl = `${trimmed}/api/portfolio/${snapshot.portfolio.id}/history`;
     await syncPortfolioHistoryFromServer({ historyUrl, portfolioId: snapshot.portfolio.id, token, db: targetDb });
