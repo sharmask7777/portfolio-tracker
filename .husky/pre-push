@@ -2,7 +2,8 @@
 
 set -e
 
-echo "Running static privacy & Anti-PII guardrail..."
+echo "Running Python static lint (ruff) & Anti-PII guardrail..."
+ruff check scripts backend-rs/scripts
 python3 scripts/check-privacy-and-pii.py
 
 echo "Running Rust backend verification pipeline..."
@@ -11,9 +12,18 @@ echo "Running Rust backend verification pipeline..."
 echo "Verifying TypeScript contracts parity..."
 (cd backend-rs && cargo test --package portfolio-api --test export_bindings)
 git diff --exit-code frontend/src/types/generated mobile/src/types/generated || (echo "❌ Frontend or mobile types drift detected! Commit updated generated types." && exit 1)
+if [ -n "$(git status --porcelain frontend/src/types/generated mobile/src/types/generated)" ]; then
+  echo "❌ Untracked or modified files detected in generated types!"
+  git status --porcelain frontend/src/types/generated mobile/src/types/generated
+  exit 1
+fi
 
-echo "Enforcing backend test coverage threshold (fail-under-lines 80%)..."
-(cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 80 --summary-only)
+echo "Enforcing backend workspace test coverage threshold (fail-under-lines 80%)..."
+pnpm run test:coverage:backend
+
+echo "Verifying @portfolio/core-view types and coverage..."
+pnpm --filter @portfolio/core-view typecheck
+pnpm --filter @portfolio/core-view test:coverage
 
 echo "Verifying mobile build, lints, knip, and coverage..."
 pnpm --filter mobile build:verify

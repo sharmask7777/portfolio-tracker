@@ -1,6 +1,7 @@
 #![allow(
     missing_docs,
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
     clippy::assert_is_empty,
     clippy::undocumented_unsafe_blocks

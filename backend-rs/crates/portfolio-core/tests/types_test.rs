@@ -1,4 +1,4 @@
-#![allow(missing_docs, clippy::unwrap_used, clippy::panic)]
+#![allow(missing_docs, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

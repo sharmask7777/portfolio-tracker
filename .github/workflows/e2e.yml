@@ -22,16 +22,31 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
-    - name: Run Hermetic Unit Tests (Frontend)
-      run: pnpm --filter frontend test:unit
+    - name: Run Python Sensors (Ruff & Anti-PII)
+      run: |
+        pip install ruff
+        ruff check scripts backend-rs/scripts
+        python3 scripts/check-privacy-and-pii.py
+
+    - name: Run @portfolio/core-view Sensors & Coverage
+      run: |
+        pnpm --filter @portfolio/core-view typecheck
+        pnpm --filter @portfolio/core-view test:coverage
+
+    - name: Run Hermetic Unit Tests & Build (Frontend)
+      run: |
+        pnpm --filter frontend build
+        pnpm --filter frontend test:unit
 
     - name: Run Mobile Maintainability Sensors & Tests
       run: |
-        pnpm --filter mobile lint
-        pnpm --filter mobile typecheck
-        pnpm --filter mobile knip
-        pnpm --filter mobile test
+        pnpm --filter mobile build:verify
         pnpm --filter mobile test:e2e
+
+    - name: Run Cross-Platform Parity Gates
+      run: |
+        pnpm parity:check
+        pnpm parity:visual
 
     - name: Setup Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -43,17 +58,12 @@ jobs:
       with:
         workspaces: "backend-rs -> target"
 
-    - name: Run Rust Workspace Quality & Tests
+    - name: Run Rust Workspace Quality, Tests & Coverage
       run: |
-        cd backend-rs
-        cargo fmt --check
-        cargo clippy --workspace --all-targets -- -D warnings
-        cargo test --workspace
-
-    - name: Run Dual-Runner Parity Validation Harness
-      run: |
-        cd backend-rs
-        cargo run --package portfolio-parity
+        cargo install --locked cargo-deny
+        cargo install cargo-llvm-cov
+        (cd backend-rs && ./scripts/verify.sh)
+        pnpm run test:coverage:backend
 
     - name: Install Playwright Browsers
       run: pnpm --filter frontend exec playwright install --with-deps chromium

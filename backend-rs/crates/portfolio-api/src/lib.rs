@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! HTTP REST API Gateway for Portfolio Tracker.
 //!
 //! Provides camelCase JSON endpoints with JWT authentication,

@@ -1,6 +1,7 @@
 #![allow(
     missing_docs,
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
     clippy::assert_is_empty,
     clippy::undocumented_unsafe_blocks
@@ -323,9 +324,9 @@ async fn test_nav_refresh_job_processing() {
 
     // 2. Refresh with default date and default NAV (offline fallback)
     if std::env::var("MFAPI_BASE_URL").is_err() {
-        unsafe {
-            std::env::set_var("MFAPI_BASE_URL", "http://127.0.0.1:1");
-        }
+        portfolio_worker::jobs::nav_refresh::set_mfapi_base_url_override(Some(
+            "http://127.0.0.1:1".to_string(),
+        ));
     }
     let job_default = NavRefreshJobData::new("120716");
     let err_default = process_nav_refresh_job(&job_default, &db).await;
@@ -385,9 +386,7 @@ async fn test_process_nav_refresh_job_with_mfapi_payload() {
         axum::serve(listener, mock_app).await.ok();
     });
 
-    unsafe {
-        std::env::set_var("MFAPI_BASE_URL", &base_url);
-    }
+    portfolio_worker::jobs::nav_refresh::set_mfapi_base_url_override(Some(base_url.clone()));
 
     let db = InMemoryDatabase::new();
     let job_data = NavRefreshJobData::new("122639");
@@ -433,9 +432,7 @@ async fn test_process_nav_refresh_job_fallback_when_http_fails() {
         axum::serve(listener, mock_app).await.ok();
     });
 
-    unsafe {
-        std::env::set_var("MFAPI_BASE_URL", &base_url);
-    }
+    portfolio_worker::jobs::nav_refresh::set_mfapi_base_url_override(Some(base_url.clone()));
 
     let db = InMemoryDatabase::new();
     let job_data = NavRefreshJobData::new("118989");

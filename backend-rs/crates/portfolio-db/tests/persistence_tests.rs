@@ -1,6 +1,7 @@
 #![allow(
     missing_docs,
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
     clippy::assert_is_empty
 )]
@@ -1039,6 +1040,6 @@ fn test_schema_ddl_numeric_precision_and_partial_index() {
     assert!(ddl.contains(r#""taxSlab" NUMERIC(18, 4)"#));
     assert!(ddl.contains(r#""amount" NUMERIC(18, 4)"#));
     assert!(ddl.contains(r#""targetAmount" NUMERIC(18, 2)"#));
-    assert!(ddl.contains(r#"Portfolio_userId_managedProfileId_key"#));
+    assert!(ddl.contains(r"Portfolio_userId_managedProfileId_key"));
     assert!(!ddl.contains(r#"UPDATE "Transaction" SET amount = ABS(amount)"#));
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Automated Differential Parity Harness (`portfolio-parity`).
 //!
 //! Validates mathematical equivalence and precision bounds between

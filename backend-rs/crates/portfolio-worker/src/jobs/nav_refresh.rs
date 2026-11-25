@@ -13,6 +13,15 @@ use portfolio_db::InMemoryDatabase;
 use portfolio_db::entities::HistoricalNavEntity;
 use rust_decimal::Decimal;
 
+static MFAPI_BASE_URL_OVERRIDE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Sets an in-process override for `MFAPI_BASE_URL` (used in hermetic tests without `unsafe` env mutation).
+pub fn set_mfapi_base_url_override(url: Option<String>) {
+    if let Ok(mut guard) = MFAPI_BASE_URL_OVERRIDE.write() {
+        *guard = url;
+    }
+}
+
 use crate::error::WorkerError;
 use crate::jobs::NavRefreshJobData;
 
@@ -70,8 +79,12 @@ pub async fn process_nav_refresh_job(
         (date, nav_override)
     } else {
         // Attempt live fetch from MFAPI
-        let base_url =
-            std::env::var("MFAPI_BASE_URL").unwrap_or_else(|_| "https://api.mfapi.in".to_string());
+        let base_url = MFAPI_BASE_URL_OVERRIDE
+            .read()
+            .ok()
+            .and_then(|g| g.clone())
+            .or_else(|| std::env::var("MFAPI_BASE_URL").ok())
+            .unwrap_or_else(|| "https://api.mfapi.in".to_string());
         let url = format!(
             "{}/mf/{validated_amfi_code}/latest",
             base_url.trim_end_matches('/')

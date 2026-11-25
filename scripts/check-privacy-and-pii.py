@@ -54,13 +54,6 @@ ALLOWED_SYNTHETIC_PANS = {
 # Standard Indian Income Tax PAN regex: 5 uppercase letters, 4 digits, 1 uppercase letter
 PAN_REGEX = re.compile(r'\b[A-Z]{5}[0-9]{4}[A-Z]\b')
 
-# Forbidden file extensions or filenames that must never be tracked in git
-FORBIDDEN_FILE_PATTERNS = [
-    re.compile(r'.*\.cas\.json$', re.IGNORECASE),
-    re.compile(r'.*parsed_cas\.json$', re.IGNORECASE),
-    re.compile(r'.*\.pdf$', re.IGNORECASE), # Exception: test.pdf if dummy
-]
-
 # Paths allowed to contain test fixtures or documentation references
 ALLOWLISTED_PATHS = {
     "scripts/check-privacy-and-pii.py",
@@ -68,7 +61,12 @@ ALLOWLISTED_PATHS = {
 }
 
 def get_tracked_files():
-    result = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     return [f.strip() for f in result.stdout.splitlines() if f.strip()]
 
 def check_file_privacy(file_path: str) -> list[str]:
@@ -76,35 +74,33 @@ def check_file_privacy(file_path: str) -> list[str]:
     if file_path in ALLOWLISTED_PATHS:
         return violations
 
-    # Check for forbidden binary or CAS exports
-    if file_path.endswith((".cas.json", "parsed_cas.json")):
+    # Check for forbidden binary, CAS exports, or .env files (excluding .env.example)
+    basename = os.path.basename(file_path)
+    is_forbidden_env = (
+        (basename == ".env" or basename.startswith(".env."))
+        and not basename.endswith(".env.example")
+    )
+    is_binary = file_path.endswith((".png", ".jpg", ".jpeg", ".ico", ".lock", ".wasm"))
+    if is_forbidden_env:
+        violations.append(f"Forbidden environment file tracked or untracked in git: {file_path}")
+    elif file_path.endswith((".cas.json", "parsed_cas.json")):
         violations.append(f"Forbidden CAS data file tracked in git: {file_path}")
-        return violations
-
-    if file_path.endswith(".pdf") and file_path != "test.pdf":
+    elif file_path.endswith(".pdf") and file_path != "test.pdf":
         violations.append(f"Forbidden PDF file tracked in git: {file_path}")
-        return violations
-
-    # Ignore images, lockfiles, compiled targets
-    if file_path.endswith((".png", ".jpg", ".jpeg", ".ico", ".svg", ".lock", ".wasm")):
-        return violations
-
-    if not os.path.isfile(file_path):
-        return violations
-
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line_idx, line in enumerate(f, start=1):
-                # Check for PAN occurrences
-                pans = PAN_REGEX.findall(line)
-                for pan in pans:
-                    if pan not in ALLOWED_SYNTHETIC_PANS:
-                        violations.append(
-                            f"{file_path}:{line_idx} - Non-synthetic PAN detected: '{pan}' "
-                            f"(Violates Zero Real Data Commitment mandate)"
-                        )
-    except (OSError, UnicodeDecodeError) as e:
-        violations.append(f"Error reading file {file_path}: {e}")
+    elif not is_binary and os.path.isfile(file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line_idx, line in enumerate(f, start=1):
+                    # Check for PAN occurrences
+                    pans = PAN_REGEX.findall(line)
+                    for pan in pans:
+                        if pan not in ALLOWED_SYNTHETIC_PANS:
+                            violations.append(
+                                f"{file_path}:{line_idx} - Non-synthetic PAN detected: '{pan}' "
+                                f"(Violates Zero Real Data Commitment mandate)"
+                            )
+        except (OSError, UnicodeDecodeError) as e:
+            violations.append(f"Error reading file {file_path}: {e}")
 
     return violations
 

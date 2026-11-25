@@ -32,10 +32,10 @@ tracing = "0.1"
 ts-rs = { version = "10.1", features = ["chrono-impl", "uuid-impl", "no-serde-warnings"] }
 
 [workspace.lints.rust]
+unsafe_code = "forbid"
 missing_docs = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 unreachable_pub = "warn"
-unknown_lints = "allow"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
 
 [workspace.lints.rustdoc]
@@ -46,8 +46,11 @@ bare_urls = "warn"
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 unwrap_used = "deny"
+expect_used = "deny"
 panic = "deny"
 todo = "deny"
+unreachable = "deny"
+dbg_macro = "deny"
 redundant_clone = "deny"
 undocumented_unsafe_blocks = "deny"
 

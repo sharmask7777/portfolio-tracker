@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! Background Queue Workers (`portfolio-worker`) for Portfolio Tracker.
 //!
 //! Provides background job processors for:

@@ -16,7 +16,7 @@ ignore = [
 ]
 
 [licenses]
-unused-allowed-license = "allow"
+unused-allowed-license = "deny"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -25,8 +25,6 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
-    "OpenSSL",
     "Zlib",
     "CDLA-Permissive-2.0",
 ]
@@ -39,7 +37,8 @@ registries = []
 
 [bans]
 multiple-versions = "warn"
-wildcards = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
