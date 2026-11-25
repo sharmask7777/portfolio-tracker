@@ -1,9 +1,12 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { DragDecompositionDto } from '../types/generated';
+import type { DragDecompositionDto, SummaryMetrics } from '../types/generated';
+import { getDatabaseInstance, initDatabase } from '../db/client';
 import {
-  savePortfolioSnapshot,
+  reconcileServerSnapshot,
+  getStoredSummaryMetrics,
   type PortfolioSnapshotInput,
 } from '../db/repository';
+import type { DashboardSummary } from './portfolio-service';
 import type { FolioEntity, HoldingEntity, TransactionEntity } from '../db/schema';
 import { syncPortfolioHistoryFromServer } from './history-service';
 import { syncPortfolioAnalyticsFromServer } from './analytics-sync-service';
@@ -15,6 +18,7 @@ import {
 import { saveFamilyProfiles, type FamilyProfile } from './family-service';
 
 let cachedDrags: DragDecompositionDto | null = null;
+let cachedSummaryMetrics: SummaryMetrics | null = null;
 
 export function setCachedDrags(drags: DragDecompositionDto | null): void {
   cachedDrags = drags;
@@ -22,6 +26,57 @@ export function setCachedDrags(drags: DragDecompositionDto | null): void {
 
 export function getCachedDrags(): DragDecompositionDto | null {
   return cachedDrags;
+}
+
+export function setCachedSummaryMetrics(metrics: SummaryMetrics | null): void {
+  cachedSummaryMetrics = metrics;
+  cachedDrags = metrics?.drags ?? null;
+}
+
+export async function loadCachedSummaryMetrics(
+  targetDb: SQLiteDatabase,
+): Promise<SummaryMetrics | null> {
+  if (cachedSummaryMetrics) {
+    return cachedSummaryMetrics;
+  }
+  const stored = await getStoredSummaryMetrics(targetDb);
+  if (stored) {
+    setCachedSummaryMetrics(stored);
+  }
+  return stored;
+}
+
+export async function getStoredDashboardMetrics(
+  db?: SQLiteDatabase,
+): Promise<SummaryMetrics | null> {
+  const targetDb = db ?? getDatabaseInstance() ?? (await initDatabase());
+  if (!targetDb || typeof targetDb.getFirstAsync !== 'function') {
+    return null;
+  }
+  return loadCachedSummaryMetrics(targetDb);
+}
+
+export function mergeServerMetricsIntoSummary(
+  base: Omit<DashboardSummary, 'isOfflineFallback'>,
+  serverMetrics: SummaryMetrics,
+): DashboardSummary {
+  return {
+    ...base,
+    totalCurrentValue: serverMetrics.totalValue,
+    totalInvestedCost: serverMetrics.totalInvested,
+    unrealizedGain: serverMetrics.totalGain,
+    unrealizedGainPct: serverMetrics.absoluteReturn * 100,
+    dayGain: serverMetrics.dayChange,
+    dayGainPct: serverMetrics.dayChangePercentage,
+    overallXirr: serverMetrics.xirr,
+    netRealizableValue: serverMetrics.netRealizableValue ?? serverMetrics.postTaxTotalValue,
+    postTaxTotalValue: serverMetrics.postTaxTotalValue,
+    estimatedTax: serverMetrics.estimatedTax,
+    realPostTaxXirr: serverMetrics.realPostTaxXirr ?? null,
+    drags: serverMetrics.drags ?? null,
+    metrics: serverMetrics,
+    isOfflineFallback: false,
+  };
 }
 
 function extractFolioEntities(foliosList: ServerFolioData[], now: string): FolioEntity[] {
@@ -122,13 +177,38 @@ async function syncFamilyProfilesFromServer(profilesUrl: string, token: string):
   }
 }
 
-export async function syncWithServer(
-  serverUrl: string,
-  token: string,
-  targetDb: SQLiteDatabase,
-): Promise<boolean> {
+export interface SyncServerOptions {
+  cpi?: number | undefined;
+  taxBracket?: number | undefined;
+}
+
+function buildSummaryUrl(trimmedBase: string, options?: SyncServerOptions): string {
+  const params = new URLSearchParams();
+  if (typeof options?.cpi === 'number' && !Number.isNaN(options.cpi)) {
+    params.set('cpi', String(options.cpi));
+  }
+  if (typeof options?.taxBracket === 'number' && !Number.isNaN(options.taxBracket)) {
+    params.set('taxBracket', String(options.taxBracket));
+  }
+  const qs = params.toString();
+  return qs ? `${trimmedBase}/api/portfolio/summary?${qs}` : `${trimmedBase}/api/portfolio/summary`;
+}
+
+export interface SyncServerParams {
+  serverUrl: string;
+  token: string;
+  targetDb: SQLiteDatabase;
+  options?: SyncServerOptions | undefined;
+}
+
+export async function syncWithServerWithOptions({
+  serverUrl,
+  token,
+  targetDb,
+  options,
+}: SyncServerParams): Promise<boolean> {
   const trimmed = serverUrl.trim().replace(/\/+$/, '');
-  const url = `${trimmed}/api/portfolio/summary`;
+  const url = buildSummaryUrl(trimmed, options);
   const profilesUrl = `${trimmed}/api/family/profiles`;
 
   try {
@@ -139,13 +219,13 @@ export async function syncWithServer(
     if (!res.ok) return false;
     const json = (await res.json()) as Record<string, unknown>;
     const snapshot = parseServerPayload(json);
+    let metricsJson: string | null = null;
     if (json['metrics'] && typeof json['metrics'] === 'object') {
-      const metrics = json['metrics'] as Record<string, unknown>;
-      if (metrics['drags']) {
-        setCachedDrags(metrics['drags'] as DragDecompositionDto);
-      }
+      const metrics = json['metrics'] as SummaryMetrics;
+      setCachedSummaryMetrics(metrics);
+      metricsJson = JSON.stringify(metrics);
     }
-    await savePortfolioSnapshot(targetDb, snapshot);
+    await reconcileServerSnapshot(targetDb, snapshot, metricsJson);
     await syncFamilyProfilesFromServer(profilesUrl, token);
     const historyUrl = `${trimmed}/api/portfolio/${snapshot.portfolio.id}/history`;
     await syncPortfolioHistoryFromServer({ historyUrl, portfolioId: snapshot.portfolio.id, token, db: targetDb });
@@ -154,4 +234,12 @@ export async function syncWithServer(
   } catch {
     return false;
   }
+}
+
+export async function syncWithServer(
+  serverUrl: string,
+  token: string,
+  targetDb: SQLiteDatabase,
+): Promise<boolean> {
+  return syncWithServerWithOptions({ serverUrl, token, targetDb });
 }

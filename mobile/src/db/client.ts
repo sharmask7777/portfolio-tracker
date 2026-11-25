@@ -9,6 +9,7 @@ const MIGRATION_ALTERS = [
   'ALTER TABLE holdings ADD COLUMN xirr REAL DEFAULT 0;',
   'ALTER TABLE holdings ADD COLUMN absolute_return REAL DEFAULT 0;',
   'ALTER TABLE holdings ADD COLUMN asset_category TEXT;',
+  'ALTER TABLE portfolios ADD COLUMN summary_metrics_json TEXT;',
 ] as const;
 
 let databaseInstance: SQLiteDatabase | null = null;

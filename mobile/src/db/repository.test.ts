@@ -9,6 +9,8 @@ import {
 } from './client';
 import {
   savePortfolioSnapshot,
+  reconcileServerSnapshot,
+  getStoredSummaryMetrics,
   getPortfolioHoldings,
   updateHoldingNav,
   getPendingUploads,
@@ -563,6 +565,139 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
 
       const fallback = await getPortfolioHistory(db, 'default');
       expect(fallback).toEqual(points);
+    });
+  });
+
+  describe('Server Snapshot Reconciliation & Summary Metrics Persistence', () => {
+    it('prunes stale duplicate folios and holdings on server sync while preserving MANUAL_* folios', async () => {
+      const now = '2026-11-25T00:00:00Z';
+      // Step 1: Seed inflated duplicate folios (simulating pre-fix SQLite state)
+      await savePortfolioSnapshot(db, {
+        portfolio: { id: 'p-1', name: 'Main', updated_at: now },
+        folios: [
+          { folio_number: '10101010 / 05', amc_name: 'HDFC', pan: 'ALPAC1001A', updated_at: now },
+          { folio_number: '10101010/ 05', amc_name: 'HDFC', pan: 'ALPAC1001A', updated_at: now },
+          { folio_number: 'MANUAL_EPF_1', amc_name: 'EPF', pan: 'ALPAC1001A', updated_at: now },
+        ],
+        holdings: [
+          {
+            id: 'h-dup-1',
+            folio_number: '10101010 / 05',
+            amfi_code: '119551',
+            scheme_name: 'HDFC Corporate Bond',
+            isin: 'INF179K01V01',
+            units: 1000,
+            invested_cost: 50000,
+            current_nav: 100,
+            current_value: 100000,
+            asset_class: 'DEBT',
+            nav_date: '2026-11-24',
+            updated_at: now,
+          },
+          {
+            id: 'h-dup-2',
+            folio_number: '10101010/ 05',
+            amfi_code: '119551',
+            scheme_name: 'HDFC Corporate Bond',
+            isin: 'INF179K01V01',
+            units: 1000,
+            invested_cost: 50000,
+            current_nav: 100,
+            current_value: 100000,
+            asset_class: 'DEBT',
+            nav_date: '2026-11-24',
+            updated_at: now,
+          },
+          {
+            id: 'h-manual-1',
+            folio_number: 'MANUAL_EPF_1',
+            amfi_code: null,
+            scheme_name: 'EPF Account',
+            isin: null,
+            units: 25000,
+            invested_cost: 25000,
+            current_nav: 1,
+            current_value: 25000,
+            asset_class: 'DEBT',
+            nav_date: '2026-11-24',
+            updated_at: now,
+          },
+        ],
+      });
+
+      expect(await getPortfolioHoldings(db)).toHaveLength(3);
+
+      // Step 2: Reconcile with deduplicated canonical server snapshot
+      const metricsJson = JSON.stringify({
+        totalInvested: 50000,
+        totalValue: 100000,
+        postTaxTotalValue: 92000,
+        netRealizableValue: 92000,
+        totalGain: 50000,
+        absoluteReturn: 1.0,
+        xirr: 0.145,
+        postTaxXirr: 0.125,
+        realPostTaxXirr: 0.061,
+        estimatedTax: 8000,
+        dayChange: 120,
+        dayChangePercentage: 0.12,
+        drags: {
+          nominalXirr: 0.145,
+          postTaxXirr: 0.125,
+          debtDrag: 0.01,
+          equityDrag: 0.008,
+          cessAndOtherDrag: 0.002,
+          inflationDrag: 0.064,
+          totalTaxDrag: 0.02,
+          totalOverallDrag: 0.084,
+          realPostTaxXirr: 0.061,
+          benchmarkSpread: 0.05,
+          postTaxValue: 92000,
+          purchasingPowerValue: 77245,
+          purchasingPowerLoss: 22755,
+          stages: [],
+        },
+      });
+
+      await reconcileServerSnapshot(
+        db,
+        {
+          portfolio: { id: 'p-1', name: 'Main', updated_at: '2026-11-25T01:00:00Z' },
+          folios: [
+            { folio_number: '10101010/05', amc_name: 'HDFC', pan: 'ALPAC1001A', updated_at: '2026-11-25T01:00:00Z' },
+          ],
+          holdings: [
+            {
+              id: 'h-canon-1',
+              folio_number: '10101010/05',
+              amfi_code: '119551',
+              scheme_name: 'HDFC Corporate Bond',
+              isin: 'INF179K01V01',
+              units: 1000,
+              invested_cost: 50000,
+              current_nav: 100,
+              current_value: 100000,
+              asset_class: 'DEBT',
+              nav_date: '2026-11-24',
+              updated_at: '2026-11-25T01:00:00Z',
+            },
+          ],
+        },
+        metricsJson,
+      );
+
+      const holdingsAfter = await getPortfolioHoldings(db);
+      expect(holdingsAfter.map((h) => h.id).sort()).toEqual(['h-canon-1', 'h-manual-1']);
+
+      const foliosAfter = await getAllFolios(db);
+      expect(foliosAfter.map((f) => f.folio_number).sort()).toEqual(['10101010/05', 'MANUAL_EPF_1']);
+
+      const storedMetrics = await getStoredSummaryMetrics(db);
+      expect(storedMetrics).not.toBeNull();
+      expect(storedMetrics?.totalValue).toBe(100000);
+      expect(storedMetrics?.netRealizableValue).toBe(92000);
+      expect(storedMetrics?.realPostTaxXirr).toBe(0.061);
+      expect(storedMetrics?.drags?.purchasingPowerValue).toBe(77245);
     });
   });
 });

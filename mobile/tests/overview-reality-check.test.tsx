@@ -92,6 +92,7 @@ import {
   PresetGrid,
   HistoricalTrendChart,
 } from '../src/components/Dashboard';
+import { NetWorthCard } from '../src/components/NetWorthCard';
 
 import { BannerHeader } from '../src/components/Dashboard/RealityCheckRow';
 import { ModalHeader } from '../src/components/Dashboard/AssumptionsModal';
@@ -547,12 +548,51 @@ describe('Task 5: Reality Check & Historical Checkpoints Suite', () => {
     });
   });
 
-  describe('7. DashboardScreen Integration', () => {
+  describe('7. DashboardScreen Integration & NetWorthCard Reality Check Compliance', () => {
     it('renders DashboardScreen with Reality Check toggle and Historical Trend chart', () => {
       const screen = DashboardScreen();
       expect(screen).toBeDefined();
       const testID = getProps(screen)['testID'];
       expect(testID === 'dashboard-scroll' || testID === 'dashboard-loading').toBe(true);
+    });
+
+    it('switches NetWorthCard between Nominal and Net Realizable Wealth in Reality Check mode', () => {
+      const nominalCard = NetWorthCard({
+        totalCurrentValue: 136943774,
+        totalInvestedCost: 95000000,
+        unrealizedGain: 41943774,
+        unrealizedGainPct: 44.15,
+        performanceMode: 'XIRR',
+        overallXirr: 0.165,
+        realityCheckMode: false,
+        netRealizableValue: 131500000,
+        estimatedTax: 5443774,
+        realPostTaxXirr: 0.082,
+      });
+      const nominalText = JSON.stringify(nominalCard);
+      expect(nominalText).toContain('Total Net Worth');
+      expect(nominalText).toContain('13,69,43,774');
+      expect(nominalText).toContain('Total Gain (XIRR)');
+
+      const realityCard = NetWorthCard({
+        totalCurrentValue: 136943774,
+        totalInvestedCost: 95000000,
+        unrealizedGain: 41943774,
+        unrealizedGainPct: 44.15,
+        performanceMode: 'XIRR',
+        overallXirr: 0.165,
+        realityCheckMode: true,
+        netRealizableValue: 131500000,
+        estimatedTax: 5443774,
+        realPostTaxXirr: 0.082,
+      });
+      const realityText = JSON.stringify(realityCard);
+      expect(realityText).toContain('Net Realizable Wealth');
+      expect(realityText).toContain('13,15,00,000');
+      expect(realityText).toContain('Gross:');
+      expect(realityText).toContain('Est. Tax:');
+      expect(realityText).toContain('Real Post-Tax XIRR');
+      expect(realityText).toContain('8.20%');
     });
   });
 });

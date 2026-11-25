@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import type { SummaryMetrics } from '../types/generated';
 import type {
   FolioEntity,
   HoldingEntity,
@@ -44,14 +45,20 @@ export {
   getQueueCounts,
 } from './upload-repository';
 
-async function upsertPortfolio(db: SQLiteDatabase, portfolio: PortfolioEntity): Promise<void> {
+async function upsertPortfolio(
+  db: SQLiteDatabase,
+  portfolio: PortfolioEntity,
+  summaryMetricsJson?: string | null,
+): Promise<void> {
+  const metricsPayload = summaryMetricsJson ?? portfolio.summary_metrics_json ?? null;
   await db.runAsync(
-    `INSERT INTO portfolios (id, name, updated_at)
-     VALUES (?, ?, ?)
+    `INSERT INTO portfolios (id, name, updated_at, summary_metrics_json)
+     VALUES (?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
-       updated_at = excluded.updated_at;`,
-    [portfolio.id, portfolio.name, portfolio.updated_at],
+       updated_at = excluded.updated_at,
+       summary_metrics_json = COALESCE(excluded.summary_metrics_json, portfolios.summary_metrics_json);`,
+    [portfolio.id, portfolio.name, portfolio.updated_at, metricsPayload],
   );
 }
 
@@ -135,6 +142,51 @@ export async function savePortfolioSnapshot(
   });
 }
 
+/**
+ * Atomically replaces non-manual server folios, holdings, and transactions with the
+ * authoritative backend snapshot, pruning stale or deduplicated records while preserving
+ * local MANUAL_* assets and persisting backend summary metrics.
+ */
+export async function reconcileServerSnapshot(
+  db: SQLiteDatabase,
+  snapshot: PortfolioSnapshotInput,
+  summaryMetricsJson?: string | null,
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM holdings WHERE folio_number NOT LIKE 'MANUAL_%';");
+    await db.runAsync("DELETE FROM folios WHERE folio_number NOT LIKE 'MANUAL_%';");
+    await db.runAsync("DELETE FROM transactions WHERE folio_number NOT LIKE 'MANUAL_%';");
+    await upsertPortfolio(db, snapshot.portfolio, summaryMetricsJson);
+    for (const folio of snapshot.folios) {
+      await upsertFolio(db, folio);
+    }
+    for (const holding of snapshot.holdings) {
+      await upsertHolding(db, holding);
+    }
+    if (snapshot.transactions) {
+      for (const tx of snapshot.transactions) {
+        await upsertTransaction(db, tx);
+      }
+    }
+  });
+}
+
+export async function getStoredSummaryMetrics(
+  db: SQLiteDatabase,
+): Promise<SummaryMetrics | null> {
+  const row = await db.getFirstAsync<{ summary_metrics_json: string | null }>(
+    'SELECT summary_metrics_json FROM portfolios WHERE summary_metrics_json IS NOT NULL ORDER BY updated_at DESC LIMIT 1;',
+  );
+  if (!row?.summary_metrics_json) {
+    return null;
+  }
+  try {
+    return JSON.parse(row.summary_metrics_json) as SummaryMetrics;
+  } catch {
+    return null;
+  }
+}
+
 export async function getPortfolioHoldings(
   db: SQLiteDatabase,
   folioNumber?: string,
@@ -185,7 +237,7 @@ export async function getPortfolioById(
   id: string,
 ): Promise<PortfolioEntity | null> {
   return db.getFirstAsync<PortfolioEntity>(
-    'SELECT * FROM portfolios WHERE id = ?;',
+    'SELECT id, name, updated_at FROM portfolios WHERE id = ?;',
     [id],
   );
 }

@@ -27,6 +27,14 @@ export interface NetWorthCardProps {
   overallXirr?: number | undefined;
   /** Optional callback invoked when performance mode toggle is switched */
   onTogglePerformanceMode?: ((mode: PerformanceMode) => void) | undefined;
+  /** Whether Reality Check mode is active */
+  realityCheckMode?: boolean | undefined;
+  /** Backend-computed Net Realizable Wealth (post-tax & exit load) */
+  netRealizableValue?: number | undefined;
+  /** Backend-computed estimated unrealized tax */
+  estimatedTax?: number | undefined;
+  /** Backend-computed Real Post-Tax XIRR (decimal) */
+  realPostTaxXirr?: number | null | undefined;
 }
 
 const styles = StyleSheet.create({
@@ -56,6 +64,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#f4f4f5',
     marginBottom: 16,
+  },
+  subValueRow: {
+    fontSize: 12,
+    color: '#a1a1aa',
+    marginTop: -10,
+    marginBottom: 14,
   },
   metricsRow: {
     flexDirection: 'row',
@@ -107,36 +121,60 @@ function resolveReturnLabel(
   return 'Total Gain (ABS)';
 }
 
+function resolveDisplayedNetWorth(
+  realityCheckMode: boolean | undefined,
+  totalCurrentValue: number,
+  netRealizableValue: number | undefined,
+): { title: string; value: number } {
+  if (realityCheckMode) {
+    return {
+      title: 'Net Realizable Wealth',
+      value: netRealizableValue ?? totalCurrentValue,
+    };
+  }
+  return { title: 'Total Net Worth', value: totalCurrentValue };
+}
+
+function resolveDisplayedReturn(props: NetWorthCardProps): { label: string; formatted: string } {
+  if (props.realityCheckMode && props.realPostTaxXirr !== undefined && props.realPostTaxXirr !== null) {
+    return {
+      label: 'Real Post-Tax XIRR',
+      formatted: `${formatPct(props.realPostTaxXirr * 100)}`,
+    };
+  }
+  const returnPct = resolveReturnPct(props.performanceMode, props.overallXirr, props.unrealizedGainPct);
+  const label = resolveReturnLabel(props.performanceMode, props.overallXirr);
+  return { label, formatted: `${formatInr(props.unrealizedGain)} (${formatPct(returnPct)})` };
+}
+
 /**
  * Overview card showing total portfolio net worth, invested principal, and unrealized returns.
  *
  * @param props - Component properties {@link NetWorthCardProps}
  * @returns React Native element
  */
-export function NetWorthCard({
-  totalCurrentValue,
-  totalInvestedCost,
-  unrealizedGain,
-  unrealizedGainPct,
-  performanceMode,
-  overallXirr,
-  onTogglePerformanceMode,
-}: NetWorthCardProps): React.ReactElement {
-  const isGainPositive = unrealizedGain >= 0;
-  const gainStyle = isGainPositive ? styles.positive : styles.negative;
-  const returnPct = resolveReturnPct(performanceMode, overallXirr, unrealizedGainPct);
-  const returnLabel = resolveReturnLabel(performanceMode, overallXirr);
-  const gainFormatted = `${formatInr(unrealizedGain)} (${formatPct(returnPct)})`;
+export function NetWorthCard(props: NetWorthCardProps): React.ReactElement {
+  const { totalCurrentValue, totalInvestedCost, unrealizedGain, performanceMode, onTogglePerformanceMode } = props;
+  const gainStyle = unrealizedGain >= 0 ? styles.positive : styles.negative;
+  const { title, value } = resolveDisplayedNetWorth(props.realityCheckMode, totalCurrentValue, props.netRealizableValue);
+  const { label: returnLabel, formatted: gainFormatted } = resolveDisplayedReturn(props);
 
   return (
     <View style={styles.card} testID="net-worth-card">
       <View style={styles.headerRow}>
-        <Text style={styles.label}>Total Net Worth</Text>
+        <Text style={styles.label}>{title}</Text>
         {performanceMode && onTogglePerformanceMode ? (
           <PerformanceModeToggle mode={performanceMode} onToggle={onTogglePerformanceMode} />
         ) : null}
       </View>
-      <Text style={styles.value}>{formatInr(totalCurrentValue)}</Text>
+      <View>
+        <Text style={styles.value}>{formatInr(value)}</Text>
+        {props.realityCheckMode && props.estimatedTax !== undefined ? (
+          <Text style={styles.subValueRow}>
+            Gross: {formatInr(totalCurrentValue)} · Est. Tax: -{formatInr(props.estimatedTax)}
+          </Text>
+        ) : null}
+      </View>
 
       <View style={styles.metricsRow}>
         <View style={styles.metricBlock}>

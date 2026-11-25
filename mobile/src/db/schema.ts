@@ -2,6 +2,7 @@ export interface PortfolioEntity {
   id: string;
   name: string;
   updated_at: string;
+  summary_metrics_json?: string | null | undefined;
 }
 
 export interface FolioEntity {
@@ -81,7 +82,8 @@ export const CREATE_PORTFOLIOS_TABLE = `
 CREATE TABLE IF NOT EXISTS portfolios (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  summary_metrics_json TEXT
 );
 `.trim();
 
