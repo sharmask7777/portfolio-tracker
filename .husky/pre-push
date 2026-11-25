@@ -25,7 +25,7 @@ git diff --exit-code frontend/src/types/generated mobile/src/types/generated || 
 echo "Enforcing backend test coverage thresholds (portfolio-core >= 93%, workspace >= 78%)..."
 (cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 93 --summary-only && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|test_mocks\.rs|repositories/)" --fail-under-lines 78 --json --output-path coverage.json)
 
-echo "Verifying mobile build, lints, knip, and coverage (lines 89%, statements 87%, funcs 86%, branches 76%)..."
+echo "Verifying mobile build, lints, knip, and coverage (lines 89%, statements 87%, funcs 86%, branches 75%)..."
 pnpm --filter mobile build:verify
 
 echo "Running mobile E2E simulation suites..."
