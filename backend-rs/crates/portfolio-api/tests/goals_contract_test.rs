@@ -10,8 +10,6 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-#![allow(clippy::expect_used)]
-
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use chrono::{Duration, Utc};
