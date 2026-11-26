@@ -76,7 +76,11 @@ pub struct OverlapQuery {
 #[serde(rename_all = "camelCase")]
 pub struct SummaryParams {
     pub profile_id: Option<String>,
-    #[serde(alias = "tax_slab", alias = "marginal_tax_bracket", alias = "taxBracket")]
+    #[serde(
+        alias = "tax_slab",
+        alias = "marginal_tax_bracket",
+        alias = "taxBracket"
+    )]
     pub marginal_tax_bracket: Option<Decimal>,
     #[serde(alias = "cpi_inflation_rate", alias = "cpi")]
     pub cpi_inflation_rate: Option<Decimal>,
