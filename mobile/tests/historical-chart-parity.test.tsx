@@ -1,9 +1,32 @@
 import React from 'react';
 
+interface StateSlot {
+  val: unknown;
+  setter: ReturnType<typeof vi.fn>;
+}
+
+let stateSlots: StateSlot[] = [];
+let slotCursor = 0;
+
+function resetSlots(): void {
+  stateSlots = [];
+  slotCursor = 0;
+}
+
 // Set up React hook dispatcher for testing functional components in Node
 // @ts-expect-error React internals for test runner
 React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.H = {
-  useState: (init: unknown) => [typeof init === 'function' ? (init as () => unknown)() : init, vi.fn()],
+  useState: (init: unknown) => {
+    const i = slotCursor++;
+    if (!stateSlots[i]) {
+      const val = typeof init === 'function' ? (init as () => unknown)() : init;
+      const setter = vi.fn((next: unknown) => {
+        stateSlots[i]!.val = typeof next === 'function' ? (next as (prev: unknown) => unknown)(stateSlots[i]!.val) : next;
+      });
+      stateSlots[i] = { val, setter };
+    }
+    return [stateSlots[i]!.val, stateSlots[i]!.setter];
+  },
   useEffect: (fn: () => void) => fn(),
   useCallback: (fn: unknown) => fn,
   useMemo: (fn: () => unknown) => fn(),
@@ -11,11 +34,17 @@ React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.H = {
   useContext: () => ({}),
 };
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { HistoricalTrendChart } from '../src/components/Dashboard/HistoricalTrendChart';
 import { RANGES, ChartSvgCanvas } from '../src/components/Dashboard/chart-components';
+import {
+  sliceForZoomAndPan,
+  handlePinchAndPanMove,
+  type GestureRefs,
+  type GestureCallbacks,
+} from '../src/components/Dashboard/chart-gesture';
 import type { HistoryPoint } from '../src/types/generated';
-import type { HistoryRangePreset } from '../src/services/reality-check-service';
+import type { HistoryRangePreset, HistoricalCheckpoint } from '../src/services/reality-check-service';
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (s: Record<string, unknown>) => s },
@@ -52,6 +81,10 @@ function getChartContentChildren(element: React.ReactElement): unknown[] {
 }
 
 describe('HistoricalTrendChart Parity & Real Points Suite', () => {
+  beforeEach(() => {
+    resetSlots();
+  });
+
   const mockPoints: HistoryPoint[] = [
     {
       date: '2026-01-01',
@@ -193,7 +226,17 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
     const rangeBar = children[1] as { props?: { onSelectRange?: (r: HistoryRangePreset) => void } };
     expect(rangeBar).toBeDefined();
     expect(typeof rangeBar.props?.onSelectRange).toBe('function');
-    expect(() => rangeBar.props?.onSelectRange?.('1M')).not.toThrow();
+
+    // Select new preset '1M'
+    rangeBar.props?.onSelectRange?.('1M');
+
+    // Slot 0: selectedRange, Slot 1: selectedIdx, Slot 2: probedDate, Slot 3: scrubX, Slot 4: zoomLevel, Slot 5: panOffset
+    expect(stateSlots[0]?.setter).toHaveBeenCalledWith('1M');
+    expect(stateSlots[1]?.setter).toHaveBeenCalledWith(null);
+    expect(stateSlots[2]?.setter).toHaveBeenCalledWith(null);
+    expect(stateSlots[3]?.setter).toHaveBeenCalledWith(null);
+    expect(stateSlots[4]?.setter).toHaveBeenCalledWith(1);
+    expect(stateSlots[5]?.setter).toHaveBeenCalledWith(1);
   });
 
   it('handles 2-finger pinch gesture, adjusts zoom, and hides hairline during pinch', () => {
@@ -214,7 +257,7 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
     const handlers = svgCanvas.props?.panResponderHandlers;
     const onMove = handlers?.['onPanResponderMove'] as (e: unknown, g: unknown) => void;
 
-    // Start 2-finger pinch
+    // Start 2-finger pinch with initial distance = 100
     onMove(
       {
         nativeEvent: {
@@ -228,7 +271,7 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
     );
     expect(onGestureActive).toHaveBeenCalledWith(true);
 
-    // Continue pinch: widen fingers
+    // Continue pinch: widen fingers distance = 160 (scale = 1.6x)
     onMove(
       {
         nativeEvent: {
@@ -241,6 +284,10 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
       { dx: 0, dy: 0, numberActiveTouches: 2 },
     );
     expect(onGestureActive).toHaveBeenCalledWith(true);
+    // Hairline must be hidden during pinch
+    expect(stateSlots[3]?.setter).toHaveBeenCalledWith(null);
+    // Zoom must be adjusted
+    expect(stateSlots[4]?.setter).toHaveBeenCalledWith(1.6);
 
     // Release
     const onRelease = handlers?.['onPanResponderRelease'] as () => void;
@@ -248,7 +295,7 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
     expect(onGestureActive).toHaveBeenCalledWith(false);
   });
 
-  it('supports onResetZoom and onResetProbe handlers without errors', () => {
+  it('supports onResetZoom and onResetProbe handlers with real state updates', () => {
     const element = HistoricalTrendChart({
       historyPoints: mockPoints,
     });
@@ -256,16 +303,23 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
     const header = children[0] as { props?: { onResetZoom?: () => void } };
     expect(header).toBeDefined();
     expect(typeof header.props?.onResetZoom).toBe('function');
-    expect(() => header.props?.onResetZoom?.()).not.toThrow();
+
+    header.props?.onResetZoom?.();
+    expect(stateSlots[4]?.setter).toHaveBeenCalledWith(1);
+    expect(stateSlots[5]?.setter).toHaveBeenCalledWith(1);
 
     const fragmentChildren = getChartContentChildren(element);
     const tooltip = fragmentChildren[0] as { props?: { onResetProbe?: () => void } };
     expect(tooltip).toBeDefined();
     expect(typeof tooltip.props?.onResetProbe).toBe('function');
-    expect(() => tooltip.props?.onResetProbe?.()).not.toThrow();
+
+    tooltip.props?.onResetProbe?.();
+    expect(stateSlots[2]?.setter).toHaveBeenCalledWith(null);
+    expect(stateSlots[3]?.setter).toHaveBeenCalledWith(null);
+    expect(stateSlots[1]?.setter).toHaveBeenCalledWith(null);
   });
 
-  it('supports onSelectIdx point tap to set probed checkpoint', () => {
+  it('supports onSelectIdx point tap to set probed checkpoint and scrubX', () => {
     const element = HistoricalTrendChart({
       historyPoints: mockPoints,
     });
@@ -280,7 +334,11 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
 
     expect(svgCanvas).toBeDefined();
     expect(typeof svgCanvas.props?.onSelectIdx).toBe('function');
-    expect(() => svgCanvas.props?.onSelectIdx?.(0)).not.toThrow();
+
+    svgCanvas.props?.onSelectIdx?.(0);
+    expect(stateSlots[2]?.setter).toHaveBeenCalledWith('2026-01-01');
+    expect(stateSlots[1]?.setter).toHaveBeenCalledWith(0);
+    expect(stateSlots[3]?.setter).toHaveBeenCalledWith(expect.any(Number));
   });
 
   it('handles single touch grant and release cycle', () => {
@@ -306,5 +364,111 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
     const onTerminate = handlers?.['onPanResponderTerminate'] as () => void;
     onTerminate();
     expect(onGestureActive).toHaveBeenCalledWith(false);
+  });
+
+  it('slices dynamically by zoom level and pan offset ratio', () => {
+    const checkpoints: HistoricalCheckpoint[] = [
+      { date: '2026-01-01', value: 100000, investedAmount: 90000, unrealizedGain: 10000, gainPct: 11.11, isAth: false, athValue: 100000, drawdownPct: 0 },
+      { date: '2026-02-01', value: 110000, investedAmount: 95000, unrealizedGain: 15000, gainPct: 15.79, isAth: false, athValue: 110000, drawdownPct: 0 },
+      { date: '2026-03-01', value: 120000, investedAmount: 100000, unrealizedGain: 20000, gainPct: 20.0, isAth: false, athValue: 120000, drawdownPct: 0 },
+      { date: '2026-04-01', value: 130000, investedAmount: 105000, unrealizedGain: 25000, gainPct: 23.8, isAth: true, athValue: 130000, drawdownPct: 0 },
+    ];
+
+    // Zoom 1 returns all points
+    const unzoomed = sliceForZoomAndPan(checkpoints, 1, 1);
+    expect(unzoomed.length).toBe(4);
+
+    // Zoom 2 with panOffset 1 (newest half)
+    const rightHalf = sliceForZoomAndPan(checkpoints, 2, 1);
+    expect(rightHalf[rightHalf.length - 1]?.date).toBe('2026-04-01');
+
+    // Zoom 2 with panOffset 0 (oldest half)
+    const leftHalf = sliceForZoomAndPan(checkpoints, 2, 0);
+    expect(leftHalf[0]?.date).toBe('2026-01-01');
+  });
+
+  it('processes two-finger pinch zoom and midpoint pan offset delta', () => {
+    const setZoomLevel = vi.fn();
+    const setPanOffset = vi.fn();
+    const setScrubX = vi.fn();
+    const onGestureActive = vi.fn();
+
+    const refs: GestureRefs = {
+      state: { current: 'IDLE' },
+      dist: { current: 100 },
+      baseZoom: { current: 1.5 },
+      lastMidX: { current: 150 },
+      cooldown: { current: null },
+    };
+
+    const callbacks: GestureCallbacks = {
+      setProbedDate: vi.fn(),
+      setSelectedIdx: vi.fn(),
+      setScrubX,
+      setZoomLevel,
+      setPanOffset,
+      onGestureActive,
+    };
+
+    const event = {
+      nativeEvent: {
+        touches: [
+          { pageX: 80, pageY: 100, locationX: 80 },
+          { pageX: 280, pageY: 100, locationX: 280 },
+        ],
+      },
+    } as unknown as Parameters<typeof handlePinchAndPanMove>[0];
+
+    handlePinchAndPanMove(event, refs, callbacks);
+
+    expect(refs.state.current).toBe('PINCHING');
+    // distance is 200 (scale 2.0x from 100) -> nextZoom = 1.5 * 2.0 = 3.0
+    expect(setZoomLevel).toHaveBeenCalledWith(3);
+    // midX is (80 + 280) / 2 = 180, dx = 180 - 150 = 30 -> deltaRatio = -30 / 300 = -0.1
+    expect(setPanOffset).toHaveBeenCalledWith(expect.any(Function));
+    expect(setScrubX).toHaveBeenCalledWith(null);
+    expect(onGestureActive).toHaveBeenCalledWith(true);
+  });
+
+  it('triggers cooldown debounce when transitioning from two fingers to one finger', () => {
+    const onGestureActive = vi.fn();
+    const element = HistoricalTrendChart({
+      historyPoints: mockPoints,
+      onGestureActive,
+    });
+    const fragmentChildren = getChartContentChildren(element);
+    const svgCanvas = fragmentChildren.find(
+      (c: unknown) =>
+        typeof c === 'object' &&
+        c !== null &&
+        ((c as { type?: unknown }).type === ChartSvgCanvas ||
+          (c as { props?: { testID?: string } }).props?.testID === 'chart-svg-canvas'),
+    ) as { props?: { panResponderHandlers?: Record<string, unknown> } };
+
+    const handlers = svgCanvas.props?.panResponderHandlers;
+    const onMove = handlers?.['onPanResponderMove'] as (e: unknown) => void;
+
+    // Step 1: Start 2-finger pinch -> sets state to 'PINCHING'
+    onMove({
+      nativeEvent: {
+        touches: [
+          { pageX: 100, pageY: 100, locationX: 100 },
+          { pageX: 200, pageY: 100, locationX: 200 },
+        ],
+      },
+    });
+
+    // Step 2: Lift one finger -> 1 touch remaining while in 'PINCHING'
+    // Must NOT trigger single touch scrub; must transition to 'COOLDOWN'
+    const scrubXCallsBefore = stateSlots[3]?.setter.mock.calls.length ?? 0;
+    onMove({
+      nativeEvent: {
+        touches: [{ pageX: 150, pageY: 100, locationX: 150 }],
+      },
+    });
+
+    // Should not have updated scrubX to the trailing finger's coordinate
+    const scrubXCallsAfter = stateSlots[3]?.setter.mock.calls.length ?? 0;
+    expect(scrubXCallsAfter).toBe(scrubXCallsBefore);
   });
 });
