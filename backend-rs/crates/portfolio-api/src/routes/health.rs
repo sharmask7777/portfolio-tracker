@@ -572,7 +572,7 @@ pub async fn update_goal(
     Json(payload): Json<UpdateGoalRequest>,
 ) -> Result<Json<GoalDto>, ApiError> {
     let owned_ids = resolve_owned_portfolio_ids(&state, auth_user.user_id, &portfolio_id).await?;
-    let portfolio_ids: Vec<String> = owned_ids.iter().map(|p| p.to_string()).collect();
+    let portfolio_ids: Vec<String> = owned_ids.iter().map(std::string::ToString::to_string).collect();
     verify_goal_ownership(&state, &portfolio_ids, &goal_id).await?;
     let name = payload.name.unwrap_or_else(|| "Goal".to_string());
     let target_amount =
@@ -618,7 +618,7 @@ pub async fn delete_goal(
     Path((portfolio_id, goal_id)): Path<(String, String)>,
 ) -> Result<Json<DeleteGoalResponse>, ApiError> {
     let owned_ids = resolve_owned_portfolio_ids(&state, auth_user.user_id, &portfolio_id).await?;
-    let portfolio_ids: Vec<String> = owned_ids.iter().map(|p| p.to_string()).collect();
+    let portfolio_ids: Vec<String> = owned_ids.iter().map(std::string::ToString::to_string).collect();
     verify_goal_ownership(&state, &portfolio_ids, &goal_id).await?;
     let deleted = if let Some(pool) = state.pool() {
         PgGoalRepository::new(pool.clone())
