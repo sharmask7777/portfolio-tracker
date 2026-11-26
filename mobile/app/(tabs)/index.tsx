@@ -1,12 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  ScrollView,
-  RefreshControl,
-  ActivityIndicator,
-} from 'react-native';
+import { StyleSheet, Text, View, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { usePortfolioScope, type PerformanceMode } from '@portfolio/core-view';
 import {
   getEnrichedHoldings,
@@ -31,10 +24,7 @@ import {
 import { getCachedPortfolioHistory } from '../../src/services/history-service';
 import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
 import { ScopeSelectorHeader } from '../../src/components/Navigation';
-import {
-  DEFAULT_ASSUMPTIONS,
-  type RealityCheckAssumptions,
-} from '../../src/services/reality-check-service';
+import { DEFAULT_ASSUMPTIONS, type RealityCheckAssumptions } from '../../src/services/reality-check-service';
 import { NetWorthCard } from '../../src/components/NetWorthCard';
 import { DayReturnBanner } from '../../src/components/DayReturnBanner';
 import { AssetAllocationCard } from '../../src/components/AssetAllocationCard';
@@ -61,15 +51,14 @@ const styles = StyleSheet.create({
 });
 
 async function fetchDashboardSnapshot(historyId: string, scopeId: string) {
-  const [enriched, storedProfiles, storedFolios, cachedHistory, scopedBundle, baseBundle] =
-    await Promise.all([
-      getEnrichedHoldings(),
-      getStoredFamilyProfiles(),
-      getStoredFolios(),
-      getCachedPortfolioHistory(undefined, historyId),
-      getStoredDashboardBundle(undefined, scopeId),
-      getStoredDashboardBundle(undefined, 'consolidated'),
-    ]);
+  const [enriched, storedProfiles, storedFolios, cachedHistory, scopedBundle, baseBundle] = await Promise.all([
+    getEnrichedHoldings(),
+    getStoredFamilyProfiles(),
+    getStoredFolios(),
+    getCachedPortfolioHistory(undefined, historyId),
+    getStoredDashboardBundle(undefined, scopeId),
+    getStoredDashboardBundle(undefined, 'consolidated'),
+  ]);
   return { enriched, storedProfiles, storedFolios, cachedHistory, scopedBundle, baseBundle };
 }
 
@@ -125,16 +114,8 @@ function useDashboardData(activeProfileId: string | null) {
 }
 
 const defaultSummary: DashboardSummary = {
-  totalCurrentValue: 0,
-  totalInvestedCost: 0,
-  unrealizedGain: 0,
-  unrealizedGainPct: 0,
-  dayGain: 0,
-  dayGainPct: 0,
-  assetAllocation: [],
-  holdingsCount: 0,
-  lastUpdated: null,
-  isOfflineFallback: false,
+  totalCurrentValue: 0, totalInvestedCost: 0, unrealizedGain: 0, unrealizedGainPct: 0,
+  dayGain: 0, dayGainPct: 0, assetAllocation: [], holdingsCount: 0, lastUpdated: null, isOfflineFallback: false,
 };
 
 function renderEmptyState(): React.ReactElement {
@@ -160,8 +141,6 @@ interface RealityCheckSectionProps {
 
 function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElement {
   const { realityCheckMode, setRealityCheckMode, assumptions, setAssumptions, isAssumptionsOpen, setIsAssumptionsOpen, data } = props;
-  const nominalReturnPct = data.overallXirr ?? 0;
-
   return (
     <>
       <RealityCheckModeToggle realityCheckMode={realityCheckMode} onToggle={setRealityCheckMode} onOpenAssumptions={() => setIsAssumptionsOpen(true)} />
@@ -170,7 +149,7 @@ function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElemen
         <RealityCheckBanner
           nominalValue={data.totalCurrentValue}
           investedCost={data.totalInvestedCost}
-          nominalReturnPct={nominalReturnPct}
+          nominalReturnPct={data.overallXirr ?? 0}
           drags={data.drags}
           assumptions={assumptions}
           onOpenAssumptions={() => setIsAssumptionsOpen(true)}
@@ -180,15 +159,8 @@ function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElemen
   );
 }
 
-interface DashboardCardsProps {
-  data: DashboardSummary;
+interface DashboardCardsProps extends RealityCheckSectionProps {
   historyPoints: HistoryPoint[];
-  realityCheckMode: boolean;
-  setRealityCheckMode: (m: boolean) => void;
-  assumptions: RealityCheckAssumptions;
-  setAssumptions: (a: RealityCheckAssumptions) => void;
-  isAssumptionsOpen: boolean;
-  setIsAssumptionsOpen: (open: boolean) => void;
   performanceMode: PerformanceMode;
   onTogglePerformanceMode: (mode: PerformanceMode) => void;
   onGestureActive?: ((active: boolean) => void) | undefined;
@@ -216,10 +188,8 @@ function DashboardCards(props: DashboardCardsProps): React.ReactElement {
       />
       <DayReturnBanner dayGain={data.dayGain} dayGainPct={data.dayGainPct} isOfflineFallback={data.isOfflineFallback} />
       <HistoricalTrendChart
-        currentValue={data.totalCurrentValue}
-        investedCost={data.totalInvestedCost}
-        historyPoints={historyPoints}
-        onGestureActive={onGestureActive}
+        currentValue={data.totalCurrentValue} investedCost={data.totalInvestedCost}
+        historyPoints={historyPoints} onGestureActive={onGestureActive}
       />
       {hasHoldings ? <AssetAllocationCard allocation={data.assetAllocation} totalValue={data.totalCurrentValue} /> : renderEmptyState()}
     </>
@@ -236,13 +206,12 @@ interface FilteredSummaryInput {
 
 function useFilteredSummary({ activeProfileId, holdings, profiles, folios, serverBundle }: FilteredSummaryInput) {
   const activeProfile = useMemo(() => {
-    if (!activeProfileId) return null;
-    return profiles.find((p) => p.id === activeProfileId) ?? null;
+    return activeProfileId ? profiles.find((p) => p.id === activeProfileId) ?? null : null;
   }, [activeProfileId, profiles]);
 
   const filteredHoldings = useMemo(
     () => filterHoldingsForProfile(activeProfile, holdings, folios),
-    [activeProfile, holdings, folios]
+    [activeProfile, holdings, folios],
   );
 
   return useMemo<DashboardSummary>(() => {

@@ -1,0 +1,42 @@
+appId: com.portfolio.mobile
+---
+# Flow 05: Interactive Historical Valuation Chart & Checkpoints Verification
+- launchApp:
+    clearState: false
+
+# Handle unlock prompt if present
+- runFlow:
+    when:
+      visible: "Unlock Portfolio"
+    commands:
+      - tapOn: "Unlock Portfolio"
+
+- assertVisible:
+    id: "historical-trend-chart"
+
+- tapOn:
+    id: "range-button-1Y"
+
+# Perform swipe/scrub across chart canvas
+- swipe:
+    from:
+      id: "chart-svg-canvas"
+      x: 20
+      y: 50
+    to:
+      id: "chart-svg-canvas"
+      x: 80
+      y: 50
+    duration: 600
+
+# Assert pinned inspection card is visible
+- assertVisible:
+    id: "checkpoint-tooltip-card"
+
+# Tap Reset to Latest
+- tapOn:
+    id: "reset-probe-button"
+
+# Assert returns to today's state
+- assertVisible:
+    id: "ath-badge"
