@@ -529,7 +529,7 @@ mod tests {
             ExpenseSchemeInput {
                 scheme_name: "ICICI Corporate Bond Fund".to_string(),
                 current_value: Money::from_str("10000").unwrap(),
-                explicit_ter_pct: None,
+                explicit_ter_pct: Some(0.5),
             },
         ]);
         assert!(multi_exp.estimated_annual_fee > Money::ZERO);

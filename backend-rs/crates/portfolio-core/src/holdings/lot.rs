@@ -730,9 +730,21 @@ mod tests {
             Units::from_str("110").unwrap(),
         );
 
-        let (lots, depletions) = process_fifo_lots(&[tx_synth, tx_zero_rev, tx_pos_rev]);
+        let (lots, depletions) = process_fifo_lots(&[tx_synth, tx_zero_rev, tx_pos_rev.clone()]);
         assert_eq!(depletions.len(), 0);
         assert_eq!(lots.len(), 2);
         assert_eq!(lots[1].remaining_units, Units::from_str("10").unwrap());
+
+        let tx_neg_rev = Transaction::new(
+            "rev-neg",
+            date(2025, 1, 4),
+            TransactionType::Reversal,
+            Money::from_str("-1000").unwrap(),
+            Units::from_str("-10").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::from_str("100").unwrap(),
+        );
+        let (lots2, _) = process_fifo_lots(&[tx_pos_rev, tx_neg_rev]);
+        assert_eq!(lots2.len(), 0);
     }
 }
