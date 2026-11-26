@@ -90,9 +90,9 @@ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
     if transactions.is_empty() {
         return Units::ZERO;
     }
-    // 0.001 unit threshold to eliminate fractional truncation dust
+    // 0.0001 unit threshold to eliminate fractional truncation dust (matches Units Δ <= 0.0001)
     let fractional_dust_threshold =
-        Units::new(rust_decimal::Decimal::from_parts(1, 0, 0, false, 3));
+        Units::new(rust_decimal::Decimal::from_parts(1, 0, 0, false, 4));
 
     // Check if transactions carry explicit cumulative balance tracking (matching CAS statements)
     let sorted = crate::holdings::lot::sort_transactions(transactions);
