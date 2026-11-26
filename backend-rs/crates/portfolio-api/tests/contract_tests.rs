@@ -943,6 +943,24 @@ async fn test_cas_upload_and_status_polling_contract() {
     let json_res = app.clone().oneshot(json_req).await.unwrap();
     assert_eq!(json_res.status(), StatusCode::ACCEPTED);
 
+    // 1c. Invalid magic bytes rejected with 400
+    let bad_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"bad.pdf\"\r\n\
+        Content-Type: application/pdf\r\n\r\nNOT_A_PDF\r\n--{boundary}--\r\n"
+    );
+    let bad_req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(bad_body))
+        .unwrap();
+    let bad_res = app.clone().oneshot(bad_req).await.unwrap();
+    assert_eq!(bad_res.status(), StatusCode::BAD_REQUEST);
+
     // 2. Poll status: GET /api/portfolio/upload-status/{jobId}
     let status_req = Request::builder()
         .method("GET")

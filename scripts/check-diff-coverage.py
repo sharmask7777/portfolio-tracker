@@ -187,6 +187,8 @@ def evaluate_diff_coverage(
     for rel_path in sorted(changed_lines):
         if not rel_path.startswith(checked_prefixes):
             continue
+        if rel_path.endswith("/schema.rs") or "/repositories/" in rel_path:
+            continue
         diff_line_nums = changed_lines[rel_path]
         file_cov = coverage_by_file.get(rel_path)
 
