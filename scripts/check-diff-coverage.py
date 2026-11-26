@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E501, PLR2004
 """Incremental Diff Coverage Guardrail.
 
 Prevents test coverage regressions on every incremental change by checking that
@@ -11,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
@@ -67,7 +67,9 @@ def is_excluded_source(rel_path: str) -> bool:
         return True
     if rel_path.endswith(("index.ts", "index.tsx")):
         return True
-    for pattern in EXCLUDED_FRONTEND_PATTERNS + EXCLUDED_MOBILE_PATTERNS + EXCLUDED_BACKEND_PATTERNS:
+    for pattern in (
+        EXCLUDED_FRONTEND_PATTERNS + EXCLUDED_MOBILE_PATTERNS + EXCLUDED_BACKEND_PATTERNS
+    ):
         if re.search(pattern, rel_path):
             return True
     return False
@@ -77,11 +79,15 @@ def is_tracked_source(rel_path: str) -> bool:
     """Return True if the path belongs to frontend, mobile, or backend source directories."""
     if rel_path.startswith("frontend/src/") and rel_path.endswith((".ts", ".tsx")):
         return not is_excluded_source(rel_path)
-    if (rel_path.startswith("mobile/src/") or rel_path.startswith("mobile/app/")) and rel_path.endswith(
-        (".ts", ".tsx")
-    ):
+    if (
+        rel_path.startswith("mobile/src/") or rel_path.startswith("mobile/app/")
+    ) and rel_path.endswith((".ts", ".tsx")):
         return not is_excluded_source(rel_path)
-    if rel_path.startswith("backend-rs/crates/") and "/src/" in rel_path and rel_path.endswith(".rs"):
+    if (
+        rel_path.startswith("backend-rs/crates/")
+        and "/src/" in rel_path
+        and rel_path.endswith(".rs")
+    ):
         return not is_excluded_source(rel_path)
     return False
 
@@ -104,7 +110,9 @@ def parse_unified_diff(diff_text: str) -> dict[str, set[int]]:
             start_line = int(match.group(1))
             count = int(match.group(2)) if match.group(2) is not None else 1
             if count > 0:
-                changed.setdefault(current_file, set()).update(range(start_line, start_line + count))
+                changed.setdefault(current_file, set()).update(
+                    range(start_line, start_line + count)
+                )
 
     return {path: lines for path, lines in changed.items() if lines}
 
@@ -246,7 +254,9 @@ diff --git a/frontend/src/utils/sample.test.ts b/frontend/src/utils/sample.test.
 +expect(true).toBe(true);
 """
     parsed = parse_unified_diff(sample_diff)
-    assert parsed == {"frontend/src/utils/sample.ts": {11, 12, 13}}, f"Unexpected parsed diff: {parsed}"
+    assert parsed == {"frontend/src/utils/sample.ts": {11, 12, 13}}, (
+        f"Unexpected parsed diff: {parsed}"
+    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -257,9 +267,18 @@ diff --git a/frontend/src/utils/sample.test.ts b/frontend/src/utils/sample.test.
                 {
                     sample_abs: {
                         "statementMap": {
-                            "0": {"start": {"line": 11, "column": 0}, "end": {"line": 11, "column": 10}},
-                            "1": {"start": {"line": 12, "column": 0}, "end": {"line": 12, "column": 10}},
-                            "2": {"start": {"line": 13, "column": 0}, "end": {"line": 13, "column": 10}},
+                            "0": {
+                                "start": {"line": 11, "column": 0},
+                                "end": {"line": 11, "column": 10},
+                            },
+                            "1": {
+                                "start": {"line": 12, "column": 0},
+                                "end": {"line": 12, "column": 10},
+                            },
+                            "2": {
+                                "start": {"line": 13, "column": 0},
+                                "end": {"line": 13, "column": 10},
+                            },
                         },
                         "s": {"0": 1, "1": 1, "2": 0},
                     }
@@ -283,12 +302,18 @@ diff --git a/frontend/src/utils/sample.test.ts b/frontend/src/utils/sample.test.
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Enforce minimum coverage on incremental git diff lines.")
-    parser.add_argument("--base", default=None, help="Git base ref to diff against (default: origin/main or HEAD~1)")
+    parser = argparse.ArgumentParser(
+        description="Enforce minimum coverage on incremental git diff lines."
+    )
+    parser.add_argument(
+        "--base", default=None, help="Git base ref to diff against (default: origin/main or HEAD~1)"
+    )
     parser.add_argument("--min-diff-coverage", type=float, default=DEFAULT_MIN_DIFF_COVERAGE)
     parser.add_argument("--frontend-cov", default="frontend/coverage/coverage-final.json")
     parser.add_argument("--mobile-cov", default="mobile/coverage/coverage-final.json")
-    parser.add_argument("--backend-cov", default=None, help="Optional cargo llvm-cov --json output path")
+    parser.add_argument(
+        "--backend-cov", default=None, help="Optional cargo llvm-cov --json output path"
+    )
     parser.add_argument("--self-test", action="store_true", help="Run internal self-tests and exit")
     args = parser.parse_args()
 
@@ -338,7 +363,9 @@ def main() -> int:
             checked_prefixes.append("backend-rs/crates/")
 
     if not checked_prefixes:
-        print("ℹ️  No coverage JSON artifacts found; run unit coverage suites before check-diff-coverage.")
+        print(
+            "ℹ️  No coverage JSON artifacts found; run unit coverage suites before check-diff-coverage."
+        )
         return 0
 
     passed, report_lines, overall_pct, covered, executable = evaluate_diff_coverage(
@@ -346,7 +373,9 @@ def main() -> int:
     )
 
     print("=" * 80)
-    print(f"Incremental Diff Coverage Guardrail (vs {base_ref}, minimum {args.min_diff_coverage:.1f}%)")
+    print(
+        f"Incremental Diff Coverage Guardrail (vs {base_ref}, minimum {args.min_diff_coverage:.1f}%)"
+    )
     print("=" * 80)
     for line in report_lines:
         print(line)
