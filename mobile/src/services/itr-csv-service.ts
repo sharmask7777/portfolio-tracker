@@ -41,7 +41,7 @@ function buildHeaderLines(selectedFY: string, taxResult: TaxCalculationsResult):
     `# Base Tax: Rs ${taxResult.baseTaxTotal.toFixed(2)} | Health & Education Cess (4%): Rs ${taxResult.cessTotal.toFixed(2)} | Net Tax: Rs ${taxResult.grandTotalTax.toFixed(2)}`,
     '# ----------------------------------------------------------------------------------------------------',
     '# ADVANCE TAX ACCRUAL MATRIX (SECTION 234C / SCHEDULE CG TABLE F)',
-    '# Quarter,Due Date,Sec 111A STCG,Sec 112A LTCG,Sec 50AA Slab,Total Quarter Gain',
+    '# Quarter,Due Date,Sec 111A STCG,Sec 112A LTCG,Sec 112 Debt LTCG,Sec 50AA Slab,Total Quarter Gain',
   ];
 }
 
@@ -54,12 +54,19 @@ const QUARTERS = [
   AdvanceTaxQuarter.Q5,
 ] as const;
 
-function extractQuarterGainSum(q: TableFQuarterData): { stcg: number; ltcg: number; slab: number; total: number } {
+function extractQuarterGainSum(q: TableFQuarterData): {
+  stcg: number;
+  ltcg: number;
+  debtLtcg: number;
+  slab: number;
+  total: number;
+} {
   const stcg = q.stcg15 + q.stcg20;
   const ltcg = q.ltcg10 + q.ltcg12_5;
+  const debtLtcg = q.debtLtcg12_5 + q.debtLtcg20;
   const slab = q.slab;
   const total = q.totalGain;
-  return { stcg, ltcg, slab, total };
+  return { stcg, ltcg, debtLtcg, slab, total };
 }
 
 const DEFAULT_Q_DATA: TableFQuarterData = {
@@ -84,7 +91,7 @@ function buildQuarterLine(
   const data = matrix.quarters[q] ?? DEFAULT_Q_DATA;
   const vals = extractQuarterGainSum(data);
   const date = dueDates[q] ?? '';
-  return `# ${q},${date},${vals.stcg.toFixed(2)},${vals.ltcg.toFixed(2)},${vals.slab.toFixed(2)},${vals.total.toFixed(2)}`;
+  return `# ${escapeCsvField(q)},${escapeCsvField(date)},${vals.stcg.toFixed(2)},${vals.ltcg.toFixed(2)},${vals.debtLtcg.toFixed(2)},${vals.slab.toFixed(2)},${vals.total.toFixed(2)}`;
 }
 
 function buildTableFRows(matrix: AdvanceTaxAccrualMatrix, startYear: number): string[] {
@@ -101,13 +108,19 @@ function buildTableFRows(matrix: AdvanceTaxAccrualMatrix, startYear: number): st
   return QUARTERS.map((q) => buildQuarterLine(q, matrix, dueDates));
 }
 
-function buildDetailSection(taxResult: TaxCalculationsResult): string[] {
+function buildDetailSection(taxResult: TaxCalculationsResult, startYear: number): string[] {
+  const isPostBudget2024 = startYear >= 2024;
+  const ltcgRateLabel = isPostBudget2024 ? '12.5% statutory' : '10% statutory';
+  const stcgRateLabel = isPostBudget2024 ? '20% statutory' : '15% statutory';
+
   return [
     '# ----------------------------------------------------------------------------------------------------',
     'Category,Tax Section,Applicable Rate,Realized Gain (Rs),Exemption Claimed (Rs),Tax Payable (Rs)',
-    `Equity LTCG,Section 112A,12.5% statutory,${taxResult.totalEquityLTCG.toFixed(2)},${taxResult.ltcgExemptClaimed.toFixed(2)},${taxResult.ltcgTotalTax.toFixed(2)}`,
-    `Equity STCG,Section 111A,20% statutory,${taxResult.totalSTCG111A.toFixed(2)},0.00,${taxResult.stcgTotalTax.toFixed(2)}`,
-    `Specified Debt / MLD,Section 50AA,Slab rate,${taxResult.slabGain.toFixed(2)},0.00,${taxResult.slabTotalTax.toFixed(2)}`,
+    `${escapeCsvField('Equity LTCG')},${escapeCsvField('Section 112A')},${escapeCsvField(ltcgRateLabel)},${taxResult.totalEquityLTCG.toFixed(2)},${taxResult.ltcgExemptClaimed.toFixed(2)},${taxResult.ltcgTotalTax.toFixed(2)}`,
+    `${escapeCsvField('Equity STCG')},${escapeCsvField('Section 111A')},${escapeCsvField(stcgRateLabel)},${taxResult.totalSTCG111A.toFixed(2)},0.00,${taxResult.stcgTotalTax.toFixed(2)}`,
+    `${escapeCsvField('Debt LTCG (12.5%)')},${escapeCsvField('Section 112')},${escapeCsvField('12.5% statutory')},${taxResult.debtLtcg12_5Gain.toFixed(2)},0.00,${Math.max(0, taxResult.debtLtcg12_5Gain * 0.125).toFixed(2)}`,
+    `${escapeCsvField('Debt LTCG (20% Indexed)')},${escapeCsvField('Section 112')},${escapeCsvField('20% statutory')},${taxResult.debtLtcg20Gain.toFixed(2)},0.00,${Math.max(0, taxResult.debtLtcg20Gain * 0.2).toFixed(2)}`,
+    `${escapeCsvField('Specified Debt / MLD')},${escapeCsvField('Section 50AA')},${escapeCsvField('Slab rate')},${taxResult.slabGain.toFixed(2)},0.00,${taxResult.slabTotalTax.toFixed(2)}`,
   ];
 }
 
@@ -127,7 +140,7 @@ export function generateScheduleCgCsv(
   const startYear = parseInt(selectedFY.split('-')[0] ?? '2024', 10);
   const headerLines = buildHeaderLines(selectedFY, taxResult);
   const matrixLines = buildTableFRows(matrix, startYear);
-  const detailLines = buildDetailSection(taxResult);
+  const detailLines = buildDetailSection(taxResult, startYear);
 
   return [...headerLines, ...matrixLines, ...detailLines].join('\n');
 }

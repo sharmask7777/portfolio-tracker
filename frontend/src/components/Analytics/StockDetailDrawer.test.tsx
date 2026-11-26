@@ -24,17 +24,17 @@ describe('StockDetailDrawer', () => {
       {
         schemeName: 'Parag Parikh Flexi Cap Fund - Direct Plan',
         value: 250000,
-        weight: 0.08,
+        weight: 8.0,
       },
       {
         schemeName: 'Mirae Asset Large Cap Fund - Direct Plan',
         value: 120000,
-        weight: 0.065,
+        weight: 6.5,
       },
       {
         schemeName: 'HDFC Top 100 Fund - Direct Plan',
         value: 80000,
-        weight: 0.05,
+        weight: 5.0,
       },
     ],
   };

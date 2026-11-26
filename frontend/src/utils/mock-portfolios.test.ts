@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { consolidateFoliosIntoSchemes, type FolioInput, type ConsolidatedSchemeGroup } from './consolidation';
-import { sortSchemeGroups } from './sorting';
+import {
+  consolidateFoliosIntoSchemes,
+  sortSchemeGroups,
+  type FolioInput,
+  type ConsolidatedSchemeGroup,
+} from '@portfolio/core-view';
 
 /**
  * ELABORATE FRONTEND MOCK PORTFOLIOS UNIT TEST SUITE

@@ -13,6 +13,15 @@ use portfolio_db::InMemoryDatabase;
 use portfolio_db::entities::HistoricalNavEntity;
 use rust_decimal::Decimal;
 
+static MFAPI_BASE_URL_OVERRIDE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Sets an in-process override for `MFAPI_BASE_URL` (used in hermetic tests without `unsafe` env mutation).
+pub fn set_mfapi_base_url_override(url: Option<String>) {
+    if let Ok(mut guard) = MFAPI_BASE_URL_OVERRIDE.write() {
+        *guard = url;
+    }
+}
+
 use crate::error::WorkerError;
 use crate::jobs::NavRefreshJobData;
 
@@ -70,8 +79,12 @@ pub async fn process_nav_refresh_job(
         (date, nav_override)
     } else {
         // Attempt live fetch from MFAPI
-        let base_url =
-            std::env::var("MFAPI_BASE_URL").unwrap_or_else(|_| "https://api.mfapi.in".to_string());
+        let base_url = MFAPI_BASE_URL_OVERRIDE
+            .read()
+            .ok()
+            .and_then(|g| g.clone())
+            .or_else(|| std::env::var("MFAPI_BASE_URL").ok())
+            .unwrap_or_else(|| "https://api.mfapi.in".to_string());
         let url = format!(
             "{}/mf/{validated_amfi_code}/latest",
             base_url.trim_end_matches('/')
@@ -81,16 +94,16 @@ pub async fn process_nav_refresh_job(
             let date = job_data.as_of_date.unwrap_or(fetched_date);
             (date, fetched_nav)
         } else {
-            // Fallback gracefully to existing DB nav or default 100.00
+            // Fallback to existing DB nav if present; never fabricate synthetic 100.00 NAV
             let date = job_data
                 .as_of_date
                 .unwrap_or_else(|| Utc::now().date_naive());
-            let nav = if let Some(existing) = db.get_nav(validated_amfi_code, date) {
-                existing.nav
-            } else {
-                Decimal::new(10000, 2) // Default 100.00
+            let Some(existing) = db.get_nav(validated_amfi_code, date) else {
+                return Err(WorkerError::Io(std::io::Error::other(format!(
+                    "Failed to fetch live NAV for AMFI code {validated_amfi_code} and no cached NAV exists"
+                ))));
             };
-            (date, nav)
+            (date, existing.nav)
         }
     };
 
@@ -106,23 +119,47 @@ pub async fn process_nav_refresh_job_with_pool(
     db: &InMemoryDatabase,
     pool: Option<&sqlx::PgPool>,
 ) -> Result<HistoricalNavEntity, WorkerError> {
-    let historical_nav_entity = process_nav_refresh_job(job_data, db).await?;
+    match process_nav_refresh_job(job_data, db).await {
+        Ok(historical_nav_entity) => {
+            if let Some(pool) = pool {
+                sqlx::query(
+                    r#"
+                    INSERT INTO "HistoricalNAV" (id, "amfiCode", date, nav, "createdAt")
+                    VALUES (gen_random_uuid()::text, $1, $2, $3, NOW())
+                    ON CONFLICT ("amfiCode", date) DO UPDATE SET nav = EXCLUDED.nav;
+                    "#,
+                )
+                .bind(&historical_nav_entity.amfi_code)
+                .bind(historical_nav_entity.date)
+                .bind(historical_nav_entity.nav)
+                .execute(pool)
+                .await
+                .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
+            }
+            Ok(historical_nav_entity)
+        }
+        Err(err) => {
+            if let Some(pool) = pool {
+                let validated = validate_amfi_code(&job_data.amfi_code)?;
+                let existing = sqlx::query_as::<_, HistoricalNavEntity>(
+                    r#"
+                    SELECT id, "amfiCode", date, nav, "createdAt"
+                    FROM "HistoricalNAV"
+                    WHERE "amfiCode" = $1
+                    ORDER BY date DESC
+                    LIMIT 1
+                    "#,
+                )
+                .bind(validated)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
 
-    if let Some(pool) = pool {
-        sqlx::query(
-            r#"
-            INSERT INTO "HistoricalNAV" (id, "amfiCode", date, nav, "createdAt")
-            VALUES (gen_random_uuid()::text, $1, $2, $3, NOW())
-            ON CONFLICT ("amfiCode", date) DO UPDATE SET nav = EXCLUDED.nav;
-            "#,
-        )
-        .bind(&historical_nav_entity.amfi_code)
-        .bind(historical_nav_entity.date)
-        .bind(historical_nav_entity.nav)
-        .execute(pool)
-        .await
-        .map_err(|e| WorkerError::Db(portfolio_db::DbError::Sqlx(e)))?;
+                if let Some(entity) = existing {
+                    return Ok(entity);
+                }
+            }
+            Err(err)
+        }
     }
-
-    Ok(historical_nav_entity)
 }

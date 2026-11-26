@@ -9,7 +9,10 @@
 pub mod cas_ingest_repo;
 pub mod family_repo;
 pub mod fund_holdings_repo;
+/// Financial goal CRUD repository.
 pub mod goal_repo;
+/// Historical portfolio valuation repository with LOCF aggregation.
+pub mod history_repo;
 pub mod portfolio_repo;
 pub mod stock_metadata_repo;
 pub mod transaction_repo;
@@ -17,7 +20,8 @@ pub mod transaction_repo;
 pub use cas_ingest_repo::*;
 pub use family_repo::{FamilyRepository, SqlxFamilyRepo};
 pub use fund_holdings_repo::{FundHoldingsRepository, SqlxFundHoldingsRepo};
-pub use goal_repo::{CreateGoalParams, GoalRepository, SqlxGoalRepo, UpdateGoalParams};
+pub use goal_repo::{GoalRepository, PgGoalRepository};
+pub use history_repo::{PeakValuation, PgPortfolioHistoryRepository, PortfolioHistoryRepository};
 pub use portfolio_repo::{PortfolioRepository, SqlxPortfolioRepo};
 pub use stock_metadata_repo::{SqlxStockMetadataRepo, StockMetadataRepository};
 pub use transaction_repo::{SqlxTransactionRepo, TransactionRepository};

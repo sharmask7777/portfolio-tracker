@@ -294,7 +294,7 @@ export async function waitFor(
       await assertion();
       return;
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
   }
   await assertion();

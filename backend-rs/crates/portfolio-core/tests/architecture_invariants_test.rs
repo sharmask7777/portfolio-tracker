@@ -19,24 +19,79 @@ fn test_archunit_zero_io_dependency_invariants() {
         "postgres",
     ];
 
-    // Find the [dependencies] section
-    let in_dependencies = cargo_toml_content
-        .lines()
-        .skip_while(|line| !line.trim().starts_with("[dependencies]"))
-        .skip(1)
-        .take_while(|line| !line.trim().starts_with('['));
-
-    for line in in_dependencies {
+    // Inspect [dependencies], [dependencies.*], and [target.*.dependencies]
+    let mut in_dep_section = false;
+    for line in cargo_toml_content.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
+        if trimmed.starts_with('[') {
+            in_dep_section = trimmed == "[dependencies]"
+                || trimmed.starts_with("[dependencies.")
+                || (trimmed.starts_with("[target.") && trimmed.contains(".dependencies"));
+            continue;
+        }
+        if in_dep_section {
+            let dep_name = trimmed.split(['=', ' ', '.']).next().unwrap_or("").trim();
+            for &forbidden in &forbidden_dependencies {
+                assert_ne!(
+                    dep_name, forbidden,
+                    "ArchUnit Violation: portfolio-core violates the Zero-I/O Mandate by importing '{dep_name}'!"
+                );
+            }
+        }
+    }
+}
 
-        let dep_name = trimmed.split(['=', ' ', '.']).next().unwrap_or("").trim();
-        for &forbidden in &forbidden_dependencies {
-            assert_ne!(
-                dep_name, forbidden,
-                "ArchUnit Violation: portfolio-core violates the Zero-I/O Mandate by importing '{dep_name}'!"
+fn collect_rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_rs_files(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_archunit_zero_io_source_scan() {
+    let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    collect_rs_files(&src_dir, &mut files);
+    assert!(!files.is_empty(), "Expected Rust source files in src/");
+
+    let forbidden_apis = ["std::fs", "std::net", "std::process", "std::env"];
+
+    for file in files {
+        let rel = file
+            .strip_prefix(&src_dir)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let content = std::fs::read_to_string(&file).unwrap();
+
+        for api in &forbidden_apis {
+            assert!(
+                !content.contains(api),
+                "ArchUnit Violation: {rel} uses forbidden I/O API '{api}'"
+            );
+        }
+
+        if !rel.starts_with("tax/") {
+            assert!(
+                !content.contains("Utc::now"),
+                "ArchUnit Violation: {rel} uses ambient Utc::now() outside tax/"
+            );
+        }
+
+        if rel != "tax/classification.rs" && !rel.starts_with("tax/") {
+            assert!(
+                !content.contains("HOLDING_DAYS_EQUITY_LTCG"),
+                "ArchUnit Violation: {rel} references HOLDING_DAYS_EQUITY_LTCG directly outside tax/classification.rs"
             );
         }
     }

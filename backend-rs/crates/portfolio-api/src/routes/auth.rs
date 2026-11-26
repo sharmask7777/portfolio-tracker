@@ -186,17 +186,14 @@ pub async fn login(
         .map_err(portfolio_db::error::DbError::from)?
         .ok_or(ApiError::Auth(AuthError::InvalidCredentials))?;
 
-        let is_valid = if user.password.starts_with("$2") {
-            verify_password(&payload.password, &user.password)?
-        } else {
-            user.password == payload.password
-        };
+        let is_valid = verify_password(&payload.password, &user.password)?;
 
         if !is_valid {
             return Err(ApiError::Auth(AuthError::InvalidCredentials));
         }
 
-        let user_id = Uuid::parse_str(&user.id).unwrap_or_else(|_| Uuid::new_v4());
+        let user_id = Uuid::parse_str(&user.id)
+            .map_err(|_| ApiError::Internal("Invalid user UUID in database".to_string()))?;
         let token = create_jwt(user_id, &user.email, &state.jwt_secret)?;
 
         Ok(Json(AuthResponse {

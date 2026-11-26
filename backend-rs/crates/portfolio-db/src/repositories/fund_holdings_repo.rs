@@ -66,41 +66,64 @@ impl FundHoldingsRepository for SqlxFundHoldingsRepo {
             return Ok(());
         }
 
-        // Open an explicit transaction to ensure all holding rows in the disclosure batch
-        // commit atomically. If any row insert fails, the whole batch is rolled back.
-        let mut transaction = self.pool.begin().await?;
+        let mut ids = Vec::with_capacity(holdings.len());
+        let mut isins = Vec::with_capacity(holdings.len());
+        let mut scheme_names = Vec::with_capacity(holdings.len());
+        let mut as_of_dates = Vec::with_capacity(holdings.len());
+        let mut stock_names = Vec::with_capacity(holdings.len());
+        let mut stock_isins: Vec<Option<String>> = Vec::with_capacity(holdings.len());
+        let mut sectors = Vec::with_capacity(holdings.len());
+        let mut weights = Vec::with_capacity(holdings.len());
+        let mut created_ats = Vec::with_capacity(holdings.len());
 
-        // Uses PostgreSQL ON CONFLICT clause matching unique constraint
-        // "FundHolding_isin_asOfDate_stockName_key". If AMC re-releases disclosures
-        // or weights are updated, EXCLUDED columns overwrite old values.
         for holding in holdings {
-            sqlx::query(
-                r#"
-                INSERT INTO "FundHolding" (
-                    id, isin, "schemeName", "asOfDate", "stockName", "stockIsin", sector, weight, "createdAt"
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                ON CONFLICT ("isin", "asOfDate", "stockName") DO UPDATE SET
-                    "schemeName" = EXCLUDED."schemeName",
-                    "stockIsin" = EXCLUDED."stockIsin",
-                    "sector" = EXCLUDED."sector",
-                    "weight" = EXCLUDED."weight"
-                "#,
-            )
-            .bind(holding.id.to_string())
-            .bind(&holding.isin)
-            .bind(&holding.scheme_name)
-            .bind(holding.as_of_date)
-            .bind(&holding.stock_name)
-            .bind(holding.stock_isin.as_deref())
-            .bind(&holding.sector)
-            .bind(holding.weight)
-            .bind(holding.created_at)
-            .execute(&mut *transaction)
-            .await?;
+            ids.push(holding.id.to_string());
+            isins.push(holding.isin.clone());
+            scheme_names.push(holding.scheme_name.clone());
+            as_of_dates.push(holding.as_of_date);
+            stock_names.push(holding.stock_name.clone());
+            stock_isins.push(holding.stock_isin.clone());
+            sectors.push(holding.sector.clone());
+            weights.push(holding.weight);
+            created_ats.push(holding.created_at);
         }
 
-        transaction.commit().await?;
+        // Single-statement UNNEST bulk upsert matching "FundHolding_isin_asOfDate_stockName_key".
+        sqlx::query(
+            r#"
+            INSERT INTO "FundHolding" (
+                id, isin, "schemeName", "asOfDate", "stockName", "stockIsin", sector, weight, "createdAt"
+            )
+            SELECT * FROM UNNEST(
+                $1::text[],
+                $2::text[],
+                $3::text[],
+                $4::date[],
+                $5::text[],
+                $6::text[],
+                $7::text[],
+                $8::numeric[],
+                $9::timestamptz[]
+            )
+            ON CONFLICT ("isin", "asOfDate", "stockName") DO UPDATE SET
+                "schemeName" = EXCLUDED."schemeName",
+                "stockIsin" = EXCLUDED."stockIsin",
+                "sector" = EXCLUDED."sector",
+                "weight" = EXCLUDED."weight"
+            "#,
+        )
+        .bind(&ids)
+        .bind(&isins)
+        .bind(&scheme_names)
+        .bind(&as_of_dates)
+        .bind(&stock_names)
+        .bind(&stock_isins)
+        .bind(&sectors)
+        .bind(&weights)
+        .bind(&created_ats)
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 

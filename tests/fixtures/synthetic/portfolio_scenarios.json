@@ -420,9 +420,9 @@
         "invested_amount": "100000.00",
         "current_value": "150000.00",
         "total_gain": "50000.00",
-        "estimated_tax": "6250.00",
+        "estimated_tax": "6500.00",
         "absolute_return": "0.50",
-        "post_tax_absolute_return": "0.4375"
+        "post_tax_absolute_return": "0.435"
       }
     }
   ]

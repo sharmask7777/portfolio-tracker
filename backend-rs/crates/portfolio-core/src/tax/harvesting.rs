@@ -119,6 +119,8 @@ pub struct FolioHarvestingInput<'a> {
     pub current_nav: Nav,
     /// Fund exit load metadata string, if available.
     pub exit_load_metadata: Option<&'a str>,
+    /// Optional 31-Jan-2018 Fair Market Value (FMV) NAV for Section 55(2)(ac) grandfathering.
+    pub grandfather_nav: Option<Nav>,
 }
 
 impl<'a> FolioHarvestingInput<'a> {
@@ -137,6 +139,7 @@ impl<'a> FolioHarvestingInput<'a> {
             transactions,
             current_nav,
             exit_load_metadata: None,
+            grandfather_nav: None,
         }
     }
 
@@ -158,6 +161,12 @@ impl<'a> FolioHarvestingInput<'a> {
         self
     }
 
+    /// Builder method attaching a 31-Jan-2018 grandfathering FMV NAV to this input.
+    pub fn with_grandfather_nav(mut self, grandfather_nav: Nav) -> Self {
+        self.grandfather_nav = Some(grandfather_nav);
+        self
+    }
+
     /// Convenience constructor converting a domain [`Folio`] reference into harvesting input.
     pub fn from_folio(folio: &'a Folio, current_nav: Nav) -> Self {
         Self {
@@ -168,6 +177,7 @@ impl<'a> FolioHarvestingInput<'a> {
             transactions: &folio.transactions,
             current_nav,
             exit_load_metadata: None,
+            grandfather_nav: None,
         }
     }
 }
@@ -198,7 +208,16 @@ pub fn compute_unrealized_gains(
             let holding_days = classification.holding_days;
 
             let current_value = input.current_nav * lot.remaining_units;
-            let cost_basis = lot.purchase_nav * lot.remaining_units;
+            let (cost_basis, _, _, _, _) = crate::tax::grandfathering::compute_deemed_cost(
+                lot.purchase_date,
+                as_of,
+                lot.remaining_units,
+                lot.purchase_nav,
+                input.current_nav,
+                input.grandfather_nav,
+                is_eq,
+                false,
+            );
             let gain = current_value - cost_basis;
 
             net_gain += gain;
@@ -297,10 +316,9 @@ pub fn get_harvesting_opportunities(
                     continue;
                 }
 
-                let holding_days = (as_of - lot.purchase_date).num_days();
-
-                // Only LTCG lots (holding >= 365 days) with unrealized gains
-                if holding_days >= HOLDING_DAYS_EQUITY_LTCG && input.current_nav > lot.purchase_nav
+                // Only LTCG lots (holding >= 12 calendar months) with unrealized gains
+                if crate::tax::classification::is_long_term_holding(true, lot.purchase_date, as_of)
+                    && input.current_nav > lot.purchase_nav
                 {
                     let lot_val = lot.remaining_units * input.current_nav;
                     let exit_load = crate::tax::rules::get_exit_load(
@@ -315,9 +333,22 @@ pub fn get_harvesting_opportunities(
                         continue;
                     }
 
-                    let nav_gain = input.current_nav.to_decimal() - lot.purchase_nav.to_decimal();
-                    let lot_gain = input.current_nav * lot.remaining_units
-                        - lot.purchase_nav * lot.remaining_units;
+                    let (cost_basis, _, _, _, _) = crate::tax::grandfathering::compute_deemed_cost(
+                        lot.purchase_date,
+                        as_of,
+                        lot.remaining_units,
+                        lot.purchase_nav,
+                        input.current_nav,
+                        input.grandfather_nav,
+                        true,
+                        false,
+                    );
+                    let lot_gain = lot_val - cost_basis;
+                    let nav_gain = if lot.remaining_units.is_positive() {
+                        lot_gain.to_decimal() / lot.remaining_units.to_decimal()
+                    } else {
+                        Decimal::ZERO
+                    };
 
                     if lot_gain >= Money::new(Decimal::ONE) {
                         scheme_total_gain += lot_gain;
@@ -728,5 +759,25 @@ mod tests {
         // At 60 gain per unit, units = 125,000 / 60 = 2083.3333 units
         // Capital turnover = ~₹2,08,333 instead of ₹12,50,000 required for Scheme A!
         assert!(summary.opportunities[0].current_value < money("210000"));
+    }
+
+    #[test]
+    fn test_harvesting_with_grandfather_nav_builder() {
+        let txs = vec![Transaction::new(
+            "tx-gf",
+            date(2017, 1, 1),
+            TransactionType::Purchase,
+            money("-100000"),
+            units("1000"),
+            nav("100"),
+            units("1000"),
+        )];
+        let input =
+            FolioHarvestingInput::new("Old Equity Fund", AssetType::MutualFund, &txs, nav("200"))
+                .with_grandfather_nav(nav("150"));
+
+        let as_of = date(2024, 6, 1);
+        let summary = get_harvesting_opportunities(&[input], as_of, Money::ZERO, None);
+        assert_ne!(summary.opportunities.len(), 0);
     }
 }

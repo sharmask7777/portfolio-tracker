@@ -333,30 +333,37 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
     let objective_npv = |r: f64| evaluate_npv(&pairs, r);
     let derivative_npv = |r: f64| evaluate_d_npv(&pairs, r);
 
-    // 1. Initial Bracket [-0.9999, 10.0]
-    let initial_a = -0.9999;
-    let initial_b = 10.0;
+    // 1. Search outward around the economic region 0.0..0.5 first so multi-sign-change
+    // cash flows prefer the economically meaningful root over extreme negative/positive roots.
     let mut bracket = None;
+    let outward_brackets: &[(f64, f64)] = &[
+        (0.0, 0.2),
+        (0.2, 0.5),
+        (-0.1, 0.0),
+        (0.5, 1.0),
+        (-0.3, -0.1),
+        (1.0, 2.0),
+        (-0.6, -0.3),
+        (2.0, 5.0),
+        (-0.9, -0.6),
+        (5.0, 10.0),
+        (-0.9999, -0.9),
+    ];
 
-    if objective_npv(initial_a) * objective_npv(initial_b) <= 0.0 {
-        bracket = Some((initial_a, initial_b));
-    } else {
-        // Grid search in [-0.9999, 10.0]
-        let sample_points = [
-            -0.9999, -0.99, -0.95, -0.9, -0.8, -0.6, -0.4, -0.2, -0.1, 0.0, 0.05, 0.1, 0.2, 0.3,
-            0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0,
-        ];
-        for i in 0..sample_points.len() - 1 {
-            let x0 = sample_points[i];
-            let x1 = sample_points[i + 1];
-            if objective_npv(x0) * objective_npv(x1) <= 0.0 {
-                bracket = Some((x0, x1));
-                break;
-            }
+    for &(x0, x1) in outward_brackets {
+        if objective_npv(x0) * objective_npv(x1) <= 0.0 {
+            bracket = Some((x0, x1));
+            break;
         }
+    }
 
-        // Expand bounds upwards if still not bracketed
-        if bracket.is_none() {
+    if bracket.is_none() {
+        let initial_a = -0.9999;
+        let initial_b = 10.0;
+        if objective_npv(initial_a) * objective_npv(initial_b) <= 0.0 {
+            bracket = Some((initial_a, initial_b));
+        } else {
+            // Expand bounds upwards if still not bracketed
             let upper_points = [20.0, 50.0, 100.0, 500.0, 1000.0, 10000.0];
             let mut prev = initial_b;
             for &next in &upper_points {
@@ -366,25 +373,27 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
                 }
                 prev = next;
             }
-        }
 
-        // Expand bounds downwards towards -1.0 if still not bracketed
-        if bracket.is_none() {
-            let lower_points = [-0.99999, -0.999999];
-            let mut prev = initial_a;
-            for &next in &lower_points {
-                if objective_npv(prev) * objective_npv(next) <= 0.0 {
-                    bracket = Some((next, prev));
-                    break;
+            // Expand bounds downwards towards -1.0 if still not bracketed
+            if bracket.is_none() {
+                let lower_points = [-0.99999, -0.999999];
+                let mut prev = initial_a;
+                for &next in &lower_points {
+                    if objective_npv(prev) * objective_npv(next) <= 0.0 {
+                        bracket = Some((next, prev));
+                        break;
+                    }
+                    prev = next;
                 }
-                prev = next;
             }
         }
     }
 
     // Solve via Brent's method if bracketed
     let mut solved_rate = None;
+    let mut last_tried_guess = 0.1_f64;
     if let Some((a, b)) = bracket {
+        last_tried_guess = f64::midpoint(a, b);
         solved_rate = brent_root(objective_npv, a, b, 1e-11, 100).ok();
     }
 
@@ -392,6 +401,7 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
     if solved_rate.is_none() {
         let guesses = [0.1, 0.0, -0.2, 0.5, 1.0, -0.5, 2.0];
         for &guess in &guesses {
+            last_tried_guess = guess;
             if let Ok(root) = newton_raphson(objective_npv, derivative_npv, guess, 100) {
                 solved_rate = Some(root);
                 break;
@@ -399,15 +409,18 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
         }
     }
 
+    let last_guess_dec =
+        Decimal::from_f64_retain(last_tried_guess).map_or(Decimal::ZERO, |d| d.round_dp(6));
+
     let rate = solved_rate.ok_or(PortfolioError::XirrConvergenceFailure {
         iterations: 100,
-        last_guess: Decimal::ZERO,
+        last_guess: last_guess_dec,
     })?;
 
     if !rate.is_finite() {
         return Err(PortfolioError::XirrConvergenceFailure {
             iterations: 100,
-            last_guess: Decimal::ZERO,
+            last_guess: last_guess_dec,
         });
     }
 
@@ -418,7 +431,7 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
     let dec_rate =
         Decimal::from_f64_retain(rate).ok_or(PortfolioError::XirrConvergenceFailure {
             iterations: 100,
-            last_guess: Decimal::ZERO,
+            last_guess: last_guess_dec,
         })?;
 
     let rounded = dec_rate.round_dp(8).normalize();

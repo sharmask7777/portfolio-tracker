@@ -1,6 +1,7 @@
 #![allow(
     missing_docs,
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
     clippy::assert_is_empty
 )]
@@ -915,6 +916,132 @@ async fn test_fund_holdings_repository_crud() {
     assert_eq!(latest_after_update[0].stock_name, "HDFC Bank Ltd");
     assert_eq!(latest_after_update[0].weight, dec("8.500"));
     assert_eq!(latest_after_update[0].sector, "Banking");
+}
+
+#[tokio::test]
+async fn test_goal_crud_and_cascade_on_portfolio_delete() {
+    use portfolio_db::GoalRepository;
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("goal_user@example.com", "hash");
+    let portfolio = db
+        .create_portfolio(user.id, "Retirement", None)
+        .await
+        .expect("create portfolio");
+
+    let pid_str = portfolio.id.to_string();
+    let target_date = Utc::now() + chrono::Duration::days(3650);
+    let created = db
+        .create_goal(&pid_str, "Corpus", dec("10000000.50"), target_date)
+        .await
+        .expect("create goal");
+    assert_eq!(created.name, "Corpus");
+    assert_eq!(created.target_amount, dec("10000000.50"));
+
+    let listed = db.list_goals(&pid_str).await.expect("list goals");
+    assert_eq!(listed.len(), 1);
+
+    let updated = db
+        .update_goal(
+            &created.id,
+            "Early Retirement",
+            dec("12500000.75"),
+            target_date,
+        )
+        .await
+        .expect("update goal");
+    assert_eq!(updated.name, "Early Retirement");
+    assert_eq!(updated.target_amount, dec("12500000.75"));
+
+    // Cascade delete when portfolio is deleted
+    db.delete_portfolio(portfolio.id)
+        .await
+        .expect("delete portfolio");
+    let after_delete = db.list_goals(&pid_str).await.expect("list goals");
+    assert!(after_delete.is_empty());
+}
+
+#[tokio::test]
+async fn test_manual_asset_and_fetch_portfolio_bundle() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("manual_user@example.com", "hash");
+    let portfolio = db
+        .create_portfolio(user.id, "Alt Assets", None)
+        .await
+        .expect("create portfolio");
+
+    let (asset, folio, tx) = db
+        .create_manual_asset(
+            portfolio.id,
+            "SGB",
+            "Sovereign Gold Bond 2024",
+            dec("62500.25"),
+            dec("10.0000"),
+            dec("6250.0250"),
+            Utc::now(),
+        )
+        .await
+        .expect("create manual asset");
+
+    assert_eq!(asset.asset_type, "SGB");
+    assert_eq!(folio.portfolio_id, portfolio.id);
+    assert_eq!(tx.amount, dec("62500.25"));
+
+    let bundle = db
+        .fetch_portfolio_bundle(portfolio.id)
+        .await
+        .expect("fetch bundle")
+        .expect("bundle exists");
+    assert_eq!(bundle.portfolio.id, portfolio.id);
+    assert_eq!(bundle.folios.len(), 1);
+    assert_eq!(bundle.assets.len(), 1);
+    assert_eq!(bundle.transactions.len(), 1);
+}
+
+#[tokio::test]
+async fn test_portfolio_history_locf_and_peak_valuation() {
+    use portfolio_db::PortfolioHistoryRepository;
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("hist_user@example.com", "hash");
+    let p1 = db.create_portfolio(user.id, "P1", None).await.expect("p1");
+    let p2 = db.create_portfolio(user.id, "P2", None).await.expect("p2");
+
+    let d1 = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+    let d2 = NaiveDate::from_ymd_opt(2025, 1, 2).unwrap();
+
+    db.store_historical_valuation(p1.id, d1, dec("100000.00"), dec("80000.00"));
+    db.store_historical_valuation(p2.id, d2, dec("50000.00"), dec("40000.00"));
+
+    let ids = vec![p1.id.to_string(), p2.id.to_string()];
+    let history = db
+        .get_aggregated_history(&ids, None, None)
+        .await
+        .expect("aggregated history");
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].value, dec("100000.00"));
+    // On d2, p1's 100000.00 is carried forward + p2's 50000.00 = 150000.00
+    assert_eq!(history[1].value, dec("150000.00"));
+
+    let peak = db
+        .get_peak_valuation(&ids)
+        .await
+        .expect("peak")
+        .expect("some peak");
+    assert_eq!(peak.value, dec("150000.00"));
+    assert_eq!(peak.date, d2);
+
+    // Deleting p1 cascades its historical valuations
+    db.delete_portfolio(p1.id).await.expect("delete p1");
+    assert!(db.list_historical_valuations(p1.id).is_empty());
+}
+
+#[test]
+fn test_schema_ddl_numeric_precision_and_partial_index() {
+    let ddl = portfolio_db::schema::generate_ddl();
+    assert!(ddl.contains(r#""taxSlab" NUMERIC(18, 4)"#));
+    assert!(ddl.contains(r#""amount" NUMERIC(18, 4)"#));
+    assert!(ddl.contains(r#""targetAmount" NUMERIC(18, 2)"#));
+    assert!(ddl.contains(r"Portfolio_userId_managedProfileId_key"));
+    assert!(!ddl.contains(r#"UPDATE "Transaction" SET amount = ABS(amount)"#));
 }
 
 #[tokio::test]

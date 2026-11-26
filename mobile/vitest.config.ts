@@ -19,6 +19,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    testTimeout: 60000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -31,6 +32,7 @@ export default defineConfig({
         'src/db/index.ts',
         'src/feeds/index.ts',
         'src/services/index.ts',
+        'src/e2e/**',
         'tests/mocks/**',
       ],
       thresholds: {

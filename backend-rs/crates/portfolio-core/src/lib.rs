@@ -13,6 +13,7 @@ pub mod error;
 /// Holdings consolidation, FIFO lot matching, and portfolio registry.
 pub mod holdings;
 /// Financial statement and CAS transaction parser.
+pub mod insights;
 pub mod parser;
 /// Performance metrics, absolute returns, and numerical XIRR root-finding.
 pub mod performance;

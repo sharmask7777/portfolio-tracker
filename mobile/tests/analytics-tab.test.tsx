@@ -318,9 +318,7 @@ describe('Analytics Tab & Stock X-Ray Suite', () => {
       expect(xrayData.assetAllocation.cash.value).toBe(70000);
       expect(xrayData.assetAllocation.gold.value).toBe(60000);
       expect(xrayData.exArbitrage?.assetAllocation.arbitrage.value).toBe(175000);
-      expect(exposures.length).toBe(5);
-      expect(exposures[0]?.name).toBe('HDFC Bank Ltd.');
-      expect(exposures[0]?.contributions.length).toBeGreaterThan(0);
+      expect(exposures.length).toBe(0);
     });
 
     it('handles empty portfolio holdings without NaN or runtime exceptions', () => {

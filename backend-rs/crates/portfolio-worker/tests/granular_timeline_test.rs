@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used)]
 //! Integration tests verifying granular historical valuation timeline reconstruction and gap handling.
 
 use std::str::FromStr;

@@ -62,6 +62,7 @@ describe('useDashboardData', () => {
 
     expect(api.get).toHaveBeenCalledWith(`${API_ENDPOINTS.PORTFOLIO}/port-1/tax-summary`, {
       params: { taxSlab: 0.2 },
+      signal: expect.any(AbortSignal),
     });
 
     act(() => {

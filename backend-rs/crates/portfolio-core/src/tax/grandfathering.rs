@@ -69,10 +69,8 @@ pub fn compute_deemed_cost(
     is_anchor: bool,
 ) -> (Money, bool, String, Nav, Money) {
     let cost_of_acquisition = actual_nav * units;
-    let anniversary = buy_date
-        .checked_add_months(chrono::Months::new(12))
-        .unwrap_or(buy_date + chrono::Duration::days(365));
-    let is_long_term = sell_date > anniversary;
+    let is_long_term =
+        crate::tax::classification::is_long_term_holding(is_equity_asset, buy_date, sell_date);
 
     if is_equity_asset && buy_date <= GRANDFATHER_DATE && is_long_term && !is_anchor {
         let is_grandfathered = true;
@@ -94,6 +92,28 @@ pub fn compute_deemed_cost(
             )
         }
     } else if !is_equity_asset && buy_date < DEBT_NEW_REGIME_DATE && !is_anchor {
+        if is_long_term && sell_date < BUDGET_2024_DATE {
+            let buy_fy = financial_year_start_year(buy_date);
+            let sell_fy = financial_year_start_year(sell_date);
+            if let (Some(cii_buy), Some(cii_sell)) =
+                (cost_inflation_index(buy_fy), cost_inflation_index(sell_fy))
+                && cii_buy > 0
+                && cii_sell >= cii_buy
+            {
+                let indexed_cost = Money::new(
+                    (cost_of_acquisition.to_decimal() * Decimal::from(cii_sell))
+                        / Decimal::from(cii_buy),
+                )
+                .max(cost_of_acquisition);
+                return (
+                    indexed_cost,
+                    true,
+                    "Grandfathered Debt u/s 112 (CII Indexed)".to_string(),
+                    Nav::ZERO,
+                    Money::ZERO,
+                );
+            }
+        }
         (
             cost_of_acquisition,
             true,
@@ -252,5 +272,27 @@ pub fn calculate_gain_with_expenses(
         is_grandfathered,
         grandfathered_status,
         advance_tax_quarter: Some(crate::tax::AdvanceTaxQuarter::from_date(sell_date)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_compute_deemed_cost_sec112_debt_cii_indexation() {
+        let buy_date = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let sell_date = NaiveDate::from_ymd_opt(2024, 6, 1).unwrap();
+        let units = Units::from_str("100").unwrap();
+        let actual_nav = Nav::from_str("100").unwrap();
+        let sell_nav = Nav::from_str("150").unwrap();
+
+        let (deemed_cost, is_gf, status, _, _) = compute_deemed_cost(
+            buy_date, sell_date, units, actual_nav, sell_nav, None, false, false,
+        );
+        assert!(is_gf);
+        assert!(status.contains("CII Indexed"));
+        assert!(deemed_cost > Money::from_str("10000").unwrap());
     }
 }

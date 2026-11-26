@@ -11,12 +11,12 @@ import { formatIndianRupee } from '../../utils/hierarchy-builder';
 
 interface StockContributionsListProps {
   contributions: StockContribution[];
-  maxSchemeValue: number;
+  totalStockValue: number;
 }
 
 export const StockContributionsList: React.FC<StockContributionsListProps> = ({
   contributions,
-  maxSchemeValue,
+  totalStockValue,
 }) => {
   return (
     <div>
@@ -33,10 +33,10 @@ export const StockContributionsList: React.FC<StockContributionsListProps> = ({
         <div className="space-y-4">
           {contributions.map((contribution, index) => {
             const relativePct =
-              maxSchemeValue > 0
-                ? Math.min(100, Math.max(5, (contribution.value / maxSchemeValue) * 100))
+              totalStockValue > 0
+                ? Math.min(100, Math.max(5, (contribution.value / totalStockValue) * 100))
                 : 0;
-            const fundWeightPct = (contribution.weight * 100).toFixed(2);
+            const fundWeightPct = contribution.weight.toFixed(2);
 
             return (
               <div
@@ -57,7 +57,7 @@ export const StockContributionsList: React.FC<StockContributionsListProps> = ({
                     role="progressbar"
                     aria-valuenow={contribution.value}
                     aria-valuemin={0}
-                    aria-valuemax={maxSchemeValue}
+                    aria-valuemax={totalStockValue}
                     aria-label={`${contribution.schemeName} exposure`}
                     className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden"
                   >

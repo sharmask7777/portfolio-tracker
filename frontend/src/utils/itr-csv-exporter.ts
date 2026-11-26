@@ -12,7 +12,10 @@ import {
 
 export function escapeCSV(val: unknown): string {
   if (val === undefined || val === null) return '';
-  const str = String(val);
+  let str = String(val).replace(/\r\n?/g, '\n');
+  if (/^[=+\-@\t]/.test(str) && !/^-?\d+(\.\d+)?$/.test(str)) {
+    str = `'${str}`;
+  }
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
@@ -195,7 +198,7 @@ function extractRowTaxFields(
 ) {
   const taxRate = formatTaxRate(item.taxRate);
   const taxBeforeCess = (item.taxBeforeCess ?? 0).toFixed(2);
-  const cessAmount = (item.cess ?? ((item.taxBeforeCess ?? 0) * 0.04)).toFixed(2);
+  const cessAmount = (item.cess ?? (Math.max(0, item.taxBeforeCess ?? 0) * 0.04)).toFixed(2);
   const totalTaxPayable = (
     item.estimatedTax ?? ((item.taxBeforeCess ?? 0) + (item.cess ?? 0))
   ).toFixed(2);

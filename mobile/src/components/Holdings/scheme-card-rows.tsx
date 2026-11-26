@@ -134,10 +134,10 @@ const styles = StyleSheet.create({
 });
 
 function formatDayChange(dayChange: number, dayChangePct: number | undefined): string {
-  const sign = dayChange > 0 ? '+' : '';
+  const isDayPositive = dayChange >= 0;
+  const isPctPositive = (dayChangePct ?? 0) >= 0;
   const pct = dayChangePct !== undefined ? formatPercent(dayChangePct / 100) : '0.00%';
-  const pctSign = dayChangePct !== undefined && dayChangePct > 0 ? '+' : '';
-  return `${sign}${formatIndianRupee(dayChange)} (${pctSign}${pct})`;
+  return `${isDayPositive ? '+' : ''}${formatIndianRupee(dayChange)} (${isPctPositive ? '+' : ''}${pct})`;
 }
 
 function resolveDayChangeStyle(dayChange: number) {

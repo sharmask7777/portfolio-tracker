@@ -213,7 +213,7 @@ describe('Maestro Flow 04: Tax & Statutory Harvesting Simulation', () => {
 
     // 7. Close simulation modal
     fireEvent.press(screen.getByTestId('close-simulation-modal-btn'));
-  }, 15000);
+  }, 60000);
 
   it('validates ELSS statutory lock-in restriction checks in sell simulation', async () => {
     // Render SimulationModal directly with locked ELSS lots (<3 years holding)

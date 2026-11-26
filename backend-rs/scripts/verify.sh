@@ -26,39 +26,45 @@ echo "Working directory: $(pwd)"
 echo "================================================================================"
 
 echo ""
-echo "▶ [1/8] Formatting Check: cargo fmt --check"
+echo "▶ [1/10] Formatting Check: cargo fmt --check"
 cargo fmt --check
 
 echo ""
-echo "▶ [2/8] Type Checking: cargo check --workspace --all-targets"
+echo "▶ [2/10] Type Checking: cargo check --workspace --all-targets"
 cargo check --workspace --all-targets
 
 echo ""
-echo "▶ [3/8] Strict Clippy Lints: cargo clippy --workspace --all-targets -- -D warnings"
+echo "▶ [3/10] Strict Clippy Lints: cargo clippy --workspace --all-targets -- -D warnings"
 cargo clippy --workspace --all-targets -- -D warnings
 
 echo ""
-echo "▶ [4/8] Static Rustdoc Guardrails: RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps"
+echo "▶ [4/10] Static Rustdoc Guardrails: RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 echo ""
-echo "▶ [5/8] Workspace Tests: cargo test --workspace"
+echo "▶ [5/10] Workspace Tests: cargo test --workspace"
 cargo test --workspace
 
 echo ""
-echo "▶ [6/8] Dependency Auditing: cargo deny check"
+echo "▶ [6/10] Dependency Auditing: cargo deny check"
 if command -v cargo-deny >/dev/null 2>&1 || command -v cargo-deny.exe >/dev/null 2>&1 || cargo deny --version >/dev/null 2>&1; then
     cargo deny check
 else
-    echo "⚠️  cargo-deny not found in PATH; skipping cargo deny check (install via 'cargo install --locked cargo-deny' or 'brew install cargo-deny')"
+    echo "❌ ERROR: cargo-deny not found in PATH (install via 'cargo install --locked cargo-deny' or 'brew install cargo-deny')"
+    exit 1
 fi
 
 echo ""
-echo "▶ [7/8] Unused Dependency Checking: cargo machete"
+echo "▶ [7/10] Unused Dependency Checking: cargo machete"
 if command -v cargo-machete >/dev/null 2>&1 || cargo machete --version >/dev/null 2>&1; then
     cargo machete
 else
-    echo "ℹ️  cargo-machete is optional and not installed; skipping unused dependency check"
+    if [ "${CI:-false}" = "true" ]; then
+        echo "❌ ERROR: cargo-machete is required in CI (install via 'cargo install cargo-machete')"
+        exit 1
+    else
+        echo "ℹ️  cargo-machete is optional locally and not installed; skipping unused dependency check"
+    fi
 fi
 
 echo ""
@@ -69,6 +75,11 @@ echo ""
 echo "▶ [9/10] TypeScript Contract Parity Export & Drift Gate"
 cargo test --package portfolio-api --test export_bindings
 git diff --exit-code "${SCRIPT_DIR}/../../frontend/src/types/generated" "${SCRIPT_DIR}/../../mobile/src/types/generated"
+if [ -n "$(git status --porcelain "${SCRIPT_DIR}/../../frontend/src/types/generated" "${SCRIPT_DIR}/../../mobile/src/types/generated")" ]; then
+    echo "❌ ERROR: Untracked or modified files detected in generated types!"
+    git status --porcelain "${SCRIPT_DIR}/../../frontend/src/types/generated" "${SCRIPT_DIR}/../../mobile/src/types/generated"
+    exit 1
+fi
 
 echo ""
 echo "▶ [10/10] Static Privacy & Anti-PII Guardrail: scripts/check-privacy-and-pii.py"

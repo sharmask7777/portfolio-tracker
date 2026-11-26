@@ -62,9 +62,7 @@ export const TaxView: React.FC<TaxViewProps> = ({
     selectedFY: controlledFY,
     onFYChange,
   });
-
   if (!summary) return <div>Loading tax data...</div>;
-
   return (
     <div className="tax-view animate-fade">
       <TaxHeader

@@ -47,16 +47,16 @@ interface RawGainsAccumulator {
 
 function accumulateGain(acc: RawGainsAccumulator, g: ITRGainDetail): void {
   const section = classifySection(g);
-  const tbCess = g.taxBeforeCess !== undefined ? g.taxBeforeCess : 0;
+  const explicitTax = g.taxBeforeCess;
 
   switch (section) {
     case TaxSectionName.SEC_111A_15:
       acc.stcg15Gain += g.gain;
-      acc.stcg15TaxBeforeCess += tbCess || Math.max(0, g.gain) * 0.15;
+      acc.stcg15TaxBeforeCess += explicitTax ?? Math.max(0, g.gain) * 0.15;
       break;
     case TaxSectionName.SEC_111A_20:
       acc.stcg20Gain += g.gain;
-      acc.stcg20TaxBeforeCess += tbCess || Math.max(0, g.gain) * 0.20;
+      acc.stcg20TaxBeforeCess += explicitTax ?? Math.max(0, g.gain) * 0.20;
       break;
     case TaxSectionName.SEC_112A_10:
       acc.ltcg10Gain += g.gain;
@@ -66,16 +66,16 @@ function accumulateGain(acc: RawGainsAccumulator, g: ITRGainDetail): void {
       break;
     case TaxSectionName.SEC_112_DEBT_20:
       acc.debtLtcg20Gain += g.gain;
-      acc.debtTaxBeforeCess += tbCess || Math.max(0, g.gain) * 0.20;
+      acc.debtTaxBeforeCess += explicitTax ?? Math.max(0, g.gain) * 0.20;
       break;
     case TaxSectionName.SEC_112_DEBT_12_5:
       acc.debtLtcg12_5Gain += g.gain;
-      acc.debtTaxBeforeCess += tbCess || Math.max(0, g.gain) * 0.125;
+      acc.debtTaxBeforeCess += explicitTax ?? Math.max(0, g.gain) * 0.125;
       break;
     default: {
       acc.slabGain += g.gain;
       const rate = g.taxRate ?? 0.30;
-      acc.slabTaxBeforeCess += tbCess || Math.max(0, g.gain) * rate;
+      acc.slabTaxBeforeCess += explicitTax ?? Math.max(0, g.gain) * rate;
       break;
     }
   }

@@ -248,11 +248,37 @@ pub fn calculate_drag_attribution(
     cpi_inflation_rate: Decimal,
     risk_free_nominal_rate: Option<Decimal>,
 ) -> Result<DragDecomposition, PortfolioError> {
+    calculate_drag_attribution_with_slab(
+        nominal_xirr,
+        post_tax_xirr,
+        debt_tax,
+        equity_tax,
+        cess_and_other_tax,
+        cpi_inflation_rate,
+        risk_free_nominal_rate,
+        Decimal::from_str_exact("0.30").unwrap_or(Decimal::ZERO),
+    )
+}
+
+/// Computes drag attribution with an explicit marginal `tax_slab` (e.g. `0.30` for 30%).
+///
+/// Computes `inflation_drag = post_tax_xirr - real_post_tax_xirr` even when `nominal_xirr <= 0`.
+#[allow(clippy::too_many_arguments)]
+pub fn calculate_drag_attribution_with_slab(
+    nominal_xirr: Option<Decimal>,
+    post_tax_xirr: Option<Decimal>,
+    debt_tax: Money,
+    equity_tax: Money,
+    cess_and_other_tax: Money,
+    cpi_inflation_rate: Decimal,
+    risk_free_nominal_rate: Option<Decimal>,
+    tax_slab: Decimal,
+) -> Result<DragDecomposition, PortfolioError> {
     let real_post_tax_xirr = calculate_post_tax_real_xirr(post_tax_xirr, cpi_inflation_rate)?;
 
     let (debt_drag, equity_drag, cess_drag, inflation_drag) =
         match (nominal_xirr, post_tax_xirr, real_post_tax_xirr) {
-            (Some(nom), Some(pt), Some(real)) if nom > Decimal::ZERO => {
+            (Some(nom), Some(pt), Some(real)) => {
                 let total_tax_drag = (nom - pt).max(Decimal::ZERO);
                 let total_tax = debt_tax + equity_tax + cess_and_other_tax;
 
@@ -273,17 +299,14 @@ pub fn calculate_drag_attribution(
                 let inf_drag = (pt - real).round_dp(6);
                 (d_drag, eq_drag, c_drag, inf_drag)
             }
-            (Some(_nom), Some(pt), Some(real)) => {
-                let inf_drag = (pt - real).round_dp(6);
-                (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, inf_drag)
-            }
             _ => (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
         };
 
-    // Risk-free benchmark comparison (e.g. 1-year T-Bill / FD default 6.5% nominal, 30% slab -> 4.55% post-tax)
+    // Risk-free benchmark comparison using configurable marginal tax slab
     let benchmark_spread =
         if let (Some(real), Some(rf_nom)) = (real_post_tax_xirr, risk_free_nominal_rate) {
-            let rf_post_tax = rf_nom * Decimal::from_str_exact("0.70").unwrap_or(Decimal::ONE);
+            let retention = (Decimal::ONE - tax_slab).max(Decimal::ZERO);
+            let rf_post_tax = rf_nom * retention;
             let rf_real = calculate_post_tax_real_xirr(Some(rf_post_tax), cpi_inflation_rate)?
                 .unwrap_or(Decimal::ZERO);
             Some((real - rf_real).round_dp(6))
@@ -389,7 +412,7 @@ pub fn get_metrics(
         .as_ref()
         .and_then(|o| o.as_of_date)
         .or(last_date)
-        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+        .unwrap_or_default();
 
     let cagr = if let Some(start) = first_date {
         if start < as_of_date && invested_amount.is_positive() {
@@ -460,6 +483,88 @@ pub fn get_metrics(
         post_tax_xirr,
         post_tax_absolute_return,
         estimated_tax,
+    }
+}
+
+/// Day-over-day portfolio valuation change summary.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayChangeSummary {
+    /// Total rupee change (`sum(units * (current_nav - previous_nav))`).
+    pub day_change: Money,
+    /// Percentage change relative to previous day's total value.
+    pub day_change_pct: f64,
+    /// Previous day's total portfolio value.
+    pub previous_total_value: Money,
+}
+
+/// Computes the aggregate day-over-day change from `(units, current_nav, previous_nav)` tuples.
+pub fn compute_day_change(items: &[(crate::types::Units, Nav, Nav)]) -> DayChangeSummary {
+    let mut day_change = Money::ZERO;
+    let mut previous_total_value = Money::ZERO;
+
+    for &(units, current_nav, previous_nav) in items {
+        if units.is_positive() && previous_nav.is_positive() {
+            day_change += Money::new(
+                units.as_decimal() * (current_nav.as_decimal() - previous_nav.as_decimal()),
+            );
+            previous_total_value += units * previous_nav;
+        }
+    }
+
+    let day_change_pct = if previous_total_value.is_positive() {
+        let ratio =
+            (day_change.as_decimal() / previous_total_value.as_decimal()) * Decimal::from(100);
+        ratio.to_f64().unwrap_or(0.0)
+    } else {
+        0.0
+    };
+
+    DayChangeSummary {
+        day_change,
+        day_change_pct,
+        previous_total_value,
+    }
+}
+
+/// Summary of portfolio valuation excluding cash-futures arbitrage funds.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExArbitrageSummary {
+    /// Total portfolio value including arbitrage funds.
+    pub total_value: Money,
+    /// Value of arbitrage funds excluded.
+    pub arbitrage_value: Money,
+    /// Portfolio value excluding arbitrage funds.
+    pub ex_arbitrage_value: Money,
+    /// Total invested amount excluding arbitrage funds.
+    pub ex_arbitrage_invested: Money,
+}
+
+/// Computes portfolio totals excluding arbitrage schemes (identified by `is_arbitrage` flag).
+///
+/// Input slice elements are `(current_value, invested_amount, is_arbitrage)`.
+pub fn compute_ex_arbitrage_summary(items: &[(Money, Money, bool)]) -> ExArbitrageSummary {
+    let mut total_value = Money::ZERO;
+    let mut arbitrage_value = Money::ZERO;
+    let mut ex_arbitrage_value = Money::ZERO;
+    let mut ex_arbitrage_invested = Money::ZERO;
+
+    for &(val, inv, is_arb) in items {
+        total_value += val;
+        if is_arb {
+            arbitrage_value += val;
+        } else {
+            ex_arbitrage_value += val;
+            ex_arbitrage_invested += inv;
+        }
+    }
+
+    ExArbitrageSummary {
+        total_value,
+        arbitrage_value,
+        ex_arbitrage_value,
+        ex_arbitrage_invested,
     }
 }
 
@@ -654,11 +759,11 @@ mod tests {
         assert_eq!(metrics.xirr, Some(dec("0.5")));
 
         // Post-tax metrics
-        // Gain = 5,000; LTCG rate (pre-budget 2024) = 10% -> Tax = 500
-        // Post-tax value = 14,500 -> Post-tax return = 45% (0.45)
-        assert_eq!(metrics.estimated_tax, Some(money("500")));
-        assert_eq!(metrics.post_tax_absolute_return, Some(dec("0.45")));
-        assert_eq!(metrics.post_tax_xirr, Some(dec("0.45")));
+        // Gain = 5,000; LTCG rate (pre-budget 2024) = 10% -> Tax = 500 + 4% cess = 520
+        // Post-tax value = 14,480 -> Post-tax return = 44.80% (0.448)
+        assert_eq!(metrics.estimated_tax, Some(money("520")));
+        assert_eq!(metrics.post_tax_absolute_return, Some(dec("0.448")));
+        assert_eq!(metrics.post_tax_xirr, Some(dec("0.448")));
     }
 
     #[test]
@@ -781,5 +886,43 @@ mod tests {
             "Drag identity violated: delta = {delta}"
         );
         assert!(drag.benchmark_spread.is_some());
+    }
+
+    #[test]
+    fn test_compute_day_change_positive_and_zero() {
+        let items = vec![
+            (
+                crate::types::Units::from_str("100").unwrap(),
+                Nav::from_str("110").unwrap(),
+                Nav::from_str("100").unwrap(),
+            ),
+            (
+                crate::types::Units::from_str("50").unwrap(),
+                Nav::from_str("90").unwrap(),
+                Nav::from_str("100").unwrap(),
+            ),
+        ];
+        let summary = compute_day_change(&items);
+        // 100*(110-100) + 50*(90-100) = 1000 - 500 = 500
+        assert_eq!(summary.day_change, money("500"));
+        assert_eq!(summary.previous_total_value, money("15000"));
+        assert!((summary.day_change_pct - (500.0 / 15000.0 * 100.0)).abs() < 1e-6);
+
+        let empty_summary = compute_day_change(&[]);
+        assert_eq!(empty_summary.day_change, Money::ZERO);
+        assert_eq!(empty_summary.day_change_pct, 0.0);
+    }
+
+    #[test]
+    fn test_compute_ex_arbitrage_summary() {
+        let items = vec![
+            (money("100000"), money("80000"), false),
+            (money("50000"), money("45000"), true),
+        ];
+        let summary = compute_ex_arbitrage_summary(&items);
+        assert_eq!(summary.total_value, money("150000"));
+        assert_eq!(summary.arbitrage_value, money("50000"));
+        assert_eq!(summary.ex_arbitrage_value, money("100000"));
+        assert_eq!(summary.ex_arbitrage_invested, money("80000"));
     }
 }

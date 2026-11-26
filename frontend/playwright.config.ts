@@ -5,8 +5,6 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests',
-  /* Stop the suite immediately after 1 failure */
-  maxFailures: 1,
   /* Opt out of parallel execution to keep process linear for the agent */
   workers: 1,
   /* Force a clean exit without triggering an interactive browser/HTML report */

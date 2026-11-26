@@ -70,8 +70,7 @@ export function toFolioView(f: EnrichedFolioView): FolioView {
   };
   const name = f.name ?? f.schemeName;
   if (name !== undefined) result.name = name;
-  const folioNum = f.folioNumber ?? f.number;
-  if (folioNum !== undefined) result.folioNumber = folioNum;
+  if (f.folioNumber !== undefined) result.folioNumber = f.folioNumber;
 
   if (f.asset) {
     const assetObj: NonNullable<FolioView['asset']> = {};

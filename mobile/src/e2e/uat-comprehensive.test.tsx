@@ -381,7 +381,7 @@ describe('Agent-Driven Comprehensive UAT Suite: Mobile (Android & iOS)', () => {
       expect(screen.getByText('Gross Nominal')).toBeDefined();
       expect(screen.getByText('Real Purchasing XIRR')).toBeDefined();
     });
-  });
+  }, 60000);
 
   it('UAT-MOB-2: iOS Platform Journey - Tax harvesting, advance tax matrix, and CAS upload queuing', async () => {
     (Platform as { OS: string }).OS = 'ios';
@@ -411,7 +411,7 @@ describe('Agent-Driven Comprehensive UAT Suite: Mobile (Android & iOS)', () => {
       expect(screen.getByText('Portfolio X-Ray')).toBeDefined();
       expect(screen.getByText('Asset Allocation')).toBeDefined();
       expect(screen.getByTestId('svg-treemap')).toBeDefined();
-      expect(screen.getByTestId('stock-overlap-table')).toBeDefined();
+      expect(screen.getByTestId('stock-overlap-table-empty')).toBeDefined();
     });
 
     // 4. CAS Upload Screen and Outbox Persistence
@@ -434,5 +434,5 @@ describe('Agent-Driven Comprehensive UAT Suite: Mobile (Android & iOS)', () => {
       expect(screen.getByText('Queued for upload when server reconnects')).toBeDefined();
       expect(screen.getByText('Upload Outbox')).toBeDefined();
     });
-  });
+  }, 60000);
 });

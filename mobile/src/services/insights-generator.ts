@@ -144,7 +144,7 @@ function checkTaxHarvesting(
   harvestSummary?: { harvestableGain?: number },
 ): SmartInsight | null {
   const gain = harvestSummary?.harvestableGain ?? 0;
-  if (gain >= 0) {
+  if (gain > 0) {
     return {
       id: 'insight-tax-harvesting',
       type: 'TAX_HARVESTING',
@@ -170,7 +170,11 @@ function checkGoalsBehind(
       g.allocatedPercentage !== undefined &&
       g.targetAmount > 0 &&
       (netWorth * (g.allocatedPercentage / 100)) / g.targetAmount < 0.20 &&
-      g.targetDate.startsWith('2026')
+      (() => {
+        const target = new Date(g.targetDate);
+        const monthsRemaining = (target.getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30.44);
+        return !Number.isNaN(monthsRemaining) && monthsRemaining <= 12;
+      })()
     );
 
     if (isBehind) {

@@ -111,13 +111,13 @@ export async function syncPortfolioAnalyticsFromServer(
 
     await persistScopedCaches({ portfolioId, fy, taxSummaryJson, harvestJson });
 
-    if (xrayJson && expJson) {
+    if ([xrayJson, expJson, taxSummaryJson].some(Boolean)) {
       const targetDb = await resolveDb(db);
       await savePortfolioAnalytics(targetDb, {
         portfolio_id: portfolioId,
-        xray_json: xrayJson,
-        exposures_json: expJson,
-        exposures_ex_arb_json: expExArbJson || expJson,
+        xray_json: xrayJson || '',
+        exposures_json: expJson || '[]',
+        exposures_ex_arb_json: expExArbJson || expJson || '[]',
         tax_summary_json: taxSummaryJson || null,
         updated_at: new Date().toISOString(),
       });
@@ -207,8 +207,10 @@ export async function getCachedPortfolioAnalytics(
       return { ...emptyCachedResult(), taxSummary, harvestTicket };
     }
 
-    const xrayData = JSON.parse(row.xray_json) as XRayData;
-    const exposures = JSON.parse(row.exposures_json) as StockExposure[];
+    const xrayData = row.xray_json ? (JSON.parse(row.xray_json) as XRayData) : null;
+    const exposures = row.exposures_json
+      ? (JSON.parse(row.exposures_json) as StockExposure[])
+      : null;
     const exposuresExArb = row.exposures_ex_arb_json
       ? (JSON.parse(row.exposures_ex_arb_json) as StockExposure[])
       : exposures;

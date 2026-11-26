@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Automated Differential Parity Harness (`portfolio-parity`).
 //!
 //! Validates mathematical equivalence and precision bounds between
@@ -9,8 +10,6 @@
 //! - Returns and XIRR within <= 10^-6
 
 #![forbid(unsafe_code)]
-#![allow(missing_docs)]
-#![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,20 +34,31 @@ use portfolio_core::xray::{FundHolding, calculate_fund_overlap};
 // Fixture Data Models
 // ============================================================================
 
+/// Root structure of the parity scenarios JSON fixture file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenariosFile {
+    /// Fixture schema version.
     pub version: String,
+    /// Human-readable description of the fixture suite.
     pub description: String,
+    /// Ordered list of differential parity scenarios.
     pub scenarios: Vec<ScenarioDefinition>,
 }
 
+/// A single differential parity test scenario definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioDefinition {
+    /// Unique scenario identifier.
     pub id: String,
+    /// Display name of the scenario.
     pub name: String,
+    /// Domain category (e.g., `tax`, `xirr`, `xray`).
     pub category: String,
+    /// Detailed description of what the scenario validates.
     pub description: String,
+    /// Arbitrary JSON inputs for the scenario.
     pub inputs: serde_json::Value,
+    /// Expected JSON outputs for the scenario.
     pub expected: serde_json::Value,
 }
 
@@ -56,42 +66,66 @@ pub struct ScenarioDefinition {
 // Assertion & Result Types
 // ============================================================================
 
+/// Result of a single numerical or exact-match assertion within a scenario.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckResult {
+    /// Name of the assertion check.
     pub name: String,
+    /// Formatted actual value computed by the engine.
     pub actual: String,
+    /// Formatted expected value from the fixture.
     pub expected: String,
+    /// Formatted absolute difference between actual and expected.
     pub diff: String,
+    /// Formatted tolerance threshold.
     pub tolerance: String,
+    /// Whether the check passed within tolerance.
     pub passed: bool,
 }
 
+/// Aggregated result for a single parity scenario.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioResult {
+    /// Scenario identifier.
     pub id: String,
+    /// Scenario display name.
     pub name: String,
+    /// Domain category.
     pub category: String,
+    /// Scenario description.
     pub description: String,
+    /// Individual assertion results.
     pub checks: Vec<CheckResult>,
+    /// Whether all checks in this scenario passed.
     pub passed: bool,
 }
 
+/// Overall differential parity report across all scenarios.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DifferentialReport {
+    /// Total number of scenarios executed.
     pub total_scenarios: usize,
+    /// Number of scenarios that passed all checks.
     pub passed_scenarios: usize,
+    /// Number of scenarios with at least one failed check.
     pub failed_scenarios: usize,
+    /// Total number of individual checks executed.
     pub total_checks: usize,
+    /// Number of individual checks that passed.
     pub passed_checks: usize,
+    /// Number of individual checks that failed.
     pub failed_checks: usize,
+    /// Per-scenario execution results.
     pub scenarios: Vec<ScenarioResult>,
 }
 
 impl DifferentialReport {
+    /// Returns `true` if every scenario and every check passed.
     pub fn is_all_passed(&self) -> bool {
         self.failed_scenarios == 0 && self.failed_checks == 0
     }
 
+    /// Formats the differential report as a human-readable certification table.
     pub fn format_report(&self) -> String {
         let mut out = String::new();
         out.push_str(
@@ -175,6 +209,7 @@ impl DifferentialReport {
 // Precision Verification Helpers
 // ============================================================================
 
+/// Checks that two `Units` values match within `0.0001`.
 pub fn check_units(name: &str, actual: Units, expected: Units) -> CheckResult {
     let diff = (actual.to_decimal() - expected.to_decimal()).abs();
     let passed = diff <= Decimal::from_str("0.0001").unwrap();
@@ -188,6 +223,7 @@ pub fn check_units(name: &str, actual: Units, expected: Units) -> CheckResult {
     }
 }
 
+/// Checks that two `Money` values match within `₹0.01`.
 pub fn check_money(name: &str, actual: Money, expected: Money) -> CheckResult {
     let diff = (actual.to_decimal() - expected.to_decimal()).abs();
     let passed = diff <= Decimal::from_str("0.01").unwrap();
@@ -201,6 +237,7 @@ pub fn check_money(name: &str, actual: Money, expected: Money) -> CheckResult {
     }
 }
 
+/// Checks that two `Decimal` rate/ratio values match within `10^-6`.
 pub fn check_rate(name: &str, actual: Decimal, expected: Decimal) -> CheckResult {
     let diff = (actual - expected).abs();
     let passed = diff <= Decimal::from_str("0.000001").unwrap();
@@ -214,6 +251,7 @@ pub fn check_rate(name: &str, actual: Decimal, expected: Decimal) -> CheckResult
     }
 }
 
+/// Checks that two boolean values match exactly.
 pub fn check_bool(name: &str, actual: bool, expected: bool) -> CheckResult {
     let passed = actual == expected;
     CheckResult {
@@ -230,6 +268,7 @@ pub fn check_bool(name: &str, actual: bool, expected: bool) -> CheckResult {
     }
 }
 
+/// Checks that two string values match exactly.
 pub fn check_str(name: &str, actual: &str, expected: &str) -> CheckResult {
     let passed = actual == expected;
     CheckResult {
@@ -246,6 +285,7 @@ pub fn check_str(name: &str, actual: &str, expected: &str) -> CheckResult {
     }
 }
 
+/// Checks that two `usize` counts match exactly.
 pub fn check_count(name: &str, actual: usize, expected: usize) -> CheckResult {
     let passed = actual == expected;
     CheckResult {
@@ -266,6 +306,7 @@ pub fn check_count(name: &str, actual: usize, expected: usize) -> CheckResult {
 // Scenario File Loader
 // ============================================================================
 
+/// Locates `tests/fixtures/synthetic/portfolio_scenarios.json` by walking ancestor directories.
 pub fn find_scenarios_path() -> Result<PathBuf, String> {
     let relative_candidates = [
         "tests/fixtures/synthetic/portfolio_scenarios.json",
@@ -308,6 +349,7 @@ pub fn find_scenarios_path() -> Result<PathBuf, String> {
     Err("Could not find portfolio_scenarios.json in any ancestor directory".to_string())
 }
 
+/// Loads and deserializes parity scenarios from the given JSON file path.
 pub fn load_scenarios_from_file(path: &Path) -> Result<ScenariosFile, String> {
     let contents = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
@@ -341,6 +383,7 @@ fn parse_tx(v: &serde_json::Value) -> Transaction {
     Transaction::new(id, date, tx_type, amount, units, nav, balance)
 }
 
+/// Executes a single parity scenario and returns its check results.
 pub fn run_scenario(scenario: &ScenarioDefinition) -> ScenarioResult {
     let mut checks = Vec::new();
 
@@ -1230,6 +1273,7 @@ pub fn run_scenario(scenario: &ScenarioDefinition) -> ScenarioResult {
     }
 }
 
+/// Runs all differential parity scenarios and returns the aggregated report.
 pub fn run_differential_tests() -> Result<DifferentialReport, String> {
     let scenarios_path = find_scenarios_path()?;
     let file = load_scenarios_from_file(&scenarios_path)?;

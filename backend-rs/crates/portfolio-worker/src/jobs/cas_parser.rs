@@ -245,19 +245,33 @@ pub fn validate_file_path(path_str: &str) -> Result<PathBuf, WorkerError> {
         )));
     }
 
-    // 2. Allowable directory check
+    // 2. Allowable directory check (strictly against canonicalized UPLOADS_DIR or temp_dir)
     let temp_dir = std::env::temp_dir();
-    let is_in_temp = p.starts_with(&temp_dir)
-        || p.starts_with("/tmp")
-        || p.starts_with("/private/tmp")
-        || p.starts_with("/var/tmp")
-        || p.starts_with("/private/var/tmp");
+    let canon_temp = std::fs::canonicalize(&temp_dir).unwrap_or_else(|_| temp_dir.clone());
+    let uploads_env = std::env::var("UPLOADS_DIR").unwrap_or_else(|_| "uploads".to_string());
+    let uploads_dir = Path::new(&uploads_env);
+    let canon_uploads = std::fs::canonicalize(uploads_dir).ok();
 
-    let is_in_uploads = p.starts_with("uploads")
-        || p.starts_with("./uploads")
-        || p.components().any(|c| c.as_os_str() == "uploads");
+    let is_allowed = if p.exists() {
+        let canon_p = std::fs::canonicalize(p).map_err(|e| {
+            WorkerError::ValidationError(format!("Failed to canonicalize path '{path_str}': {e}"))
+        })?;
+        canon_p.starts_with(&canon_temp)
+            || canon_uploads
+                .as_ref()
+                .is_some_and(|u| canon_p.starts_with(u))
+    } else {
+        let is_in_temp = p.starts_with(&temp_dir)
+            || p.starts_with("/tmp")
+            || p.starts_with("/private/tmp")
+            || p.starts_with("/var/tmp")
+            || p.starts_with("/private/var/tmp");
+        let is_in_uploads =
+            p.starts_with(uploads_dir) || p.starts_with("uploads") || p.starts_with("./uploads");
+        is_in_temp || is_in_uploads
+    };
 
-    if !is_in_temp && !is_in_uploads {
+    if !is_allowed {
         return Err(WorkerError::ValidationError(format!(
             "Path '{path_str}' is not in an allowed directory (uploads/ or temp directory)"
         )));
@@ -382,9 +396,12 @@ async fn process_cas_file_internal(
             cmd.arg(pw);
         }
 
-        let output = cmd.output().map_err(|e| {
-            WorkerError::ParseError(format!("Failed to execute casparser script: {e}"))
-        })?;
+        let output = tokio::task::spawn_blocking(move || cmd.output())
+            .await
+            .map_err(|e| WorkerError::ParseError(format!("casparser task panicked: {e}")))?
+            .map_err(|e| {
+                WorkerError::ParseError(format!("Failed to execute casparser script: {e}"))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -405,7 +422,7 @@ async fn process_cas_file_internal(
     let statement: CasStatement = serde_json::from_str(&raw_content)
         .map_err(|e| WorkerError::ParseError(format!("Failed to parse CAS statement JSON: {e}")))?;
 
-    // Determine default investor PAN
+    // Determine default investor PAN (must be present; never fabricate a synthetic PAN)
     let investor_pan = statement
         .investor_info
         .as_ref()
@@ -416,7 +433,13 @@ async fn process_cas_file_internal(
                 .as_ref()
                 .and_then(|i| i.pan.as_deref().or(i.pan_upper.as_deref()))
         })
-        .unwrap_or("ABCDE1234F");
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            WorkerError::ValidationError(
+                "Missing investor PAN in CAS statement; cannot ingest without PAN".to_string(),
+            )
+        })?;
 
     let mut touched_portfolios = HashSet::new();
     let mut touched_pg_portfolios = HashSet::new();
@@ -597,14 +620,14 @@ async fn process_cas_file_internal(
             // 5. Transactions
             for tx in &scheme_data.transactions {
                 let date = parse_cas_date(&tx.date)?;
-                let tx_type = normalize_tx_type(&tx.tx_type);
+                let tx_type = portfolio_core::parser::normalize_cas_tx_type(&tx.tx_type);
 
-                let units = tx.units.unwrap_or(Decimal::ZERO).abs();
+                let units = tx.units.unwrap_or(Decimal::ZERO);
                 let nav = tx.nav.unwrap_or(Decimal::ZERO).abs();
                 let amount = if let Some(amt) = tx.amount {
                     amt.abs()
                 } else if !units.is_zero() && !nav.is_zero() {
-                    units * nav
+                    units.abs() * nav
                 } else {
                     Decimal::ZERO
                 };
@@ -673,14 +696,6 @@ async fn process_cas_file_internal(
     // CAS statements uploaded by users contain complete transaction history from inception.
     // To ensure clean-slate reconstruction without accumulating stale or conflicting historical
     // checkpoints, we purge previous history for touched portfolios before regenerating the timeline.
-    let mut touched_vec: Vec<uuid::Uuid> = touched_portfolios.into_iter().collect();
-    touched_vec.sort();
-    for portfolio_id in touched_vec {
-        db.purge_historical_valuations(portfolio_id);
-        let refresh_data = HistoryRefreshJobData::new(portfolio_id);
-        process_history_refresh_job_with_pool(&refresh_data, db, None).await?;
-    }
-
     if let Some(pool) = pool {
         let mut touched_pg_vec: Vec<uuid::Uuid> = touched_pg_portfolios.into_iter().collect();
         touched_pg_vec.sort();
@@ -690,6 +705,14 @@ async fn process_cas_file_internal(
                 .map_err(WorkerError::Db)?;
             let refresh_data = HistoryRefreshJobData::new(pg_port_id);
             process_history_refresh_job_with_pool(&refresh_data, db, Some(pool)).await?;
+        }
+    } else {
+        let mut touched_vec: Vec<uuid::Uuid> = touched_portfolios.into_iter().collect();
+        touched_vec.sort();
+        for portfolio_id in touched_vec {
+            db.purge_historical_valuations(portfolio_id);
+            let refresh_data = HistoryRefreshJobData::new(portfolio_id);
+            process_history_refresh_job_with_pool(&refresh_data, db, None).await?;
         }
     }
 

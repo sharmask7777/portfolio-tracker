@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import api, { API_ENDPOINTS } from './api';
 
@@ -11,6 +11,13 @@ export function useDashboardUpload({ fetchSummary }: UseDashboardUploadParams) {
   const [uploading, setUploading] = useState(false);
   const [uploadStatusMsg, setUploadStatusMsg] = useState('');
   const [password, setPassword] = useState('');
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+  }, []);
 
   const pollJobStatus = (jobId: string) => {
     setUploadStatusMsg('Processing portfolio... This may take a few minutes.');
@@ -30,7 +37,7 @@ export function useDashboardUpload({ fetchSummary }: UseDashboardUploadParams) {
           alert(`Processing failed: ${message || 'Unknown error'}`);
         } else {
           setUploadStatusMsg(`Processing... (${status.toLowerCase()})`);
-          setTimeout(checkStatus, 3000);
+          pollTimerRef.current = setTimeout(checkStatus, 3000);
         }
       } catch (err) {
         console.error('Error polling job status:', err);
@@ -39,7 +46,8 @@ export function useDashboardUpload({ fetchSummary }: UseDashboardUploadParams) {
         alert('Lost connection to processing status.');
       }
     };
-    setTimeout(checkStatus, 2000);
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    pollTimerRef.current = setTimeout(checkStatus, 2000);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -38,11 +38,6 @@ export class SimulationBackendError extends Error {
   }
 }
 
-/**
- * Type alias for compatibility with request specifications.
- */
-export type WithdrawalSimulationRequest = WithdrawalSimulationParams;
-
 function mapTaxType(taxType: string): 'STCG' | 'LTCG' | 'SLAB' {
   const upper = taxType.toUpperCase();
   if (upper.includes('LTCG')) return 'LTCG';

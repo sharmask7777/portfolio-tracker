@@ -79,3 +79,46 @@ pub fn ltcg_exemption_limit_budget_2024() -> Money {
 pub fn ltcg_exemption_limit_pre_budget_2024() -> Money {
     Money::new(LTCG_EXEMPTION_LIMIT_PRE_BUDGET_2024_DECIMAL)
 }
+
+/// Returns the Indian Financial Year start year (e.g. `2024` for FY 2024-25) for a given date.
+pub fn financial_year_start_year(date: NaiveDate) -> i32 {
+    use chrono::Datelike;
+    if date.month() >= 4 {
+        date.year()
+    } else {
+        date.year() - 1
+    }
+}
+
+/// Returns the official CBDT Cost Inflation Index (CII) for a given Financial Year start year
+/// (e.g. `2001` for FY 2001-02 = 100, `2024` for FY 2024-25 = 363, `2025` for FY 2025-26 = 376).
+pub fn cost_inflation_index(fy_start_year: i32) -> Option<u32> {
+    match fy_start_year {
+        2001 => Some(100),
+        2002 => Some(105),
+        2003 => Some(109),
+        2004 => Some(113),
+        2005 => Some(117),
+        2006 => Some(122),
+        2007 => Some(129),
+        2008 => Some(137),
+        2009 => Some(148),
+        2010 => Some(167),
+        2011 => Some(184),
+        2012 => Some(200),
+        2013 => Some(220),
+        2014 => Some(240),
+        2015 => Some(254),
+        2016 => Some(264),
+        2017 => Some(272),
+        2018 => Some(280),
+        2019 => Some(289),
+        2020 => Some(301),
+        2021 => Some(317),
+        2022 => Some(331),
+        2023 => Some(348),
+        2024 => Some(363),
+        2025 => Some(376),
+        _ => None,
+    }
+}

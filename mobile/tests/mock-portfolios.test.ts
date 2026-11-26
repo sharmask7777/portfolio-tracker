@@ -13,7 +13,7 @@ vi.mock('expo-secure-store', () => ({
 import {
   consolidateFoliosIntoSchemes,
   type FolioInput,
-} from '../src/services/consolidation';
+} from '@portfolio/core-view';
 import {
   calculateSection55DeemedCost,
   checkElssLockIn,

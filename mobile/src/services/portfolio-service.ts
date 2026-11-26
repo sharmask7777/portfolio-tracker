@@ -24,21 +24,13 @@ import {
   type SyncServerOptions,
 } from './portfolio-sync-service';
 export {
-  syncWithServer,
   parseServerPayload,
-  setCachedDrags,
-  getCachedDrags,
-  getStoredDashboardMetrics,
   getStoredDashboardBundle,
   mergeServerMetricsIntoSummary,
   type SyncServerOptions,
 } from './portfolio-sync-service';
 export type { StoredSummaryEnvelope } from '../db/repository';
-export {
-  simulateWithdrawal,
-  type WithdrawalSimulationParams,
-  type WithdrawalSimulationRequest,
-} from './tax-simulation-service';
+export { simulateWithdrawal } from './tax-simulation-service';
 
 import type { DragDecompositionDto, SummaryMetrics } from '../types/generated';
 export type { TransactionEntity } from '../db/schema';
@@ -233,7 +225,7 @@ export async function getDashboardSummary(
  * @returns Normalized decimal rate (e.g. 0.15 for 15%)
  */
 function extractHoldingReturnRate(holding: EnrichedHolding): number {
-  if (typeof holding.xirr === 'number' && !Number.isNaN(holding.xirr) && holding.xirr !== 0) {
+  if (holding.xirr !== undefined && holding.xirr !== null && typeof holding.xirr === 'number' && !Number.isNaN(holding.xirr)) {
     return holding.xirr;
   }
   if (typeof holding.absolute_return === 'number' && !Number.isNaN(holding.absolute_return)) {

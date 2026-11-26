@@ -9,18 +9,16 @@ interface SimulationResultViewProps {
 }
 
 const isLtcg = (l: RealizedGain): boolean => {
-  const t = (l.taxType || (l as unknown as { tax_type?: string }).tax_type || '').toUpperCase();
-  return t === 'LTCG';
+  return (l.taxType || '').toUpperCase() === 'LTCG';
 };
 
 const isStcg = (l: RealizedGain): boolean => {
-  const t = (l.taxType || (l as unknown as { tax_type?: string }).tax_type || '').toUpperCase();
-  return t === 'STCG';
+  return (l.taxType || '').toUpperCase() === 'STCG';
 };
 
 const getLotRate = (l?: RealizedGain): number | undefined => {
   if (!l) return undefined;
-  const rate = l.taxRate ?? (l as unknown as { tax_rate?: number | string }).tax_rate;
+  const rate = l.taxRate;
   if (typeof rate === 'number') return rate;
   if (typeof rate === 'string') return parseFloat(rate);
   return undefined;

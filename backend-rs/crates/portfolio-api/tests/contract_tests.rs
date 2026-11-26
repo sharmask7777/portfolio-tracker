@@ -1,6 +1,7 @@
 #![allow(
     missing_docs,
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
     clippy::assert_is_empty,
     clippy::undocumented_unsafe_blocks
@@ -924,6 +925,81 @@ async fn test_cas_upload_and_status_polling_contract() {
         "PDF upload accepted and processing has started."
     );
 
+    // 1b. JSON upload
+    let json_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"statement.json\"\r\n\
+        Content-Type: application/json\r\n\r\n{{\"folios\":[]}}\r\n--{boundary}--\r\n"
+    );
+    let json_req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(json_body))
+        .unwrap();
+    let json_res = app.clone().oneshot(json_req).await.unwrap();
+    assert_eq!(json_res.status(), StatusCode::ACCEPTED);
+
+    // 1c. Invalid magic bytes rejected with 400
+    let bad_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"bad.pdf\"\r\n\
+        Content-Type: application/pdf\r\n\r\nNOT_A_PDF\r\n--{boundary}--\r\n"
+    );
+    let bad_req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(bad_body))
+        .unwrap();
+    let bad_res = app.clone().oneshot(bad_req).await.unwrap();
+    assert_eq!(bad_res.status(), StatusCode::BAD_REQUEST);
+
+    // 1d. Unsupported extension rejected with 400
+    let txt_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"notes.txt\"\r\n\
+        Content-Type: text/plain\r\n\r\nhello\r\n--{boundary}--\r\n"
+    );
+    let txt_req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(txt_body))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(txt_req).await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // 1e. Missing file field rejected with 400
+    let nofile_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nPASS123\r\n--{boundary}--\r\n"
+    );
+    let nofile_req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(nofile_body))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(nofile_req).await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+
     // 2. Poll status: GET /api/portfolio/upload-status/{jobId}
     let status_req = Request::builder()
         .method("GET")
@@ -1308,9 +1384,19 @@ async fn test_portfolio_summary_and_health_endpoints_contract() {
     let goals_json = parse_json(goals_res.into_body()).await;
     assert!(goals_json.is_array());
 
-    // 13. Call POST /api/health/test-id/goals with string targetAmount. Assert 200 OK.
+    // 13. Create a portfolio for the user, then call POST /api/health/{portfolioId}/goals with string targetAmount. Assert 200 OK.
+    let create_p_req = Request::builder()
+        .uri("/api/portfolio")
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "name": "Goal Portfolio" }).to_string()))
+        .unwrap();
+    let create_p_res = app.clone().oneshot(create_p_req).await.unwrap();
+    let create_p_json = parse_json(create_p_res.into_body()).await;
+    let goal_portfolio_id = create_p_json["id"].as_str().unwrap();
     let goal_create_req = Request::builder()
-        .uri("/api/health/test-id/goals")
+        .uri(format!("/api/health/{goal_portfolio_id}/goals"))
         .method("POST")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .header(header::CONTENT_TYPE, "application/json")
@@ -1705,6 +1791,21 @@ async fn test_exposures_exclude_arbitrage_query_param() {
     );
 }
 
+async fn get_test_token(app: &axum::Router) -> String {
+    let email = format!("fh_{}@example.com", Uuid::new_v4());
+    let req = Request::builder()
+        .uri("/api/auth/register")
+        .method("POST")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({ "email": email, "password": "Password123!" }).to_string(),
+        ))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let body = parse_json(res.into_body()).await;
+    body["token"].as_str().unwrap().to_string()
+}
+
 #[tokio::test]
 async fn test_ingest_fund_holdings_success() {
     let (app, _, _) = setup_test_app();
@@ -1731,6 +1832,10 @@ async fn test_ingest_fund_holdings_success() {
 
     let req = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(payload.to_string()))
@@ -1765,6 +1870,10 @@ async fn test_ingest_fund_holdings_validation_failure() {
 
     let req1 = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(empty_isin_payload.to_string()))
@@ -1783,6 +1892,10 @@ async fn test_ingest_fund_holdings_validation_failure() {
 
     let req2 = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(empty_holdings_payload.to_string()))
@@ -1806,6 +1919,10 @@ async fn test_ingest_fund_holdings_validation_failure() {
 
     let req3 = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(zero_weight_payload.to_string()))
@@ -1841,6 +1958,10 @@ async fn test_get_fund_holdings_by_isin() {
 
     let ingest_req = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(payload.to_string()))
@@ -1851,6 +1972,10 @@ async fn test_get_fund_holdings_by_isin() {
 
     let get_req = Request::builder()
         .uri("/api/fund-holdings/INF209K01157")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("GET")
         .body(Body::empty())
         .unwrap();
@@ -1878,6 +2003,10 @@ async fn test_get_fund_holdings_empty_when_not_found() {
 
     let req = Request::builder()
         .uri("/api/fund-holdings/INF999999999")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("GET")
         .body(Body::empty())
         .unwrap();
@@ -2033,6 +2162,10 @@ async fn test_dynamic_exposure_uses_db_holdings_when_available() {
     });
     let ingest_req = Request::builder()
         .uri("/api/fund-holdings/ingest")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", get_test_token(&app).await),
+        )
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(ingest_payload.to_string()))
@@ -2625,6 +2758,93 @@ async fn test_portfolio_summary_display_ready_pan_breakdowns_contract() {
 }
 
 #[tokio::test]
+async fn test_cross_user_goal_idor_rejected() {
+    let (app, db, jwt_secret) = setup_test_app();
+
+    // User A creates a portfolio and a goal
+    let user_a = db.create_user("usera@example.com", "hash_a");
+    let portfolio_a = db
+        .create_portfolio(user_a.id, "User A Portfolio", None)
+        .await
+        .unwrap();
+    let portfolio_a_id = portfolio_a.id;
+    let token_a = portfolio_api::create_jwt(user_a.id, &user_a.email, &jwt_secret).unwrap();
+
+    let create_req = Request::builder()
+        .uri(format!("/api/health/{portfolio_a_id}/goals"))
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token_a}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "name": "Retirement",
+                "targetAmount": 1_000_000.0,
+                "targetDate": "2035-01-01"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let create_res = app.clone().oneshot(create_req).await.unwrap();
+    assert_eq!(create_res.status(), StatusCode::OK);
+    let created_goal = parse_json(create_res.into_body()).await;
+    let goal_id = created_goal["id"].as_str().expect("goal id").to_string();
+
+    // User B creates their own portfolio
+    let user_b = db.create_user("userb@example.com", "hash_b");
+    let portfolio_b = db
+        .create_portfolio(user_b.id, "User B Portfolio", None)
+        .await
+        .unwrap();
+    let portfolio_b_id = portfolio_b.id;
+    let token_b = portfolio_api::create_jwt(user_b.id, &user_b.email, &jwt_secret).unwrap();
+
+    // User B attempts to update User A's goal using User B's portfolio_id
+    let update_req = Request::builder()
+        .uri(format!("/api/health/{portfolio_b_id}/goals/{goal_id}"))
+        .method("PUT")
+        .header(header::AUTHORIZATION, format!("Bearer {token_b}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "name": "Hijacked",
+                "targetAmount": 1.0
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let update_res = app.clone().oneshot(update_req).await.unwrap();
+    assert_eq!(update_res.status(), StatusCode::NOT_FOUND);
+
+    // User B attempts to delete User A's goal using User B's portfolio_id
+    let delete_req = Request::builder()
+        .uri(format!("/api/health/{portfolio_b_id}/goals/{goal_id}"))
+        .method("DELETE")
+        .header(header::AUTHORIZATION, format!("Bearer {token_b}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let delete_res = app.clone().oneshot(delete_req).await.unwrap();
+    assert_eq!(delete_res.status(), StatusCode::NOT_FOUND);
+
+    // Verify User A's goal is still intact
+    let list_req = Request::builder()
+        .uri(format!("/api/health/{portfolio_a_id}/goals"))
+        .method("GET")
+        .header(header::AUTHORIZATION, format!("Bearer {token_a}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let list_res = app.clone().oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let goals = parse_json(list_res.into_body()).await;
+    let goals_arr = goals.as_array().expect("goals array");
+    assert_eq!(goals_arr.len(), 1);
+    assert_eq!(goals_arr[0]["name"], "Retirement");
+}
+
+#[tokio::test]
 async fn test_portfolio_summary_with_same_day_zero_balance_stamp_duty_and_purchases() {
     let (app, db, _) = setup_test_app();
 
@@ -3043,4 +3263,82 @@ async fn test_summary_params_cpi_and_tax_bracket_aliases() {
         .unwrap();
     let bad_res = app.oneshot(bad_req).await.unwrap();
     assert_eq!(bad_res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_close_and_delete_folio_and_purge_user_data_contract() {
+    let (app, db, jwt_secret) = setup_test_app();
+    let user = db.create_user("folio.lifecycle@example.com", "hash_pw");
+    let token = portfolio_api::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
+
+    let portfolio = db
+        .create_portfolio(user.id, "Lifecycle Portfolio", None)
+        .await
+        .unwrap();
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "Axis Bluechip Fund",
+        Some("INF846K01DP8"),
+        Some("120503"),
+        None,
+        None,
+    );
+    let folio = db
+        .create_folio(
+            portfolio.id,
+            asset.id,
+            "11223344/99",
+            Some("Axis MF"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+
+    db.create_transaction(
+        folio.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        "PURCHASE",
+        Decimal::from_str("50000").unwrap(),
+        Decimal::from_str("500").unwrap(),
+        Decimal::from_str("100").unwrap(),
+        Decimal::from_str("500").unwrap(),
+        Some("LC-BUY-1"),
+    )
+    .await
+    .unwrap();
+
+    // 1. Close folio
+    let close_req = Request::builder()
+        .uri(format!("/api/portfolio/folio/{}/close", folio.id))
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let close_res = app.clone().oneshot(close_req).await.unwrap();
+    assert_eq!(close_res.status(), StatusCode::OK);
+    let close_json = parse_json(close_res.into_body()).await;
+    assert_eq!(close_json["status"], "success");
+
+    // 2. Delete folio
+    let del_req = Request::builder()
+        .uri(format!("/api/portfolio/folio/{}", folio.id))
+        .method("DELETE")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let del_res = app.clone().oneshot(del_req).await.unwrap();
+    assert_eq!(del_res.status(), StatusCode::OK);
+    let del_json = parse_json(del_res.into_body()).await;
+    assert_eq!(del_json["status"], "success");
+
+    // 3. Purge user data
+    let purge_req = Request::builder()
+        .uri("/api/portfolio/purge")
+        .method("DELETE")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let purge_res = app.clone().oneshot(purge_req).await.unwrap();
+    assert_eq!(purge_res.status(), StatusCode::OK);
+    let purge_json = parse_json(purge_res.into_body()).await;
+    assert_eq!(purge_json["status"], "success");
 }

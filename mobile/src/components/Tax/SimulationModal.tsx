@@ -99,26 +99,6 @@ function computeUnits(mode: 'units' | 'amount', val: string, price: number): num
   return mode === 'units' ? num : (price > 0 ? num / price : 0);
 }
 
-interface ResolveLotsParams {
-  lots?: SimulationLot[] | undefined;
-  isElss: boolean;
-  unitsToSell: number;
-  currentNav: number;
-}
-
-function resolveLots({ lots, isElss, unitsToSell, currentNav }: ResolveLotsParams): SimulationLot[] {
-  if (lots && lots.length > 0) return lots;
-  return [
-    {
-      lotId: 'LOT-SIM-1',
-      buyDate: isElss ? '2024-01-01' : '2023-01-01',
-      units: unitsToSell,
-      buyPrice: currentNav * 0.7,
-      isElss,
-    },
-  ];
-}
-
 interface SimulationHeaderProps {
   schemeName: string;
   onClose: () => void;
@@ -163,17 +143,16 @@ function useSellSimulation(props: SimulationModalProps) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (initialUnits) {
-      setInputVal(initialUnits.toString());
-      setMode('units');
-      setError(null);
-    }
-  }, [initialUnits]);
+    setInputVal(initialUnits ? initialUnits.toString() : '');
+    setMode('units');
+    setResult(null);
+    setError(null);
+  }, [props.visible, schemeName, folioId, initialUnits]);
 
   const unitsToSell = computeUnits(mode, inputVal, currentNav);
 
   const handleSimulate = async () => {
-    const activeLots = resolveLots({ lots, isElss, unitsToSell, currentNav });
+    const activeLots = lots ?? [];
     setLoading(true);
     setError(null);
     try {

@@ -61,41 +61,72 @@ impl StockMetadataRepository for SqlxStockMetadataRepo {
             return Ok(());
         }
 
-        let mut tx = self.pool.begin().await.map_err(DbError::Sqlx)?;
+        let mut isins = Vec::with_capacity(items.len());
+        let mut symbols = Vec::with_capacity(items.len());
+        let mut names = Vec::with_capacity(items.len());
+        let mut sectors = Vec::with_capacity(items.len());
+        let mut tiers = Vec::with_capacity(items.len());
+        let mut ranks: Vec<Option<i32>> = Vec::with_capacity(items.len());
+        let mut caps: Vec<Option<f64>> = Vec::with_capacity(items.len());
+        let mut as_of_dates = Vec::with_capacity(items.len());
+        let mut created_ats = Vec::with_capacity(items.len());
+        let mut updated_ats = Vec::with_capacity(items.len());
 
         for item in items {
-            sqlx::query(
-                r#"
-                INSERT INTO "StockMetadata" (
-                    "isin", "symbol", "name", "sector", "marketCapTier", "marketCapRank", "marketCapCr", "asOfDate", "createdAt", "updatedAt"
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                ON CONFLICT ("isin") DO UPDATE SET
-                    "symbol" = EXCLUDED."symbol",
-                    "name" = EXCLUDED."name",
-                    "sector" = EXCLUDED."sector",
-                    "marketCapTier" = EXCLUDED."marketCapTier",
-                    "marketCapRank" = EXCLUDED."marketCapRank",
-                    "marketCapCr" = EXCLUDED."marketCapCr",
-                    "asOfDate" = EXCLUDED."asOfDate",
-                    "updatedAt" = EXCLUDED."updatedAt"
-                "#,
-            )
-            .bind(&item.isin)
-            .bind(&item.symbol)
-            .bind(&item.name)
-            .bind(&item.sector)
-            .bind(&item.market_cap_tier)
-            .bind(item.market_cap_rank)
-            .bind(item.market_cap_cr)
-            .bind(item.as_of_date)
-            .bind(item.created_at)
-            .bind(item.updated_at)
-            .execute(&mut *tx)
-            .await
-            .map_err(DbError::Sqlx)?;
+            isins.push(item.isin.clone());
+            symbols.push(item.symbol.clone());
+            names.push(item.name.clone());
+            sectors.push(item.sector.clone());
+            tiers.push(item.market_cap_tier.clone());
+            ranks.push(item.market_cap_rank);
+            caps.push(item.market_cap_cr);
+            as_of_dates.push(item.as_of_date);
+            created_ats.push(item.created_at);
+            updated_ats.push(item.updated_at);
         }
 
-        tx.commit().await.map_err(DbError::Sqlx)?;
+        sqlx::query(
+            r#"
+            INSERT INTO "StockMetadata" (
+                "isin", "symbol", "name", "sector", "marketCapTier", "marketCapRank", "marketCapCr", "asOfDate", "createdAt", "updatedAt"
+            )
+            SELECT * FROM UNNEST(
+                $1::text[],
+                $2::text[],
+                $3::text[],
+                $4::text[],
+                $5::text[],
+                $6::int4[],
+                $7::float8[],
+                $8::date[],
+                $9::timestamptz[],
+                $10::timestamptz[]
+            )
+            ON CONFLICT ("isin") DO UPDATE SET
+                "symbol" = EXCLUDED."symbol",
+                "name" = EXCLUDED."name",
+                "sector" = EXCLUDED."sector",
+                "marketCapTier" = EXCLUDED."marketCapTier",
+                "marketCapRank" = EXCLUDED."marketCapRank",
+                "marketCapCr" = EXCLUDED."marketCapCr",
+                "asOfDate" = EXCLUDED."asOfDate",
+                "updatedAt" = EXCLUDED."updatedAt"
+            "#,
+        )
+        .bind(&isins)
+        .bind(&symbols)
+        .bind(&names)
+        .bind(&sectors)
+        .bind(&tiers)
+        .bind(&ranks)
+        .bind(&caps)
+        .bind(&as_of_dates)
+        .bind(&created_ats)
+        .bind(&updated_ats)
+        .execute(&self.pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+
         Ok(())
     }
 

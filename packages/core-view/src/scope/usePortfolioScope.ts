@@ -152,6 +152,34 @@ export function deserializeScope(raw: string | null): PortfolioScope {
   return { type: 'consolidated' };
 }
 
+function loadInitialScope(
+  initialScope: PortfolioScope | undefined,
+  storageAdapter: ScopeStorageAdapter | undefined,
+  storageKey: string
+): PortfolioScope {
+  if (initialScope) return initialScope;
+  if (storageAdapter) {
+    const stored = storageAdapter.getItem(storageKey);
+    if (typeof stored === 'string') {
+      return deserializeScope(stored);
+    }
+  }
+  return { type: 'consolidated' };
+}
+
+function persistScopeToStorage(
+  storageAdapter: ScopeStorageAdapter | undefined,
+  storageKey: string,
+  newScope: PortfolioScope
+): void {
+  if (!storageAdapter) return;
+  if (newScope.type === 'consolidated' && storageAdapter.removeItem) {
+    storageAdapter.removeItem(storageKey);
+  } else {
+    storageAdapter.setItem(storageKey, serializeScope(newScope));
+  }
+}
+
 /**
  * React hook for managing portfolio active scope with pluggable storage adapter.
  *
@@ -162,53 +190,32 @@ export function usePortfolioScope(options?: UsePortfolioScopeOptions): UsePortfo
   const storageKey = options?.storageKey ?? DEFAULT_SCOPE_STORAGE_KEY;
   const storageAdapter = options?.storageAdapter;
 
-  const [scope, setScope] = useState<PortfolioScope>(() => {
-    if (options?.initialScope) return options.initialScope;
-    if (storageAdapter) {
-      const stored = storageAdapter.getItem(storageKey);
-      if (typeof stored === 'string') {
-        return deserializeScope(stored);
-      }
-    }
-    return { type: 'consolidated' };
-  });
+  const [scope, setScope] = useState<PortfolioScope>(() =>
+    loadInitialScope(options?.initialScope, storageAdapter, storageKey)
+  );
 
   // Handle async storage initialization if adapter returns Promise
   useEffect(() => {
     if (!storageAdapter) return;
     const result = storageAdapter.getItem(storageKey);
     if (result instanceof Promise) {
-      result.then((stored) => {
-        if (typeof stored === 'string') {
-          setScope(deserializeScope(stored));
-        }
-      }).catch(() => {
-        // Ignore initialization errors
-      });
+      result
+        .then((stored) => {
+          if (typeof stored === 'string') setScope(deserializeScope(stored));
+        })
+        .catch(() => {});
     }
   }, [storageAdapter, storageKey]);
 
   const persistScope = useCallback(
     (newScope: PortfolioScope) => {
       setScope(newScope);
-      if (storageAdapter) {
-        if (newScope.type === 'consolidated') {
-          if (storageAdapter.removeItem) {
-            storageAdapter.removeItem(storageKey);
-          } else {
-            storageAdapter.setItem(storageKey, serializeScope(newScope));
-          }
-        } else {
-          storageAdapter.setItem(storageKey, serializeScope(newScope));
-        }
-      }
+      persistScopeToStorage(storageAdapter, storageKey, newScope);
     },
     [storageAdapter, storageKey]
   );
 
-  const setConsolidated = useCallback(() => {
-    persistScope({ type: 'consolidated' });
-  }, [persistScope]);
+  const setConsolidated = useCallback(() => persistScope({ type: 'consolidated' }), [persistScope]);
 
   const setMemberScope = useCallback(
     (profile: {
@@ -226,21 +233,11 @@ export function usePortfolioScope(options?: UsePortfolioScopeOptions): UsePortfo
     [persistScope]
   );
 
-  const resetScope = useCallback(() => {
-    persistScope({ type: 'consolidated' });
-  }, [persistScope]);
+  const resetScope = useCallback(() => persistScope({ type: 'consolidated' }), [persistScope]);
 
   const isConsolidated = scope.type === 'consolidated';
   const activeProfileId = scope.type === 'member' ? scope.profileId : null;
   const activePan = scope.type === 'member' ? scope.pan : undefined;
 
-  return {
-    scope,
-    isConsolidated,
-    activeProfileId,
-    activePan,
-    setConsolidated,
-    setMemberScope,
-    resetScope,
-  };
+  return { scope, isConsolidated, activeProfileId, activePan, setConsolidated, setMemberScope, resetScope };
 }

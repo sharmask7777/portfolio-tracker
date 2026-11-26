@@ -18,6 +18,15 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+static MFAPI_BASE_URL_OVERRIDE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Sets an in-process override for `MFAPI_BASE_URL` (used in hermetic tests without `unsafe` env mutation).
+pub fn set_mfapi_base_url_override(url: Option<String>) {
+    if let Ok(mut guard) = MFAPI_BASE_URL_OVERRIDE.write() {
+        *guard = url;
+    }
+}
+
 use chrono::NaiveDate;
 use tokio::sync::RwLock;
 
@@ -200,7 +209,11 @@ impl NavSyncService {
     /// Executes fire-and-forget; errors are logged at `tracing::warn` without panicking or bubbling up.
     pub fn spawn_lazy_nav_fetch(state: AppState, amfi_code: String) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            let base_url = std::env::var("MFAPI_BASE_URL").ok();
+            let base_url = MFAPI_BASE_URL_OVERRIDE
+                .read()
+                .ok()
+                .and_then(|g| g.clone())
+                .or_else(|| std::env::var("MFAPI_BASE_URL").ok());
             if let Err(e) =
                 Self::fetch_and_upsert_latest_nav(&state, &amfi_code, base_url.as_deref()).await
             {

@@ -68,7 +68,7 @@ pub fn generate_ddl() -> &'static str {
         "name" TEXT NOT NULL,
         "pan" TEXT NOT NULL,
         "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
-        "taxSlab" DOUBLE PRECISION NOT NULL DEFAULT 0.3,
+        "taxSlab" NUMERIC(18, 4) NOT NULL DEFAULT 0.3,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "ManagedProfile_userId_pan_key" UNIQUE ("userId", "pan")
@@ -105,6 +105,7 @@ pub fn generate_ddl() -> &'static str {
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS "Portfolio_userId_idx" ON "Portfolio"("userId");
+    CREATE UNIQUE INDEX IF NOT EXISTS "Portfolio_userId_managedProfileId_key" ON "Portfolio"("userId", "managedProfileId") WHERE "managedProfileId" IS NOT NULL;
 
     DO $$ BEGIN
         CREATE TYPE "AssetType" AS ENUM ('MUTUAL_FUND', 'STOCK', 'FIXED_DEPOSIT', 'EPF', 'PPF', 'SGB', 'PHYSICAL_GOLD');
@@ -144,10 +145,10 @@ pub fn generate_ddl() -> &'static str {
         "id" TEXT PRIMARY KEY,
         "date" TIMESTAMP(3) NOT NULL,
         "type" TEXT NOT NULL,
-        "amount" DOUBLE PRECISION NOT NULL,
-        "units" DOUBLE PRECISION NOT NULL,
-        "nav" DOUBLE PRECISION NOT NULL,
-        "balance" DOUBLE PRECISION NOT NULL,
+        "amount" NUMERIC(18, 4) NOT NULL,
+        "units" NUMERIC(18, 4) NOT NULL,
+        "nav" NUMERIC(18, 4) NOT NULL,
+        "balance" NUMERIC(18, 4) NOT NULL,
         "folioId" TEXT NOT NULL REFERENCES "Folio"("id") ON DELETE CASCADE,
         "externalId" TEXT UNIQUE,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -155,9 +156,6 @@ pub fn generate_ddl() -> &'static str {
     );
     CREATE INDEX IF NOT EXISTS "Transaction_folioId_idx" ON "Transaction"("folioId");
     CREATE INDEX IF NOT EXISTS "Transaction_date_idx" ON "Transaction"("date");
-
-    -- Invariant Guardrail: Ensure transaction amounts and units are non-negative across all records
-    UPDATE "Transaction" SET amount = ABS(amount), units = ABS(units) WHERE amount < 0 OR units < 0;
 
     DO $$ BEGIN
         CREATE TYPE "UploadJobStatus" AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED');
@@ -183,8 +181,8 @@ pub fn generate_ddl() -> &'static str {
         "id" TEXT PRIMARY KEY,
         "portfolioId" TEXT NOT NULL REFERENCES "Portfolio"("id") ON DELETE CASCADE,
         "date" TIMESTAMP(3) NOT NULL,
-        "value" DOUBLE PRECISION NOT NULL,
-        "investedAmount" DOUBLE PRECISION NOT NULL,
+        "value" NUMERIC(18, 2) NOT NULL,
+        "investedAmount" NUMERIC(18, 2) NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "PortfolioHistory_portfolioId_date_key" UNIQUE ("portfolioId", "date")
     );
@@ -195,7 +193,7 @@ pub fn generate_ddl() -> &'static str {
         "id" TEXT PRIMARY KEY,
         "amfiCode" TEXT NOT NULL,
         "date" TIMESTAMP(3) NOT NULL,
-        "nav" DOUBLE PRECISION NOT NULL,
+        "nav" NUMERIC(18, 4) NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "HistoricalNAV_amfiCode_date_key" UNIQUE ("amfiCode", "date")
     );
@@ -205,7 +203,7 @@ pub fn generate_ddl() -> &'static str {
     CREATE TABLE IF NOT EXISTS "Goal" (
         "id" TEXT PRIMARY KEY,
         "name" TEXT NOT NULL,
-        "targetAmount" DOUBLE PRECISION NOT NULL,
+        "targetAmount" NUMERIC(18, 2) NOT NULL,
         "targetDate" TIMESTAMP(3) NOT NULL,
         "monthlySip" DOUBLE PRECISION NOT NULL DEFAULT 0,
         "priority" TEXT NOT NULL DEFAULT 'MEDIUM',
@@ -336,6 +334,39 @@ pub async fn run_self_healing_migrations(pool: &PgPool) -> Result<(), sqlx::Erro
             );
 
             INSERT INTO "_SchemaMigrations" ("id") VALUES ('dedup_legacy_transactions_v2')
+            ON CONFLICT ("id") DO NOTHING;
+            "#,
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    let numeric_migrated: bool = sqlx::query_scalar::<_, bool>(
+        r#"SELECT EXISTS(SELECT 1 FROM "_SchemaMigrations" WHERE id = 'numeric_money_columns_v1')"#,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !numeric_migrated {
+        sqlx::raw_sql(
+            r#"
+            ALTER TABLE "ManagedProfile"
+                ALTER COLUMN "taxSlab" TYPE NUMERIC(18, 4) USING "taxSlab"::NUMERIC(18, 4);
+            ALTER TABLE "Transaction"
+                ALTER COLUMN "amount" TYPE NUMERIC(18, 4) USING "amount"::NUMERIC(18, 4),
+                ALTER COLUMN "units" TYPE NUMERIC(18, 4) USING "units"::NUMERIC(18, 4),
+                ALTER COLUMN "nav" TYPE NUMERIC(18, 4) USING "nav"::NUMERIC(18, 4),
+                ALTER COLUMN "balance" TYPE NUMERIC(18, 4) USING "balance"::NUMERIC(18, 4);
+            ALTER TABLE "PortfolioHistory"
+                ALTER COLUMN "value" TYPE NUMERIC(18, 2) USING "value"::NUMERIC(18, 2),
+                ALTER COLUMN "investedAmount" TYPE NUMERIC(18, 2) USING "investedAmount"::NUMERIC(18, 2);
+            ALTER TABLE "HistoricalNAV"
+                ALTER COLUMN "nav" TYPE NUMERIC(18, 4) USING "nav"::NUMERIC(18, 4);
+            ALTER TABLE "Goal"
+                ALTER COLUMN "targetAmount" TYPE NUMERIC(18, 2) USING "targetAmount"::NUMERIC(18, 2);
+
+            INSERT INTO "_SchemaMigrations" ("id") VALUES ('numeric_money_columns_v1')
             ON CONFLICT ("id") DO NOTHING;
             "#,
         )

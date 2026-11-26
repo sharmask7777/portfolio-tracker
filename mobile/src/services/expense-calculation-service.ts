@@ -30,7 +30,10 @@ function getHoldingTer(schemeName: string, assetClass: string): number {
   if (cls.includes('debt') || cls.includes('liquid') || name.includes('liquid')) {
     return name.includes('direct') ? 0.25 : 0.60;
   }
-  if (cls.includes('gold') || name.includes('gold') || name.includes('sgb')) {
+  if (name.includes('sgb') || name.includes('sovereign gold')) {
+    return 0;
+  }
+  if (cls.includes('gold') || name.includes('gold')) {
     return 0.50;
   }
   if (name.includes('direct')) {

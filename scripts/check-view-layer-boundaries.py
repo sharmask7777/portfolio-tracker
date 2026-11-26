@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E501, BLE001
 """
 Static View Layer Boundary & Zero Business Logic Guardrail.
 
@@ -15,7 +16,6 @@ Enforces AGENTS.md mandates:
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -61,17 +61,23 @@ BANNED_MATH_PATTERNS = [
     ),
     (
         "VBL003_TAX_NETTING_SUBTRACTION",
-        re.compile(r"(\b(?:totalValue|currentValue|nominalValue)\s*-\s*(?:\(?\s*\w*\.?estimatedTax|\(?\s*\w*\.?totalTax|\(?\s*taxDrag))"),
+        re.compile(
+            r"(\b(?:totalValue|currentValue|nominalValue)\s*-\s*(?:\(?\s*\w*\.?estimatedTax|\(?\s*\w*\.?totalTax|\(?\s*taxDrag))"
+        ),
         "Forbidden client-side tax netting subtraction. Use backend pre-calculated netRealizableValue or postTaxValue.",
     ),
     (
         "VBL004_DRAG_SUBTRACTION",
-        re.compile(r"(\bxirr\s*-\s*(?:postTaxXirr|realPostTaxXirr)|\bpostTaxXirr\s*-\s*realPostTaxXirr)"),
+        re.compile(
+            r"(\bxirr\s*-\s*(?:postTaxXirr|realPostTaxXirr)|\bpostTaxXirr\s*-\s*realPostTaxXirr)"
+        ),
         "Forbidden client-side return drag subtraction. Consume backend drags.totalTaxDrag and drags.totalOverallDrag directly.",
     ),
     (
         "VBL005_RAW_GAIN_RETURN_PCT",
-        re.compile(r"(\bunrealizedGain\s*/\s*(?:totalInvestedCost|investedCost|investedAmount)|\(\s*unrealizedGain\s*/\s*\w+\s*\)\s*\*\s*100)"),
+        re.compile(
+            r"(\bunrealizedGain\s*/\s*(?:totalInvestedCost|investedCost|investedAmount)|\(\s*unrealizedGain\s*/\s*\w+\s*\)\s*\*\s*100)"
+        ),
         "Forbidden client-side return percentage arithmetic in view. Use backend return rates (nominalXirr, absoluteReturn, gainPercentage).",
     ),
 ]
@@ -108,7 +114,18 @@ def is_comment_or_css(line: str) -> bool:
     if stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*"):
         return True
     # Ignore CSS transitions, durations, font-weights, and rgba opacities
-    if any(css_kw in stripped for css_kw in ["transition:", "animation:", "duration:", "rgba(", "padding:", "margin:", "fontSize:"]):
+    if any(
+        css_kw in stripped
+        for css_kw in [
+            "transition:",
+            "animation:",
+            "duration:",
+            "rgba(",
+            "padding:",
+            "margin:",
+            "fontSize:",
+        ]
+    ):
         return True
     return False
 
@@ -201,11 +218,17 @@ def run_checks() -> int:
     if all_violations:
         print(f"\n❌ FAILED: Found {len(all_violations)} View Layer Business Logic Violation(s):\n")
         for v in all_violations:
-            rel_path = v.file_path.relative_to(REPO_ROOT) if REPO_ROOT in v.file_path.parents else v.file_path
+            rel_path = (
+                v.file_path.relative_to(REPO_ROOT)
+                if REPO_ROOT in v.file_path.parents
+                else v.file_path
+            )
             print(f"  [{v.rule_id}] {rel_path}:{v.line_number}")
             print(f"    Line:    {v.line_content}")
             print(f"    Message: {v.message}\n")
-        print("Remediation: Remove client-side arithmetic from the view layer and consume display-ready backend DTOs.")
+        print(
+            "Remediation: Remove client-side arithmetic from the view layer and consume display-ready backend DTOs."
+        )
         print("=" * 80)
         return 1
 
@@ -237,7 +260,9 @@ def run_self_tests() -> int:
         # Test VBL003
         test_file.write_text("const netWorth = totalValue - estimatedTax;")
         v = scan_file(test_file)
-        assert any(x.rule_id == "VBL003_TAX_NETTING_SUBTRACTION" for x in v), "Failed to detect VBL003"
+        assert any(x.rule_id == "VBL003_TAX_NETTING_SUBTRACTION" for x in v), (
+            "Failed to detect VBL003"
+        )
 
         # Test VBL004
         test_file.write_text("const drag = xirr - postTaxXirr;")
@@ -261,7 +286,9 @@ def run_self_tests() -> int:
         } from '../../utils/tax-calculations';
         """)
         v = scan_file(test_file)
-        assert any(x.rule_id == "VBL102_CALC_ENGINE_IMPORT_IN_VIEW" for x in v), "Failed to detect VBL102 multi-line import"
+        assert any(x.rule_id == "VBL102_CALC_ENGINE_IMPORT_IN_VIEW" for x in v), (
+            "Failed to detect VBL102 multi-line import"
+        )
 
         # Test clean component passes (including type-only imports)
         test_file.write_text("""

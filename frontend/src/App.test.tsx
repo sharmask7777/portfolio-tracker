@@ -124,7 +124,8 @@ describe('App Dashboard - Stock Intersection excludeArbitrage data flow', () => 
 
     await waitFor(() => {
       expect(api.get).toHaveBeenCalledWith(
-        `${API_ENDPOINTS.PORTFOLIO}/port-123/exposures?excludeArbitrage=false`
+        `${API_ENDPOINTS.PORTFOLIO}/port-123/exposures?excludeArbitrage=false`,
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
 
@@ -142,7 +143,8 @@ describe('App Dashboard - Stock Intersection excludeArbitrage data flow', () => 
     // Verify exposures are re-fetched with ?excludeArbitrage=true
     await waitFor(() => {
       expect(api.get).toHaveBeenCalledWith(
-        `${API_ENDPOINTS.PORTFOLIO}/port-123/exposures?excludeArbitrage=true`
+        `${API_ENDPOINTS.PORTFOLIO}/port-123/exposures?excludeArbitrage=true`,
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
 
@@ -152,7 +154,8 @@ describe('App Dashboard - Stock Intersection excludeArbitrage data flow', () => 
     // Verify exposures are re-fetched with ?excludeArbitrage=false
     await waitFor(() => {
       expect(api.get).toHaveBeenCalledWith(
-        `${API_ENDPOINTS.PORTFOLIO}/port-123/exposures?excludeArbitrage=false`
+        `${API_ENDPOINTS.PORTFOLIO}/port-123/exposures?excludeArbitrage=false`,
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
   });
@@ -298,7 +301,8 @@ describe('App Dashboard - Stock Intersection excludeArbitrage data flow', () => 
 
     await waitFor(() => {
       expect(api.get).toHaveBeenCalledWith(
-        `${API_ENDPOINTS.PORTFOLIO}/port-456/exposures?excludeArbitrage=false`
+        `${API_ENDPOINTS.PORTFOLIO}/port-456/exposures?excludeArbitrage=false`,
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
 
@@ -314,7 +318,8 @@ describe('App Dashboard - Stock Intersection excludeArbitrage data flow', () => 
 
     await waitFor(() => {
       expect(api.get).toHaveBeenCalledWith(
-        `${API_ENDPOINTS.PORTFOLIO}/port-456/exposures?excludeArbitrage=true`
+        `${API_ENDPOINTS.PORTFOLIO}/port-456/exposures?excludeArbitrage=true`,
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
 

@@ -207,12 +207,69 @@ pub struct LotDepletion {
 /// 3. Returns a tuple containing:
 ///    - `Vec<TaxLot>`: Remaining active lots with positive unsold units.
 ///    - `Vec<LotDepletion>`: Chronological history of all closed/depleted lot segments.
-pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotDepletion>) {
+///
+/// Summary of FIFO lot processing for a folio, including synthetic anchor tracking.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FolioLotSummary {
+    /// Remaining active lots with positive unsold units.
+    pub active_lots: Vec<TaxLot>,
+    /// Chronological history of all closed/depleted lot segments.
+    pub depletions: Vec<LotDepletion>,
+    /// Whether any transaction in the folio used a synthetic anchor or reversal adjustment.
+    pub has_synthetic_anchors: bool,
+}
+
+/// Processes a slice of transactions in FIFO order and returns a [`FolioLotSummary`].
+pub fn process_fifo_lots_with_summary(transactions: &[Transaction]) -> FolioLotSummary {
     let sorted = sort_transactions(transactions);
     let mut lots: Vec<TaxLot> = Vec::new();
     let mut depletions: Vec<LotDepletion> = Vec::new();
+    let mut has_synthetic_anchors = false;
 
     for tx in &sorted {
+        if tx.id.starts_with("synthetic") {
+            has_synthetic_anchors = true;
+        }
+
+        if tx.tx_type == TransactionType::Reversal {
+            has_synthetic_anchors = true;
+            let units = tx.units.abs();
+            if units.is_zero() {
+                continue;
+            }
+            let is_purchase_reversal = tx.units.is_negative() || tx.amount.is_negative();
+            if is_purchase_reversal {
+                // Purchase reversal: remove units from existing lots without emitting a taxable LotDepletion.
+                let mut units_to_reverse = units;
+                for lot in &mut lots {
+                    if units_to_reverse.is_zero() {
+                        break;
+                    }
+                    if lot.is_depleted() {
+                        continue;
+                    }
+                    let (consumed, _) = lot.deplete(units_to_reverse);
+                    units_to_reverse -= consumed;
+                }
+            } else {
+                // Redemption reversal: credit units back as a lot instead of double-redeeming.
+                let nav = if tx.nav.is_positive() {
+                    tx.nav
+                } else if tx.amount.abs().is_positive() {
+                    tx.amount.abs() / units
+                } else {
+                    Nav::ZERO
+                };
+                let amount = if tx.amount.abs().is_positive() {
+                    tx.amount.abs()
+                } else {
+                    units * nav
+                };
+                lots.push(TaxLot::new(tx.date, units, nav, amount));
+            }
+            continue;
+        }
+
         let is_addition = is_unit_addition(tx.tx_type) && !tx.units.is_negative();
         let is_redemption = is_unit_redemption(tx.tx_type)
             || (is_unit_addition(tx.tx_type) && tx.units.is_negative());
@@ -277,7 +334,17 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
 
     // Retain only active lots with positive unsold units
     let active_lots = lots.into_iter().filter(|l| !l.is_depleted()).collect();
-    (active_lots, depletions)
+    FolioLotSummary {
+        active_lots,
+        depletions,
+        has_synthetic_anchors,
+    }
+}
+
+/// Processes a slice of transactions in FIFO order, returning `(active_lots, depletions)`.
+pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotDepletion>) {
+    let summary = process_fifo_lots_with_summary(transactions);
+    (summary.active_lots, summary.depletions)
 }
 
 #[cfg(test)]
@@ -631,5 +698,53 @@ mod tests {
         let sorted_scrambled = sort_transactions(&scrambled);
         let scrambled_ids: Vec<&str> = sorted_scrambled.iter().map(|tx| tx.id.as_str()).collect();
         assert_eq!(sorted_ids, scrambled_ids);
+    }
+
+    #[test]
+    fn test_process_fifo_lots_synthetic_and_reversal_branches() {
+        let tx_synth = Transaction::new(
+            "synthetic-anchor-1",
+            date(2025, 1, 1),
+            TransactionType::Purchase,
+            Money::from_str("10000").unwrap(),
+            Units::from_str("100").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::from_str("100").unwrap(),
+        );
+        let tx_zero_rev = Transaction::new(
+            "rev-0",
+            date(2025, 1, 2),
+            TransactionType::Reversal,
+            Money::ZERO,
+            Units::ZERO,
+            Nav::ZERO,
+            Units::from_str("100").unwrap(),
+        );
+        let tx_pos_rev = Transaction::new(
+            "rev-pos",
+            date(2025, 1, 3),
+            TransactionType::Reversal,
+            Money::from_str("1000").unwrap(),
+            Units::from_str("10").unwrap(),
+            Nav::ZERO,
+            Units::from_str("110").unwrap(),
+        );
+
+        let (lots, depletions) = process_fifo_lots(&[tx_synth, tx_zero_rev, tx_pos_rev.clone()]);
+        assert_eq!(depletions.len(), 0);
+        assert_eq!(lots.len(), 2);
+        assert_eq!(lots[1].remaining_units, Units::from_str("10").unwrap());
+
+        let tx_neg_rev = Transaction::new(
+            "rev-neg",
+            date(2025, 1, 4),
+            TransactionType::Reversal,
+            Money::from_str("-1000").unwrap(),
+            Units::from_str("-10").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::from_str("100").unwrap(),
+        );
+        let (lots2, _) = process_fifo_lots(&[tx_pos_rev, tx_neg_rev]);
+        assert_eq!(lots2.len(), 0);
     }
 }

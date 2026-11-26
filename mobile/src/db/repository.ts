@@ -273,7 +273,7 @@ export async function updateHoldingNav(
     await db.runAsync(
       `UPDATE holdings 
        SET current_nav = ?, current_value = units * ?, nav_date = ?, updated_at = ? 
-       WHERE amfi_code = ?;`,
+       WHERE amfi_code = ? AND units >= 0.001;`,
       [update.nav, update.nav, update.navDate, updatedAt, amfiCode],
     );
     await db.runAsync(

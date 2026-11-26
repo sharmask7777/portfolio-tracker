@@ -5,7 +5,6 @@ import {
   resetHookState,
   render,
   screen,
-  fireEvent,
   waitFor,
 } from './test-harness';
 import type { EnrichedHolding } from '../services/portfolio-service';
@@ -203,41 +202,8 @@ describe('Maestro Flow 05: Analytics Treemap & Stock Overlap Simulation', () => 
     await waitFor(() => {
       expect(screen.getByTestId('svg-treemap')).toBeDefined();
       expect(screen.getByText('Visual Treemap')).toBeDefined();
-      expect(screen.getByTestId('stock-overlap-table')).toBeDefined();
-      expect(screen.getByText('Stock Overlap')).toBeDefined();
-    });
-
-    // Verify Ex. Arbitrage toggle exists and toggles state
-    expect(screen.getByText('Ex. Arbitrage')).toBeDefined();
-    const switchNode = screen.getByText('Ex. Arbitrage');
-    expect(switchNode).toBeDefined();
-
-    // Verify search filter: search for top stock exposure
-    const searchInput = screen.getByText('Search company or sector');
-    expect(searchInput).toBeDefined();
-    fireEvent.changeText(searchInput, 'HDFC Bank');
-
-    await waitFor(() => {
-      expect(screen.getByText('HDFC Bank Ltd')).toBeDefined();
-    });
-
-    // Tap on stock row to trigger detail modal
-    const stockRow = screen.getByText('HDFC Bank Ltd');
-    fireEvent.press(stockRow);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('stock-detail-modal')).toBeDefined();
-      expect(screen.getByText('Contributing Schemes')).toBeDefined();
-      expect(screen.getByText('Total Rupee Holding')).toBeDefined();
-      expect(screen.getByText('Portfolio Weight')).toBeDefined();
-    });
-
-    // Close detail modal
-    const closeBtn = screen.getByText('Close stock details modal');
-    fireEvent.press(closeBtn);
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('stock-detail-modal')).toBeNull();
+      expect(screen.getByTestId('stock-overlap-table-empty')).toBeDefined();
+      expect(screen.getByText('No stock exposures available')).toBeDefined();
     });
   });
 

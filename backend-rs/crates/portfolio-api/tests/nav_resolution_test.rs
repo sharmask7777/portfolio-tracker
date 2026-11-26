@@ -146,9 +146,9 @@ fn test_resolve_nav_and_previous_newer_transaction_makes_latest_history_the_prev
 
 #[tokio::test]
 async fn test_fetch_latest_nav_triggers_lazy_sync_and_enforces_transaction_priority() {
-    unsafe {
-        std::env::set_var("MFAPI_BASE_URL", "http://127.0.0.1:1");
-    }
+    portfolio_api::services::nav_sync::set_mfapi_base_url_override(Some(
+        "http://127.0.0.1:1".to_string(),
+    ));
 
     let db = Arc::new(InMemoryDatabase::new());
     let state = AppState::new(Arc::clone(&db), "test-secret");

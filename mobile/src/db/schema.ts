@@ -79,12 +79,6 @@ export interface PortfolioHistoryEntity {
   drawdown_percentage?: number | null | undefined;
 }
 
-export interface SummaryCacheEntity {
-  scope_id: string;
-  summary_json: string;
-  updated_at: string;
-}
-
 export interface PortfolioAnalyticsEntity {
   portfolio_id: string;
   xray_json: string;

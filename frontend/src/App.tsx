@@ -73,7 +73,7 @@ export function Dashboard() {
           onRenameProfile={(p) => {
             ctrl.setProfileToEdit(p);
             ctrl.setEditName(p.name);
-            ctrl.setEditTaxSlab(p.taxSlab || 0.3);
+            ctrl.setEditTaxSlab(p.taxSlab ?? 0.3);
           }}
           onDeleteProfile={ctrl.handleDeleteProfile}
           onAddAsset={() => ctrl.setShowAddAsset(true)}

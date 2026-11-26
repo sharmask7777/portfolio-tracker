@@ -65,11 +65,10 @@ function filterFoliosByScope(
 
   // Filter to matching profile/PAN
   return folios.filter((folio) => {
-    if (scope.pan && folio.pan) {
-      return folio.pan.toUpperCase() === scope.pan.toUpperCase();
+    if (!scope.pan || !folio.pan) {
+      return false;
     }
-    // If no PAN specified, could match profileId if present
-    return true;
+    return folio.pan.toUpperCase() === scope.pan.toUpperCase();
   });
 }
 
@@ -98,6 +97,29 @@ function matchesAssetType(group: ConsolidatedSchemeGroup, typeFilter: string): b
   return group.type.toUpperCase() === normalizedFilter;
 }
 
+function filterSchemes(
+  allSchemes: ConsolidatedSchemeGroup[],
+  searchQuery: string,
+  assetTypeFilter: string | undefined
+): ConsolidatedSchemeGroup[] {
+  let result = allSchemes;
+  const trimmedQuery = searchQuery.trim();
+  if (trimmedQuery.length > 0) {
+    result = result.filter((group) => matchesSearch(group, trimmedQuery));
+  }
+  if (assetTypeFilter && assetTypeFilter !== 'ALL') {
+    result = result.filter((group) => matchesAssetType(group, assetTypeFilter));
+  }
+  return result;
+}
+
+function toggleSchemeInSet(prev: Set<string>, schemeId: string): Set<string> {
+  const next = new Set(prev);
+  if (next.has(schemeId)) next.delete(schemeId);
+  else next.add(schemeId);
+  return next;
+}
+
 /**
  * Hook to manage consolidated holdings calculation, filtering, sorting, and row expansion.
  *
@@ -122,58 +144,34 @@ export function useConsolidatedHoldings(
     () => new Set(initialExpandedIds)
   );
 
-  // 1. Filter raw folios by scope first
-  const scopedFolios = useMemo(() => {
-    if (!folios || folios.length === 0) return [];
-    return filterFoliosByScope(folios, scope);
-  }, [folios, scope]);
+  const scopedFolios = useMemo(
+    () => (folios && folios.length > 0 ? filterFoliosByScope(folios, scope) : []),
+    [folios, scope]
+  );
 
-  // 2. Consolidate into scheme groups
-  const allSchemes = useMemo(() => {
-    return consolidateFoliosIntoSchemes(scopedFolios);
-  }, [scopedFolios]);
+  const allSchemes = useMemo(() => consolidateFoliosIntoSchemes(scopedFolios), [scopedFolios]);
 
-  // 3. Filter schemes by search query and asset type
-  const filteredSchemes = useMemo(() => {
-    let result = allSchemes;
-    const trimmedQuery = searchQuery.trim();
+  const filteredSchemes = useMemo(
+    () => filterSchemes(allSchemes, searchQuery, assetTypeFilter),
+    [allSchemes, searchQuery, assetTypeFilter]
+  );
 
-    if (trimmedQuery.length > 0) {
-      result = result.filter((group) => matchesSearch(group, trimmedQuery));
-    }
-
-    if (assetTypeFilter && assetTypeFilter !== 'ALL') {
-      result = result.filter((group) => matchesAssetType(group, assetTypeFilter));
-    }
-
-    return result;
-  }, [allSchemes, searchQuery, assetTypeFilter]);
-
-  // 4. Sort filtered schemes
-  const sortedSchemes = useMemo(() => {
-    return sortSchemeGroups(filteredSchemes, sortField, sortDirection, performanceMode);
-  }, [filteredSchemes, sortField, sortDirection, performanceMode]);
+  const sortedSchemes = useMemo(
+    () => sortSchemeGroups(filteredSchemes, sortField, sortDirection, performanceMode),
+    [filteredSchemes, sortField, sortDirection, performanceMode]
+  );
 
   // Expansion controls
   const toggleExpanded = useCallback((schemeId: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(schemeId)) {
-        next.delete(schemeId);
-      } else {
-        next.add(schemeId);
-      }
-      return next;
-    });
+    setExpandedIds((prev) => toggleSchemeInSet(prev, schemeId));
   }, []);
 
-  const expandAll = useCallback(() => {
-    setExpandedIds(new Set(allSchemes.map((s) => s.id)));
-  }, [allSchemes]);
+  const expandAll = useCallback(
+    () => setExpandedIds(new Set(allSchemes.map((s) => s.id))),
+    [allSchemes]
+  );
 
-  const collapseAll = useCallback(() => {
-    setExpandedIds(new Set());
-  }, []);
+  const collapseAll = useCallback(() => setExpandedIds(new Set()), []);
 
   const isExpanded = useCallback(
     (schemeId: string) => expandedIds.has(schemeId),
@@ -181,13 +179,7 @@ export function useConsolidatedHoldings(
   );
 
   return {
-    allSchemes,
-    filteredSchemes,
-    sortedSchemes,
-    expandedSchemeIds: expandedIds,
-    isExpanded,
-    toggleExpanded,
-    expandAll,
-    collapseAll,
+    allSchemes, filteredSchemes, sortedSchemes, expandedSchemeIds: expandedIds,
+    isExpanded, toggleExpanded, expandAll, collapseAll,
   };
 }

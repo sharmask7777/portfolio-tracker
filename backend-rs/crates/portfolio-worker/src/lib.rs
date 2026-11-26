@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! Background Queue Workers (`portfolio-worker`) for Portfolio Tracker.
 //!
 //! Provides background job processors for:
@@ -7,7 +8,6 @@
 //! - Pluggable queue abstractions (`JobQueue`, `InMemoryJobQueue`, `RedisBullQueue`)
 
 #![forbid(unsafe_code)]
-#![allow(missing_docs)]
 
 pub mod error;
 pub mod jobs;

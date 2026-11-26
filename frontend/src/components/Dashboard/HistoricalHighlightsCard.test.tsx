@@ -27,8 +27,12 @@ describe('HistoricalHighlightsCard Component', () => {
         yearly: [
           {
             year: 2024,
-            ath: { value: 1500000, date: '2024-03-15T00:00:00Z' },
-            maxInvested: { value: 1200000, date: '2024-02-10T00:00:00Z' },
+            maxValue: 1500000,
+            maxValueDate: '2024-03-15T00:00:00Z',
+            maxInvested: 1200000,
+            maxInvestedDate: '2024-02-10T00:00:00Z',
+            endValue: 1400000,
+            endInvested: 1200000,
           },
         ],
       },

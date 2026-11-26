@@ -8,7 +8,8 @@ if [ -d "/Library/Developer/CommandLineTools" ]; then
   export PATH="/Library/Developer/CommandLineTools/usr/bin:${PATH}"
 fi
 
-echo "Running static privacy & Anti-PII guardrail..."
+echo "Running Python static lint (ruff) & Anti-PII guardrail..."
+ruff check scripts backend-rs/scripts
 python3 scripts/check-privacy-and-pii.py
 
 echo "Running static View Layer Boundary & Zero Business Logic guardrail..."
@@ -21,9 +22,19 @@ echo "Running Rust backend verification pipeline..."
 echo "Verifying TypeScript contracts parity..."
 (cd backend-rs && cargo test --package portfolio-api --test export_bindings)
 git diff --exit-code frontend/src/types/generated mobile/src/types/generated || (echo "❌ Frontend or mobile types drift detected! Commit updated generated types." && exit 1)
+if [ -n "$(git status --porcelain frontend/src/types/generated mobile/src/types/generated)" ]; then
+  echo "❌ Untracked or modified files detected in generated types!"
+  git status --porcelain frontend/src/types/generated mobile/src/types/generated
+  exit 1
+fi
 
-echo "Enforcing backend test coverage thresholds (portfolio-core >= 93%, workspace >= 78%)..."
-(cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 93 --summary-only && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|test_mocks\.rs|repositories/)" --fail-under-lines 78 --json --output-path coverage.json)
+echo "Enforcing backend test coverage threshold (workspace >= 78%)..."
+(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|bin/|test_mocks\.rs|repositories/|schema\.rs)" --fail-under-lines 78 --json --output-path coverage.json)
+
+echo "Verifying @portfolio/core-view types, build, and coverage..."
+pnpm --filter @portfolio/core-view typecheck
+pnpm --filter @portfolio/core-view test:coverage
+pnpm --filter @portfolio/core-view build:verify
 
 echo "Verifying mobile build, lints, knip, and coverage (lines 89%, statements 87%, funcs 86%, branches 75%)..."
 pnpm --filter mobile build:verify

@@ -4,10 +4,13 @@
 //! including creation, retrieval, listing, and atomic cascading deletion.
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use crate::entities::PortfolioEntity;
+use crate::entities::{
+    AssetEntity, FolioEntity, PortfolioBundle, PortfolioEntity, TransactionEntity,
+};
 use crate::error::DbError;
 
 /// Repository interface for managing portfolio containers and their lifecycles.
@@ -55,6 +58,24 @@ pub trait PortfolioRepository: Send + Sync {
     /// # Errors
     /// Returns [`DbError`] if transaction execution or commit fails.
     async fn delete_portfolio(&self, id: Uuid) -> Result<(), DbError>;
+
+    /// Fetches a complete portfolio bundle (portfolio, folios, assets, transactions)
+    /// using batched `ANY($1)` queries to eliminate N+1 round-trips.
+    async fn fetch_portfolio_bundle(&self, id: Uuid) -> Result<Option<PortfolioBundle>, DbError>;
+
+    /// Atomically creates a manual asset, its folio, and its initial purchase transaction
+    /// within a single database transaction.
+    #[allow(clippy::too_many_arguments)]
+    async fn create_manual_asset(
+        &self,
+        portfolio_id: Uuid,
+        asset_type: &str,
+        name: &str,
+        amount: Decimal,
+        units: Decimal,
+        nav: Decimal,
+        date: DateTime<Utc>,
+    ) -> Result<(AssetEntity, FolioEntity, TransactionEntity), DbError>;
 }
 
 /// Production PostgreSQL implementation of [`PortfolioRepository`] using SQLx.
@@ -184,5 +205,136 @@ impl PortfolioRepository for SqlxPortfolioRepo {
         transaction.commit().await?;
 
         Ok(())
+    }
+
+    async fn fetch_portfolio_bundle(&self, id: Uuid) -> Result<Option<PortfolioBundle>, DbError> {
+        let Some(portfolio) = self.get_portfolio(id).await? else {
+            return Ok(None);
+        };
+
+        let folios = sqlx::query_as::<_, FolioEntity>(
+            r#"
+            SELECT id, number, amc, pan, "portfolioId", "assetId", "createdAt", "updatedAt"
+            FROM "Folio"
+            WHERE "portfolioId" = $1
+            ORDER BY "createdAt" ASC
+            "#,
+        )
+        .bind(id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        if folios.is_empty() {
+            return Ok(Some(PortfolioBundle {
+                portfolio,
+                folios,
+                assets: Vec::new(),
+                transactions: Vec::new(),
+            }));
+        }
+
+        let asset_ids: Vec<String> = folios.iter().map(|f| f.asset_id.to_string()).collect();
+        let folio_ids: Vec<String> = folios.iter().map(|f| f.id.to_string()).collect();
+
+        let assets = sqlx::query_as::<_, AssetEntity>(
+            r#"
+            SELECT id, type::text AS type, name, isin, "amfiCode", symbol, "exitLoadMetadata", "createdAt", "updatedAt"
+            FROM "Asset"
+            WHERE id = ANY($1)
+            "#,
+        )
+        .bind(&asset_ids)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let transactions = sqlx::query_as::<_, TransactionEntity>(
+            r#"
+            SELECT id, date, type, amount, units, nav, balance, "folioId", "externalId", "createdAt", "updatedAt"
+            FROM "Transaction"
+            WHERE "folioId" = ANY($1)
+            ORDER BY date ASC, "createdAt" ASC
+            "#,
+        )
+        .bind(&folio_ids)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(Some(PortfolioBundle {
+            portfolio,
+            folios,
+            assets,
+            transactions,
+        }))
+    }
+
+    async fn create_manual_asset(
+        &self,
+        portfolio_id: Uuid,
+        asset_type: &str,
+        name: &str,
+        amount: Decimal,
+        units: Decimal,
+        nav: Decimal,
+        date: DateTime<Utc>,
+    ) -> Result<(AssetEntity, FolioEntity, TransactionEntity), DbError> {
+        let mut tx = self.pool.begin().await?;
+        let now = Utc::now();
+        let asset_id = Uuid::new_v4().to_string();
+        let folio_id = Uuid::new_v4().to_string();
+        let tx_id = Uuid::new_v4().to_string();
+        let folio_number = format!("MANUAL-{}", &asset_id[..8]);
+
+        let asset = sqlx::query_as::<_, AssetEntity>(
+            r#"
+            INSERT INTO "Asset" (id, type, name, "createdAt", "updatedAt")
+            VALUES ($1, $2::"AssetType", $3, $4, $5)
+            RETURNING id, type::text AS type, name, isin, "amfiCode", symbol, "exitLoadMetadata", "createdAt", "updatedAt"
+            "#,
+        )
+        .bind(&asset_id)
+        .bind(asset_type)
+        .bind(name)
+        .bind(now)
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let folio = sqlx::query_as::<_, FolioEntity>(
+            r#"
+            INSERT INTO "Folio" (id, number, "portfolioId", "assetId", "createdAt", "updatedAt")
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id, number, amc, pan, "portfolioId", "assetId", "createdAt", "updatedAt"
+            "#,
+        )
+        .bind(&folio_id)
+        .bind(&folio_number)
+        .bind(portfolio_id.to_string())
+        .bind(&asset_id)
+        .bind(now)
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let transaction = sqlx::query_as::<_, TransactionEntity>(
+            r#"
+            INSERT INTO "Transaction" (id, date, type, amount, units, nav, balance, "folioId", "createdAt", "updatedAt")
+            VALUES ($1, $2, 'PURCHASE', $3, $4, $5, $4, $6, $7, $8)
+            RETURNING id, date, type, amount, units, nav, balance, "folioId", "externalId", "createdAt", "updatedAt"
+            "#,
+        )
+        .bind(&tx_id)
+        .bind(date)
+        .bind(amount)
+        .bind(units)
+        .bind(nav)
+        .bind(&folio_id)
+        .bind(now)
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok((asset, folio, transaction))
     }
 }

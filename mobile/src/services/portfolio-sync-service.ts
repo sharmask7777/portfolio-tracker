@@ -1,7 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type {
   AssetAllocationDto,
-  DragDecompositionDto,
   PanBreakdownDto,
   SummaryMetrics,
 } from '../types/generated';
@@ -25,16 +24,7 @@ import {
 } from './portfolio-calculations';
 import { saveFamilyProfiles, type FamilyProfile } from './family-service';
 
-let cachedDrags: DragDecompositionDto | null = null;
 const cachedBundlesByScope = new Map<string, StoredSummaryEnvelope>();
-
-export function setCachedDrags(drags: DragDecompositionDto | null): void {
-  cachedDrags = drags;
-}
-
-export function getCachedDrags(): DragDecompositionDto | null {
-  return cachedDrags;
-}
 
 function setCachedSummaryBundle(
   bundle: StoredSummaryEnvelope | null,
@@ -42,10 +32,8 @@ function setCachedSummaryBundle(
 ): void {
   if (bundle) {
     cachedBundlesByScope.set(scopeId, bundle);
-    cachedDrags = bundle.metrics.drags ?? null;
   } else {
     cachedBundlesByScope.delete(scopeId);
-    if (scopeId === 'consolidated') cachedDrags = null;
   }
 }
 
@@ -64,14 +52,6 @@ export async function getStoredDashboardBundle(
     setCachedSummaryBundle(stored, scopeId);
   }
   return stored;
-}
-
-export async function getStoredDashboardMetrics(
-  db?: SQLiteDatabase,
-  scopeId: string = 'consolidated',
-): Promise<SummaryMetrics | null> {
-  const bundle = await getStoredDashboardBundle(db, scopeId);
-  return bundle?.metrics ?? null;
 }
 
 export function mergeServerMetricsIntoSummary(
@@ -299,10 +279,3 @@ export async function syncWithServerWithOptions({
   }
 }
 
-export async function syncWithServer(
-  serverUrl: string,
-  token: string,
-  targetDb: SQLiteDatabase,
-): Promise<boolean> {
-  return syncWithServerWithOptions({ serverUrl, token, targetDb });
-}

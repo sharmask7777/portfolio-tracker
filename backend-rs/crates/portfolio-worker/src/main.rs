@@ -221,9 +221,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn shutdown_signal() {
     let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            eprintln!("Failed to install Ctrl+C handler: {e}");
+        }
     };
 
     #[cfg(unix)]

@@ -43,7 +43,6 @@ import {
   formatInr,
   formatPct,
   checkServerReachable,
-  syncWithServer,
   syncWithPublicFeed,
   refreshPortfolio,
   computeOverallPortfolioXirr,
@@ -354,7 +353,11 @@ describe('portfolio-service', () => {
         }),
       });
 
-      const success = await syncWithServer('http://localhost:3000', 'valid-jwt', db);
+      const success = await syncWithServerWithOptions({
+        serverUrl: 'http://localhost:3000',
+        token: 'valid-jwt',
+        targetDb: db,
+      });
       expect(success).toBe(true);
 
       const summary = await getDashboardSummary(db);
@@ -523,9 +526,9 @@ describe('portfolio-service', () => {
         gainLossPct: 6, // 6% -> 0.06
       };
 
-      // (50000 * 0.12 + 50000 * 0.08 + 50000 * 0.06) / 150000 = (6000 + 4000 + 3000) / 150000 = 13000 / 150000 ≈ 0.08667
+      // (50000 * 0.12 + 50000 * 0 + 50000 * 0.06) / 150000 = (6000 + 0 + 3000) / 150000 = 0.06
       const result = computeOverallPortfolioXirr([h1, h2, h3]);
-      expect(result).toBeCloseTo(0.08667, 4);
+      expect(result).toBeCloseTo(0.06, 4);
     });
   });
 

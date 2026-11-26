@@ -205,6 +205,28 @@ describe('useConsolidatedHoldings', () => {
       );
       expect(result.current.filteredSchemes).toHaveLength(3);
     });
+
+    it('excludes folios without a PAN when member scope has a PAN', () => {
+      const foliosWithPanless = [
+        ...sampleFolios,
+        {
+          id: 'panless-1',
+          folioNumber: 'PANLESS-1',
+          schemeName: 'Unassigned Fund',
+          type: 'EQUITY',
+          currentValue: 5000,
+          costValue: 4000,
+          units: 100,
+        },
+      ];
+      const { result } = renderHook(() =>
+        useConsolidatedHoldings({
+          folios: foliosWithPanless,
+          scope: { type: 'member', profileId: 'p1', pan: 'ABCDE1234F', name: 'Aarav' },
+        })
+      );
+      expect(result.current.allSchemes.every((s) => s.schemeName !== 'Unassigned Fund')).toBe(true);
+    });
   });
 
   describe('sorting', () => {
