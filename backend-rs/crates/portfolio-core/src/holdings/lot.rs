@@ -699,4 +699,40 @@ mod tests {
         let scrambled_ids: Vec<&str> = sorted_scrambled.iter().map(|tx| tx.id.as_str()).collect();
         assert_eq!(sorted_ids, scrambled_ids);
     }
+
+    #[test]
+    fn test_process_fifo_lots_synthetic_and_reversal_branches() {
+        let tx_synth = Transaction::new(
+            "synthetic-anchor-1",
+            date(2025, 1, 1),
+            TransactionType::Purchase,
+            Money::from_str("10000").unwrap(),
+            Units::from_str("100").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::from_str("100").unwrap(),
+        );
+        let tx_zero_rev = Transaction::new(
+            "rev-0",
+            date(2025, 1, 2),
+            TransactionType::Reversal,
+            Money::ZERO,
+            Units::ZERO,
+            Nav::ZERO,
+            Units::from_str("100").unwrap(),
+        );
+        let tx_pos_rev = Transaction::new(
+            "rev-pos",
+            date(2025, 1, 3),
+            TransactionType::Reversal,
+            Money::from_str("1000").unwrap(),
+            Units::from_str("10").unwrap(),
+            Nav::ZERO,
+            Units::from_str("110").unwrap(),
+        );
+
+        let (lots, depletions) = process_fifo_lots(&[tx_synth, tx_zero_rev, tx_pos_rev]);
+        assert!(depletions.is_empty());
+        assert_eq!(lots.len(), 2);
+        assert_eq!(lots[1].remaining_units, Units::from_str("10").unwrap());
+    }
 }

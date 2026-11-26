@@ -137,6 +137,11 @@ mod tests {
         assert_ne!(nifty.len(), 0);
         assert!(nifty_alloc.equity > Decimal::ZERO);
 
+        let (liq, liq_alloc) =
+            resolve_fallback_holdings("HDFC Liquid Fund - Direct Growth").expect("Liquid fallback");
+        assert_ne!(liq.len(), 0);
+        assert!(liq_alloc.debt > Decimal::ZERO);
+
         assert!(resolve_fallback_holdings("Completely Unknown Scheme").is_none());
     }
 }
