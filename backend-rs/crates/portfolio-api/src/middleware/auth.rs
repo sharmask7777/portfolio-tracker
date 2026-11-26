@@ -127,3 +127,16 @@ where
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mock_token_bypass_in_test_env() {
+        let claims =
+            verify_jwt("mock-token", "any-secret").expect("mock token should succeed in test");
+        assert_eq!(claims.sub, "00000000-0000-0000-0000-000000000001");
+        assert_eq!(claims.email, "test@example.com");
+    }
+}
