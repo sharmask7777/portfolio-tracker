@@ -3264,3 +3264,81 @@ async fn test_summary_params_cpi_and_tax_bracket_aliases() {
     let bad_res = app.oneshot(bad_req).await.unwrap();
     assert_eq!(bad_res.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn test_close_and_delete_folio_and_purge_user_data_contract() {
+    let (app, db, jwt_secret) = setup_test_app();
+    let user = db.create_user("folio.lifecycle@example.com", "hash_pw");
+    let token = portfolio_api::create_jwt(user.id, &user.email, &jwt_secret).unwrap();
+
+    let portfolio = db
+        .create_portfolio(user.id, "Lifecycle Portfolio", None)
+        .await
+        .unwrap();
+    let asset = db.create_asset(
+        "MUTUAL_FUND",
+        "Axis Bluechip Fund",
+        Some("INF846K01DP8"),
+        Some("120503"),
+        None,
+        None,
+    );
+    let folio = db
+        .create_folio(
+            portfolio.id,
+            asset.id,
+            "11223344/99",
+            Some("Axis MF"),
+            Some("ABCDE1234F"),
+        )
+        .unwrap();
+
+    db.create_transaction(
+        folio.id,
+        chrono::NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        "PURCHASE",
+        Decimal::from_str("50000").unwrap(),
+        Decimal::from_str("500").unwrap(),
+        Decimal::from_str("100").unwrap(),
+        Decimal::from_str("500").unwrap(),
+        Some("LC-BUY-1"),
+    )
+    .await
+    .unwrap();
+
+    // 1. Close folio
+    let close_req = Request::builder()
+        .uri(format!("/api/portfolio/folio/{}/close", folio.id))
+        .method("POST")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let close_res = app.clone().oneshot(close_req).await.unwrap();
+    assert_eq!(close_res.status(), StatusCode::OK);
+    let close_json = parse_json(close_res.into_body()).await;
+    assert_eq!(close_json["status"], "success");
+
+    // 2. Delete folio
+    let del_req = Request::builder()
+        .uri(format!("/api/portfolio/folio/{}", folio.id))
+        .method("DELETE")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let del_res = app.clone().oneshot(del_req).await.unwrap();
+    assert_eq!(del_res.status(), StatusCode::OK);
+    let del_json = parse_json(del_res.into_body()).await;
+    assert_eq!(del_json["status"], "success");
+
+    // 3. Purge user data
+    let purge_req = Request::builder()
+        .uri("/api/portfolio/purge")
+        .method("DELETE")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let purge_res = app.clone().oneshot(purge_req).await.unwrap();
+    assert_eq!(purge_res.status(), StatusCode::OK);
+    let purge_json = parse_json(purge_res.into_body()).await;
+    assert_eq!(purge_json["status"], "success");
+}

@@ -760,4 +760,24 @@ mod tests {
         // Capital turnover = ~₹2,08,333 instead of ₹12,50,000 required for Scheme A!
         assert!(summary.opportunities[0].current_value < money("210000"));
     }
+
+    #[test]
+    fn test_harvesting_with_grandfather_nav_builder() {
+        let txs = vec![Transaction::new(
+            "tx-gf",
+            date(2017, 1, 1),
+            TransactionType::Purchase,
+            money("-100000"),
+            units("1000"),
+            nav("100"),
+            units("1000"),
+        )];
+        let input =
+            FolioHarvestingInput::new("Old Equity Fund", AssetType::MutualFund, &txs, nav("200"))
+                .with_grandfather_nav(nav("150"));
+
+        let as_of = date(2024, 6, 1);
+        let summary = get_harvesting_opportunities(&[input], as_of, Money::ZERO, None);
+        assert!(!summary.opportunities.is_empty());
+    }
 }
