@@ -34,6 +34,14 @@ taxableLTCG: number,
  */
 exemptLtcg112a: number, 
 /**
+ * Statutory Section 112A annual exemption limit for the selected FY.
+ */
+sec112aExemptionLimit: number, 
+/**
+ * Section 112A exemption applied for the selected FY (alias).
+ */
+sec112aExemption: number, 
+/**
  * Lot-level realized gain details.
  */
 details: Array<RealizedGainDetailDto>, 

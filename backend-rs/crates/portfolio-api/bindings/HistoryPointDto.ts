@@ -15,4 +15,24 @@ value: number,
 /**
  * Net invested amount on `date`.
  */
-investedAmount: number, };
+investedAmount: number, 
+/**
+ * Unrealized gain (`value - invested_amount`) on `date`.
+ */
+unrealizedGain: number, 
+/**
+ * Percentage gain relative to `invested_amount`.
+ */
+gainPercentage: number, 
+/**
+ * Whether this checkpoint is a new all-time high.
+ */
+isAth: boolean, 
+/**
+ * Running all-time high value up to `date`.
+ */
+athValue: number, 
+/**
+ * Percentage drawdown from `ath_value`.
+ */
+drawdownPercentage: number, };
