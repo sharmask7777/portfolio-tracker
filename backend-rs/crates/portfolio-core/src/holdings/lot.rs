@@ -731,7 +731,7 @@ mod tests {
         );
 
         let (lots, depletions) = process_fifo_lots(&[tx_synth, tx_zero_rev, tx_pos_rev]);
-        assert!(depletions.is_empty());
+        assert_eq!(depletions.len(), 0);
         assert_eq!(lots.len(), 2);
         assert_eq!(lots[1].remaining_units, Units::from_str("10").unwrap());
     }
