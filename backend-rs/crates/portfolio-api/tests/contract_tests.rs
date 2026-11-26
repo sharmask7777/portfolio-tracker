@@ -961,6 +961,45 @@ async fn test_cas_upload_and_status_polling_contract() {
     let bad_res = app.clone().oneshot(bad_req).await.unwrap();
     assert_eq!(bad_res.status(), StatusCode::BAD_REQUEST);
 
+    // 1d. Unsupported extension rejected with 400
+    let txt_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"notes.txt\"\r\n\
+        Content-Type: text/plain\r\n\r\nhello\r\n--{boundary}--\r\n"
+    );
+    let txt_req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(txt_body))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(txt_req).await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // 1e. Missing file field rejected with 400
+    let nofile_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nPASS123\r\n--{boundary}--\r\n"
+    );
+    let nofile_req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(nofile_body))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(nofile_req).await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+
     // 2. Poll status: GET /api/portfolio/upload-status/{jobId}
     let status_req = Request::builder()
         .method("GET")

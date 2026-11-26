@@ -1679,6 +1679,14 @@ mod tests {
             Err(TaxInvariantError::QuarterlyMismatch { .. })
         ));
 
+        report.exempt_ltcg_112a = money("-10");
+        if let Some(ref mut tf) = report.summary.table_f
+            && let Some(q) = tf.quarters.values_mut().next()
+        {
+            q.total_gain = Money::ZERO;
+        }
+        assert!(verify_itr_invariants(&report).is_err());
+
         report.summary.table_f = None;
         assert!(matches!(
             verify_itr_invariants(&report),
