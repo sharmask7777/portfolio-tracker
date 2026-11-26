@@ -556,4 +556,36 @@ mod tests {
         // 100 - 10 + 5 = 95
         assert_eq!(units, Units::from_str("95").unwrap());
     }
+
+    #[test]
+    fn test_consolidate_schemes_with_metrics_active_and_closed() {
+        let tx_active = Transaction::new(
+            "tx-1",
+            date(2025, 1, 1),
+            TransactionType::Purchase,
+            Money::from_str("10000").unwrap(),
+            Units::from_str("100").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::from_str("100").unwrap(),
+        );
+        let folio_active = Folio {
+            id: "f-1".to_string(),
+            folio_number: crate::FolioNumber::new("12345").unwrap(),
+            isin: Some(Isin::new("INF179K01BB8").unwrap()),
+            asset_name: "HDFC Top 100 Fund".to_string(),
+            asset_type: crate::AssetType::MutualFund,
+            pan: None,
+            transactions: vec![tx_active],
+        };
+        let dtos = consolidate_schemes_with_metrics(
+            &[folio_active],
+            Nav::ZERO,
+            Some(Nav::from_str("95").unwrap()),
+            date(2025, 6, 1),
+            rust_decimal::Decimal::from_str("0.30").unwrap(),
+        );
+        assert_eq!(dtos.len(), 1);
+        assert!(dtos[0].is_active);
+        assert!(dtos[0].day_change.is_some());
+    }
 }
