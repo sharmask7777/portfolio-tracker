@@ -69,6 +69,7 @@ jobs:
     - name: Run Rust Workspace Quality, Tests & Coverage
       run: |
         cargo install --locked cargo-deny
+        cargo install cargo-machete
         cargo install cargo-llvm-cov
         (cd backend-rs && ./scripts/verify.sh)
         pnpm run test:coverage:backend
