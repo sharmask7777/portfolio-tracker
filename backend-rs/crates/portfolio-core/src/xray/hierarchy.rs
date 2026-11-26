@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(tree_ex_arb[0].value, Money::from_str("100000").unwrap());
 
         let exposures = compute_portfolio_exposures(&arb_schemes);
-        assert!(!exposures.is_empty());
+        assert_ne!(exposures.len(), 0);
 
         let xray = compute_xray_report(&arb_schemes);
         assert!(xray.total_value > Money::ZERO);
