@@ -15,9 +15,24 @@ const __dirname = path.dirname(__filename);
 test.describe('E2E Integration: Real PDF Processing', () => {
   let dummyPdfPath: string;
 
-  test.beforeEach(async ({ page }, testInfo) => {
-    // We still use setupAuth to bypass the UI login, but we expect the backend to accept the session
-    await setupAuth(page);
+  test.beforeEach(async ({ page, request }, testInfo) => {
+    const email = `e2e-integration-${testInfo.workerIndex}-${Date.now()}@example.com`;
+    const password = 'SyntheticE2ePassword123!';
+    const regRes = await request.post('/api/auth/register', {
+      data: { email, password, name: 'E2E Integration User' },
+    });
+    const authJson = await regRes.json();
+    const token = authJson.token as string;
+    const user = authJson.user;
+
+    await page.addInitScript(
+      ({ t, u }) => {
+        window.localStorage.setItem('token', t);
+        window.localStorage.setItem('user', JSON.stringify(u));
+        window.localStorage.setItem('bypass-auth', 'true');
+      },
+      { t: token, u: user }
+    );
     
     // Create a very small valid-looking dummy file
     dummyPdfPath = path.join(__dirname, `integration-test-${testInfo.workerIndex}.pdf`);
