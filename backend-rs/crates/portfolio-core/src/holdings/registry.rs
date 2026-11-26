@@ -522,4 +522,38 @@ mod tests {
         let units = get_latest_units(&[tx_initial, tx_redemption]);
         assert_eq!(units, Units::ZERO);
     }
+
+    #[test]
+    fn test_get_latest_units_replay_reversal_and_addition() {
+        let tx_initial = Transaction::new(
+            "tx-1",
+            date(2025, 1, 1),
+            TransactionType::Purchase,
+            Money::from_str("10000").unwrap(),
+            Units::from_str("100").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::from_str("100").unwrap(),
+        );
+        let tx_rev_neg = Transaction::new(
+            "tx-2",
+            date(2025, 2, 1),
+            TransactionType::Reversal,
+            Money::from_str("-1000").unwrap(),
+            Units::from_str("-10").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::from_str("90").unwrap(),
+        );
+        let tx_rev_pos = Transaction::new(
+            "tx-3",
+            date(2025, 3, 1),
+            TransactionType::Purchase,
+            Money::from_str("500").unwrap(),
+            Units::from_str("5").unwrap(),
+            Nav::from_str("100").unwrap(),
+            Units::ZERO,
+        );
+        let units = get_latest_units(&[tx_initial, tx_rev_neg, tx_rev_pos]);
+        // 100 - 10 + 5 = 95
+        assert_eq!(units, Units::from_str("95").unwrap());
+    }
 }

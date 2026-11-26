@@ -1628,4 +1628,18 @@ mod tests {
         assert_eq!(gain_old.holding_type, HoldingType::LongTerm);
         assert!(gain_old.is_grandfathered);
     }
+
+    #[test]
+    fn test_parse_fy_bounds_and_112a_limit_and_itr_invariants() {
+        assert!(parse_financial_year_bounds("invalid").is_err());
+        assert!(parse_financial_year_bounds("1800-01").is_err());
+        assert_eq!(
+            get_112a_statutory_limit("2023-24").unwrap(),
+            ltcg_exemption_limit_pre_budget_2024()
+        );
+        assert_eq!(
+            get_112a_statutory_limit("2024-25").unwrap(),
+            ltcg_exemption_limit_budget_2024()
+        );
+    }
 }

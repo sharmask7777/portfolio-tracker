@@ -274,3 +274,25 @@ pub fn calculate_gain_with_expenses(
         advance_tax_quarter: Some(crate::tax::AdvanceTaxQuarter::from_date(sell_date)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_compute_deemed_cost_sec112_debt_cii_indexation() {
+        let buy_date = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let sell_date = NaiveDate::from_ymd_opt(2024, 6, 1).unwrap();
+        let units = Units::from_str("100").unwrap();
+        let actual_nav = Nav::from_str("100").unwrap();
+        let sell_nav = Nav::from_str("150").unwrap();
+
+        let (deemed_cost, is_gf, status, _, _) = compute_deemed_cost(
+            buy_date, sell_date, units, actual_nav, sell_nav, None, false, false,
+        );
+        assert!(is_gf);
+        assert!(status.contains("CII Indexed"));
+        assert!(deemed_cost > Money::from_str("10000").unwrap());
+    }
+}

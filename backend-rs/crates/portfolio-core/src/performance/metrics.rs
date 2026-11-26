@@ -887,4 +887,29 @@ mod tests {
         );
         assert!(drag.benchmark_spread.is_some());
     }
+
+    #[test]
+    fn test_compute_day_change_positive_and_zero() {
+        let items = vec![
+            (
+                crate::types::Units::from_str("100").unwrap(),
+                Nav::from_str("110").unwrap(),
+                Nav::from_str("100").unwrap(),
+            ),
+            (
+                crate::types::Units::from_str("50").unwrap(),
+                Nav::from_str("90").unwrap(),
+                Nav::from_str("100").unwrap(),
+            ),
+        ];
+        let summary = compute_day_change(&items);
+        // 100*(110-100) + 50*(90-100) = 1000 - 500 = 500
+        assert_eq!(summary.day_change, money("500"));
+        assert_eq!(summary.previous_total_value, money("15000"));
+        assert!((summary.day_change_pct - (500.0 / 15000.0 * 100.0)).abs() < 1e-6);
+
+        let empty_summary = compute_day_change(&[]);
+        assert_eq!(empty_summary.day_change, Money::ZERO);
+        assert_eq!(empty_summary.day_change_pct, 0.0);
+    }
 }
