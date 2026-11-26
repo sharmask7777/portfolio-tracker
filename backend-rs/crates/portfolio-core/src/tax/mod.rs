@@ -1641,5 +1641,35 @@ mod tests {
             get_112a_statutory_limit("2024-25").unwrap(),
             ltcg_exemption_limit_budget_2024()
         );
+
+        let summary = calculate_portfolio_tax(
+            "Test Fund",
+            AssetType::MutualFund,
+            &[],
+            nav("100"),
+            dec("0.30"),
+            None,
+        );
+        let mut report = TaxReport {
+            financial_year: "2024-25".to_string(),
+            assessment_year: Some("2025-26".to_string()),
+            assessee_name: Some("Test User".to_string()),
+            pan: None,
+            summary,
+            exempt_ltcg_112a: Money::ZERO,
+        };
+        assert!(verify_itr_invariants(&report).is_ok());
+
+        report.financial_year = "bad".to_string();
+        assert!(matches!(
+            verify_itr_invariants(&report),
+            Err(TaxInvariantError::InvalidFinancialYear { .. })
+        ));
+        report.financial_year = "2024-25".to_string();
+        report.summary.table_f = None;
+        assert!(matches!(
+            verify_itr_invariants(&report),
+            Err(TaxInvariantError::MissingTableF)
+        ));
     }
 }

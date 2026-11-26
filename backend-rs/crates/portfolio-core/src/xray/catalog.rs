@@ -142,6 +142,11 @@ mod tests {
         assert_ne!(liq.len(), 0);
         assert!(liq_alloc.debt > Decimal::ZERO);
 
+        let (gold, gold_alloc) =
+            resolve_fallback_holdings("Nippon India Gold Bees").expect("Gold fallback");
+        assert_ne!(gold.len(), 0);
+        assert!(gold_alloc.alternatives > Decimal::ZERO);
+
         assert!(resolve_fallback_holdings("Completely Unknown Scheme").is_none());
     }
 }
