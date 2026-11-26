@@ -19,6 +19,7 @@ export * from './FolioNumber';
 export * from './Isin';
 export * from './FolioView';
 export * from './DragDecompositionDto';
+export * from './DragWaterfallStageDto';
 export * from './HarvestOpportunityDto';
 export * from './UnrealizedLotGainDto';
 export * from './UnrealizedSummaryDto';

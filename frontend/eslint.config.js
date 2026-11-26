@@ -112,6 +112,38 @@ export default defineConfig([
     },
   },
   {
+    // View Layer Zero Business Logic Guardrail: enforces pure paint/rendering layers
+    files: ['src/components/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'MemberExpression[object.meta.name="import"][object.property.name="meta"][property.name="env"]',
+          message: 'Direct access to import.meta.env is forbidden. Centralize environment variable access in src/env.ts using Zod validation.',
+        },
+        {
+          selector: 'BinaryExpression[operator="*"][right.value=0.125], BinaryExpression[operator="*"][left.value=0.125], BinaryExpression[operator="*"][right.value=0.2], BinaryExpression[operator="*"][left.value=0.2], BinaryExpression[operator="*"][right.value=0.04], BinaryExpression[operator="*"][left.value=0.04], BinaryExpression[operator="*"][right.value=0.15], BinaryExpression[operator="*"][left.value=0.15], BinaryExpression[operator="*"][right.value=0.3], BinaryExpression[operator="*"][left.value=0.3]',
+          message: 'Forbidden statutory tax rate multiplication in view layer. Tax calculations must occur on the backend.',
+        },
+        {
+          selector: 'CallExpression[callee.object.name="Math"][callee.property.name="pow"] > BinaryExpression[operator="+"][left.value=1]',
+          message: 'Forbidden Fisher purchasing power deflator compounding in view layer. Use backend DragDecompositionDto.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['*/**/tax-calculations', '*/**/itr-report-generator', '*/**/portfolio-calculations*'],
+              message: 'View components must never import calculation engines directly. Consume display DTOs and presentation hooks.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Fowler Maintainability Sensors for App.tsx and modular dashboard components
     files: [
       'src/App.tsx',

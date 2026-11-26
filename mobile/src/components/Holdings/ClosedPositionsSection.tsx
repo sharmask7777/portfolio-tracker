@@ -115,11 +115,19 @@ interface ClosedRowProps {
   onSelect?: ((holding: EnrichedHolding) => void) | undefined;
 }
 
+function resolveClosedRowMetrics(holding: EnrichedHolding) {
+  const primaryReturn = holding.xirr ?? holding.absolute_return ?? undefined;
+  const postTaxXirr = holding.post_tax_xirr ?? undefined;
+  const isPositive = (primaryReturn ?? 0) >= 0;
+  const retColor = isPositive ? styles.positive : styles.negative;
+  const returnText = primaryReturn !== undefined ? formatPercent(primaryReturn) : '—';
+  const returnLabel = holding.xirr != null ? 'XIRR' : 'Return';
+  return { postTaxXirr, retColor, returnText, returnLabel };
+}
+
 function ClosedRow(props: ClosedRowProps): React.ReactElement {
   const { holding, onDelete, onSelect } = props;
-  const isPositive = holding.gainLoss >= 0;
-  const retColor = isPositive ? styles.positive : styles.negative;
-  const pct = holding.gainLossPct !== undefined ? formatPercent(holding.gainLossPct / 100) : '0.00%';
+  const { postTaxXirr, retColor, returnText, returnLabel } = resolveClosedRowMetrics(holding);
 
   return (
     <TouchableOpacity
@@ -139,9 +147,13 @@ function ClosedRow(props: ClosedRowProps): React.ReactElement {
       <View style={styles.rowRight}>
         <View style={styles.metricsCol}>
           <Text style={[styles.returnVal, retColor]}>
-            {isPositive ? '+' : ''}{formatIndianRupee(holding.gainLoss)} ({pct})
+            {returnLabel}: {returnText}
           </Text>
-          <Text style={styles.costText}>Cost: {formatIndianRupee(holding.invested_cost)}</Text>
+          {postTaxXirr !== undefined ? (
+            <Text style={styles.costText}>Post-Tax XIRR: {formatPercent(postTaxXirr)}</Text>
+          ) : (
+            <Text style={styles.costText}>Cost: {formatIndianRupee(holding.invested_cost)}</Text>
+          )}
         </View>
         {onDelete ? (
           <TouchableOpacity

@@ -9,8 +9,12 @@
 
 set -euo pipefail
 
-# Ensure standard cargo and homebrew binary paths are included in PATH
-export PATH="/opt/homebrew/bin:${HOME}/.cargo/bin:${PATH}"
+# Ensure standard cargo, homebrew, and developer tools binary paths are included in PATH
+if [ -d "/Library/Developer/CommandLineTools" ]; then
+  export DEVELOPER_DIR="/Library/Developer/CommandLineTools"
+  export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+fi
+export PATH="/Library/Developer/CommandLineTools/usr/bin:/opt/homebrew/bin:${HOME}/.cargo/bin:${PATH}"
 
 # Auto-cd to backend-rs root directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

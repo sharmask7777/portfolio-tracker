@@ -15,7 +15,7 @@
     "test": "vitest run --coverage",
     "test:coverage": "vitest run --coverage",
     "test:unit": "vitest run --coverage",
-    "build:verify": "pnpm lint && pnpm typecheck && pnpm knip && pnpm test:coverage",
+    "build:verify": "python3 ../scripts/check-view-layer-boundaries.py && pnpm lint && pnpm typecheck && pnpm knip && pnpm test:coverage",
     "build:apk": "bash scripts/build-local-apk.sh",
     "build:ios": "bash scripts/build-local-ios.sh",
     "eas:update": "npx eas-cli update --auto",

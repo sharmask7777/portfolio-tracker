@@ -2,8 +2,8 @@ import {
   calculate112AExemption,
   classifySection,
   TaxSectionName,
-} from '../../utils/itr-report-generator';
-import type { ITRGainDetail } from '../../utils/itr-report-generator';
+} from './itr-report-generator';
+import type { ITRGainDetail } from './itr-report-generator';
 
 export interface TaxCalculationsResult {
   totalEquityLTCG: number;

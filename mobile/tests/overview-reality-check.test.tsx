@@ -92,8 +92,9 @@ import {
   PresetGrid,
   HistoricalTrendChart,
 } from '../src/components/Dashboard';
+import { NetWorthCard } from '../src/components/NetWorthCard';
 
-import { BannerHeader } from '../src/components/Dashboard/RealityCheckBanner';
+import { BannerHeader } from '../src/components/Dashboard/RealityCheckRow';
 import { ModalHeader } from '../src/components/Dashboard/AssumptionsModal';
 import {
   ChartHeader,
@@ -114,9 +115,9 @@ describe('Task 5: Reality Check & Historical Checkpoints Suite', () => {
   });
 
   describe('1. Reality Check Calculation Service', () => {
-    it('uses standard default assumptions (6% CPI inflation, 15% tax rate, 3y horizon)', () => {
+    it('uses standard default assumptions (6% CPI inflation, 30% tax rate, 3y horizon)', () => {
       expect(DEFAULT_ASSUMPTIONS.inflationRate).toBe(0.06);
-      expect(DEFAULT_ASSUMPTIONS.taxRate).toBe(0.15);
+      expect(DEFAULT_ASSUMPTIONS.taxRate).toBe(0.30);
       expect(DEFAULT_ASSUMPTIONS.horizonYears).toBe(3);
     });
 
@@ -212,6 +213,47 @@ describe('Task 5: Reality Check & Historical Checkpoints Suite', () => {
 
       expect(result.nominalReturn).toBeCloseTo(0.20, 2);
       expect(result.nominalGain).toBe(200000);
+    });
+
+    it('uses canonical backend drags when provided and overrides input nominal return', () => {
+      const result = calculateRealityCheckMetrics({
+        currentValue: 1200000,
+        investedCost: 1000000,
+        nominalReturn: 0.12,
+        drags: {
+          nominalXirr: 0.18,
+          postTaxXirr: 0.15,
+          debtDrag: 0.01,
+          equityDrag: 0.02,
+          cessAndOtherDrag: 0.0012,
+          inflationDrag: 0.06,
+          totalTaxDrag: 0.03,
+          totalOverallDrag: 0.09,
+          realPostTaxXirr: 0.09,
+          benchmarkSpread: 0.045,
+          postTaxValue: 1160000,
+          purchasingPowerValue: 975000,
+          purchasingPowerLoss: 225000,
+          stages: [
+            { step: 1, key: 'gross_nominal', label: 'Gross Nominal', rate: 0.18, drag: 0, description: 'Pre-tax annualized IRR' },
+            { step: 2, key: 'debt_drag', label: 'Sec 50AA Debt Drag', rate: 0.01, drag: -0.01, description: 'Slab rate debt fund taxation' },
+            { step: 3, key: 'equity_drag', label: 'Sec 112A/111A Equity', rate: 0.02, drag: -0.02, description: '12.5% LTCG / 20% STCG' },
+            { step: 4, key: 'cess_drag', label: 'Cess & Overheads', rate: 0.0012, drag: -0.0012, description: '4% health & edu cess' },
+            { step: 5, key: 'inflation_drag', label: 'CPI Inflation Drag', rate: 0.06, drag: -0.06, description: 'Purchasing power deflator' },
+            { step: 6, key: 'real_xirr', label: 'Real Purchasing XIRR', rate: 0.09, drag: 0, description: 'True real compounding' },
+          ],
+        },
+      });
+
+      expect(result.nominalReturn).toBe(0.18);
+      expect(result.postTaxReturn).toBe(0.15);
+      expect(result.realPostTaxReturn).toBe(0.09);
+      expect(result.dragWaterfall.length).toBe(6);
+      expect(result.dragWaterfall[0]?.label).toBe('Gross Nominal');
+      expect(result.dragWaterfall[1]?.label).toBe('Sec 50AA Debt Drag');
+      expect(result.benchmarkSpread).toBe(0.045);
+      expect(result.postTaxValue).toBe(1160000);
+      expect(result.purchasingPowerValue).toBe(975000);
     });
   });
 
@@ -506,12 +548,51 @@ describe('Task 5: Reality Check & Historical Checkpoints Suite', () => {
     });
   });
 
-  describe('7. DashboardScreen Integration', () => {
+  describe('7. DashboardScreen Integration & NetWorthCard Reality Check Compliance', () => {
     it('renders DashboardScreen with Reality Check toggle and Historical Trend chart', () => {
       const screen = DashboardScreen();
       expect(screen).toBeDefined();
       const testID = getProps(screen)['testID'];
       expect(testID === 'dashboard-scroll' || testID === 'dashboard-loading').toBe(true);
+    });
+
+    it('switches NetWorthCard between Nominal and Net Realizable Wealth in Reality Check mode', () => {
+      const nominalCard = NetWorthCard({
+        totalCurrentValue: 136943774,
+        totalInvestedCost: 95000000,
+        unrealizedGain: 41943774,
+        unrealizedGainPct: 44.15,
+        performanceMode: 'XIRR',
+        overallXirr: 0.165,
+        realityCheckMode: false,
+        netRealizableValue: 131500000,
+        estimatedTax: 5443774,
+        realPostTaxXirr: 0.082,
+      });
+      const nominalText = JSON.stringify(nominalCard);
+      expect(nominalText).toContain('Total Net Worth');
+      expect(nominalText).toContain('13,69,43,774');
+      expect(nominalText).toContain('Total Gain (XIRR)');
+
+      const realityCard = NetWorthCard({
+        totalCurrentValue: 136943774,
+        totalInvestedCost: 95000000,
+        unrealizedGain: 41943774,
+        unrealizedGainPct: 44.15,
+        performanceMode: 'XIRR',
+        overallXirr: 0.165,
+        realityCheckMode: true,
+        netRealizableValue: 131500000,
+        estimatedTax: 5443774,
+        realPostTaxXirr: 0.082,
+      });
+      const realityText = JSON.stringify(realityCard);
+      expect(realityText).toContain('Net Realizable Wealth');
+      expect(realityText).toContain('13,15,00,000');
+      expect(realityText).toContain('Gross:');
+      expect(realityText).toContain('Est. Tax:');
+      expect(realityText).toContain('Real Post-Tax XIRR');
+      expect(realityText).toContain('8.20%');
     });
   });
 });

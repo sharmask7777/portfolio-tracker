@@ -1,6 +1,10 @@
+import type { HarvestOpportunityDto, HarvestTicketResponse } from '../types/generated';
+import { formatHarvestInstructions } from './tax-harvesting';
 import {
   AdvanceTaxQuarter,
   type AdvanceTaxAccrualMatrix,
+  type HarvestOpportunity,
+  type HarvestPlan,
   type TableFQuarterData,
   type TaxCalculationsResult,
 } from './tax-types';
@@ -183,5 +187,58 @@ export function mapServerSummaryToResult(
     grandTotalTax,
     ltcgUsed: ltcgExemptClaimed,
     ltcgPercent: Math.min(100, (ltcgExemptClaimed / ltcgLimit) * 100),
+  };
+}
+
+function mapDtoToHarvestOpportunity(dto: HarvestOpportunityDto): HarvestOpportunity {
+  const units = dto.unitsToHarvest;
+  const currentNav = units > 0 ? dto.currentValue / units : 0;
+  const costNav = units > 0 ? (dto.currentValue - dto.unrealizedGain) / units : 0;
+  const holdingDays = dto.firstLotDate
+    ? Math.max(0, Math.floor((Date.now() - Date.parse(dto.firstLotDate)) / 86400000))
+    : 365;
+
+  return {
+    folioId: dto.folioNumber ?? dto.folioId ?? 'FOLIO',
+    schemeName: dto.schemeName,
+    currentUnits: units,
+    unitsToHarvest: units,
+    currentNav,
+    costNav,
+    currentValue: dto.currentValue,
+    unrealizedGain: dto.unrealizedGain,
+    holdingDays,
+    lotsCount: dto.lotsCount,
+    firstLotDate: dto.firstLotDate ?? undefined,
+    lastLotDate: dto.lastLotDate ?? undefined,
+  };
+}
+
+/**
+ * Maps a backend {@link HarvestTicketResponse} directly into a {@link HarvestPlan}
+ * without fabricating single-lot proxies or recomputing statutory tax savings locally.
+ *
+ * @param ticket - Backend Section 112A harvesting ticket response
+ * @param fy - Selected financial year (e.g. `'2024-25'`)
+ * @returns Mapped {@link HarvestPlan} ready for UI rendering
+ */
+export function mapHarvestTicketToPlan(
+  ticket: HarvestTicketResponse,
+  fy: string,
+): HarvestPlan {
+  const ltcgLimit = fy >= '2024-25' ? 125000 : 100000;
+  const basePlan: Omit<HarvestPlan, 'instructions'> = {
+    fy,
+    ltcgLimit,
+    realizedLtcgCurrentFY: ticket.realizedLtcgFy,
+    remainingExemption: ticket.remainingExemption,
+    totalPotentialHarvest: ticket.totalPotentialHarvest,
+    estimatedTaxSavings: ticket.estimatedTaxSavings,
+    opportunities: ticket.opportunities.map(mapDtoToHarvestOpportunity),
+  };
+
+  return {
+    ...basePlan,
+    instructions: formatHarvestInstructions(basePlan),
   };
 }

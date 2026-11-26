@@ -16,6 +16,8 @@ else
   exit 1
 fi
 python3 "$REPO_ROOT/scripts/check-privacy-and-pii.py"
+python3 "$REPO_ROOT/scripts/check-view-layer-boundaries.py" --self-test
+python3 "$REPO_ROOT/scripts/check-view-layer-boundaries.py"
 
 # 2. Rust Backend Sensors, Hermetic Pipeline & Coverage
 echo "🦀 [2/7] Running Rust Backend Sensor Suite & Coverage..."

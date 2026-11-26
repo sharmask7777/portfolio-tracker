@@ -76,9 +76,9 @@ pub struct OverlapQuery {
 #[serde(rename_all = "camelCase")]
 pub struct SummaryParams {
     pub profile_id: Option<String>,
-    #[serde(alias = "tax_slab", alias = "marginal_tax_bracket")]
+    #[serde(alias = "tax_slab", alias = "marginal_tax_bracket", alias = "taxBracket")]
     pub marginal_tax_bracket: Option<Decimal>,
-    #[serde(alias = "cpi_inflation_rate")]
+    #[serde(alias = "cpi_inflation_rate", alias = "cpi")]
     pub cpi_inflation_rate: Option<Decimal>,
     pub family_group_id: Option<String>,
 }
@@ -152,6 +152,23 @@ pub struct AssetAllocationDto {
 }
 
 /// Detailed sequential teardown of return drag from nominal returns down to real purchasing power.
+/// Individual stage of the sequential 6-stage drag waterfall.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DragWaterfallStageDto {
+    pub step: u8,
+    pub key: String,
+    pub label: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub rate: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub drag: Decimal,
+    pub description: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -160,6 +177,10 @@ pub struct DragDecompositionDto {
     #[serde(with = "rust_decimal::serde::float_option")]
     #[ts(optional = nullable, type = "number")]
     pub nominal_xirr: Option<Decimal>,
+    /// Post-tax annualized internal rate of return.
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub post_tax_xirr: Option<Decimal>,
     /// Drag attributed to Section 50AA debt gains slab taxation.
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
@@ -176,6 +197,14 @@ pub struct DragDecompositionDto {
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub inflation_drag: Decimal,
+    /// Total tax drag (nominal XIRR - post-tax XIRR).
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub total_tax_drag: Decimal,
+    /// Total overall drag from nominal gross XIRR to real post-tax XIRR.
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub total_overall_drag: Decimal,
     /// Net real purchasing-power return after tax and inflation.
     #[serde(with = "rust_decimal::serde::float_option")]
     #[ts(optional = nullable, type = "number")]
@@ -184,18 +213,98 @@ pub struct DragDecompositionDto {
     #[serde(with = "rust_decimal::serde::float_option")]
     #[ts(optional = nullable, type = "number")]
     pub benchmark_spread: Option<Decimal>,
+    /// Post-tax portfolio valuation (net realizable wealth).
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub post_tax_value: Option<Decimal>,
+    /// Purchasing power deflated over 3-year horizon.
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub purchasing_power_value: Option<Decimal>,
+    /// Wealth erosion drag due to inflation and taxes over horizon.
+    #[serde(with = "rust_decimal::serde::float_option")]
+    #[ts(optional = nullable, type = "number")]
+    pub purchasing_power_loss: Option<Decimal>,
+    /// Display-ready sequential 6-stage waterfall.
+    pub stages: Vec<DragWaterfallStageDto>,
 }
 
 impl From<portfolio_core::performance::metrics::DragDecomposition> for DragDecompositionDto {
     fn from(core: portfolio_core::performance::metrics::DragDecomposition) -> Self {
+        let nom = core.nominal_xirr.unwrap_or(Decimal::ZERO);
+        let after_debt = nom - core.debt_drag;
+        let after_eq = after_debt - core.equity_drag;
+        let after_cess = after_eq - core.cess_and_other_drag;
+        let real = core
+            .real_post_tax_xirr
+            .unwrap_or(after_cess - core.inflation_drag);
+
+        let stages = vec![
+            DragWaterfallStageDto {
+                step: 1,
+                key: "nominal".to_string(),
+                label: "Nominal Gross XIRR".to_string(),
+                rate: nom,
+                drag: Decimal::ZERO,
+                description: "Gross annualized return before taxes and inflation".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 2,
+                key: "debt_tax".to_string(),
+                label: "Sec 50AA Debt Tax".to_string(),
+                rate: after_debt,
+                drag: core.debt_drag,
+                description: "Slab-rate tax drag on debt and non-equity gains".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 3,
+                key: "equity_tax".to_string(),
+                label: "Sec 112A / 111A Equity Tax".to_string(),
+                rate: after_eq,
+                drag: core.equity_drag,
+                description: "LTCG/STCG tax drag on equity holdings".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 4,
+                key: "cess".to_string(),
+                label: "Cess & Overheads".to_string(),
+                rate: after_cess,
+                drag: core.cess_and_other_drag,
+                description: "4% Health & Education Cess and surcharge".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 5,
+                key: "inflation".to_string(),
+                label: "CPI Inflation".to_string(),
+                rate: real,
+                drag: core.inflation_drag,
+                description: "Purchasing-power erosion from annual CPI inflation".to_string(),
+            },
+            DragWaterfallStageDto {
+                step: 6,
+                key: "real".to_string(),
+                label: "Real Post-Tax XIRR".to_string(),
+                rate: real,
+                drag: core.total_overall_drag,
+                description: "Net real purchasing-power return".to_string(),
+            },
+        ];
+
         Self {
             nominal_xirr: core.nominal_xirr,
+            post_tax_xirr: core.post_tax_xirr,
             debt_drag: core.debt_drag,
             equity_drag: core.equity_drag,
             cess_and_other_drag: core.cess_and_other_drag,
             inflation_drag: core.inflation_drag,
+            total_tax_drag: core.total_tax_drag,
+            total_overall_drag: core.total_overall_drag,
             real_post_tax_xirr: core.real_post_tax_xirr,
             benchmark_spread: core.benchmark_spread,
+            post_tax_value: Some(Decimal::ZERO),
+            purchasing_power_value: Some(Decimal::ZERO),
+            purchasing_power_loss: Some(Decimal::ZERO),
+            stages,
         }
     }
 }

@@ -30,6 +30,20 @@ pub struct HistoryPointDto {
     /// Net invested amount on `date`.
     #[ts(type = "number")]
     pub invested_amount: f64,
+    /// Unrealized gain (`value - invested_amount`) on `date`.
+    #[ts(type = "number")]
+    pub unrealized_gain: f64,
+    /// Percentage gain relative to `invested_amount`.
+    #[ts(type = "number")]
+    pub gain_percentage: f64,
+    /// Whether this checkpoint is a new all-time high.
+    pub is_ath: bool,
+    /// Running all-time high value up to `date`.
+    #[ts(type = "number")]
+    pub ath_value: f64,
+    /// Percentage drawdown from `ath_value`.
+    #[ts(type = "number")]
+    pub drawdown_percentage: f64,
 }
 
 /// A milestone peak (all-time high or maximum invested) with its true occurrence date.
@@ -124,6 +138,11 @@ pub(crate) async fn fetch_in_memory_history(
             date: dt,
             value: total_val,
             invested_amount: total_inv,
+            unrealized_gain: total_val - total_inv,
+            gain_percentage: Decimal::ZERO,
+            is_ath: false,
+            ath_value: Decimal::ZERO,
+            drawdown_percentage: Decimal::ZERO,
         });
     }
 
@@ -201,6 +220,11 @@ async fn fetch_reconciled_history_points(
                 date: today,
                 value: live.total_value,
                 invested_amount: live.total_invested,
+                unrealized_gain: live.total_value - live.total_invested,
+                gain_percentage: Decimal::ZERO,
+                is_ath: false,
+                ath_value: Decimal::ZERO,
+                drawdown_percentage: Decimal::ZERO,
             });
         }
     } else if let Some(last) = points.last_mut() {
@@ -212,6 +236,11 @@ async fn fetch_reconciled_history_points(
                 date: today,
                 value: live.total_value,
                 invested_amount: live.total_invested,
+                unrealized_gain: live.total_value - live.total_invested,
+                gain_percentage: Decimal::ZERO,
+                is_ath: false,
+                ath_value: Decimal::ZERO,
+                drawdown_percentage: Decimal::ZERO,
             });
         }
     }
@@ -229,12 +258,39 @@ pub async fn get_history(
     let p_uuids: Vec<Uuid> = portfolios.iter().map(|p| p.id).collect();
     let points = fetch_reconciled_history_points(&state, &p_uuids).await?;
 
+    let mut running_ath = 0.0_f64;
     let dtos = points
         .into_iter()
-        .map(|p| HistoryPointDto {
-            date: p.date,
-            value: p.value.to_f64().unwrap_or(0.0),
-            invested_amount: p.invested_amount.to_f64().unwrap_or(0.0),
+        .map(|p| {
+            let value = p.value.to_f64().unwrap_or(0.0);
+            let invested_amount = p.invested_amount.to_f64().unwrap_or(0.0);
+            let unrealized_gain = value - invested_amount;
+            let gain_percentage = if invested_amount > 0.0 {
+                (unrealized_gain / invested_amount) * 100.0
+            } else {
+                0.0
+            };
+            let is_ath = if value > running_ath {
+                running_ath = value;
+                true
+            } else {
+                false
+            };
+            let drawdown_percentage = if running_ath > 0.0 {
+                ((running_ath - value) / running_ath) * 100.0
+            } else {
+                0.0
+            };
+            HistoryPointDto {
+                date: p.date,
+                value,
+                invested_amount,
+                unrealized_gain,
+                gain_percentage,
+                is_ath,
+                ath_value: running_ath,
+                drawdown_percentage,
+            }
         })
         .collect();
 

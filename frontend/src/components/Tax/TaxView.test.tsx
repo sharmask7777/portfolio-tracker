@@ -1,7 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { TaxView, getDaysUntilFYEndIST, formatHarvestInstructions } from './TaxView';
+import { TaxView } from './TaxView';
+import { getDaysUntilFYEndIST, formatHarvestInstructions } from './tax-harvest-instructions';
 import type { HarvestTicketResponse } from '../../types/generated/HarvestTicketResponse';
 import type { UnrealizedSummaryDto } from '../../types/generated/UnrealizedSummaryDto';
+import type { ITRSummary } from '../../utils/itr-report-types';
 import { describe, it, expect, vi } from 'vitest';
 
 const dummyUnrealizedSummary: UnrealizedSummaryDto = {
@@ -524,6 +526,157 @@ describe('TaxView', () => {
 
       expect(screen.getByText(/statutory tax-free exemption runway remaining/i)).toBeInTheDocument();
       expect(screen.getByText(/ELSS 3-year lock-in/i)).toBeInTheDocument();
+    });
+  });
+
+  describe('Backend SSoT Tax Summary Integration', () => {
+    it('consumes backend sectionTotals, tableF, and realized fields directly without client-side tax recalculation', async () => {
+      const taxCalcMod = await import('../../utils/tax-calculations');
+      const itrGenMod = await import('../../utils/itr-report-generator');
+      const computeSpy = vi.spyOn(taxCalcMod, 'computeTaxBreakdowns');
+      const matrixSpy = vi.spyOn(itrGenMod, 'buildAdvanceTaxMatrix');
+
+      const backendSummary = {
+        realized: {
+          stcg: 10000,
+          ltcg: 200000,
+          slab: -5000,
+          total: 205000,
+          taxableSlab: 0,
+          sec112aExemption: 125000,
+          sec112aExemptionLimit: 125000,
+        },
+        sectionTotals: {
+          '112A (12.5%)': {
+            section: '112A (12.5%)',
+            grossConsideration: 500000,
+            costOfAcquisition: 300000,
+            deemedCostOfAcquisition: 300000,
+            transferExpenses: 0,
+            totalGain: 200000,
+            taxRate: 0.125,
+            taxBeforeCess: 9375,
+            cess: 375,
+            totalTax: 9750,
+          },
+          '111A (20%)': {
+            section: '111A (20%)',
+            grossConsideration: 110000,
+            costOfAcquisition: 100000,
+            deemedCostOfAcquisition: 100000,
+            transferExpenses: 0,
+            totalGain: 10000,
+            taxRate: 0.2,
+            taxBeforeCess: 2000,
+            cess: 80,
+            totalTax: 2080,
+          },
+          '50AA (Slab)': {
+            section: '50AA (Slab)',
+            grossConsideration: 95000,
+            costOfAcquisition: 100000,
+            deemedCostOfAcquisition: 100000,
+            transferExpenses: 0,
+            totalGain: -5000,
+            taxRate: 0.3,
+            taxBeforeCess: 0,
+            cess: 0,
+            totalTax: 0,
+          },
+        },
+        tableF: {
+          quarters: {
+            'Q1 (01/04 - 15/06)': { stcg15: 0, stcg20: 0, ltcg10: 0, ltcg12_5: 0, debtLtcg12_5: 0, debtLtcg20: 0, slab: 0, totalGain: 0, taxBeforeCess: 0, cess: 0, estimatedTax: 0 },
+            'Q2a (16/06 - 22/07)': { stcg15: 0, stcg20: 0, ltcg10: 0, ltcg12_5: 0, debtLtcg12_5: 0, debtLtcg20: 0, slab: 0, totalGain: 0, taxBeforeCess: 0, cess: 0, estimatedTax: 0 },
+            'Q2b (23/07 - 15/09)': { stcg15: 0, stcg20: 10000, ltcg10: 0, ltcg12_5: 200000, debtLtcg12_5: 0, debtLtcg20: 0, slab: 0, totalGain: 210000, taxBeforeCess: 11375, cess: 455, estimatedTax: 11830 },
+            'Q3 (16/09 - 15/12)': { stcg15: 0, stcg20: 0, ltcg10: 0, ltcg12_5: 0, debtLtcg12_5: 0, debtLtcg20: 0, slab: 0, totalGain: 0, taxBeforeCess: 0, cess: 0, estimatedTax: 0 },
+            'Q4 (16/12 - 15/03)': { stcg15: 0, stcg20: 0, ltcg10: 0, ltcg12_5: 0, debtLtcg12_5: 0, debtLtcg20: 0, slab: 0, totalGain: 0, taxBeforeCess: 0, cess: 0, estimatedTax: 0 },
+            'Q5 (16/03 - 31/03)': { stcg15: 0, stcg20: 0, ltcg10: 0, ltcg12_5: 0, debtLtcg12_5: 0, debtLtcg20: 0, slab: 0, totalGain: 0, taxBeforeCess: 0, cess: 0, estimatedTax: 0 },
+          },
+          quarterTotals: {
+            'Q1 (01/04 - 15/06)': 0,
+            'Q2a (16/06 - 22/07)': 0,
+            'Q2b (23/07 - 15/09)': 11830,
+            'Q3 (16/09 - 15/12)': 0,
+            'Q4 (16/12 - 15/03)': 0,
+            'Q5 (16/03 - 31/03)': 0,
+          },
+        },
+        details: [],
+      };
+
+      const onFYChange = vi.fn();
+      render(
+        <TaxView
+          summary={backendSummary}
+          harvesting={null}
+          selectedFY="2024-25"
+          onFYChange={onFYChange}
+        />
+      );
+
+      expect(computeSpy).not.toHaveBeenCalled();
+      expect(matrixSpy).not.toHaveBeenCalled();
+      expect(screen.getByText(/Used: ₹1,25,000/)).toBeInTheDocument();
+      expect(screen.getByText(/Limit: ₹1,25,000/)).toBeInTheDocument();
+      expect(screen.getByText(/Total Tax Payable: ₹11,830/)).toBeInTheDocument();
+
+      const fySelect = screen.getByRole('combobox');
+      fireEvent.change(fySelect, { target: { value: '2025-26' } });
+      expect(onFYChange).toHaveBeenCalledWith('2025-26');
+
+      computeSpy.mockRestore();
+      matrixSpy.mockRestore();
+    });
+
+    it('renders due dates, cumulative payable, combined 15/09 note, and handles "FY 2024-25" & "All" without NaN', () => {
+      const { rerender } = render(
+        <TaxView summary={mockSummary} harvesting={null} selectedFY="FY 2024-25" />
+      );
+
+      expect(screen.getByText(/Total Gross Advance Tax \(Pre-Exemption\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Cumulative Payable/i)).toBeInTheDocument();
+      expect(screen.getByText(/Combined 15\/09 total/i)).toBeInTheDocument();
+      expect(screen.getByText('15/06/2024')).toBeInTheDocument();
+      expect(screen.getAllByText('15/09/2024').length).toBe(2);
+      expect(screen.getByText('15/12/2024')).toBeInTheDocument();
+      expect(screen.getByText('15/03/2025')).toBeInTheDocument();
+      expect(screen.getByText('31/03/2025')).toBeInTheDocument();
+      expect(screen.queryByText(/FY FY/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+
+      rerender(<TaxView summary={mockSummary} harvesting={null} selectedFY="All" />);
+      expect(screen.getByText('15/06')).toBeInTheDocument();
+      expect(screen.getAllByText('15/09').length).toBe(2);
+      expect(screen.getByText(/Total \(All FYs\)/i)).toBeInTheDocument();
+      expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    });
+
+    it('renders non-finite values safely as em-dash without NaN in TaxView', () => {
+      const nanSummary = {
+        ...mockSummary,
+        tableF: {
+          quarters: {
+            'Q1 (01/04 - 15/06)': {
+              stcg15: Number.NaN,
+              stcg20: 0,
+              ltcg10: 0,
+              ltcg12_5: 0,
+              debtLtcg12_5: 0,
+              debtLtcg20: 0,
+              slab: 0,
+              totalGain: Number.NaN,
+              taxBeforeCess: 0,
+              cess: 0,
+              estimatedTax: Number.NaN,
+            },
+          },
+          quarterTotals: {},
+        },
+      } as unknown as ITRSummary;
+
+      render(<TaxView summary={nanSummary} harvesting={null} selectedFY="2024-25" />);
+      expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
     });
   });
 });

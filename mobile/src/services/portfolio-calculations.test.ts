@@ -62,7 +62,7 @@ describe('portfolio-calculations', () => {
       expect(holding).not.toBeNull();
       expect(holding?.day_change).toBe(0);
       expect(holding?.day_change_pct).toBe(0);
-      expect(holding?.xirr).toBe(0);
+      expect(holding?.xirr).toBeNull();
       expect(holding?.absolute_return).toBe(0);
       expect(holding?.asset_category).toBe('DEBT');
     });
@@ -208,7 +208,7 @@ describe('portfolio-calculations', () => {
       expect(names).not.toContain('Gold/Others');
 
       const eq = allocation.find((a) => a.name === 'Equity');
-      expect(eq?.color).toBe('#38bdf8');
+      expect(eq?.color).toBe('#3b82f6');
 
       const arb = allocation.find((a) => a.name === 'Arbitrage');
       expect(arb?.color).toBe('#ec4899');

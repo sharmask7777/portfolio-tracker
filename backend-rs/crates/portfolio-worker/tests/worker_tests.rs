@@ -1528,3 +1528,111 @@ fn test_validate_file_path_rejects_etc_uploads_traversal() {
         "Expected ValidationError for /etc/uploads/passwd, got {err:?}"
     );
 }
+
+#[tokio::test]
+async fn test_cas_upload_idempotent_across_folio_format_perturbations() {
+    let db = InMemoryDatabase::new();
+    let user = db.create_user("idempotency_test@example.com", "pwd");
+
+    // Upload 1: CAMS format with '/ 0' check digit and spaces
+    let cas_json_1 = serde_json::json!({
+        "investor_info": { "name": "Aarav Sharma", "pan": "ALPAC1001A" },
+        "folios": [{
+            "folio": "577329058171 / 0",
+            "amc": "UTI Mutual Fund",
+            "pan": "ALPAC1001A",
+            "schemes": [{
+                "scheme": "UTI Nifty 50 Index Fund Direct Growth",
+                "isin": "INF789FB1X41",
+                "transactions": [
+                    { "date": "2024-01-15", "type": "PURCHASE", "amount": 10000.0, "units": 100.0, "nav": 100.0, "balance": 100.0 }
+                ]
+            }]
+        }]
+    });
+
+    let mut temp_file_1 = NamedTempFile::new().expect("create temp file");
+    temp_file_1
+        .write_all(cas_json_1.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path_1 = temp_file_1.path().to_path_buf();
+
+    let job_id_1 = Uuid::new_v4();
+    db.create_upload_job(job_id_1, user.id, &temp_path_1.to_string_lossy());
+    let job_data_1 =
+        ProcessPdfUploadJobData::new(user.id, temp_path_1.to_string_lossy().to_string(), job_id_1);
+
+    let res1 = process_pdf_job_with_pool(&job_data_1, &db, None).await;
+    assert!(res1.is_ok(), "First upload must succeed");
+
+    let profile = db
+        .find_profile_by_pan(user.id, "ALPAC1001A")
+        .expect("profile exists");
+    let portfolio = db
+        .find_portfolio_by_profile(user.id, profile.id)
+        .expect("portfolio exists");
+    let folios_1 = db.list_folios_by_portfolio(portfolio.id);
+    assert_eq!(
+        folios_1.len(),
+        1,
+        "Exactly 1 folio must exist after upload 1"
+    );
+
+    // Upload 2: Same fund, but folio format is KFintech/MFCentral style ("577329058171" without / 0)
+    // with 1 incremental SIP transaction
+    let cas_json_2 = serde_json::json!({
+        "investor_info": { "name": "Aarav Sharma", "pan": "ALPAC1001A" },
+        "folios": [{
+            "folio": "577329058171",
+            "amc": "UTI Mutual Fund",
+            "pan": "ALPAC1001A",
+            "schemes": [{
+                "scheme": "UTI Nifty 50 Index Fund Direct Growth",
+                "isin": "INF789FB1X41",
+                "transactions": [
+                    { "date": "2024-01-15", "type": "PURCHASE", "amount": 10000.0, "units": 100.0, "nav": 100.0, "balance": 100.0 },
+                    { "date": "2024-02-15", "type": "PURCHASE_SIP", "amount": 5000.0, "units": 50.0, "nav": 100.0, "balance": 150.0 }
+                ]
+            }]
+        }]
+    });
+
+    let mut temp_file_2 = NamedTempFile::new().expect("create temp file");
+    temp_file_2
+        .write_all(cas_json_2.to_string().as_bytes())
+        .expect("write test cas json");
+    let temp_path_2 = temp_file_2.path().to_path_buf();
+
+    let job_id_2 = Uuid::new_v4();
+    db.create_upload_job(job_id_2, user.id, &temp_path_2.to_string_lossy());
+    let job_data_2 =
+        ProcessPdfUploadJobData::new(user.id, temp_path_2.to_string_lossy().to_string(), job_id_2);
+
+    let res2 = process_pdf_job_with_pool(&job_data_2, &db, None).await;
+    assert!(res2.is_ok(), "Second upload must succeed");
+
+    let folios_2 = db.list_folios_by_portfolio(portfolio.id);
+    assert_eq!(
+        folios_2.len(),
+        1,
+        "Exactly 1 folio must exist after re-upload - NO duplicate folio must be created"
+    );
+
+    let txs = db.list_by_folio(folios_2[0].id).await.unwrap();
+    assert_eq!(
+        txs.len(),
+        2,
+        "Total transactions must be 2 (original purchase + new SIP), no duplicates"
+    );
+
+    let core_txs: Vec<_> = txs
+        .iter()
+        .map(|t| t.to_core_transaction().unwrap())
+        .collect();
+    let units = portfolio_core::holdings::get_latest_units(&core_txs);
+    assert_eq!(
+        units.to_decimal(),
+        dec("150.0"),
+        "Total active units must equal 150.0 after incremental upload"
+    );
+}

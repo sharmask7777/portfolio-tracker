@@ -11,8 +11,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Target, Plus } from 'lucide-react-native';
+import { usePortfolioScope } from '@portfolio/core-view';
 import {
   getStoredGoals,
+  syncGoalsForScope,
   addGoal,
   updateGoal,
   deleteGoal,
@@ -21,7 +23,13 @@ import {
   type FinancialGoal,
   type CreateGoalInput,
   type GoalProgressMetrics,
+  type SmartInsight,
 } from '../../src/services/goals-service';
+import {
+  fetchInsightsForScope,
+  getCachedInsightsForScope,
+} from '../../src/services/insights-generator';
+import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
 import {
   getEnrichedHoldings,
   type EnrichedHolding,
@@ -33,114 +41,25 @@ import {
 } from '../../src/components/Insights';
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#09090b',
-  },
-  content: {
-    padding: 20,
-    paddingTop: 56,
-  },
-  header: {
-    marginBottom: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  category: {
-    fontSize: 12,
-    color: '#a1a1aa',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#f4f4f5',
-  },
-  addBtn: {
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  addBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  summaryCard: {
-    backgroundColor: '#18181b',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#27272a',
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  summaryLabel: {
-    fontSize: 11,
-    color: '#a1a1aa',
-    textTransform: 'uppercase',
-    fontWeight: '600',
-  },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#f4f4f5',
-  },
-  summaryStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#27272a',
-  },
-  statItem: {
-    alignItems: 'flex-start',
-  },
-  statLabel: {
-    fontSize: 10,
-    color: '#71717a',
-  },
-  statValue: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#3b82f6',
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#f4f4f5',
-    marginBottom: 12,
-  },
-  emptyState: {
-    padding: 24,
-    alignItems: 'center',
-    backgroundColor: '#18181b',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    marginBottom: 20,
-  },
-  emptyText: {
-    color: '#a1a1aa',
-    fontSize: 13,
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: '#09090b' },
+  content: { padding: 20, paddingTop: 56 },
+  header: { marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  category: { fontSize: 12, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontSize: 26, fontWeight: '800', color: '#f4f4f5' },
+  addBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  addBtnText: { fontSize: 12, fontWeight: '600', color: '#ffffff' },
+  summaryCard: { backgroundColor: '#18181b', borderRadius: 14, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#27272a' },
+  summaryHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  summaryLabel: { fontSize: 11, color: '#a1a1aa', textTransform: 'uppercase', fontWeight: '600' },
+  summaryValue: { fontSize: 20, fontWeight: '800', color: '#f4f4f5' },
+  summaryStats: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#27272a' },
+  statItem: { alignItems: 'flex-start' },
+  statLabel: { fontSize: 10, color: '#71717a' },
+  statValue: { fontSize: 13, fontWeight: '700', color: '#3b82f6' },
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#f4f4f5', marginBottom: 12 },
+  emptyState: { padding: 24, alignItems: 'center', backgroundColor: '#18181b', borderRadius: 12, borderWidth: 1, borderColor: '#27272a', marginBottom: 20 },
+  emptyText: { color: '#a1a1aa', fontSize: 13, textAlign: 'center' },
 });
 
 function formatIndianCompact(val: number): string {
@@ -149,29 +68,39 @@ function formatIndianCompact(val: number): string {
   return `₹${Math.round(val).toLocaleString('en-IN')}`;
 }
 
-function useInsightsData() {
+function useInsightsData(scopeId: string) {
   const [goals, setGoals] = useState<FinancialGoal[]>([]);
+  const [serverInsights, setServerInsights] = useState<SmartInsight[] | null>(null);
   const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [storedGoals, enrichedHoldings] = await Promise.all([
-        getStoredGoals(),
+      const [storedGoals, cachedInsights, enrichedHoldings] = await Promise.all([
+        getStoredGoals(scopeId),
+        getCachedInsightsForScope(scopeId),
         getEnrichedHoldings(),
       ]);
       setGoals(storedGoals);
+      if (cachedInsights) setServerInsights(cachedInsights);
       setHoldings(enrichedHoldings);
+
+      const [syncedGoals, syncedInsights] = await Promise.all([
+        syncGoalsForScope(scopeId),
+        fetchInsightsForScope(scopeId),
+      ]);
+      setGoals(syncedGoals);
+      if (syncedInsights) setServerInsights(syncedInsights);
     } catch {
       // Graceful fallback on loading error
     }
-  }, []);
+  }, [scopeId]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
-  return { goals, holdings, refreshing, setRefreshing, loadData };
+  return { goals, serverInsights, holdings, refreshing, setRefreshing, loadData };
 }
 
 interface SummaryViewProps {
@@ -269,7 +198,9 @@ function GoalsSection({ items, onEdit, onDelete }: GoalsSectionProps) {
  * @returns React Native tab screen
  */
 export default function InsightsScreen(): React.ReactElement {
-  const { goals, holdings, refreshing, setRefreshing, loadData } = useInsightsData();
+  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+  const scopeId = scopeState.activeProfileId ?? 'consolidated';
+  const { goals, serverInsights, holdings, refreshing, setRefreshing, loadData } = useInsightsData(scopeId);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingGoal, setEditingGoal] = useState<FinancialGoal | null>(null);
 
@@ -283,16 +214,16 @@ export default function InsightsScreen(): React.ReactElement {
   const netWorth = holdings.reduce((sum, h) => sum + h.current_value, 0);
   const goalsWithMetrics = goals.map((g) => ({
     goal: g,
-    metrics: calculateGoalProgress(g, holdings, netWorth),
+    metrics: g.serverMetrics ?? calculateGoalProgress(g, holdings, netWorth),
   }));
 
   const totalTarget = goals.reduce((sum, g) => sum + g.targetAmount, 0);
   const totalAccumulated = goalsWithMetrics.reduce((sum, item) => sum + item.metrics.currentValue, 0);
-  const insights = generateSmartInsights(holdings, goals, netWorth);
+  const insights = serverInsights ?? generateSmartInsights(holdings, goals, netWorth);
 
   const handleSave = async (input: CreateGoalInput, editId?: string) => {
-    if (editId) await updateGoal(editId, input);
-    else await addGoal(input);
+    if (editId) await updateGoal(editId, input, scopeId);
+    else await addGoal(input, scopeId);
     await loadData();
   };
 
@@ -307,7 +238,7 @@ export default function InsightsScreen(): React.ReactElement {
       <SummaryView totalTarget={totalTarget} totalAccumulated={totalAccumulated} activeCount={goals.length} />
       <Text style={styles.sectionTitle}>Smart Portfolio Insights</Text>
       <SmartInsightsList insights={insights} />
-      <GoalsSection items={goalsWithMetrics} onEdit={(g) => { setEditingGoal(g); setModalVisible(true); }} onDelete={async (id) => { await deleteGoal(id); await loadData(); }} />
+      <GoalsSection items={goalsWithMetrics} onEdit={(g) => { setEditingGoal(g); setModalVisible(true); }} onDelete={async (id) => { await deleteGoal(id, scopeId); await loadData(); }} />
       <AddGoalModal visible={modalVisible} onClose={() => setModalVisible(false)} onSave={handleSave} initialGoal={editingGoal} />
     </ScrollView>
   );

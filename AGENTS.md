@@ -17,7 +17,8 @@
 - **Dead-Code & Dependency Auditing**: `knip` runs via `knip --production` during builds. Zero unused files, exports, or dependencies permitted. Code-generated Rust bindings (`src/types/generated/**`) are explicitly preserved.
 - **Static Privacy & Anti-PII Guardrail**: `scripts/check-privacy-and-pii.py` scans all tracked repository files before commit/push, statically barring real-world PAN patterns, non-synthetic identifiers, or CAS PDF/JSON files.
 - **Rust ArchUnit Boundary Oracle**: `backend-rs/crates/portfolio-core/tests/architecture_invariants_test.rs` programmatically asserts Zero-I/O compliance (no networking, async runtime, database, or cache dependencies) and `#![forbid(unsafe_code)]` in domain roots.
-- **Build Verification Gate**: `pnpm --filter frontend build` (`pnpm build:verify && vite build`) and `pnpm --filter frontend build:verify` (`pnpm lint && pnpm typecheck && pnpm knip`) must pass cleanly with zero type errors, zero lint warnings, and zero dead code.
+- **View Layer Boundary & Zero Business Logic Static Guardrail**: `scripts/check-view-layer-boundaries.py` statically enforces that Web (`frontend/src/components/**/*.{ts,tsx}`) and Mobile (`mobile/src/components/**/*.{ts,tsx}`, `mobile/app/**/*.{ts,tsx}`) act strictly as zero-logic paint/rendering layers. Statically bars statutory tax multiplication (`* 0.125`, `* 0.20`, `* 0.04`, `* 0.15`, `* 0.30`), Fisher deflator compounding (`Math.pow(1 + ...)`), tax netting subtraction (`totalValue - estimatedTax`), drag subtractions (`xirr - postTaxXirr`), direct database imports (`db/`, `expo-sqlite`), and calculation engine imports (`tax-calculations`, `itr-report-generator`).
+- **Build Verification Gate**: `pnpm --filter frontend build` (`pnpm build:verify && vite build`) and `pnpm --filter frontend build:verify` (`pnpm check:view-boundaries && pnpm lint && pnpm typecheck && pnpm knip`) must pass cleanly with zero type errors, zero lint warnings, and zero dead code.
 
 ### 3. ITR Report Invariant Gate
 - All changes to ITR or capital gains tax reporting must pass `verify_itr_invariants` (enforced in both backend domain engine and frontend validation).
@@ -25,6 +26,7 @@
 
 ### 4. Mandatory Hermetic Verification Sequence
 Before committing or creating a PR, you MUST run and pass the full hermetic verification sequence (or run `(cd backend-rs && ./scripts/verify.sh)` for backend stages):
+0. `python3 scripts/check-privacy-and-pii.py && python3 scripts/check-view-layer-boundaries.py --self-test && python3 scripts/check-view-layer-boundaries.py`
 1. `(cd backend-rs && cargo fmt --check)`
 2. `(cd backend-rs && cargo check --workspace --all-targets)`
 3. `(cd backend-rs && cargo clippy --workspace --all-targets -- -D warnings)`
@@ -35,7 +37,7 @@ Before committing or creating a PR, you MUST run and pass the full hermetic veri
 8. `(cd backend-rs && cargo run --package portfolio-parity)`
 9. `pnpm --filter frontend build && pnpm --filter frontend test:unit`
 10. `pnpm --filter mobile build:verify && pnpm --filter mobile test:e2e`
-11. `pnpm test:coverage` (Blocking coverage gates: Backend $\ge$ 80% line coverage via `cargo llvm-cov`; Frontend: Lines $\ge$ 88%, Statements $\ge$ 86%, Funcs $\ge$ 85%, Branches $\ge$ 65% via `vitest`; Mobile: Lines $\ge$ 85%, Statements $\ge$ 85%, Funcs $\ge$ 80%, Branches $\ge$ 70% via `vitest`)
+11. `pnpm test:coverage` (Blocking coverage gates: Backend `portfolio-core` $\ge$ 93% & workspace $\ge$ 78% line coverage via `cargo llvm-cov`; Frontend: Lines $\ge$ 89%, Statements $\ge$ 87%, Funcs $\ge$ 86%, Branches $\ge$ 72% via `vitest`; Mobile: Lines $\ge$ 89%, Statements $\ge$ 87%, Funcs $\ge$ 86%, Branches $\ge$ 75% via `vitest`; Incremental Diff Coverage $\ge$ 85% via `scripts/check-diff-coverage.py`)
 
 ### 5. Mandatory Tax Specialist Subagent (`tax-statutory-auditor`)
 - For any changes affecting tax calculation logic, statutory rates, exemptions, Schedule CG ITR reports, or files under `backend-rs/crates/portfolio-core/src/tax/`, agents MUST consult or invoke the specialized `tax-statutory-auditor` subagent role.
@@ -88,6 +90,16 @@ Comprehensive documentation of all backend and frontend test suites, financial i
 - **Self-Documenting Names**: All function names, method names, variables, and type names must be clear, descriptive, and self-documenting. Cryptic abbreviations or ambiguous single-letter variables that obscure financial, mathematical, or domain meaning must be avoided or refactored.
 - **Comprehensive Rust Docs (`///`) & TypeScript JSDoc (`/** */`)**: All structs, enums, traits, methods, and functions across the codebase must have helpful doc comments explaining their purpose, arguments, invariants, and return values to provide instant context for human reviewers.
 - **Explanatory Comments on Complex Logic**: Any non-trivial, domain-dense, or mathematically complex logic (such as FIFO lot allocation, Section 55(2)(ac) grandfathering adjustments, Section 112A/111A/50AA tax computations, XIRR root-finding fallbacks, portfolio look-through normalization, and SQL CTE batch queries) MUST include clear explanatory comments detailing the statutory intent, mathematical formulation, or algorithm rationale.
+
+### 11. Mandatory Agent-Driven UAT Suite Before Non-Trivial Pull Requests
+- Before opening or merging any non-trivial Pull Request, architectural refactor, tax calculation modification, or cross-platform enhancement, agents MUST execute and pass the productized User Acceptance Testing suite via:
+  `pnpm run test:uat` (or `bash scripts/run-uat-suite.sh`).
+- **UAT Suite Scope:**
+  1. **Preflight Guardrail**: Anti-PII synthetic data enforcement (`scripts/check-privacy-and-pii.py`) and View Layer Zero-Business-Logic static boundary scan (`scripts/check-view-layer-boundaries.py`).
+  2. **Web UAT Suite**: Automated Playwright acceptance verification (`frontend/tests/uat/comprehensive-uat.spec.ts`) covering login, portfolio summary, display-ready Reality Check drag stages (gross nominal, Sec 50AA debt drag, Sec 112A equity drag, cess overhead, CPI inflation drag, and real purchasing XIRR), advance tax Table F matrix, Section 112A ₹1.25L harvesting, sell simulation, and family scope switching.
+  3. **Mobile UAT Suite**: Cross-platform simulated acceptance testing across both Android and iOS platform journeys (`mobile/src/e2e/uat-comprehensive.test.tsx`), verifying biometric unlock, zero-balance same-day transaction resilience, offline SQLite persistence, outbox upload queuing, and look-through analytics.
+  4. **Backend Invariant Differential Parity**: 100% numerical parity verification across all 10 synthetic test scenarios (`portfolio-parity`).
+- All non-trivial PR descriptions must include evidence of this UAT suite passing.
 
 ## Mandatory Testing Requirement
 

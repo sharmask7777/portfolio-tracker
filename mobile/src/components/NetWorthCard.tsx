@@ -27,6 +27,18 @@ export interface NetWorthCardProps {
   overallXirr?: number | undefined;
   /** Optional callback invoked when performance mode toggle is switched */
   onTogglePerformanceMode?: ((mode: PerformanceMode) => void) | undefined;
+  /** Whether Reality Check mode is active */
+  realityCheckMode?: boolean | undefined;
+  /** Backend-computed Net Realizable Wealth (post-tax & exit load) */
+  netRealizableValue?: number | undefined;
+  /** Backend-computed estimated unrealized tax */
+  estimatedTax?: number | undefined;
+  /** Backend-computed Real Post-Tax XIRR (decimal) */
+  realPostTaxXirr?: number | null | undefined;
+  /** Backend-computed post-tax total value in INR */
+  postTaxTotalValue?: number | undefined;
+  /** Backend-computed post-tax XIRR (decimal) */
+  postTaxXirr?: number | null | undefined;
 }
 
 const styles = StyleSheet.create({
@@ -57,6 +69,12 @@ const styles = StyleSheet.create({
     color: '#f4f4f5',
     marginBottom: 16,
   },
+  subValueRow: {
+    fontSize: 12,
+    color: '#a1a1aa',
+    marginTop: -10,
+    marginBottom: 14,
+  },
   metricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -76,6 +94,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#e4e4e7',
+  },
+  subMetricLabel: {
+    fontSize: 11,
+    color: '#a1a1aa',
+    marginTop: 3,
   },
   positive: {
     color: '#22c55e',
@@ -107,36 +130,85 @@ function resolveReturnLabel(
   return 'Total Gain (ABS)';
 }
 
+function resolveDisplayedNetWorth(
+  realityCheckMode: boolean | undefined,
+  totalCurrentValue: number,
+  netRealizableValue: number | undefined,
+): { title: string; value: number } {
+  if (realityCheckMode) {
+    return {
+      title: 'Net Realizable Wealth',
+      value: netRealizableValue ?? totalCurrentValue,
+    };
+  }
+  return { title: 'Total Net Worth', value: totalCurrentValue };
+}
+
+function resolveDisplayedReturn(props: NetWorthCardProps): { label: string; formatted: string } {
+  if (props.realityCheckMode && props.realPostTaxXirr !== undefined && props.realPostTaxXirr !== null) {
+    return {
+      label: 'Real Post-Tax XIRR',
+      formatted: `${formatPct(props.realPostTaxXirr * 100)}`,
+    };
+  }
+  const returnPct = resolveReturnPct(props.performanceMode, props.overallXirr, props.unrealizedGainPct);
+  const label = resolveReturnLabel(props.performanceMode, props.overallXirr);
+  return { label, formatted: `${formatInr(props.unrealizedGain)} (${formatPct(returnPct)})` };
+}
+
+function renderSubValueRow(props: NetWorthCardProps): React.ReactElement | null {
+  if (props.realityCheckMode && props.estimatedTax !== undefined) {
+    return (
+      <Text style={styles.subValueRow}>
+        Gross: {formatInr(props.totalCurrentValue)} · Est. Tax: -{formatInr(props.estimatedTax)}
+      </Text>
+    );
+  }
+  if (!props.realityCheckMode && typeof props.postTaxTotalValue === 'number') {
+    return (
+      <Text style={styles.subValueRow}>
+        After-Tax: {formatInr(props.postTaxTotalValue)}
+      </Text>
+    );
+  }
+  return null;
+}
+
+function renderPostTaxXirr(props: NetWorthCardProps): React.ReactElement | null {
+  if (props.realityCheckMode || typeof props.postTaxXirr !== 'number' || Number.isNaN(props.postTaxXirr)) {
+    return null;
+  }
+  return (
+    <Text style={styles.subMetricLabel}>
+      After-Tax XIRR: {formatPct(props.postTaxXirr * 100)}
+    </Text>
+  );
+}
+
 /**
  * Overview card showing total portfolio net worth, invested principal, and unrealized returns.
  *
  * @param props - Component properties {@link NetWorthCardProps}
  * @returns React Native element
  */
-export function NetWorthCard({
-  totalCurrentValue,
-  totalInvestedCost,
-  unrealizedGain,
-  unrealizedGainPct,
-  performanceMode,
-  overallXirr,
-  onTogglePerformanceMode,
-}: NetWorthCardProps): React.ReactElement {
-  const isGainPositive = unrealizedGain >= 0;
-  const gainStyle = isGainPositive ? styles.positive : styles.negative;
-  const returnPct = resolveReturnPct(performanceMode, overallXirr, unrealizedGainPct);
-  const returnLabel = resolveReturnLabel(performanceMode, overallXirr);
-  const gainFormatted = `${formatInr(unrealizedGain)} (${formatPct(returnPct)})`;
+export function NetWorthCard(props: NetWorthCardProps): React.ReactElement {
+  const { totalCurrentValue, totalInvestedCost, unrealizedGain, performanceMode, onTogglePerformanceMode } = props;
+  const gainStyle = unrealizedGain >= 0 ? styles.positive : styles.negative;
+  const { title, value } = resolveDisplayedNetWorth(props.realityCheckMode, totalCurrentValue, props.netRealizableValue);
+  const { label: returnLabel, formatted: gainFormatted } = resolveDisplayedReturn(props);
 
   return (
     <View style={styles.card} testID="net-worth-card">
       <View style={styles.headerRow}>
-        <Text style={styles.label}>Total Net Worth</Text>
+        <Text style={styles.label}>{title}</Text>
         {performanceMode && onTogglePerformanceMode ? (
           <PerformanceModeToggle mode={performanceMode} onToggle={onTogglePerformanceMode} />
         ) : null}
       </View>
-      <Text style={styles.value}>{formatInr(totalCurrentValue)}</Text>
+      <View>
+        <Text style={styles.value}>{formatInr(value)}</Text>
+        {renderSubValueRow(props)}
+      </View>
 
       <View style={styles.metricsRow}>
         <View style={styles.metricBlock}>
@@ -147,6 +219,7 @@ export function NetWorthCard({
         <View style={styles.metricBlock}>
           <Text style={styles.metricLabel}>{returnLabel}</Text>
           <Text style={[styles.metricValue, gainStyle]}>{gainFormatted}</Text>
+          {renderPostTaxXirr(props)}
         </View>
       </View>
     </View>

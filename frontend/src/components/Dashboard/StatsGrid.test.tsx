@@ -24,8 +24,14 @@ describe('StatsGrid', () => {
       equityDrag: 0.035,
       cessAndOtherDrag: 0.005,
       inflationDrag: 0.063,
+      totalTaxDrag: 0.05,
+      totalOverallDrag: 0.118,
       realPostTaxXirr: 0.132,
       benchmarkSpread: 0.085,
+      postTaxValue: 140000,
+      purchasingPowerValue: 117546.7,
+      purchasingPowerLoss: 32453.3,
+      stages: [],
     },
     estimatedTax: 10000,
     dayChange: 1500,
@@ -113,6 +119,11 @@ describe('StatsGrid', () => {
 
     // Benchmark comparison spread
     expect(screen.getByText(/\+8.50%/)).toBeDefined();
+
+    // Real Post-Tax Purchasing Power (3Y Horizon) parity strip
+    expect(screen.getByText(/Real Post-Tax Purchasing Power \(3Y Horizon\)/i)).toBeDefined();
+    expect(screen.getByText(/₹1,17,547/)).toBeDefined();
+    expect(screen.getByText(/-₹32,453 Tax \+ CPI Drag/)).toBeDefined();
 
     // Action bridge button routes to tax view
     const harvestBtn = screen.getByText(/View Harvesting Ticket/);

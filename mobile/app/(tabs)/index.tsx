@@ -13,9 +13,13 @@ import {
   refreshPortfolio,
   summarizeHoldings,
   computeOverallPortfolioXirr,
+  getStoredDashboardBundle,
+  mergeServerMetricsIntoSummary,
   type DashboardSummary,
   type EnrichedHolding,
+  type StoredSummaryEnvelope,
 } from '../../src/services/portfolio-service';
+import type { HistoryPoint } from '../../src/types/generated';
 import { usePerformanceMode } from '../../src/services/settings-service';
 import {
   getStoredFamilyProfiles,
@@ -25,7 +29,6 @@ import {
   type FolioEntity,
 } from '../../src/services/family-service';
 import { getCachedPortfolioHistory } from '../../src/services/history-service';
-import type { HistoryPoint } from '../../src/types/generated';
 import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
 import { ScopeSelectorHeader } from '../../src/components/Navigation';
 import {
@@ -63,52 +66,68 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#09090b' },
 });
 
-function useDashboardData() {
+async function fetchDashboardSnapshot(historyId: string, scopeId: string) {
+  const [enriched, storedProfiles, storedFolios, cachedHistory, scopedBundle, baseBundle] =
+    await Promise.all([
+      getEnrichedHoldings(),
+      getStoredFamilyProfiles(),
+      getStoredFolios(),
+      getCachedPortfolioHistory(undefined, historyId),
+      getStoredDashboardBundle(undefined, scopeId),
+      getStoredDashboardBundle(undefined, 'consolidated'),
+    ]);
+  return { enriched, storedProfiles, storedFolios, cachedHistory, scopedBundle, baseBundle };
+}
+
+function useDashboardData(activeProfileId: string | null) {
   const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
   const [folios, setFolios] = useState<FolioEntity[]>([]);
   const [historyPoints, setHistoryPoints] = useState<HistoryPoint[]>([]);
+  const [serverBundle, setServerBundle] = useState<StoredSummaryEnvelope | null>(null);
+  const [consolidatedBundle, setConsolidatedBundle] = useState<StoredSummaryEnvelope | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [enriched, storedProfiles, storedFolios, cachedHistory] = await Promise.all([
-        getEnrichedHoldings(),
-        getStoredFamilyProfiles(),
-        getStoredFolios(),
-        getCachedPortfolioHistory(),
-      ]);
-      setHoldings(enriched);
-      setProfiles(storedProfiles);
-      setFolios(storedFolios);
-      setHistoryPoints(cachedHistory);
+      const data = await fetchDashboardSnapshot(activeProfileId ?? 'default', activeProfileId ?? 'consolidated');
+      setHoldings(data.enriched);
+      setProfiles(data.storedProfiles);
+      setFolios(data.storedFolios);
+      setHistoryPoints(data.cachedHistory);
+      setServerBundle(data.scopedBundle);
+      setConsolidatedBundle(data.baseBundle);
     } catch {
       // Fallback
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [activeProfileId]);
 
-  const handleRefresh = useCallback(async () => {
+  const handleRefresh = useCallback(async (assumptions?: RealityCheckAssumptions) => {
     setIsRefreshing(true);
     try {
-      await refreshPortfolio();
+      const opts = {
+        ...(assumptions ? { cpi: assumptions.inflationRate, taxBracket: assumptions.taxRate } : {}),
+        ...(activeProfileId ? { profileId: activeProfileId } : {}),
+      };
+      await refreshPortfolio(undefined, opts);
       await loadData();
     } catch {
       // Fallback
     } finally {
       setIsRefreshing(false);
     }
-  }, [loadData]);
+  }, [activeProfileId, loadData]);
 
   useEffect(() => {
     void loadData();
-    void refreshPortfolio().then(() => {
-      void loadData();
-    });
-  }, [loadData]);
-  return { holdings, profiles, folios, historyPoints, isLoading, isRefreshing, handleRefresh };
+    const opts = activeProfileId ? { profileId: activeProfileId } : undefined;
+    void refreshPortfolio(undefined, opts).then(() => void loadData());
+  }, [activeProfileId, loadData]);
+
+  return { holdings, profiles, folios, historyPoints, serverBundle, consolidatedBundle, isLoading, isRefreshing, handleRefresh };
 }
 
 const defaultSummary: DashboardSummary = {
@@ -147,7 +166,7 @@ interface RealityCheckSectionProps {
 
 function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElement {
   const { realityCheckMode, setRealityCheckMode, assumptions, setAssumptions, isAssumptionsOpen, setIsAssumptionsOpen, data } = props;
-  const nominalReturnPct = data.totalInvestedCost > 0 ? (data.unrealizedGain / data.totalInvestedCost) : 0;
+  const nominalReturnPct = data.overallXirr ?? 0;
 
   return (
     <>
@@ -158,6 +177,7 @@ function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElemen
           nominalValue={data.totalCurrentValue}
           investedCost={data.totalInvestedCost}
           nominalReturnPct={nominalReturnPct}
+          drags={data.drags}
           assumptions={assumptions}
           onOpenAssumptions={() => setIsAssumptionsOpen(true)}
         />
@@ -198,6 +218,12 @@ function DashboardCards(props: DashboardCardsProps): React.ReactElement {
         performanceMode={performanceMode}
         overallXirr={data.overallXirr}
         onTogglePerformanceMode={onTogglePerformanceMode}
+        realityCheckMode={props.realityCheckMode}
+        netRealizableValue={data.netRealizableValue}
+        estimatedTax={data.estimatedTax}
+        realPostTaxXirr={data.realPostTaxXirr}
+        postTaxTotalValue={data.postTaxTotalValue}
+        postTaxXirr={data.postTaxXirr}
       />
       <DayReturnBanner dayGain={data.dayGain} dayGainPct={data.dayGainPct} isOfflineFallback={data.isOfflineFallback} />
       <HistoricalTrendChart
@@ -210,28 +236,38 @@ function DashboardCards(props: DashboardCardsProps): React.ReactElement {
   );
 }
 
-function useFilteredSummary(holdings: EnrichedHolding[], profiles: FamilyProfile[], folios: FolioEntity[]) {
-  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+interface FilteredSummaryInput {
+  activeProfileId: string | null;
+  holdings: EnrichedHolding[];
+  profiles: FamilyProfile[];
+  folios: FolioEntity[];
+  serverBundle: StoredSummaryEnvelope | null;
+}
+
+function useFilteredSummary({ activeProfileId, holdings, profiles, folios, serverBundle }: FilteredSummaryInput) {
   const activeProfile = useMemo(() => {
-    if (!scopeState.activeProfileId) return null;
-    return profiles.find((p) => p.id === scopeState.activeProfileId) ?? null;
-  }, [scopeState.activeProfileId, profiles]);
+    if (!activeProfileId) return null;
+    return profiles.find((p) => p.id === activeProfileId) ?? null;
+  }, [activeProfileId, profiles]);
 
   const filteredHoldings = useMemo(
     () => filterHoldingsForProfile(activeProfile, holdings, folios),
     [activeProfile, holdings, folios]
   );
 
-  const summary = useMemo(() => {
-    if (filteredHoldings.length === 0) return defaultSummary;
+  return useMemo<DashboardSummary>(() => {
+    if (filteredHoldings.length === 0 && !serverBundle?.metrics) return defaultSummary;
+    const base = filteredHoldings.length > 0 ? summarizeHoldings(filteredHoldings) : defaultSummary;
+    if (serverBundle?.metrics) {
+      return mergeServerMetricsIntoSummary(base, serverBundle.metrics, serverBundle.assetAllocation);
+    }
     return {
-      ...summarizeHoldings(filteredHoldings),
+      ...base,
       overallXirr: computeOverallPortfolioXirr(filteredHoldings),
+      drags: null,
       isOfflineFallback: false,
     };
-  }, [filteredHoldings]);
-
-  return { scopeState, summary };
+  }, [filteredHoldings, serverBundle]);
 }
 
 /**
@@ -242,46 +278,46 @@ function useFilteredSummary(holdings: EnrichedHolding[], profiles: FamilyProfile
  * @returns React Native dashboard tab element
  */
 export default function DashboardScreen(): React.ReactElement {
-  const { holdings, profiles, folios, historyPoints, isLoading, isRefreshing, handleRefresh } = useDashboardData();
-  const { scopeState, summary } = useFilteredSummary(holdings, profiles, folios);
+  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+  const dash = useDashboardData(scopeState.activeProfileId);
+  const summary = useFilteredSummary({
+    activeProfileId: scopeState.activeProfileId, holdings: dash.holdings,
+    profiles: dash.profiles, folios: dash.folios, serverBundle: dash.serverBundle,
+  });
   const [performanceMode, setPerformanceMode] = usePerformanceMode();
   const [realityCheckMode, setRealityCheckMode] = useState(false);
   const [assumptions, setAssumptions] = useState<RealityCheckAssumptions>(DEFAULT_ASSUMPTIONS);
   const [isAssumptionsOpen, setIsAssumptionsOpen] = useState(false);
+  const handleSaveAssumptions = useCallback((next: RealityCheckAssumptions) => {
+    setAssumptions(next);
+    void dash.handleRefresh(next);
+  }, [dash]);
 
-  if (isLoading && holdings.length === 0) {
+  if (dash.isLoading && dash.holdings.length === 0) {
     return (
       <View style={styles.center} testID="dashboard-loading">
         <ActivityIndicator size="large" color="#3b82f6" />
       </View>
     );
   }
-
   return (
     <View style={styles.container}>
       <ScopeSelectorHeader
-        scope={scopeState.scope}
-        profiles={profiles}
+        scope={scopeState.scope} profiles={dash.profiles}
+        panBreakdowns={dash.consolidatedBundle?.panBreakdowns}
         onSelectConsolidated={scopeState.setConsolidated}
-        onSelectMember={scopeState.setMemberScope}
-        totalFolios={folios.length}
+        onSelectMember={scopeState.setMemberScope} totalFolios={dash.folios.length}
       />
       <ScrollView
-        contentContainerStyle={styles.content}
-        testID="dashboard-scroll"
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor="#3b82f6" colors={['#3b82f6']} />}
+        contentContainerStyle={styles.content} testID="dashboard-scroll"
+        refreshControl={<RefreshControl refreshing={dash.isRefreshing} onRefresh={() => void dash.handleRefresh(assumptions)} tintColor="#3b82f6" colors={['#3b82f6']} />}
       >
         <DashboardCards
-          data={summary}
-          historyPoints={historyPoints}
-          realityCheckMode={realityCheckMode}
-          setRealityCheckMode={setRealityCheckMode}
-          assumptions={assumptions}
-          setAssumptions={setAssumptions}
-          isAssumptionsOpen={isAssumptionsOpen}
-          setIsAssumptionsOpen={setIsAssumptionsOpen}
-          performanceMode={performanceMode}
-          onTogglePerformanceMode={setPerformanceMode}
+          data={summary} historyPoints={dash.historyPoints}
+          realityCheckMode={realityCheckMode} setRealityCheckMode={setRealityCheckMode}
+          assumptions={assumptions} setAssumptions={handleSaveAssumptions}
+          isAssumptionsOpen={isAssumptionsOpen} setIsAssumptionsOpen={setIsAssumptionsOpen}
+          performanceMode={performanceMode} onTogglePerformanceMode={setPerformanceMode}
         />
       </ScrollView>
     </View>

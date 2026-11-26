@@ -11,10 +11,10 @@ import {
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import {
-  simulateSellRedemption,
   type SimulationLot,
   type SimulationSellResult,
 } from '../../services/tax-harvesting';
+import { simulateWithdrawal } from '../../services/tax-simulation-service';
 import { SimulationResultView } from './SimulationResultView';
 import { SimulationForm } from './SimulationForm';
 
@@ -78,6 +78,19 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 4,
   },
+  errorBanner: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    color: '#fca5a5',
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });
 
 function computeUnits(mode: 'units' | 'amount', val: string, price: number): number {
@@ -126,33 +139,42 @@ function useSellSimulation(props: SimulationModalProps) {
   const [mode, setMode] = useState<'units' | 'amount'>('units');
   const [inputVal, setInputVal] = useState(initialUnits ? initialUnits.toString() : '');
   const [result, setResult] = useState<SimulationSellResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setInputVal(initialUnits ? initialUnits.toString() : '');
     setMode('units');
     setResult(null);
+    setError(null);
   }, [props.visible, schemeName, folioId, initialUnits]);
 
   const unitsToSell = computeUnits(mode, inputVal, currentNav);
 
-  const handleSimulate = () => {
+  const handleSimulate = async () => {
     const activeLots = lots ?? [];
-    setResult(
-      simulateSellRedemption({
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await simulateWithdrawal({
         folioId,
         schemeName,
         isElss,
         assetClass,
         lots: activeLots,
         unitsToSell,
-        sellPrice: currentNav,
-        sellDate: new Date().toISOString().split('T')[0] ?? '2024-09-01',
+        currentNav,
         taxSlab,
-      })
-    );
+      });
+      setResult(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Simulation failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return { mode, setMode, inputVal, setInputVal, result, setResult, unitsToSell, handleSimulate };
+  return { mode, setMode, inputVal, setInputVal, result, setResult, error, setError, unitsToSell, handleSimulate, loading };
 }
 
 /**
@@ -162,7 +184,7 @@ function useSellSimulation(props: SimulationModalProps) {
  * @returns React Native modal
  */
 export function SimulationModal(props: SimulationModalProps): React.ReactElement {
-  const { mode, setMode, inputVal, setInputVal, result, setResult, unitsToSell, handleSimulate } =
+  const { mode, setMode, inputVal, setInputVal, result, setResult, error, setError, unitsToSell, handleSimulate, loading } =
     useSellSimulation(props);
 
   return (
@@ -174,6 +196,11 @@ export function SimulationModal(props: SimulationModalProps): React.ReactElement
         >
           <SimulationHeader schemeName={props.schemeName ?? 'Mutual Fund Scheme'} onClose={props.onClose} />
           <ScrollView>
+            {error ? (
+              <View style={styles.errorBanner} testID="simulation-error-banner">
+                <Text style={styles.errorBannerText}>{error}</Text>
+              </View>
+            ) : null}
             {!result ? (
               <SimulationForm
                 mode={mode}
@@ -183,9 +210,16 @@ export function SimulationModal(props: SimulationModalProps): React.ReactElement
                 unitsToSell={unitsToSell}
                 currentNav={props.currentNav ?? 100}
                 onSubmit={handleSimulate}
+                loading={loading}
               />
             ) : (
-              <SimulationResultView result={result} onReset={() => setResult(null)} />
+              <SimulationResultView
+                result={result}
+                onReset={() => {
+                  setResult(null);
+                  setError(null);
+                }}
+              />
             )}
           </ScrollView>
         </KeyboardAvoidingView>

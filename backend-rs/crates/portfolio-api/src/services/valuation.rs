@@ -44,6 +44,51 @@ pub struct HistoryPoint {
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
     pub invested_amount: Decimal,
+    /// Cumulative unrealized gain amount (value - invested_amount).
+    #[sqlx(default)]
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub unrealized_gain: Decimal,
+    /// Cumulative gain percentage ((unrealized_gain / invested_amount) * 100).
+    #[sqlx(default)]
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub gain_percentage: Decimal,
+    /// Whether this checkpoint is an all-time high valuation up to this date.
+    #[sqlx(default)]
+    pub is_ath: bool,
+    /// Rolling all-time high valuation up to this date.
+    #[sqlx(default)]
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub ath_value: Decimal,
+    /// Peak-to-trough drawdown percentage ((value - ath_value) / ath_value * 100).
+    #[sqlx(default)]
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
+    pub drawdown_percentage: Decimal,
+}
+
+impl HistoryPoint {
+    /// Creates a new historical checkpoint with initial calculated gain metrics.
+    pub fn new(date: NaiveDate, value: Decimal, invested_amount: Decimal) -> Self {
+        let unrealized_gain = (value - invested_amount).round_dp(2);
+        let gain_percentage = if invested_amount > Decimal::ZERO {
+            ((unrealized_gain / invested_amount) * Decimal::from(100)).round_dp(2)
+        } else {
+            Decimal::ZERO
+        };
+        Self {
+            date,
+            value,
+            invested_amount,
+            unrealized_gain,
+            gain_percentage,
+            is_ath: false,
+            ath_value: Decimal::ZERO,
+            drawdown_percentage: Decimal::ZERO,
+        }
+    }
 }
 
 /// Centralized valuation service for calculating mark-to-market portfolio totals.

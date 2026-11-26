@@ -3,11 +3,19 @@
  * @description Canonical asset classification, token normalization, and color palette definitions.
  */
 
-export type CanonicalAssetClass = 'Equity' | 'Debt' | 'Arbitrage' | 'Gold' | 'Cash' | 'Other';
+export type CanonicalAssetClass =
+  | 'Equity'
+  | 'Debt'
+  | 'Hybrid'
+  | 'Arbitrage'
+  | 'Gold'
+  | 'Cash'
+  | 'Other';
 
 export const ASSET_CLASSES: readonly CanonicalAssetClass[] = [
   'Equity',
   'Debt',
+  'Hybrid',
   'Arbitrage',
   'Gold',
   'Cash',
@@ -15,18 +23,40 @@ export const ASSET_CLASSES: readonly CanonicalAssetClass[] = [
 ] as const;
 
 export const ALLOCATION_COLORS: Readonly<Record<CanonicalAssetClass, string>> = {
-  Equity: '#38bdf8',
+  Equity: '#3b82f6',
   Debt: '#10b981',
+  Hybrid: '#8b5cf6',
   Arbitrage: '#ec4899',
   Gold: '#f59e0b',
   Cash: '#06b6d4',
   Other: '#71717a',
 };
 
-const DEBT_TOKENS = ['debt', 'bond', 'liquid', 'gilt', 'money market', 'overnight', 'treasury'] as const;
-const EQUITY_TOKENS = ['equity', 'stock', 'index', 'nifty', 'sensex', 'large', 'mid', 'small', 'flexi', 'multi'] as const;
 const GOLD_TOKENS = ['gold', 'sgb', 'sovereign', 'silver', 'commodity'] as const;
-const CASH_TOKENS = ['cash', 'bank'] as const;
+const CASH_TOKENS = ['cash', 'bank', 'overnight', 'liquid fund'] as const;
+const DEBT_TOKENS = ['debt', 'bond', 'liquid', 'gilt', 'money market', 'treasury'] as const;
+const HYBRID_TOKENS = [
+  'hybrid',
+  'balanced advantage',
+  'dynamic asset',
+  'multi asset',
+  'equity savings',
+] as const;
+const EQUITY_TOKENS = [
+  'equity',
+  'mutual_fund',
+  'stock',
+  'index',
+  'nifty',
+  'sensex',
+  'large',
+  'mid',
+  'small',
+  'flexi',
+  'multi',
+  'growth',
+  'fund',
+] as const;
 
 /**
  * Checks whether the combined string contains any of the specified search tokens.
@@ -50,8 +80,9 @@ export function hasToken(lowerText: string, tokens: readonly string[]): boolean 
  */
 export function matchCategory(category: string): CanonicalAssetClass | null {
   const upperCategory = category.trim().toUpperCase();
-  if (upperCategory === 'EQUITY') return 'Equity';
+  if (upperCategory === 'EQUITY' || upperCategory === 'MUTUAL_FUND') return 'Equity';
   if (upperCategory === 'DEBT') return 'Debt';
+  if (upperCategory === 'HYBRID') return 'Hybrid';
   if (upperCategory === 'ARBITRAGE') return 'Arbitrage';
   if (upperCategory === 'GOLD') return 'Gold';
   if (upperCategory === 'CASH') return 'Cash';
@@ -61,17 +92,19 @@ export function matchCategory(category: string): CanonicalAssetClass | null {
 
 /**
  * Fallback token-based classification matching against scheme name and asset class text.
+ * Follows backend-rs classification precedence: GOLD -> CASH -> ARBITRAGE -> DEBT -> HYBRID -> EQUITY.
  *
  * @param combinedText - Concatenated name and asset class text
  * @returns Matched CanonicalAssetClass defaulting to 'Other'
  */
 export function matchTokens(combinedText: string): CanonicalAssetClass {
   const lowerCombined = combinedText.toLowerCase();
-  if (lowerCombined.includes('arbitrage')) return 'Arbitrage';
-  if (hasToken(lowerCombined, EQUITY_TOKENS)) return 'Equity';
-  if (hasToken(lowerCombined, DEBT_TOKENS)) return 'Debt';
   if (hasToken(lowerCombined, GOLD_TOKENS)) return 'Gold';
   if (hasToken(lowerCombined, CASH_TOKENS)) return 'Cash';
+  if (lowerCombined.includes('arbitrage')) return 'Arbitrage';
+  if (hasToken(lowerCombined, DEBT_TOKENS)) return 'Debt';
+  if (hasToken(lowerCombined, HYBRID_TOKENS)) return 'Hybrid';
+  if (hasToken(lowerCombined, EQUITY_TOKENS)) return 'Equity';
   return 'Other';
 }
 

@@ -1,4 +1,13 @@
+import * as SecureStore from 'expo-secure-store';
+import { getStoredCredentials } from './auth-service';
 import type { EnrichedHolding } from './portfolio-service';
+
+export interface BackendInsightDto {
+  type: string;
+  severity: string;
+  message: string;
+  recommendation: string;
+}
 
 export type InsightType =
   | 'CONCENTRATION_RISK'
@@ -224,4 +233,91 @@ export function generateSmartInsights(
   }
 
   return activeInsights;
+}
+
+function getInsightsCacheKey(portfolioId: string): string {
+  return `PORTFOLIO_INSIGHTS_${portfolioId.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+}
+
+function mapInsightType(rawType: string): InsightType {
+  const upper = rawType.toUpperCase();
+  if (upper === 'CONCENTRATION' || upper === 'OVERLAP') return 'CONCENTRATION_RISK';
+  if (upper === 'ASSET_TILT') return 'ASSET_TILT';
+  if (upper === 'EMERGENCY_FUND') return 'EMERGENCY_FUND';
+  if (upper === 'TAX_HARVESTING') return 'TAX_HARVESTING';
+  if (upper === 'GOAL_BEHIND') return 'GOAL_BEHIND';
+  return 'PORTFOLIO_DIVERSIFICATION';
+}
+
+function mapInsightTitle(rawType: string): string {
+  const upper = rawType.toUpperCase();
+  if (upper === 'CONCENTRATION') return 'Sector Concentration Risk';
+  if (upper === 'OVERLAP') return 'Stock Overlap Risk';
+  if (upper === 'INFO') return 'Balanced Allocation';
+  return 'Portfolio Insight';
+}
+
+function mapInsightSeverity(raw: string): InsightSeverity {
+  const upper = raw.toUpperCase();
+  if (upper === 'HIGH' || upper === 'MEDIUM' || upper === 'LOW' || upper === 'INFO') {
+    return upper;
+  }
+  return 'INFO';
+}
+
+/**
+ * Maps backend `InsightDto[]` from `/api/health/:portfolioId/insights` into {@link SmartInsight} cards.
+ */
+export function mapBackendInsightsToSmartInsights(dtos: BackendInsightDto[]): SmartInsight[] {
+  return dtos.map((dto, idx) => ({
+    id: `server-insight-${idx}-${dto.type.toLowerCase()}`,
+    type: mapInsightType(dto.type),
+    severity: mapInsightSeverity(dto.severity),
+    title: mapInsightTitle(dto.type),
+    message: dto.message,
+    recommendation: dto.recommendation,
+  }));
+}
+
+/**
+ * Reads cached server insights from hardware secure storage for offline fallback.
+ */
+export async function getCachedInsightsForScope(
+  portfolioId: string = 'consolidated',
+): Promise<SmartInsight[] | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(getInsightsCacheKey(portfolioId));
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? (parsed as SmartInsight[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetches smart insights from `/api/health/:portfolioId/insights`, caches them locally,
+ * and falls back to cached insights when offline (returns `null` if no cache exists).
+ */
+export async function fetchInsightsForScope(
+  portfolioId: string = 'consolidated',
+): Promise<SmartInsight[] | null> {
+  try {
+    const creds = await getStoredCredentials();
+    if (!creds.serverUrl || !creds.token) {
+      return getCachedInsightsForScope(portfolioId);
+    }
+    const base = creds.serverUrl.trim().replace(/\/+$/, '');
+    const res = await fetch(`${base}/api/health/${encodeURIComponent(portfolioId)}/insights`, {
+      headers: { Authorization: `Bearer ${creds.token}`, Accept: 'application/json' },
+    });
+    if (!res.ok) return getCachedInsightsForScope(portfolioId);
+    const data = (await res.json()) as BackendInsightDto[];
+    if (!Array.isArray(data)) return getCachedInsightsForScope(portfolioId);
+    const mapped = mapBackendInsightsToSmartInsights(data);
+    await SecureStore.setItemAsync(getInsightsCacheKey(portfolioId), JSON.stringify(mapped));
+    return mapped;
+  } catch {
+    return getCachedInsightsForScope(portfolioId);
+  }
 }

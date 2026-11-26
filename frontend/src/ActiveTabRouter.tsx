@@ -96,6 +96,8 @@ function renderTaxAndInsights(
         <TaxView
           summary={ctrl.taxSummary ?? { details: [] }}
           harvesting={ctrl.harvesting}
+          selectedFY={ctrl.selectedTaxFY}
+          onFYChange={ctrl.setSelectedTaxFY}
           onSimulateHarvest={(folioId, units) => {
             const folio = ctrl.portfolio?.folios.find((f) => f.id === folioId);
             if (folio) {

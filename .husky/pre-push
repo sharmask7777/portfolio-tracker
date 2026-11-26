@@ -2,9 +2,19 @@
 
 set -e
 
+if [ -d "/Library/Developer/CommandLineTools" ]; then
+  export DEVELOPER_DIR="/Library/Developer/CommandLineTools"
+  export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+  export PATH="/Library/Developer/CommandLineTools/usr/bin:${PATH}"
+fi
+
 echo "Running Python static lint (ruff) & Anti-PII guardrail..."
 ruff check scripts backend-rs/scripts
 python3 scripts/check-privacy-and-pii.py
+
+echo "Running static View Layer Boundary & Zero Business Logic guardrail..."
+python3 scripts/check-view-layer-boundaries.py --self-test
+python3 scripts/check-view-layer-boundaries.py
 
 echo "Running Rust backend verification pipeline..."
 (cd backend-rs && ./scripts/verify.sh)
@@ -18,15 +28,15 @@ if [ -n "$(git status --porcelain frontend/src/types/generated mobile/src/types/
   exit 1
 fi
 
-echo "Enforcing backend workspace test coverage threshold (fail-under-lines 80%)..."
-pnpm run test:coverage:backend
+echo "Enforcing backend test coverage thresholds (portfolio-core >= 93%, workspace >= 78%)..."
+(cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 93 --summary-only && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|test_mocks\.rs|repositories/)" --fail-under-lines 78 --json --output-path coverage.json)
 
-echo "Verifying @portfolio/core-view types and coverage..."
+echo "Verifying @portfolio/core-view types, build, and coverage..."
 pnpm --filter @portfolio/core-view typecheck
 pnpm --filter @portfolio/core-view test:coverage
-
-echo "Verifying mobile build, lints, knip, and coverage..."
 pnpm --filter @portfolio/core-view build:verify
+
+echo "Verifying mobile build, lints, knip, and coverage (lines 89%, statements 87%, funcs 86%, branches 75%)..."
 pnpm --filter mobile build:verify
 
 echo "Running mobile E2E simulation suites..."
@@ -38,8 +48,13 @@ pnpm parity:check
 echo "Verifying cross-platform visual parity & invariants..."
 pnpm parity:visual
 
-echo "Running frontend hermetic unit tests with coverage gate (lines 88%, statements 86%, funcs 85%, branches 65%)..."
+echo "Running frontend hermetic unit tests with coverage gate (lines 89%, statements 87%, funcs 86%, branches 72%)..."
 pnpm --filter frontend test:unit
+
+echo "Enforcing incremental diff coverage guardrail (>= 85% of changed lines covered)..."
+python3 scripts/check-diff-coverage.py --self-test
+python3 scripts/check-diff-coverage.py --min-diff-coverage 85 --backend-cov backend-rs/coverage.json
+rm -f backend-rs/coverage.json
 
 echo "Building frontend distribution..."
 pnpm --filter frontend build

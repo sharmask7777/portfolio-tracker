@@ -1,14 +1,17 @@
 ---
 title: "Clean-Slate CAS Folio Reconstruction, Tracked Startup Deduplication, and Intra-Day Balance Ordering"
 date: "2026-11-14"
-module: "portfolio-db, portfolio-worker, portfolio-core"
+last_updated: "2026-11-23"
+module: "portfolio-db, portfolio-worker, portfolio-core, portfolio-api"
 problem_type: "database_issue"
 component: "database"
 severity: "high"
 symptoms:
-  - "Portfolio XIRR inflated ~4x to 42.27% on Docker/PostgreSQL deployment against authentic ~11.5% return"
+  - "Portfolio XIRR inflated ~4x on Docker/PostgreSQL deployment against authentic return"
   - "Re-uploading CAS statements failed to correct inflated returns due to append-or-skip deduplication"
   - "Duplicate redemption records persisted in PostgreSQL after sign normalization"
+  - "Portfolio valuation inflated nearly ~1.7x on incremental CAS upload due to un-trimmed split_part folio matching"
+  - "Backend tokio worker thread panic with 'user-provided comparison function does not correctly implement a total order' on statement re-upload"
 root_cause: "data_integrity"
 resolution_type: "migration"
 related_components:
@@ -21,31 +24,35 @@ tags:
   - "postgresql-cte"
   - "intra-day-ordering"
   - "state-predictability"
+  - "total-order-invariant"
+  - "canonical-folio"
 status: "verified"
 ---
 
 # Clean-Slate CAS Folio Reconstruction, Tracked Startup Deduplication, and Intra-Day Balance Ordering
 
 ## Problem
-On self-hosted Docker/PostgreSQL deployments (e.g. Synology NAS), an investor's mutual fund portfolio displayed an inflated annualized return (XIRR) of 42.27% instead of the authentic ~11.5%. Furthermore, re-uploading the authoritative Consolidated Account Statement (CAS) PDF failed to heal the corrupted ledger because the ingestion pipeline skipped existing rows rather than reconciling state.
+On self-hosted Docker/PostgreSQL deployments (e.g. Synology NAS), an investor's mutual fund portfolio displayed an inflated annualized return (XIRR) due to duplicate redemptions, and re-uploading the authoritative Consolidated Account Statement (CAS) PDF failed to heal the corrupted ledger because the ingestion pipeline skipped existing rows rather than reconciling state. Later, uploading an incremental CAS with minor formatting perturbations (e.g. absent check digits or spacing differences) created twin duplicate folios, inflating valuations by nearly 1.7x, and a non-transitive sorting comparator caused backend worker threads to panic with a total order violation.
 
 ## Symptoms
-- **4x Inflated XIRR**: A conservative mutual fund portfolio with ₹35,000 net gain over 3 years on ₹1,00,000 invested capital calculated an annualized XIRR of 42.27% instead of ~11.5%.
+- **Inflated XIRR**: A conservative mutual fund portfolio calculated an annualized return nearly ~4x higher than authentic figures due to duplicate positive liquidation entries.
 - **Persistent State Corruption**: Re-uploading the complete CAS statement completed with status `COMPLETED`, but portfolio metrics and cash flows remained distorted on subsequent dashboard requests.
-- **Phantom Liquidation Inflows**: Querying `all_cash_flows` in the backend API showed duplicate positive redemption inflows (e.g., two ₹30,00,000 redemptions on the same date with identical units).
+- **Phantom Liquidation Inflows**: Querying `all_cash_flows` in the backend API showed duplicate positive redemption inflows on the same date with identical units.
+- **Folio Duplication Across CAS Formats**: Successive statements from different RTAs formatted folios with whitespace or check-digit differences (`'12345678 / 0'` vs `'12345678'`), creating duplicate twin folios under the same portfolio.
+- **Empty Reply & Worker Panic**: Requests to `/api/portfolio/.../summary` failed with `Empty reply from server` due to `thread 'tokio-rt-worker' panicked at library/core/src/slice/sort/shared/smallsort.rs: user-provided comparison function does not correctly implement a total order`.
 
 ## What Didn't Work
-- **Pure Sign Normalization (`UPDATE "Transaction" SET amount = ABS(amount)`)**: Commit `b5b7bba` corrected negative-signed transaction amounts in PostgreSQL. However, if a user had imported transactions under both the legacy negative format and a newer positive format, sign normalization turned both rows positive, leaving identical clone records in the database.
-- **Append-or-Skip Idempotency (`if existing_tx.is_some() { return Ok(()); }`)**: In `backend-rs/crates/portfolio-db/src/repositories/cas_ingest_repo.rs`, the ingestion worker queried whether a transaction with the same date, type, amount, and units already existed. When found, it skipped inserting a third record, but never purged the pre-existing duplicate row.
-- **Intra-Day Tie-Breaking by UUID (`sort_transactions`)**: When multiple transactions occurred on the exact same date (e.g., two same-day SIP installments), `backend-rs/crates/portfolio-core/src/holdings/lot.rs` fell back to `a.id.cmp(&b.id)`. Because transaction IDs are arbitrary UUIDs (`Uuid::new_v4()`), random string ordering inverted the chronological sequence, causing `get_latest_units` to read an intermediate rather than the final balance.
+- **Pure Sign Normalization (`UPDATE "Transaction" SET amount = ABS(amount)`)**: Correcting negative-signed transaction amounts in PostgreSQL turned both rows positive if imported under both legacy and newer formats, leaving identical clone records in the database.
+- **Append-or-Skip Idempotency (`if existing_tx.is_some() { return Ok(()); }`)**: Skipping transactions when a match was found prevented inserting a third record, but never purged pre-existing duplicate rows.
+- **Conditional Balance Comparator (`if !a.balance.is_zero() && !b.balance.is_zero()`)**: Conditionally ignoring zero balances when comparing same-day transactions broke transitivity whenever zero-unit auxiliary records (such as stamp duties) coexisted with multiple purchases having positive running balances, forming a 3-cycle ($D < A < B < D$) that panicked Rust 1.81+'s sorting implementation.
 
 ## Solution
 
 ### 1. Folio-Scoped Clean-Slate Reconstruction on CAS Upload
-Because CAS statements generated by CAMS and KFintech are cumulative ledgers containing complete history from inception, `backend-rs/crates/portfolio-worker/src/jobs/cas_parser.rs:586-595` now purges existing transactions for touched folios before streaming statement transactions:
+Because CAS statements generated by CAMS and KFintech are cumulative ledgers containing complete history from inception, `backend-rs/crates/portfolio-worker/src/jobs/cas_parser.rs` purges existing transactions for touched folios before streaming statement transactions:
 
 ```rust
-// backend-rs/crates/portfolio-worker/src/jobs/cas_parser.rs:586-595
+// backend-rs/crates/portfolio-worker/src/jobs/cas_parser.rs
 if purged_folios.insert(folio.id) {
     db.purge_folio_transactions(folio.id);
 }
@@ -58,100 +65,64 @@ if let (Some(pool), Some(f_id)) = (pool, pg_folio_id)
 }
 ```
 
-The purge is guarded by `purged_folios` and `purged_pg_folios` sets so each touched folio is cleared strictly once at the beginning of ingestion, preserving multi-scheme folios and avoiding data loss while inserting subsequent transactions.
+The purge is guarded by `purged_folios` and `purged_pg_folios` sets so each touched folio is cleared strictly once at the beginning of ingestion, preserving multi-scheme folios and avoiding data loss.
 
 ### 2. Tracked Self-Healing Startup Migration
-To heal existing databases without requiring manual SQL commands or database purges by the user, `backend-rs/crates/portfolio-db/src/schema.rs:257-339` introduces a tracked migration via `_SchemaMigrations`:
+To heal existing databases without requiring manual SQL commands by the user, `backend-rs/crates/portfolio-db/src/schema.rs` introduces tracked migrations via `_SchemaMigrations`:
+1. Deduplicates exact duplicate transaction clones, prioritizing canonical 8-part external IDs.
+2. Purges legacy zero-balance duplicates when an authoritative transaction with valid balance exists.
+3. Automatically identifies twin folios sharing `(portfolioId, assetId, base_number)`, reparents transactions to the canonical folio, deduplicates ledger entries, and purges the duplicate twin folio (`reconcile_and_merge_duplicate_folios_v3`).
 
-```sql
--- Deduplicate exact duplicate transaction clones, prioritizing canonical 8-part external IDs
-WITH "ExactDuplicateRows" AS (
-    SELECT id,
-           ROW_NUMBER() OVER (
-               PARTITION BY "folioId",
-                            date::date,
-                            UPPER(TRIM(type)),
-                            ROUND(ABS(amount)::numeric, 2),
-                            ROUND(ABS(units)::numeric, 4),
-                            ROUND(ABS(balance)::numeric, 4)
-               ORDER BY 
-                   CASE 
-                       WHEN "externalId" LIKE '%-%-%-%-%-%-%-%' AND "externalId" NOT LIKE '%--%' THEN 0
-                       WHEN "externalId" IS NOT NULL AND "externalId" NOT LIKE '%--%' THEN 1
-                       ELSE 2 
-                   END ASC,
-                   "createdAt" ASC,
-                   id ASC
-           ) AS rank_idx
-    FROM "Transaction"
-)
-DELETE FROM "Transaction"
-WHERE id IN (
-    SELECT id 
-    FROM "ExactDuplicateRows" 
-    WHERE rank_idx > 1
-);
+### 3. Canonical Folio Normalization & Ingestion Matching
+- **Canonical Type Parsing (`backend-rs/crates/portfolio-core/src/types.rs`)**: `FolioNumber::canonical_format(raw)` trims whitespace around delimiters (`/`, `-`, `\`), and `FolioNumber::base_number()` extracts the stripped root account identifier.
+- **Resilient SQL Ingestion Matching (`backend-rs/crates/portfolio-db/src/repositories/cas_ingest_repo.rs`)**:
+  ```sql
+  SELECT id, number FROM "Folio"
+  WHERE "portfolioId" = $1 AND "assetId" = $2
+    AND (number = $3 OR number = $4 OR TRIM(split_part(number, '/', 1)) = $5)
+  ORDER BY
+    CASE WHEN number = $3 THEN 1 WHEN number = $4 THEN 2 ELSE 3 END ASC
+  LIMIT 1;
+  ```
+- **Automatic Twin-Folio Reconciliation (`reconcile_portfolio_folios`)**: Called on touched portfolios during CAS upload to guarantee clean state.
 
--- Remove legacy zero-balance duplicates when an authoritative transaction with valid balance exists
-WITH "ZeroBalanceDuplicates" AS (
-    SELECT id
-    FROM "Transaction" t_zero
-    WHERE ABS(t_zero.balance) < 0.0001
-      AND EXISTS (
-          SELECT 1 FROM "Transaction" t_real
-          WHERE t_real."folioId" = t_zero."folioId"
-            AND t_real.date::date = t_zero.date::date
-            AND UPPER(TRIM(t_real.type)) = UPPER(TRIM(t_zero.type))
-            AND ROUND(ABS(t_real.amount)::numeric, 2) = ROUND(ABS(t_zero.amount)::numeric, 2)
-            AND ROUND(ABS(t_real.units)::numeric, 4) = ROUND(ABS(t_zero.units)::numeric, 4)
-            AND ABS(t_real.balance) >= 0.0001
-      )
-)
-DELETE FROM "Transaction"
-WHERE id IN (
-    SELECT id FROM "ZeroBalanceDuplicates"
-);
-```
-
-### 3. Balance-Aware External IDs & Intra-Day Balance Ordering
-- **External ID Entropy**: `cas_parser.rs:619-629` incorporates `balance` into `external_id`:
-  `{portfolioId}-{folioNumber}-{isin}-{date}-{txType}-{amount}-{units}-{balance}`.
-- **Deterministic Intra-Day Ordering**: `backend-rs/crates/portfolio-core/src/holdings/lot.rs:68-81` sorts same-day transactions by running balance progression rather than random UUIDs:
-  - Purchases sort in ascending balance order ($B_1 < B_2$).
-  - Redemptions sort in descending balance order ($B_1 > B_2$).
-
+### 4. Mathematical Strict Total Order Partitioning (`sort_transactions`)
+`backend-rs/crates/portfolio-core/src/holdings/lot.rs` partitions intra-day progression into a mathematically strict total order:
 ```rust
-// backend-rs/crates/portfolio-core/src/holdings/lot.rs:68-81
+// backend-rs/crates/portfolio-core/src/holdings/lot.rs
 .then_with(|| {
-    if !a.balance.is_zero() && !b.balance.is_zero() && a.balance != b.balance {
-        let a_is_sell = is_unit_redemption(a.tx_type) || a.units.is_negative();
-        if a_is_sell {
-            // For redemptions on the same date, balance decreases over time
-            b.balance.cmp(&a.balance)
-        } else {
-            // For purchases on the same date, balance increases over time
-            a.balance.cmp(&b.balance)
-        }
+    if a_is_sell {
+        // For redemptions on the same date: higher running balance executed earlier
+        b.balance.cmp(&a.balance)
     } else {
-        std::cmp::Ordering::Equal
+        // For purchases on the same date:
+        // Positive running balances advance over the day (lower balance first).
+        // Zero or auxiliary balances are grouped deterministically after active lots.
+        let a_has_bal = a.balance.is_positive();
+        let b_has_bal = b.balance.is_positive();
+        b_has_bal
+            .cmp(&a_has_bal)
+            .then_with(|| a.balance.cmp(&b.balance))
     }
 })
 .then_with(|| a.id.cmp(&b.id))
 ```
 
+Additionally, float sorting in API handlers (`exposures.sort_by`, `sectors_vec.sort_by`) replaces `partial_cmp().unwrap_or(Equal)` with `total_cmp().then_with(...)`.
+
 ## Why This Works
 In financial mathematics, XIRR solves for root $r$ of the Net Present Value polynomial:
 $$\text{NPV}(r) = \sum_{i=1}^n \frac{C_i}{(1+r)^{\frac{d_i - d_0}{365}}} = 0$$
 
-Where purchases are outflows ($C_i < 0$) and redemptions/terminal value are inflows ($C_i > 0$). In the contaminated database, a duplicate redemption doubled positive inflows in year 2 ($+₹60,000 \to +₹1,20,000$ on ₹1,00,000 invested). The Newton-Raphson polynomial root-finder converged at 42.27% because early cash returns were artificially magnified.
+Where purchases are outflows ($C_i < 0$) and redemptions/terminal value are inflows ($C_i > 0$). Duplicate transactions or twin folios artificially duplicate holdings and cash flows, inflating valuations and severely distorting root-finding solvers.
 
-By eliminating duplicate transactions through tracked CTE migration on boot and clean-slate reconstruction on upload, cash flows accurately reflect real capital transfers. Adding intra-day balance ordering guarantees that `get_latest_units` and FIFO lot depletion accurately reflect the terminal balance on days with multiple transactions.
+By combining canonical folio normalization with clean-slate reconstruction and twin-folio reconciliation, cumulative statement uploads remain 100% idempotent across arbitrary statement formatting variations. Partitioning intra-day running balances into a provable total order guarantees that FIFO lot allocation and terminal unit lookups execute deterministically without runtime sorting panics.
 
 ## Prevention
 1. **Never Rely on Append-or-Skip for Cumulative Statements**: When dealing with data sources that represent authoritative cumulative ledgers from inception (like CAS statements), use folio-scoped clean-slate reconstruction rather than `ON CONFLICT DO NOTHING`.
-2. **Include Balance in Transaction Signatures**: In mutual funds, running unit balance uniquely differentiates legitimate same-day installments from duplicate clones.
-3. **Track Schema Migrations Explicitly**: When adding self-healing data repair SQL statements to startup routines, gate them through `_SchemaMigrations` to avoid repeated unindexed table scans on container restart.
-4. **Integration Verification**:
-   - `backend-rs/crates/portfolio-worker/tests/worker_tests.rs:1335-1432` (`test_cas_upload_cleans_legacy_duplicates_and_restores_accurate_xirr`) seeds corrupted duplicate states and verifies restoration of XIRR to ~11.5%.
-   - `backend-rs/crates/portfolio-worker/tests/worker_tests.rs:1434-1498` (`test_cas_upload_preserves_legitimate_same_day_sips_with_distinct_balances`) verifies preservation of distinct same-day SIPs.
-   - `backend-rs/crates/portfolio-db/tests/live_db_ingest_test.rs:145-194` executes both `purge_folio_transactions` and the deduplication CTE against live PostgreSQL.
+2. **Trim Whitespace on Delimited SQL Projections**: Never assume `split_part(string, delimiter, pos)` strips surrounding whitespace; always wrap with `TRIM(split_part(...))`.
+3. **Total Order Invariant for Custom Comparators**: Never return `Ordering::Equal` conditionally for a subset of values (like zero balances) while comparing non-zero values; partition elements into strict total order tiers using tuples or boolean indicators.
+4. **Integration & Invariant Verification**:
+   - `backend-rs/crates/portfolio-core/tests/proptests.rs` (`prop_sort_transactions_total_order_and_transitivity`) property-tests arbitrary permutations of same-day transactions, verifying total order and permutation invariance across 256 test cases.
+   - `backend-rs/crates/portfolio-worker/tests/worker_tests.rs` (`test_cas_upload_idempotent_across_folio_format_perturbations`) verifies idempotency across perturbed folio formats (`"12345/0"` vs `"12345 / 0"` vs `"12345"`).
+   - `backend-rs/crates/portfolio-db/tests/live_db_ingest_test.rs` (`test_upsert_postgres_folio_deduplicates_whitespace_and_check_digits`) verifies PostgreSQL string matching and deduplication against live PostgreSQL.

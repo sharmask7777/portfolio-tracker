@@ -896,3 +896,63 @@ fn test_exit_load_parag_parikh_liquid_and_arbitrage_are_zero() {
         ) > Money::ZERO
     );
 }
+
+#[test]
+fn test_table_f_and_section_totals_serialize_money_as_json_numbers() {
+    use portfolio_core::tax::{
+        AdvanceTaxAccrualMatrix, BuyLot, SectionTotalData, build_advance_tax_matrix,
+        build_section_totals, calculate_gain,
+    };
+
+    let buy_lot = BuyLot::new(date(2023, 1, 1), units("100"), nav("100"), money("10000"));
+    let gain = calculate_gain(
+        "Test Equity Fund - Direct Plan - Growth",
+        AssetType::MutualFund,
+        &buy_lot,
+        units("100"),
+        nav("200"),
+        date(2024, 8, 1),
+        Decimal::from_str("0.30").unwrap(),
+        None,
+    );
+
+    let matrix = build_advance_tax_matrix(std::slice::from_ref(&gain));
+    let matrix_json = serde_json::to_value(&matrix).expect("serialize AdvanceTaxAccrualMatrix");
+    let q2b = &matrix_json["quarters"]["Q2b (23/07 - 15/09)"];
+    assert!(
+        q2b["ltcg12_5"].is_number(),
+        "ltcg12_5 must serialize as JSON number"
+    );
+    assert!(
+        q2b["totalGain"].is_number(),
+        "totalGain must serialize as JSON number"
+    );
+    assert!(
+        q2b["estimatedTax"].is_number(),
+        "estimatedTax must serialize as JSON number"
+    );
+    assert!(
+        matrix_json["quarterTotals"]["Q2b (23/07 - 15/09)"].is_number(),
+        "quarterTotals entry must serialize as JSON number"
+    );
+
+    let matrix_roundtrip: AdvanceTaxAccrualMatrix =
+        serde_json::from_value(matrix_json).expect("round-trip AdvanceTaxAccrualMatrix");
+    assert_eq!(matrix_roundtrip, matrix);
+
+    let section_totals = build_section_totals(&[gain]);
+    let section_json = serde_json::to_value(&section_totals).expect("serialize SectionTotalsMap");
+    let first_section = section_json.as_object().unwrap().values().next().unwrap();
+    assert!(
+        first_section["totalGain"].is_number(),
+        "SectionTotalData.totalGain must serialize as JSON number"
+    );
+    assert!(
+        first_section["totalTax"].is_number(),
+        "SectionTotalData.totalTax must serialize as JSON number"
+    );
+
+    let section_roundtrip: std::collections::HashMap<String, SectionTotalData> =
+        serde_json::from_value(section_json).expect("round-trip SectionTotalsMap");
+    assert_eq!(section_roundtrip, section_totals);
+}

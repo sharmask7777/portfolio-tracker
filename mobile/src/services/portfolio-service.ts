@@ -13,15 +13,26 @@ import {
   refreshSchemeNavs,
   calculateDayValuationChange,
 } from '../feeds/nav-fetcher';
-import { getStoredCredentials } from './auth-service';
+import { getStoredCredentials, normalizeServerUrl } from './auth-service';
 import {
   summarizeHoldings,
   type AssetAllocationItem,
   type EnrichedHolding,
 } from './portfolio-calculations';
-import { syncWithServer } from './portfolio-sync-service';
-export { syncWithServer, parseServerPayload } from './portfolio-sync-service';
+import {
+  syncWithServerWithOptions,
+  type SyncServerOptions,
+} from './portfolio-sync-service';
+export {
+  parseServerPayload,
+  getStoredDashboardBundle,
+  mergeServerMetricsIntoSummary,
+  type SyncServerOptions,
+} from './portfolio-sync-service';
+export type { StoredSummaryEnvelope } from '../db/repository';
+export { simulateWithdrawal } from './tax-simulation-service';
 
+import type { DragDecompositionDto, SummaryMetrics } from '../types/generated';
 export type { TransactionEntity } from '../db/schema';
 export * from './portfolio-calculations';
 
@@ -37,6 +48,13 @@ export interface DashboardSummary {
   lastUpdated: string | null;
   isOfflineFallback: boolean;
   overallXirr?: number | undefined;
+  postTaxXirr?: number | null | undefined;
+  netRealizableValue?: number | undefined;
+  postTaxTotalValue?: number | undefined;
+  estimatedTax?: number | undefined;
+  realPostTaxXirr?: number | null | undefined;
+  drags?: DragDecompositionDto | null | undefined;
+  metrics?: SummaryMetrics | undefined;
 }
 
 export interface RefreshResult {
@@ -245,7 +263,8 @@ export async function checkServerReachable(
   serverUrl: string,
   timeoutMs: number = 3000,
 ): Promise<boolean> {
-  const trimmed = serverUrl.trim().replace(/\/+$/, '');
+  const normalized = normalizeServerUrl(serverUrl);
+  const trimmed = normalized.trim().replace(/\/+$/, '');
   if (!trimmed) return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -296,6 +315,7 @@ export async function syncWithPublicFeed(
 
 export async function refreshPortfolio(
   db?: SQLiteDatabase,
+  options?: SyncServerOptions,
 ): Promise<RefreshResult> {
   try {
     const targetDb = await resolveDb(db);
@@ -307,7 +327,12 @@ export async function refreshPortfolio(
       const isReachable = await checkServerReachable(creds.serverUrl);
       if (isReachable) {
         await flushUploadQueue(creds.serverUrl, creds.token, { db: targetDb }).catch(() => {});
-        const synced = await syncWithServer(creds.serverUrl, creds.token, targetDb);
+        const synced = await syncWithServerWithOptions({
+          serverUrl: creds.serverUrl,
+          token: creds.token,
+          targetDb,
+          options,
+        });
         if (synced) return { success: true, source: 'server' };
       }
     }

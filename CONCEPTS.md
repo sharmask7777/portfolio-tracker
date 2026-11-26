@@ -42,6 +42,18 @@ An ingestion protocol where all pre-existing ledger entries and cached valuation
 
 Clean-Slate Reconstruction ensures complete state predictability across heterogeneous deployments, preventing orphaned duplicate records or historical sign anomalies from persisting.
 
+### Canonical Folio Normalization
+The process of stripping trailing whitespace, check digits, and delimiter formatting quirks from registrar account identifiers so that format perturbations across successive statements map deterministically to the identical underlying Folio.
+*Avoid: Raw folio matching, literal account key*
+
+Under Canonical Folio Normalization, folio lookup queries and transaction external ID generation match base account numbers and collapse duplicate twin folios automatically on upload.
+
+### Total Order Invariant
+The mathematical property requiring comparison functions used in sorting algorithms to satisfy reflexivity, antisymmetry, and transitivity across all elements without forming cycles.
+*Avoid: Partial equality, conditional sorting*
+
+The Total Order Invariant guarantees that intra-day tiebreakers consistently sequence transactions with advancing positive running balances before zero-unit auxiliary records, preventing sorting panics during portfolio compilation.
+
 ## Valuation & Performance
 
 ### XIRR (Extended Internal Rate of Return)
@@ -87,4 +99,10 @@ The autonomous verification pattern where agents capture actual UI rendering scr
 *Avoid: Headless-only assertion, blind DOM check*
 
 The Multimodal Visual Verification Loop prevents silent visual regressions that pass headless unit tests from reaching production.
+
+### Withdrawal Simulation
+A predictive tax and exit load calculation for redeeming units from a specific folio or hypothetical position, evaluating FIFO lot exhaustion, grandfathered deemed cost under Section 55(2)(ac), statutory tax liability under Sections 112A, 111A, or 50AA, exit load penalties, and net in-hand proceeds.
+*Avoid: Sell calculator, mock redemption*
+
+Under Withdrawal Simulation, the client uses backend calculation as the single source of truth (`POST /api/tax/simulate-sell`) to guarantee cross-platform numerical parity, with transparent offline fallback to local calculations when unreachable.
 

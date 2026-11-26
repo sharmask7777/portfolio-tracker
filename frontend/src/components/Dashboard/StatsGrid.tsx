@@ -15,6 +15,7 @@ export interface StatsMetrics {
   absoluteReturn: number;
   xirr: number;
   postTaxTotalValue?: number | undefined;
+  netRealizableValue?: number | undefined;
   postTaxXirr?: number | undefined;
   realPostTaxXirr?: number | null | undefined;
   drags?: DragDecompositionDto | null | undefined;
@@ -29,7 +30,7 @@ export interface StatsGridProps {
   onNavigateToTax?: (() => void) | undefined;
 }
 
-const isValidNumber = (val: unknown): val is number => typeof val === 'number' && !isNaN(val);
+const isValidNumber = (val: unknown): val is number => typeof val === 'number' && Number.isFinite(val);
 
 const formatCurrency = (val: unknown) => {
   if (!isValidNumber(val)) return '—';
@@ -81,7 +82,7 @@ export const StatsGrid: React.FC<StatsGridProps> = ({
   };
 
   const effectiveNetWorth = realityCheckMode
-    ? metrics.postTaxTotalValue ?? metrics.totalValue - (metrics.estimatedTax ?? 0)
+    ? metrics.netRealizableValue ?? metrics.postTaxTotalValue ?? metrics.totalValue
     : metrics.totalValue;
 
   const isPositiveGain = isValidNumber(metrics.totalGain) && metrics.totalGain > 0;
@@ -95,18 +96,7 @@ export const StatsGrid: React.FC<StatsGridProps> = ({
 
   const perfColor = getReturnColor(perfValue);
 
-  const totalTaxDrag =
-    isValidNumber(metrics.xirr) && isValidNumber(metrics.postTaxXirr)
-      ? Math.max(0, metrics.xirr - metrics.postTaxXirr)
-      : 0;
-
-  const totalOverallDrag =
-    isValidNumber(metrics.xirr) && isValidNumber(metrics.realPostTaxXirr)
-      ? Math.max(0, metrics.xirr - metrics.realPostTaxXirr)
-      : totalTaxDrag +
-        (isValidNumber(metrics.postTaxXirr) && isValidNumber(metrics.realPostTaxXirr)
-          ? Math.max(0, metrics.postTaxXirr - metrics.realPostTaxXirr)
-          : 0);
+  const totalOverallDrag = metrics.drags?.totalOverallDrag ?? 0;
 
   return (
     <>
@@ -170,6 +160,7 @@ export const StatsGrid: React.FC<StatsGridProps> = ({
             drags={metrics.drags}
             cpiInflationRate={cpiInflationRate}
             marginalTaxBracket={marginalTaxBracket}
+            formatCurrency={formatCurrency}
             formatPercent={formatPercent}
             onNavigateToTax={onNavigateToTax}
           />

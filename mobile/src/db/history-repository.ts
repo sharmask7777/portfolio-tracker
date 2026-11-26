@@ -18,9 +18,22 @@ export async function savePortfolioHistory(
   await db.withTransactionAsync(async () => {
     for (const p of points) {
       await db.runAsync(
-        `INSERT OR REPLACE INTO portfolio_history (portfolio_id, date, value, invested_amount)
-         VALUES (?, ?, ?, ?);`,
-        [portfolioId, p.date, p.value, p.investedAmount],
+        `INSERT OR REPLACE INTO portfolio_history (
+           portfolio_id, date, value, invested_amount,
+           unrealized_gain, gain_percentage, is_ath, ath_value, drawdown_percentage
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [
+          portfolioId,
+          p.date,
+          p.value,
+          p.investedAmount,
+          p.unrealizedGain,
+          p.gainPercentage,
+          p.isAth ? 1 : 0,
+          p.athValue,
+          p.drawdownPercentage,
+        ],
       );
     }
   });
@@ -40,7 +53,8 @@ export async function getPortfolioHistory(
   portfolioId: string,
 ): Promise<HistoryPoint[]> {
   const rows = await db.getAllAsync<PortfolioHistoryEntity>(
-    `SELECT portfolio_id, date, value, invested_amount
+    `SELECT portfolio_id, date, value, invested_amount,
+            unrealized_gain, gain_percentage, is_ath, ath_value, drawdown_percentage
      FROM portfolio_history
      WHERE portfolio_id = (
        CASE 
@@ -57,9 +71,20 @@ export async function getPortfolioHistory(
      ORDER BY date ASC;`,
     [portfolioId, portfolioId, portfolioId, portfolioId, portfolioId],
   );
-  return rows.map((r) => ({
-    date: r.date,
-    value: r.value,
-    investedAmount: r.invested_amount,
-  }));
+  return rows.map((r) => {
+    const fallbackGain = Math.round((r.value - r.invested_amount) * 100) / 100;
+    const fallbackGainPct = r.invested_amount > 0
+      ? Math.round(((fallbackGain / r.invested_amount) * 100) * 100) / 100
+      : 0;
+    return {
+      date: r.date,
+      value: r.value,
+      investedAmount: r.invested_amount,
+      unrealizedGain: r.unrealized_gain ?? fallbackGain,
+      gainPercentage: r.gain_percentage ?? fallbackGainPct,
+      isAth: r.is_ath === 1,
+      athValue: r.ath_value ?? r.value,
+      drawdownPercentage: r.drawdown_percentage ?? 0,
+    };
+  });
 }

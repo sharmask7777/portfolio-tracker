@@ -9,7 +9,12 @@ import {
 } from './client';
 import {
   savePortfolioSnapshot,
+  reconcileServerSnapshot,
+  getStoredSummaryMetrics,
+  getStoredSummaryBundle,
+  saveScopedSummaryBundle,
   getPortfolioHoldings,
+  getClosedHoldings,
   updateHoldingNav,
   getPendingUploads,
   enqueueUpload,
@@ -532,8 +537,26 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
       await initDatabase(db);
 
       const points = [
-        { date: '2026-01-01', value: 100000, investedAmount: 90000 },
-        { date: '2026-02-01', value: 110000, investedAmount: 95000 },
+        {
+          date: '2026-01-01',
+          value: 100000,
+          investedAmount: 90000,
+          unrealizedGain: 10000,
+          gainPercentage: 11.11,
+          isAth: false,
+          athValue: 100000,
+          drawdownPercentage: 0,
+        },
+        {
+          date: '2026-02-01',
+          value: 110000,
+          investedAmount: 95000,
+          unrealizedGain: 15000,
+          gainPercentage: 15.79,
+          isAth: false,
+          athValue: 110000,
+          drawdownPercentage: 0,
+        },
       ];
 
       await savePortfolioHistory(db, 'port-1', points);
@@ -545,6 +568,261 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
 
       const fallback = await getPortfolioHistory(db, 'default');
       expect(fallback).toEqual(points);
+    });
+  });
+
+  describe('Server Snapshot Reconciliation & Summary Metrics Persistence', () => {
+    it('prunes stale duplicate folios and holdings on server sync while preserving MANUAL_* folios', async () => {
+      const now = '2026-11-25T00:00:00Z';
+      // Step 1: Seed inflated duplicate folios (simulating pre-fix SQLite state)
+      await savePortfolioSnapshot(db, {
+        portfolio: { id: 'p-1', name: 'Main', updated_at: now },
+        folios: [
+          { folio_number: '10101010 / 05', amc_name: 'HDFC', pan: 'ALPAC1001A', updated_at: now },
+          { folio_number: '10101010/ 05', amc_name: 'HDFC', pan: 'ALPAC1001A', updated_at: now },
+          { folio_number: 'MANUAL_EPF_1', amc_name: 'EPF', pan: 'ALPAC1001A', updated_at: now },
+        ],
+        holdings: [
+          {
+            id: 'h-dup-1',
+            folio_number: '10101010 / 05',
+            amfi_code: '119551',
+            scheme_name: 'HDFC Corporate Bond',
+            isin: 'INF179K01V01',
+            units: 1000,
+            invested_cost: 50000,
+            current_nav: 100,
+            current_value: 100000,
+            asset_class: 'DEBT',
+            nav_date: '2026-11-24',
+            updated_at: now,
+          },
+          {
+            id: 'h-dup-2',
+            folio_number: '10101010/ 05',
+            amfi_code: '119551',
+            scheme_name: 'HDFC Corporate Bond',
+            isin: 'INF179K01V01',
+            units: 1000,
+            invested_cost: 50000,
+            current_nav: 100,
+            current_value: 100000,
+            asset_class: 'DEBT',
+            nav_date: '2026-11-24',
+            updated_at: now,
+          },
+          {
+            id: 'h-manual-1',
+            folio_number: 'MANUAL_EPF_1',
+            amfi_code: null,
+            scheme_name: 'EPF Account',
+            isin: null,
+            units: 25000,
+            invested_cost: 25000,
+            current_nav: 1,
+            current_value: 25000,
+            asset_class: 'DEBT',
+            nav_date: '2026-11-24',
+            updated_at: now,
+          },
+        ],
+      });
+
+      expect(await getPortfolioHoldings(db)).toHaveLength(3);
+
+      // Step 2: Reconcile with deduplicated canonical server snapshot
+      const metricsJson = JSON.stringify({
+        totalInvested: 50000,
+        totalValue: 100000,
+        postTaxTotalValue: 92000,
+        netRealizableValue: 92000,
+        totalGain: 50000,
+        absoluteReturn: 1.0,
+        xirr: 0.145,
+        postTaxXirr: 0.125,
+        realPostTaxXirr: 0.061,
+        estimatedTax: 8000,
+        dayChange: 120,
+        dayChangePercentage: 0.12,
+        drags: {
+          nominalXirr: 0.145,
+          postTaxXirr: 0.125,
+          debtDrag: 0.01,
+          equityDrag: 0.008,
+          cessAndOtherDrag: 0.002,
+          inflationDrag: 0.064,
+          totalTaxDrag: 0.02,
+          totalOverallDrag: 0.084,
+          realPostTaxXirr: 0.061,
+          benchmarkSpread: 0.05,
+          postTaxValue: 92000,
+          purchasingPowerValue: 77245,
+          purchasingPowerLoss: 22755,
+          stages: [],
+        },
+      });
+
+      await reconcileServerSnapshot(
+        db,
+        {
+          portfolio: { id: 'p-1', name: 'Main', updated_at: '2026-11-25T01:00:00Z' },
+          folios: [
+            { folio_number: '10101010/05', amc_name: 'HDFC', pan: 'ALPAC1001A', updated_at: '2026-11-25T01:00:00Z' },
+          ],
+          holdings: [
+            {
+              id: 'h-canon-1',
+              folio_number: '10101010/05',
+              amfi_code: '119551',
+              scheme_name: 'HDFC Corporate Bond',
+              isin: 'INF179K01V01',
+              units: 1000,
+              invested_cost: 50000,
+              current_nav: 100,
+              current_value: 100000,
+              asset_class: 'DEBT',
+              nav_date: '2026-11-24',
+              updated_at: '2026-11-25T01:00:00Z',
+            },
+          ],
+        },
+        metricsJson,
+      );
+
+      const holdingsAfter = await getPortfolioHoldings(db);
+      expect(holdingsAfter.map((h) => h.id).sort()).toEqual(['h-canon-1', 'h-manual-1']);
+
+      const foliosAfter = await getAllFolios(db);
+      expect(foliosAfter.map((f) => f.folio_number).sort()).toEqual(['10101010/05', 'MANUAL_EPF_1']);
+
+      const storedMetrics = await getStoredSummaryMetrics(db);
+      expect(storedMetrics).not.toBeNull();
+      expect(storedMetrics?.totalValue).toBe(100000);
+      expect(storedMetrics?.netRealizableValue).toBe(92000);
+      expect(storedMetrics?.realPostTaxXirr).toBe(0.061);
+      expect(storedMetrics?.drags?.purchasingPowerValue).toBe(77245);
+    });
+
+    it('persists and retrieves portfolio_history ATH and drawdown fields', async () => {
+      await savePortfolioHistory(db, 'p-hist', [
+        {
+          date: '2026-11-20',
+          value: 120000,
+          investedAmount: 100000,
+          unrealizedGain: 20000,
+          gainPercentage: 20,
+          isAth: true,
+          athValue: 120000,
+          drawdownPercentage: 0,
+        },
+        {
+          date: '2026-11-21',
+          value: 108000,
+          investedAmount: 100000,
+          unrealizedGain: 8000,
+          gainPercentage: 8,
+          isAth: false,
+          athValue: 120000,
+          drawdownPercentage: -10,
+        },
+      ]);
+
+      const history = await getPortfolioHistory(db, 'p-hist');
+      expect(history).toHaveLength(2);
+      expect(history[0]?.isAth).toBe(true);
+      expect(history[0]?.athValue).toBe(120000);
+      expect(history[1]?.isAth).toBe(false);
+      expect(history[1]?.athValue).toBe(120000);
+      expect(history[1]?.drawdownPercentage).toBe(-10);
+      expect(history[1]?.unrealizedGain).toBe(8000);
+      expect(history[1]?.gainPercentage).toBe(8);
+    });
+
+    it('enforces 0.001 units threshold for active vs closed holdings and preserves null xirr', async () => {
+      await savePortfolioSnapshot(db, {
+        portfolio: { id: 'p-thresh', name: 'Threshold', updated_at: '2026-11-25T00:00:00Z' },
+        folios: [{ folio_number: 'F-TH', amc_name: 'AMC', pan: 'ABCDE1234F', updated_at: '2026-11-25T00:00:00Z' }],
+        holdings: [
+          {
+            id: 'h-active',
+            folio_number: 'F-TH',
+            amfi_code: '100',
+            scheme_name: 'Active Scheme',
+            isin: null,
+            units: 0.001,
+            invested_cost: 10,
+            current_nav: 100,
+            current_value: 0.1,
+            asset_class: 'EQUITY',
+            nav_date: '2026-11-25',
+            updated_at: '2026-11-25T00:00:00Z',
+            xirr: null,
+            total_gain: 5,
+            post_tax_xirr: 0.11,
+            post_tax_absolute_return: 0.09,
+            estimated_tax: 1.5,
+            net_realizable_value: 8.5,
+          },
+          {
+            id: 'h-closed',
+            folio_number: 'F-TH',
+            amfi_code: '101',
+            scheme_name: 'Dust Closed Scheme',
+            isin: null,
+            units: 0.0005,
+            invested_cost: 0,
+            current_nav: 100,
+            current_value: 0.05,
+            asset_class: 'EQUITY',
+            nav_date: '2026-11-25',
+            updated_at: '2026-11-25T00:00:00Z',
+          },
+        ],
+      });
+
+      const active = await getPortfolioHoldings(db);
+      const closed = await getClosedHoldings(db);
+      expect(active.map((h) => h.id)).toEqual(['h-active']);
+      expect(active[0]?.xirr).toBeNull();
+      expect(active[0]?.post_tax_xirr).toBe(0.11);
+      expect(active[0]?.net_realizable_value).toBe(8.5);
+      expect(closed.map((h) => h.id)).toEqual(['h-closed']);
+    });
+
+    it('stores and retrieves scope-keyed summary bundles with panBreakdowns and assetAllocation', async () => {
+      await saveScopedSummaryBundle(db, 'member-1', {
+        metrics: {
+          totalInvested: 50000,
+          totalValue: 60000,
+          postTaxTotalValue: 58500,
+          netRealizableValue: 58500,
+          totalGain: 10000,
+          absoluteReturn: 0.2,
+          xirr: 0.14,
+          postTaxXirr: 0.12,
+          estimatedTax: 1500,
+          dayChange: 100,
+          dayChangePercentage: 0.17,
+        },
+        panBreakdowns: [
+          {
+            pan: 'ABCDE1234F',
+            memberName: 'Aarav Sharma',
+            investedAmount: 50000,
+            currentValue: 60000,
+            dayChange: 100,
+            dayChangePercentage: 0.17,
+            xirr: 0.14,
+            folioCount: 1,
+          },
+        ],
+        assetAllocation: [{ name: 'Hybrid', amount: 60000, percentage: 100, color: '#8b5cf6' }],
+      });
+
+      const bundle = await getStoredSummaryBundle(db, 'member-1');
+      expect(bundle?.metrics.postTaxXirr).toBe(0.12);
+      expect(bundle?.panBreakdowns?.[0]?.memberName).toBe('Aarav Sharma');
+      expect(bundle?.assetAllocation?.[0]?.name).toBe('Hybrid');
     });
   });
 });

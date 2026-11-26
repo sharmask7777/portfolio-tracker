@@ -363,7 +363,7 @@ describe('auth-service', () => {
     });
 
     it('rewrites localhost to 10.0.2.2 on Android platforms to prevent ConnectException', () => {
-      expect(DEFAULT_SERVER_URL).toBe('http://10.0.2.2:8082');
+      expect(DEFAULT_SERVER_URL).toBe('http://10.0.2.2:8080');
       expect(LOCAL_DEV_SERVER_URL).toBe('http://10.0.2.2:8080');
 
       const normalized = normalizeServerUrl('http://localhost:8082');

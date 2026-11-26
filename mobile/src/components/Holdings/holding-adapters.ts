@@ -3,7 +3,7 @@
  * @description Helper functions to adapt mobile database entities and portfolio holdings into FolioInput for @portfolio/core-view.
  */
 
-import type { FolioInput } from '@portfolio/core-view';
+import type { FolioInput, FolioMetricsInput } from '@portfolio/core-view';
 import type { EnrichedHolding } from '../../services/portfolio-service';
 import type { FolioEntity } from '../../services/family-service';
 
@@ -13,6 +13,20 @@ function normalizeAssetClass(raw?: string | null): 'EQUITY' | 'DEBT' | 'HYBRID' 
   if (upper === 'DEBT' || upper === 'LIQUID' || upper === 'FIXED_INCOME') return 'DEBT';
   if (upper === 'HYBRID') return 'HYBRID';
   return 'EQUITY';
+}
+
+/**
+ * Extended folio metrics including mobile-persisted net realizable value.
+ */
+export interface MobileFolioMetrics extends FolioMetricsInput {
+  readonly netRealizableValue?: number | undefined;
+}
+
+/**
+ * Extended folio input carrying {@link MobileFolioMetrics}.
+ */
+export interface MobileFolioInput extends FolioInput {
+  readonly metrics?: MobileFolioMetrics | undefined;
 }
 
 /**
@@ -47,6 +61,24 @@ function resolveAmcName(folioMeta?: FolioEntity): string | undefined {
   return undefined;
 }
 
+function buildFolioMetrics(holding: EnrichedHolding): MobileFolioMetrics {
+  const fallbackAbsReturn = holding.gainLossPct !== undefined ? holding.gainLossPct / 100 : undefined;
+  return {
+    investedAmount: holding.invested_cost,
+    currentValue: holding.current_value,
+    dayChange: holding.dayChange,
+    dayChangePercentage: holding.dayChangePct,
+    currentPrice: holding.current_nav,
+    totalGain: holding.total_gain ?? holding.gainLoss,
+    absoluteReturn: holding.absolute_return ?? fallbackAbsReturn,
+    xirr: holding.xirr ?? undefined,
+    postTaxXirr: holding.post_tax_xirr ?? undefined,
+    postTaxAbsoluteReturn: holding.post_tax_absolute_return ?? undefined,
+    estimatedTax: holding.estimated_tax ?? undefined,
+    netRealizableValue: holding.net_realizable_value ?? undefined,
+  };
+}
+
 /**
  * Converts mobile EnrichedHolding and associated FolioEntity records into a FolioInput for core-view.
  *
@@ -57,12 +89,9 @@ function resolveAmcName(folioMeta?: FolioEntity): string | undefined {
 export function adaptHoldingToFolioInput(
   holding: EnrichedHolding,
   folioMeta?: FolioEntity
-): FolioInput {
+): MobileFolioInput {
   const pan = resolvePan(folioMeta);
   const amcName = resolveAmcName(folioMeta);
-  const fallbackAbsReturn = holding.gainLossPct !== undefined ? holding.gainLossPct / 100 : undefined;
-  const absoluteReturn = holding.absolute_return ?? fallbackAbsReturn;
-  const xirr = holding.xirr ?? undefined;
 
   return {
     id: holding.id,
@@ -81,16 +110,7 @@ export function adaptHoldingToFolioInput(
       amfiCode: holding.amfi_code || undefined,
       schemeCode: holding.amfi_code || undefined,
     },
-    metrics: {
-      investedAmount: holding.invested_cost,
-      currentValue: holding.current_value,
-      dayChange: holding.dayChange,
-      dayChangePercentage: holding.dayChangePct,
-      currentPrice: holding.current_nav,
-      totalGain: holding.gainLoss,
-      absoluteReturn,
-      xirr,
-    },
+    metrics: buildFolioMetrics(holding),
   };
 }
 
@@ -104,7 +124,7 @@ export function adaptHoldingToFolioInput(
 export function adaptHoldingsToFolioInputs(
   holdings: readonly EnrichedHolding[],
   folios: readonly FolioEntity[]
-): FolioInput[] {
+): MobileFolioInput[] {
   const folioMap = buildFolioEntityMap(folios);
   return holdings.map((h) => adaptHoldingToFolioInput(h, folioMap.get(h.folio_number)));
 }

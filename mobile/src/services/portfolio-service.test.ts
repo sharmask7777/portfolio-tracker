@@ -43,11 +43,12 @@ import {
   formatInr,
   formatPct,
   checkServerReachable,
-  syncWithServer,
   syncWithPublicFeed,
   refreshPortfolio,
   computeOverallPortfolioXirr,
+  mergeServerMetricsIntoSummary,
 } from './portfolio-service';
+import { syncWithServerWithOptions } from './portfolio-sync-service';
 import type { HoldingEntity } from '../db/schema';
 
 type SqlInput = null | number | bigint | string | Uint8Array;
@@ -156,7 +157,8 @@ describe('portfolio-service', () => {
       expect(normalizeAssetClass('EQUITY')).toBe('Equity');
       expect(normalizeAssetClass('Large Cap Stock')).toBe('Equity');
       expect(normalizeAssetClass('DEBT_SHORT_TERM')).toBe('Debt');
-      expect(normalizeAssetClass('Liquid Fund')).toBe('Debt');
+      expect(normalizeAssetClass('Liquid Fund')).toBe('Cash');
+      expect(normalizeAssetClass('HDFC Balanced Advantage Fund')).toBe('Hybrid');
       expect(normalizeAssetClass('Kotak Arbitrage Fund')).toBe('Arbitrage');
       expect(normalizeAssetClass('Gold ETF')).toBe('Gold');
       expect(normalizeAssetClass('')).toBe('Other');
@@ -351,7 +353,11 @@ describe('portfolio-service', () => {
         }),
       });
 
-      const success = await syncWithServer('http://localhost:3000', 'valid-jwt', db);
+      const success = await syncWithServerWithOptions({
+        serverUrl: 'http://localhost:3000',
+        token: 'valid-jwt',
+        targetDb: db,
+      });
       expect(success).toBe(true);
 
       const summary = await getDashboardSummary(db);
@@ -523,6 +529,95 @@ describe('portfolio-service', () => {
       // (50000 * 0.12 + 50000 * 0 + 50000 * 0.06) / 150000 = (6000 + 0 + 3000) / 150000 = 0.06
       const result = computeOverallPortfolioXirr([h1, h2, h3]);
       expect(result).toBeCloseTo(0.06, 4);
+    });
+  });
+
+  describe('SSOT Sync & Scope Merging', () => {
+    it('sends cpiInflationRate, marginalTaxBracket, and profileId query params and preserves consolidated holdings', async () => {
+      await savePortfolioSnapshot(db, {
+        portfolio: { id: 'p-1', name: 'Main', updated_at: '2026-11-25T00:00:00Z' },
+        folios: [{ folio_number: 'F-1', amc_name: 'HDFC', pan: 'ABCDE1234F', updated_at: '2026-11-25T00:00:00Z' }],
+        holdings: [sampleHoldings[0]!],
+      });
+
+      mockFetch.mockImplementation(async (input: string) => {
+        if (input.includes('/api/portfolio/summary')) {
+          return {
+            ok: true,
+            json: async () => ({
+              id: 'prof-1',
+              metrics: {
+                totalInvested: 50000,
+                totalValue: 60000,
+                postTaxTotalValue: 58500,
+                netRealizableValue: 58500,
+                totalGain: 10000,
+                absoluteReturn: 0.2,
+                xirr: 0.14,
+                postTaxXirr: 0.12,
+                estimatedTax: 1500,
+                dayChange: 100,
+                dayChangePercentage: 0.17,
+              },
+              assetAllocation: [{ name: 'Hybrid', amount: 60000, percentage: 100, color: '#8b5cf6' }],
+            }),
+          };
+        }
+        return { ok: true, json: async () => [] };
+      });
+
+      const ok = await syncWithServerWithOptions({
+        serverUrl: 'https://api.example.com',
+        token: 'tok-1',
+        targetDb: db,
+        options: { cpi: 0.06, taxBracket: 0.30, profileId: 'prof-1' },
+      });
+
+      expect(ok).toBe(true);
+      const summaryCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/api/portfolio/summary'));
+      expect(String(summaryCall?.[0])).toContain('cpiInflationRate=0.06');
+      expect(String(summaryCall?.[0])).toContain('marginalTaxBracket=0.3');
+      expect(String(summaryCall?.[0])).toContain('profileId=prof-1');
+
+      const historyCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/api/portfolio/prof-1/history'));
+      expect(historyCall).toBeDefined();
+
+      const holdingsAfter = await getEnrichedHoldings(db);
+      expect(holdingsAfter).toHaveLength(1);
+    });
+
+    it('copies postTaxXirr and backend assetAllocation in mergeServerMetricsIntoSummary', () => {
+      const merged = mergeServerMetricsIntoSummary(
+        {
+          totalCurrentValue: 0,
+          totalInvestedCost: 0,
+          unrealizedGain: 0,
+          unrealizedGainPct: 0,
+          dayGain: 0,
+          dayGainPct: 0,
+          assetAllocation: [],
+          holdingsCount: 1,
+          lastUpdated: null,
+        },
+        {
+          totalInvested: 50000,
+          totalValue: 60000,
+          postTaxTotalValue: 58500,
+          netRealizableValue: 58500,
+          totalGain: 10000,
+          absoluteReturn: 0.2,
+          xirr: 0.14,
+          postTaxXirr: 0.115,
+          estimatedTax: 1500,
+          dayChange: 100,
+          dayChangePercentage: 0.17,
+        },
+        [{ name: 'Hybrid', amount: 60000, percentage: 100, color: '#8b5cf6' }],
+      );
+
+      expect(merged.postTaxXirr).toBe(0.115);
+      expect(merged.postTaxTotalValue).toBe(58500);
+      expect(merged.assetAllocation[0]?.name).toBe('Hybrid');
     });
   });
 });

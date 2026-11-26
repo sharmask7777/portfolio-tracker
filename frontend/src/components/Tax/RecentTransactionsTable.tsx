@@ -1,6 +1,6 @@
 import React from 'react';
-import { classifySection } from '../../utils/itr-report-generator';
-import type { ITRGainDetail } from '../../utils/itr-report-generator';
+import type { ITRGainDetail } from '../../utils/itr-report-types';
+import { classifySection, formatFiscalYearLabel } from '../../utils/tax-formatters';
 
 interface RecentTransactionsTableProps {
   selectedFY: string;
@@ -15,7 +15,7 @@ export const RecentTransactionsTable: React.FC<RecentTransactionsTableProps> = (
 }) => (
   <div className="card">
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <h3>Recent Tax-Impactful Transactions (FY {selectedFY})</h3>
+      <h3>Recent Tax-Impactful Transactions ({formatFiscalYearLabel(selectedFY)})</h3>
       <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
         Showing {Math.min(20, filteredDetails.length)} of {filteredDetails.length} transactions
       </span>

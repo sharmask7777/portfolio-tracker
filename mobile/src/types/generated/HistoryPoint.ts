@@ -15,4 +15,24 @@ value: number,
 /**
  * Total invested capital.
  */
-investedAmount: number, };
+investedAmount: number, 
+/**
+ * Cumulative unrealized gain amount (value - invested_amount).
+ */
+unrealizedGain: number, 
+/**
+ * Cumulative gain percentage ((unrealized_gain / invested_amount) * 100).
+ */
+gainPercentage: number, 
+/**
+ * Whether this checkpoint is an all-time high valuation up to this date.
+ */
+isAth: boolean, 
+/**
+ * Rolling all-time high valuation up to this date.
+ */
+athValue: number, 
+/**
+ * Peak-to-trough drawdown percentage ((value - ath_value) / ath_value * 100).
+ */
+drawdownPercentage: number, };

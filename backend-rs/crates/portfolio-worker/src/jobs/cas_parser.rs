@@ -517,7 +517,11 @@ async fn process_cas_file_internal(
                 )
                 .await
                 .map_err(WorkerError::Db)?;
-                touched_pg_portfolios.insert(pid);
+                if touched_pg_portfolios.insert(pid) {
+                    portfolio_db::repositories::reconcile_portfolio_folios(pool, pid)
+                        .await
+                        .map_err(WorkerError::Db)?;
+                }
                 Some(pid)
             } else {
                 None
@@ -564,20 +568,16 @@ async fn process_cas_file_internal(
             };
 
             // 4. Folio
-            let folio_number = if folio_data.folio.trim().is_empty() {
-                "DEFAULT-FOLIO"
-            } else {
-                folio_data.folio.trim()
-            };
+            let canonical_folio = portfolio_core::canonicalize_folio_number(&folio_data.folio);
 
             let folio: FolioEntity =
-                if let Some(existing) = db.find_folio(portfolio.id, asset.id, folio_number) {
+                if let Some(existing) = db.find_folio(portfolio.id, asset.id, &canonical_folio) {
                     existing
                 } else {
                     db.create_folio(
                         portfolio.id,
                         asset.id,
-                        folio_number,
+                        &canonical_folio,
                         folio_data.amc.as_deref(),
                         Some(&scheme_pan),
                     )?
@@ -591,7 +591,7 @@ async fn process_cas_file_internal(
                         pool,
                         p_id,
                         a_id,
-                        folio_number,
+                        &canonical_folio,
                         folio_data.amc.as_deref(),
                         Some(&scheme_pan),
                     )
@@ -642,7 +642,7 @@ async fn process_cas_file_internal(
                 let external_id = format!(
                     "{}-{}-{}-{}-{}-{}-{}-{}",
                     portfolio.id,
-                    folio.number,
+                    canonical_folio,
                     isin.unwrap_or("UNKNOWN"),
                     date,
                     tx_type,
@@ -673,7 +673,7 @@ async fn process_cas_file_internal(
                     let pg_ext_id = format!(
                         "{}-{}-{}-{}-{}-{}-{}-{}",
                         p_id,
-                        folio.number,
+                        canonical_folio,
                         isin.unwrap_or("UNKNOWN"),
                         date,
                         tx_type,

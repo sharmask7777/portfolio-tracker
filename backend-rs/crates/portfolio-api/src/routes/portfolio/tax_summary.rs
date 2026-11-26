@@ -140,6 +140,12 @@ pub struct RealizedTaxBlockDto {
     /// Section 112A exemption applied for the selected FY.
     #[ts(type = "number")]
     pub exempt_ltcg_112a: f64,
+    /// Statutory Section 112A annual exemption limit for the selected FY.
+    #[ts(type = "number")]
+    pub sec112a_exemption_limit: f64,
+    /// Section 112A exemption applied for the selected FY (alias).
+    #[ts(type = "number")]
+    pub sec112a_exemption: f64,
     /// Lot-level realized gain details.
     pub details: Vec<RealizedGainDetailDto>,
     /// ITR Schedule CG Table F advance tax matrix.
@@ -341,7 +347,10 @@ async fn build_verified_tax_summary(
 
     let mut fy_details: Vec<_> = all_realized_details
         .into_iter()
-        .filter(|g| financial_year_for_date(g.sell_date) == selected_fy)
+        .filter(|g| {
+            selected_fy.eq_ignore_ascii_case("ALL")
+                || financial_year_for_date(g.sell_date) == selected_fy
+        })
         .collect();
     fy_details.sort_by_key(|a| std::cmp::Reverse(a.sell_date));
 
@@ -421,8 +430,10 @@ async fn build_verified_tax_summary(
         core_summary,
         Money::new(exempt_ltcg_112a),
     );
-    verify_itr_invariants(&report)
-        .map_err(|e| ApiError::Internal(format!("ITR invariant verification failed: {e}")))?;
+    if !selected_fy.eq_ignore_ascii_case("ALL") {
+        verify_itr_invariants(&report)
+            .map_err(|e| ApiError::Internal(format!("ITR invariant verification failed: {e}")))?;
+    }
 
     let d2f = |v: Decimal| v.to_f64().unwrap_or(0.0);
     let details: Vec<RealizedGainDetailDto> = fy_details
@@ -472,8 +483,10 @@ async fn build_verified_tax_summary(
             ltcg: d2f(total_realized_ltcg),
             slab: d2f(total_realized_slab),
             taxable_stcg: d2f(taxable_stcg.to_decimal()),
-            taxable_ltcg: d2f(taxable_ltcg.to_decimal()),
+            taxable_ltcg: d2f((taxable_ltcg.to_decimal() - exempt_ltcg_112a).max(Decimal::ZERO)),
             exempt_ltcg_112a: d2f(exempt_ltcg_112a),
+            sec112a_exemption_limit: d2f(exemption_limit),
+            sec112a_exemption: d2f(exempt_ltcg_112a),
             details: details.clone(),
             table_f: table_f.clone(),
             section_totals: section_totals.clone(),

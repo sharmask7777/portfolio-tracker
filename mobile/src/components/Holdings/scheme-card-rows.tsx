@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
-import { ChevronDown, ChevronRight } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Calculator } from 'lucide-react-native';
 import {
   formatIndianRupee,
   formatPercent,
@@ -61,6 +61,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  perfSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  investedText: {
+    fontSize: 11,
+    color: '#a1a1aa',
+  },
+  perfRateText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  neutral: {
+    color: '#a1a1aa',
+  },
   subRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -111,16 +128,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#93c5fd',
   },
-  childrenContainer: {
-    borderTopWidth: 1,
-    borderTopColor: '#27272a',
-  },
-  positive: {
-    color: '#22c55e',
-  },
-  negative: {
-    color: '#ef4444',
-  },
+  childrenContainer: { borderTopWidth: 1, borderTopColor: '#27272a' },
+  positive: { color: '#22c55e' },
+  negative: { color: '#ef4444' },
 });
 
 function formatDayChange(dayChange: number, dayChangePct: number | undefined): string {
@@ -128,6 +138,20 @@ function formatDayChange(dayChange: number, dayChangePct: number | undefined): s
   const isPctPositive = (dayChangePct ?? 0) >= 0;
   const pct = dayChangePct !== undefined ? formatPercent(dayChangePct / 100) : '0.00%';
   return `${isDayPositive ? '+' : ''}${formatIndianRupee(dayChange)} (${isPctPositive ? '+' : ''}${pct})`;
+}
+
+function resolveDayChangeStyle(dayChange: number) {
+  if (dayChange > 0) return styles.positive;
+  if (dayChange < 0) return styles.negative;
+  return styles.neutral;
+}
+
+function resolveSchemeReturn(props: CardTopRowProps): { label: string; rate: number | undefined } {
+  const mode = props.performanceMode ?? 'XIRR';
+  if (mode === 'ABS') {
+    return { label: 'Abs', rate: props.absoluteReturn ?? props.xirr };
+  }
+  return { label: 'XIRR', rate: props.xirr ?? props.absoluteReturn };
 }
 
 /**
@@ -140,6 +164,14 @@ export interface CardTopRowProps {
   schemeType: string;
   /** Current valuation in INR */
   currentValue: number;
+  /** Total invested cost in INR */
+  investedAmount?: number | undefined;
+  /** Consolidated scheme XIRR */
+  xirr?: number | undefined;
+  /** Consolidated scheme absolute return */
+  absoluteReturn?: number | undefined;
+  /** Active performance display mode */
+  performanceMode?: PerformanceMode | undefined;
   /** Day change in INR */
   dayChange: number;
   /** Day change percentage */
@@ -153,9 +185,10 @@ export interface CardTopRowProps {
  * @returns React Native element
  */
 export function CardTopRow(props: CardTopRowProps): React.ReactElement {
-  const isPositive = props.dayChange >= 0;
   const dayFormatted = formatDayChange(props.dayChange, props.dayChangePercentage);
-  const style = isPositive ? styles.positive : styles.negative;
+  const style = resolveDayChangeStyle(props.dayChange);
+  const { label: returnLabel, rate: returnRate } = resolveSchemeReturn(props);
+  const returnStyle = returnRate !== undefined && returnRate < 0 ? styles.negative : styles.positive;
 
   return (
     <View style={styles.topRow}>
@@ -175,6 +208,18 @@ export function CardTopRow(props: CardTopRowProps): React.ReactElement {
         <View style={styles.dayChangeRow}>
           <Text style={[styles.dayChangeText, style]}>{dayFormatted}</Text>
         </View>
+        {(props.investedAmount !== undefined || returnRate !== undefined) ? (
+          <View style={styles.perfSummaryRow}>
+            {props.investedAmount !== undefined ? (
+              <Text style={styles.investedText}>Inv: {formatIndianRupee(props.investedAmount)}</Text>
+            ) : null}
+            {returnRate !== undefined ? (
+              <Text style={[styles.perfRateText, returnStyle]}>
+                {returnLabel}: {formatPercent(returnRate)}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -200,6 +245,8 @@ export interface CardSubRowProps {
   onToggle: () => void;
   /** Scheme identifier */
   schemeId: string;
+  /** Quick simulate callback for single-folio schemes */
+  onSimulate?: (() => void) | undefined;
 }
 
 /**
@@ -209,7 +256,7 @@ export interface CardSubRowProps {
  * @returns React Native element
  */
 export function CardSubRow(props: CardSubRowProps): React.ReactElement {
-  const { showPanBadges, pans, singleFolioNum, isMultiFolio, folioCount, isExpanded, onToggle, schemeId } = props;
+  const { showPanBadges, pans, singleFolioNum, isMultiFolio, folioCount, isExpanded, onToggle, schemeId, onSimulate } = props;
 
   return (
     <View style={styles.subRow}>
@@ -238,7 +285,18 @@ export function CardSubRow(props: CardSubRowProps): React.ReactElement {
             <ChevronRight size={14} color="#93c5fd" />
           )}
         </TouchableOpacity>
-      ) : null}
+      ) : (
+        <TouchableOpacity
+          style={styles.expandBtn}
+          onPress={onSimulate}
+          testID={`scheme-simulate-btn-${schemeId}`}
+          accessibilityRole="button"
+          accessibilityLabel="Simulate withdrawal"
+        >
+          <Calculator size={14} color="#93c5fd" />
+          <Text style={styles.expandBtnText}>Simulate</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -257,6 +315,10 @@ export interface CardChildrenProps {
   isMultiFolio: boolean;
   /** Expansion state */
   isExpanded: boolean;
+  /** Optional callback invoked when simulation button is pressed */
+  onSimulate?: ((folio: FolioInput) => void) | undefined;
+  /** Optional callback invoked when simulation button is pressed */
+  onSimulateWithdrawal?: ((folio: FolioInput) => void) | undefined;
 }
 
 /**
@@ -266,7 +328,7 @@ export interface CardChildrenProps {
  * @returns React Native element or null
  */
 export function CardChildren(props: CardChildrenProps): React.ReactElement | null {
-  const { folios, schemeId, performanceMode, isMultiFolio, isExpanded } = props;
+  const { folios, schemeId, performanceMode, isMultiFolio, isExpanded, onSimulate, onSimulateWithdrawal } = props;
   if (!isMultiFolio || !isExpanded) return null;
 
   return (
@@ -276,6 +338,8 @@ export function CardChildren(props: CardChildrenProps): React.ReactElement | nul
           key={folio.id}
           folio={folio}
           performanceMode={performanceMode}
+          onSimulate={onSimulate}
+          onSimulateWithdrawal={onSimulateWithdrawal}
         />
       ))}
     </View>

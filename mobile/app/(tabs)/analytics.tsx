@@ -24,6 +24,7 @@ import {
 } from '../../src/services/portfolio-service';
 import {
   getCachedPortfolioAnalytics,
+  syncScopedAnalytics,
   type CachedAnalyticsResult,
 } from '../../src/services/analytics-sync-service';
 import {
@@ -64,14 +65,23 @@ export interface AllocationCardProps {
   value: number;
   pct: number;
   color: string;
+  /** True when `pct` is a 0..1 fraction (backend `/xray`), false when already 0..100 */
+  isFraction?: boolean | undefined;
 }
 
-export function AllocationCard({ name, value, pct, color }: AllocationCardProps): React.ReactElement {
+export function AllocationCard({
+  name,
+  value,
+  pct,
+  color,
+  isFraction = false,
+}: AllocationCardProps): React.ReactElement {
+  const displayPct = isFraction ? pct * 100 : pct;
   return (
     <View style={styles.allocationCard} key={name}>
       <Text style={styles.allocationName}>{name}</Text>
       <Text style={styles.allocationValue}>{formatIndianRupee(value)}</Text>
-      <Text style={[styles.allocationPct, { color }]}>{pct.toFixed(1)}%</Text>
+      <Text style={[styles.allocationPct, { color }]}>{displayPct.toFixed(1)}%</Text>
     </View>
   );
 }
@@ -87,21 +97,23 @@ export function AllocationCard({ name, value, pct, color }: AllocationCardProps)
 export function AllocationCardsGrid({
   xrayData,
   excludeArbitrage = false,
+  isFraction = false,
 }: {
   xrayData: XRayData;
   excludeArbitrage?: boolean;
+  isFraction?: boolean | undefined;
 }): React.ReactElement {
   const alloc =
     excludeArbitrage && xrayData.exArbitrage
       ? xrayData.exArbitrage.assetAllocation
       : xrayData.assetAllocation;
   const rawItems: AllocationCardProps[] = [
-    { name: 'Equity', value: alloc.equity.value, pct: alloc.equity.percentage, color: '#38bdf8' },
-    { name: 'Debt', value: alloc.debt.value, pct: alloc.debt.percentage, color: '#10b981' },
-    { name: 'Arbitrage', value: alloc.arbitrage?.value ?? 0, pct: alloc.arbitrage?.percentage ?? 0, color: '#ec4899' },
-    { name: 'Cash', value: alloc.cash.value, pct: alloc.cash.percentage, color: '#06b6d4' },
-    { name: 'Gold', value: alloc.gold.value, pct: alloc.gold.percentage, color: '#f59e0b' },
-    { name: 'Other', value: alloc.other.value, pct: alloc.other.percentage, color: '#71717a' },
+    { name: 'Equity', value: alloc.equity.value, pct: alloc.equity.percentage, color: '#38bdf8', isFraction },
+    { name: 'Debt', value: alloc.debt.value, pct: alloc.debt.percentage, color: '#10b981', isFraction },
+    { name: 'Arbitrage', value: alloc.arbitrage?.value ?? 0, pct: alloc.arbitrage?.percentage ?? 0, color: '#ec4899', isFraction },
+    { name: 'Cash', value: alloc.cash.value, pct: alloc.cash.percentage, color: '#06b6d4', isFraction },
+    { name: 'Gold', value: alloc.gold.value, pct: alloc.gold.percentage, color: '#f59e0b', isFraction },
+    { name: 'Other', value: alloc.other.value, pct: alloc.other.percentage, color: '#71717a', isFraction },
   ];
   const items = rawItems.filter(
     (it) => it.value > 0 || ['Equity', 'Debt', 'Cash', 'Gold'].includes(it.name),
@@ -125,6 +137,8 @@ export function AllocationCardsGrid({
 export interface MarketCapSectionProps {
   /** Market capitalization look-through data object */
   marketCap: XRayData['marketCap'];
+  /** True when `percentage` values are 0..1 fractions from backend `/xray` */
+  isFraction?: boolean | undefined;
 }
 
 /**
@@ -133,11 +147,14 @@ export interface MarketCapSectionProps {
  * @param props - Component properties {@link MarketCapSectionProps}
  * @returns React Native element
  */
-export function MarketCapSection({ marketCap }: MarketCapSectionProps): React.ReactElement {
+export function MarketCapSection({
+  marketCap,
+  isFraction = false,
+}: MarketCapSectionProps): React.ReactElement {
   const items: AllocationCardProps[] = [
-    { name: 'Large Cap', value: marketCap.large.value, pct: marketCap.large.percentage, color: '#38bdf8' },
-    { name: 'Mid Cap', value: marketCap.mid.value, pct: marketCap.mid.percentage, color: '#a855f7' },
-    { name: 'Small Cap', value: marketCap.small.value, pct: marketCap.small.percentage, color: '#f59e0b' },
+    { name: 'Large Cap', value: marketCap.large.value, pct: marketCap.large.percentage, color: '#38bdf8', isFraction },
+    { name: 'Mid Cap', value: marketCap.mid.value, pct: marketCap.mid.percentage, color: '#a855f7', isFraction },
+    { name: 'Small Cap', value: marketCap.small.value, pct: marketCap.small.percentage, color: '#f59e0b', isFraction },
   ];
 
   if (marketCap.other && marketCap.other.value > 0) {
@@ -146,6 +163,7 @@ export function MarketCapSection({ marketCap }: MarketCapSectionProps): React.Re
       value: marketCap.other.value,
       pct: marketCap.other.percentage,
       color: '#71717a',
+      isFraction,
     });
   }
 
@@ -170,7 +188,7 @@ export function AnalyticsHeader(): React.ReactElement {
   );
 }
 
-function useAnalyticsData() {
+function useAnalyticsData(scopeId: string) {
   const [refreshing, setRefreshing] = useState(false);
   const [holdings, setHoldings] = useState<EnrichedHolding[]>([]);
   const [profiles, setProfiles] = useState<FamilyProfile[]>([]);
@@ -183,7 +201,7 @@ function useAnalyticsData() {
         getEnrichedHoldings(),
         getStoredFamilyProfiles(),
         getStoredFolios(),
-        getCachedPortfolioAnalytics(),
+        getCachedPortfolioAnalytics(undefined, scopeId),
       ]);
       setHoldings(enriched);
       setProfiles(storedProfiles);
@@ -192,20 +210,23 @@ function useAnalyticsData() {
     } catch {
       // Retain state
     }
-  }, []);
+  }, [scopeId]);
 
   useEffect(() => {
     void loadData();
-    void refreshPortfolio().then(() => {
+    void Promise.all([refreshPortfolio(), syncScopedAnalytics(scopeId)]).then(([, synced]) => {
+      setCachedAnalytics(synced);
       void loadData();
     });
-  }, [loadData]);
+  }, [loadData, scopeId]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refreshPortfolio();
+    const [, synced] = await Promise.all([refreshPortfolio(), syncScopedAnalytics(scopeId)]);
+    setCachedAnalytics(synced);
     await loadData();
     setRefreshing(false);
-  }, [loadData]);
+  }, [loadData, scopeId]);
 
   return { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics };
 }
@@ -215,29 +236,29 @@ interface AnalyticsStateInput {
   profiles: FamilyProfile[];
   folios: FolioEntity[];
   cachedAnalytics: CachedAnalyticsResult | null;
+  activeProfileId: string | null;
 }
 
 function useAnalyticsDerivedData(input: AnalyticsStateInput, excludeArbitrage: boolean) {
-  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
   const activeProfile = useMemo(() => {
-    if (!scopeState.activeProfileId) return null;
-    return input.profiles.find((p) => p.id === scopeState.activeProfileId) ?? null;
-  }, [scopeState.activeProfileId, input.profiles]);
+    if (!input.activeProfileId) return null;
+    return input.profiles.find((p) => p.id === input.activeProfileId) ?? null;
+  }, [input.activeProfileId, input.profiles]);
 
   const filteredHoldings = useMemo(
     () => filterHoldingsForProfile(activeProfile, input.holdings, input.folios),
     [activeProfile, input.holdings, input.folios],
   );
 
-  const { xrayData, exposures } = useMemo(() => {
-    if (!activeProfile && input.cachedAnalytics?.xrayData && input.cachedAnalytics.exposures) {
+  const { xrayData, exposures, isBackendXray } = useMemo(() => {
+    if (input.cachedAnalytics?.xrayData && input.cachedAnalytics.exposures) {
       const exps = excludeArbitrage
         ? (input.cachedAnalytics.exposuresExArb ?? input.cachedAnalytics.exposures)
         : input.cachedAnalytics.exposures;
-      return { xrayData: input.cachedAnalytics.xrayData, exposures: exps };
+      return { xrayData: input.cachedAnalytics.xrayData, exposures: exps, isBackendXray: true };
     }
-    return deriveAnalyticsFromHoldings(filteredHoldings);
-  }, [activeProfile, input.cachedAnalytics, excludeArbitrage, filteredHoldings]);
+    return { ...deriveAnalyticsFromHoldings(filteredHoldings), isBackendXray: false };
+  }, [input.cachedAnalytics, excludeArbitrage, filteredHoldings]);
 
   const rootHierarchyNode = useMemo(
     () => buildPortfolioHierarchy(xrayData, exposures, { excludeArbitrage }),
@@ -251,7 +272,7 @@ function useAnalyticsDerivedData(input: AnalyticsStateInput, excludeArbitrage: b
     return calculateExpenseAnalysis(filteredHoldings);
   }, [xrayData.expenseAnalysis, filteredHoldings]);
 
-  return { scopeState, xrayData, exposures, rootHierarchyNode, expenseAnalysis };
+  return { xrayData, exposures, isBackendXray, rootHierarchyNode, expenseAnalysis };
 }
 
 /**
@@ -260,12 +281,14 @@ function useAnalyticsDerivedData(input: AnalyticsStateInput, excludeArbitrage: b
  * @returns React Native screen component element
  */
 export default function AnalyticsScreen(): React.ReactElement {
-  const { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics } = useAnalyticsData();
+  const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+  const scopeId = scopeState.activeProfileId ?? 'consolidated';
+  const { refreshing, onRefresh, holdings, profiles, folios, cachedAnalytics } = useAnalyticsData(scopeId);
   const [excludeArbitrage, setExcludeArbitrage] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockExposure | null>(null);
 
-  const { scopeState, xrayData, exposures, rootHierarchyNode, expenseAnalysis } = useAnalyticsDerivedData(
-    { holdings, profiles, folios, cachedAnalytics },
+  const { xrayData, exposures, isBackendXray, rootHierarchyNode, expenseAnalysis } = useAnalyticsDerivedData(
+    { holdings, profiles, folios, cachedAnalytics, activeProfileId: scopeState.activeProfileId },
     excludeArbitrage,
   );
 
@@ -291,13 +314,14 @@ export default function AnalyticsScreen(): React.ReactElement {
       />
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38bdf8" />}>
         <AnalyticsHeader />
-        <AllocationCardsGrid xrayData={xrayData} excludeArbitrage={excludeArbitrage} />
+        <AllocationCardsGrid xrayData={xrayData} excludeArbitrage={excludeArbitrage} isFraction={isBackendXray} />
         <MarketCapSection
           marketCap={
             excludeArbitrage && xrayData.exArbitrage
               ? xrayData.exArbitrage.marketCap
               : xrayData.marketCap
           }
+          isFraction={isBackendXray}
         />
         <ExpenseAnalysisCard {...expenseAnalysis} />
         <Text style={styles.sectionTitle}>Visual Treemap</Text>

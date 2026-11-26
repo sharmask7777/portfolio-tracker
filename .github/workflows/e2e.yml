@@ -22,11 +22,13 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
-    - name: Run Python Sensors (Ruff & Anti-PII)
+    - name: Run Python Sensors (Ruff & Anti-PII) & View-Layer Boundary Guardrails
       run: |
         pip install ruff
         ruff check scripts backend-rs/scripts
         python3 scripts/check-privacy-and-pii.py
+        python3 scripts/check-view-layer-boundaries.py --self-test
+        python3 scripts/check-view-layer-boundaries.py
 
     - name: Run @portfolio/core-view Sensors & Coverage
       run: |
@@ -38,7 +40,7 @@ jobs:
         pnpm --filter frontend build
         pnpm --filter frontend test:unit
 
-    - name: Run Mobile Maintainability Sensors & Tests
+    - name: Run Mobile Maintainability Sensors, Coverage & E2E Tests
       run: |
         pnpm --filter @portfolio/core-view build:verify
         pnpm --filter mobile build:verify
@@ -48,6 +50,11 @@ jobs:
       run: |
         pnpm parity:check
         pnpm parity:visual
+
+    - name: Run Incremental Diff Coverage Guardrail
+      run: |
+        python3 scripts/check-diff-coverage.py --self-test
+        python3 scripts/check-diff-coverage.py --min-diff-coverage 85
 
     - name: Setup Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
