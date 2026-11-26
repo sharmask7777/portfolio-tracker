@@ -18,8 +18,11 @@ describe('SettingsContext', () => {
 
     act(() => {
       result.current.setCpiInflationRate(0.07);
+      result.current.setMarginalTaxBracket(0.2);
+      result.current.toggleTheme();
     });
 
     expect(result.current.cpiInflationRate).toBe(0.07);
+    expect(result.current.marginalTaxBracket).toBe(0.2);
   });
 });

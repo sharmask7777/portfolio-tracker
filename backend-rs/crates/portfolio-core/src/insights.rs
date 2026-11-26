@@ -143,3 +143,40 @@ pub fn compute_goal_progress(
         is_achieved,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_generate_smart_insights_and_goal_progress() {
+        let insights = generate_smart_insights(&InsightInput {
+            total_value: Money::from_str("500000").unwrap(),
+            regular_plan_value: Money::from_str("100000").unwrap(),
+            potential_annual_ter_savings: Money::from_str("750").unwrap(),
+            max_single_stock_pct: 15.0,
+            max_single_stock_name: Some("HDFC Bank".to_string()),
+            active_scheme_count: 5,
+        });
+        assert_ne!(insights.len(), 0);
+
+        let achieved = compute_goal_progress(
+            "Emergency",
+            Money::from_str("100000").unwrap(),
+            Money::from_str("120000").unwrap(),
+        );
+        assert!(achieved.is_achieved);
+        assert_eq!(achieved.shortfall, Money::ZERO);
+        assert_eq!(achieved.progress_pct, 100.0);
+
+        let in_progress = compute_goal_progress(
+            "House",
+            Money::from_str("200000").unwrap(),
+            Money::from_str("50000").unwrap(),
+        );
+        assert!(!in_progress.is_achieved);
+        assert_eq!(in_progress.shortfall, Money::from_str("150000").unwrap());
+        assert!((in_progress.progress_pct - 25.0).abs() < 0.01);
+    }
+}

@@ -120,3 +120,23 @@ pub fn resolve_fallback_holdings(
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_fallback_holdings_known_schemes_and_miss() {
+        let (arb, arb_alloc) =
+            resolve_fallback_holdings("Kotak Equity Arbitrage Fund").expect("Arbitrage fallback");
+        assert_ne!(arb.len(), 0);
+        assert!(arb_alloc.cash > Decimal::ZERO);
+
+        let (nifty, nifty_alloc) =
+            resolve_fallback_holdings("UTI Nifty 50 Index Fund").expect("Nifty 50 fallback");
+        assert_ne!(nifty.len(), 0);
+        assert!(nifty_alloc.equity > Decimal::ZERO);
+
+        assert!(resolve_fallback_holdings("Completely Unknown Scheme").is_none());
+    }
+}

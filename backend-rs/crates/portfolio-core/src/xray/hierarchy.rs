@@ -446,3 +446,35 @@ pub fn build_portfolio_hierarchy(
 
     ac_nodes
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_build_portfolio_hierarchy_and_expense_analysis() {
+        let schemes = vec![HierarchySchemeInput {
+            scheme_name: "HDFC Top 100 Fund - Direct Growth".to_string(),
+            asset_class: "Equity".to_string(),
+            is_arbitrage: false,
+            current_value: Money::from_str("100000").unwrap(),
+            holdings: vec![CatalogHolding {
+                name: "HDFC Bank Ltd.".to_string(),
+                sector: Some("Financial Services".to_string()),
+                weight_pct: Decimal::from_str("60").unwrap(),
+            }],
+        }];
+
+        let tree = build_portfolio_hierarchy(&schemes, false);
+        assert_ne!(tree.len(), 0);
+        assert_eq!(tree[0].value, Money::from_str("100000").unwrap());
+
+        let expenses = compute_expense_analysis(&[ExpenseSchemeInput {
+            scheme_name: "HDFC Top 100 Fund - Direct Growth".to_string(),
+            current_value: Money::from_str("100000").unwrap(),
+            explicit_ter_pct: None,
+        }]);
+        assert!(expenses.estimated_annual_fee > Money::ZERO);
+    }
+}

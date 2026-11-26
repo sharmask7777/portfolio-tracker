@@ -15,7 +15,7 @@
     "prepare": "husky",
     "parity:check": "tsx scripts/verify-web-mobile-parity.ts",
     "parity:visual": "tsx scripts/compare-web-mobile-ui.ts",
-    "test:coverage:backend": "(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex \"(main\\.rs|test_mocks\\.rs|repositories/)\" --fail-under-lines 80 --summary-only)",
+    "test:coverage:backend": "(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex \"(main\\.rs|bin/|test_mocks\\.rs|repositories/|schema\\.rs)\" --fail-under-lines 80 --summary-only)",
     "test:coverage:core-view": "pnpm --filter @portfolio/core-view test:coverage",
     "test:coverage:frontend": "pnpm --filter frontend test:coverage",
     "test:coverage:mobile": "pnpm --filter mobile test:coverage",

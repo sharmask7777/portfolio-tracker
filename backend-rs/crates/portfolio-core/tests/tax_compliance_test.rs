@@ -777,3 +777,122 @@ fn test_section_112a_harvest_ticket_compliance() {
     // Statutory savings @ 12.5% = ₹6,250
     assert_eq!(ticket.estimated_tax_savings, money("6250"));
 }
+
+#[test]
+fn test_fy_scoped_tax_report_and_schedule_cg_csv_generation() {
+    use portfolio_core::holdings::{Transaction, TransactionType};
+    use portfolio_core::tax::{
+        TaxReport, available_financial_years, calculate_portfolio_tax_for_fy,
+        generate_itr_schedule_cg_csv,
+    };
+    use portfolio_core::types::{AssetType, Money, Nav, Units};
+
+    let txs = vec![
+        Transaction {
+            id: "b1".to_string(),
+            date: NaiveDate::from_ymd_opt(2022, 1, 10).unwrap(),
+            tx_type: TransactionType::Purchase,
+            amount: Money::from_str("100000").unwrap(),
+            units: Units::from_str("1000").unwrap(),
+            nav: Nav::from_str("100").unwrap(),
+            balance: Units::from_str("1000").unwrap(),
+            external_id: None,
+        },
+        Transaction {
+            id: "s1".to_string(),
+            date: NaiveDate::from_ymd_opt(2024, 8, 15).unwrap(),
+            tx_type: TransactionType::Redemption,
+            amount: Money::from_str("150000").unwrap(),
+            units: Units::from_str("1000").unwrap(),
+            nav: Nav::from_str("150").unwrap(),
+            balance: Units::ZERO,
+            external_id: None,
+        },
+    ];
+
+    let summary = calculate_portfolio_tax_for_fy(
+        "Synthetic Equity Fund",
+        AssetType::MutualFund,
+        &txs,
+        Nav::from_str("150").unwrap(),
+        Decimal::from_str("0.30").unwrap(),
+        None,
+        "2024-25",
+    )
+    .expect("FY 2024-25 summary");
+
+    let fys = available_financial_years(&summary.realized.details);
+    assert!(fys.contains(&"2024-25".to_string()));
+
+    let report = TaxReport {
+        financial_year: "2024-25".to_string(),
+        assessment_year: Some("2025-26".to_string()),
+        assessee_name: Some("Aarav Sharma".to_string()),
+        pan: portfolio_core::types::Pan::from_str("ABCDE1234F").ok(),
+        summary,
+        exempt_ltcg_112a: Money::from_str("50000").unwrap(),
+    };
+    let csv = generate_itr_schedule_cg_csv(&report);
+    assert!(csv.contains("Synthetic Equity Fund"));
+}
+
+#[test]
+fn test_cost_inflation_index_table_coverage() {
+    use portfolio_core::tax::constants::cost_inflation_index;
+    for year in 2001..=2025 {
+        assert!(cost_inflation_index(year).is_some());
+    }
+    assert!(cost_inflation_index(1999).is_none());
+}
+
+#[test]
+fn test_exit_load_parag_parikh_liquid_and_arbitrage_are_zero() {
+    use portfolio_core::tax::rules::get_exit_load;
+    use portfolio_core::types::{AssetType, Money};
+    let buy = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let sell = NaiveDate::from_ymd_opt(2024, 2, 1).unwrap();
+    let val = Money::from_str("100000").unwrap();
+    assert_eq!(
+        get_exit_load(
+            "Parag Parikh Liquid Fund",
+            AssetType::MutualFund,
+            buy,
+            sell,
+            val,
+            None
+        ),
+        Money::ZERO
+    );
+    assert_eq!(
+        get_exit_load(
+            "Parag Parikh Arbitrage Fund",
+            AssetType::MutualFund,
+            buy,
+            sell,
+            val,
+            None
+        ),
+        Money::ZERO
+    );
+    assert_eq!(
+        get_exit_load(
+            "HDFC Overnight Fund",
+            AssetType::MutualFund,
+            buy,
+            sell,
+            val,
+            None
+        ),
+        Money::ZERO
+    );
+    assert!(
+        get_exit_load(
+            "Parag Parikh Flexi Cap Fund",
+            AssetType::MutualFund,
+            buy,
+            sell,
+            val,
+            None
+        ) > Money::ZERO
+    );
+}
