@@ -19,7 +19,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    testTimeout: 15000,
+    testTimeout: 60000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

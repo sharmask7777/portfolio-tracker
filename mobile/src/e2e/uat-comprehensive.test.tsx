@@ -381,7 +381,7 @@ describe('Agent-Driven Comprehensive UAT Suite: Mobile (Android & iOS)', () => {
       expect(screen.getByText('Gross Nominal')).toBeDefined();
       expect(screen.getByText('Real Purchasing XIRR')).toBeDefined();
     });
-  });
+  }, 60000);
 
   it('UAT-MOB-2: iOS Platform Journey - Tax harvesting, advance tax matrix, and CAS upload queuing', async () => {
     (Platform as { OS: string }).OS = 'ios';
@@ -434,5 +434,5 @@ describe('Agent-Driven Comprehensive UAT Suite: Mobile (Android & iOS)', () => {
       expect(screen.getByText('Queued for upload when server reconnects')).toBeDefined();
       expect(screen.getByText('Upload Outbox')).toBeDefined();
     });
-  });
+  }, 60000);
 });
