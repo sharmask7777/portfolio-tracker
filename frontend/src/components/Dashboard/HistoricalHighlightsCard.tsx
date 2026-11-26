@@ -1,30 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import api, { API_ENDPOINTS } from '../../api';
 import { Trophy, TrendingUp, Calendar } from 'lucide-react';
-
-interface StatPoint {
-  value: number;
-  date: string;
-}
-
-interface YearlyStat {
-  year: number;
-  ath: StatPoint;
-  maxInvested: StatPoint;
-}
-
-interface HistoricalStats {
-  ath: StatPoint;
-  maxInvested: StatPoint;
-  yearly: YearlyStat[];
-}
+import type { PortfolioStatsResponse, YearlyStatDto } from '../../types/generated';
 
 interface HistoricalHighlightsCardProps {
   portfolioId: string;
 }
 
 export const HistoricalHighlightsCard: React.FC<HistoricalHighlightsCardProps> = ({ portfolioId }) => {
-  const [stats, setStats] = useState<HistoricalStats | null>(null);
+  const [stats, setStats] = useState<PortfolioStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,8 +47,17 @@ export const HistoricalHighlightsCard: React.FC<HistoricalHighlightsCardProps> =
     }).format(num);
   };
 
-  const formatDate = (str: string) => {
+  const formatDate = (str: string | null | undefined) => {
+    if (!str) return 'N/A';
     return new Date(str).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const getYearlyPeakValue = (y: YearlyStatDto): number => {
+    return y.maxValue ?? 0;
+  };
+
+  const getYearlyMaxInvested = (y: YearlyStatDto): number => {
+    return y.maxInvested ?? 0;
   };
 
   if (loading) {
@@ -136,8 +129,8 @@ export const HistoricalHighlightsCard: React.FC<HistoricalHighlightsCardProps> =
               {stats.yearly.map((y) => (
                 <tr key={y.year} style={{ borderBottom: '1px solid var(--bg-secondary)' }}>
                   <td style={{ padding: '0.5rem 0', fontWeight: '600' }}>{y.year}</td>
-                  <td style={{ padding: '0.5rem 0' }}>{formatCurrency(y.ath.value)}</td>
-                  <td style={{ padding: '0.5rem 0' }}>{formatCurrency(y.maxInvested.value)}</td>
+                  <td style={{ padding: '0.5rem 0' }}>{formatCurrency(getYearlyPeakValue(y))}</td>
+                  <td style={{ padding: '0.5rem 0' }}>{formatCurrency(getYearlyMaxInvested(y))}</td>
                 </tr>
               ))}
             </tbody>

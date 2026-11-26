@@ -10,7 +10,8 @@ use portfolio_api::routes::auth::{
 };
 use portfolio_api::routes::holdings::HoldingsSummaryResponse;
 use portfolio_api::routes::portfolio::{
-    AssetAllocationDto, DragDecompositionDto, PanBreakdownDto, SummaryMetrics,
+    AssetAllocationDto, DragDecompositionDto, HistoryPointDto, PanBreakdownDto,
+    PortfolioStatsResponse, StatMilestoneDto, SummaryMetrics, YearlyStatDto,
 };
 use portfolio_api::routes::tax::{
     HarvestOpportunityDto, HarvestTicketResponse, SimulationSellRequest, SimulationSellResponse,
@@ -42,6 +43,14 @@ fn test_export_typescript_bindings() {
         .expect("exported all deps for harvest ticket");
 
     // Export individual bindings matching the test specification
+    PortfolioStatsResponse::export_all_to(&output_dir)
+        .expect("exported all deps for PortfolioStatsResponse");
+    PortfolioStatsResponse::export_to(output_dir.join("PortfolioStatsResponse.ts"))
+        .expect("exported");
+    YearlyStatDto::export_to(output_dir.join("YearlyStatDto.ts")).expect("exported");
+    StatMilestoneDto::export_to(output_dir.join("StatMilestoneDto.ts")).expect("exported");
+    HistoryPointDto::export_to(output_dir.join("HistoryPointDto.ts")).expect("exported");
+
     SimulationSellRequest::export_to(output_dir.join("SimulationSellRequest.ts"))
         .expect("exported");
     SimulationSellResponse::export_to(output_dir.join("SimulationSellResponse.ts"))
