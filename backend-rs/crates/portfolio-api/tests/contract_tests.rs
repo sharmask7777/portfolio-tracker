@@ -925,6 +925,24 @@ async fn test_cas_upload_and_status_polling_contract() {
         "PDF upload accepted and processing has started."
     );
 
+    // 1b. JSON upload
+    let json_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"statement.json\"\r\n\
+        Content-Type: application/json\r\n\r\n{{\"folios\":[]}}\r\n--{boundary}--\r\n"
+    );
+    let json_req = Request::builder()
+        .method("POST")
+        .uri("/api/portfolio/upload")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(json_body))
+        .unwrap();
+    let json_res = app.clone().oneshot(json_req).await.unwrap();
+    assert_eq!(json_res.status(), StatusCode::ACCEPTED);
+
     // 2. Poll status: GET /api/portfolio/upload-status/{jobId}
     let status_req = Request::builder()
         .method("GET")
