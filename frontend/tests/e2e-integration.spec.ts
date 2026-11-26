@@ -23,7 +23,7 @@ test.describe('E2E Integration: Real PDF Processing', () => {
     dummyPdfPath = path.join(__dirname, `integration-test-${testInfo.workerIndex}.pdf`);
     // Note: This won't actually "parse" correctly since it's not a real CAS PDF, 
     // but it will test the File-Not-Found and Job Queueing logic perfectly.
-    fs.writeFileSync(dummyPdfPath, 'dummy pdf content');
+    fs.writeFileSync(dummyPdfPath, '%PDF-1.4\n% dummy pdf content');
   });
 
   test.afterEach(async () => {
