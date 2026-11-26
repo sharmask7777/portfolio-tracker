@@ -328,6 +328,9 @@ pub struct SummaryMetrics {
     pub post_tax_total_value: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
+    pub net_realizable_value: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    #[ts(type = "number")]
     pub total_gain: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
     #[ts(type = "number")]
@@ -1857,6 +1860,7 @@ pub async fn get_portfolio_summary(
                 total_invested: Decimal::ZERO,
                 total_value: Decimal::ZERO,
                 post_tax_total_value: Decimal::ZERO,
+                net_realizable_value: Decimal::ZERO,
                 total_gain: Decimal::ZERO,
                 absolute_return: Decimal::ZERO,
                 xirr: Decimal::ZERO,
@@ -2236,6 +2240,7 @@ pub async fn get_portfolio_summary(
             total_invested,
             total_value: total_current_value,
             post_tax_total_value,
+            net_realizable_value: post_tax_total_value,
             total_gain,
             absolute_return,
             xirr: overall_xirr,
