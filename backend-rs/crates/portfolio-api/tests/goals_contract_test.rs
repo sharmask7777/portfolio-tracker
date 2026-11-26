@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 #![allow(
     missing_docs,
     clippy::unwrap_used,
