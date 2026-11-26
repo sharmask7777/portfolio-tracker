@@ -1666,6 +1666,19 @@ mod tests {
             Err(TaxInvariantError::InvalidFinancialYear { .. })
         ));
         report.financial_year = "2024-25".to_string();
+        let csv = generate_itr_schedule_cg_csv(&report);
+        assert_ne!(csv.len(), 0);
+
+        if let Some(ref mut tf) = report.summary.table_f
+            && let Some(q) = tf.quarters.values_mut().next()
+        {
+            q.total_gain = money("100");
+        }
+        assert!(matches!(
+            verify_itr_invariants(&report),
+            Err(TaxInvariantError::QuarterlyMismatch { .. })
+        ));
+
         report.summary.table_f = None;
         assert!(matches!(
             verify_itr_invariants(&report),
