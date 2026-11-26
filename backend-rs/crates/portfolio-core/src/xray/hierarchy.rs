@@ -506,5 +506,32 @@ mod tests {
 
         let xray = compute_xray_report(&arb_schemes);
         assert!(xray.total_value > Money::ZERO);
+
+        assert_eq!(distribute_basis_points(&[], 10_000), Vec::<i64>::new());
+        assert_eq!(distribute_basis_points(&[Decimal::ZERO], 10_000), vec![0]);
+        let bps = distribute_basis_points(
+            &[Decimal::from(1), Decimal::from(1), Decimal::from(1)],
+            10_000,
+        );
+        assert_eq!(bps.iter().sum::<i64>(), 10_000);
+
+        let multi_exp = compute_expense_analysis(&[
+            ExpenseSchemeInput {
+                scheme_name: "HDFC Liquid Fund - Regular".to_string(),
+                current_value: Money::from_str("10000").unwrap(),
+                explicit_ter_pct: None,
+            },
+            ExpenseSchemeInput {
+                scheme_name: "Nippon Gold Bees".to_string(),
+                current_value: Money::from_str("10000").unwrap(),
+                explicit_ter_pct: None,
+            },
+            ExpenseSchemeInput {
+                scheme_name: "ICICI Corporate Bond Fund".to_string(),
+                current_value: Money::from_str("10000").unwrap(),
+                explicit_ter_pct: None,
+            },
+        ]);
+        assert!(multi_exp.estimated_annual_fee > Money::ZERO);
     }
 }
