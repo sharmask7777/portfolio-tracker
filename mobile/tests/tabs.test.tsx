@@ -61,6 +61,7 @@ vi.mock('react-native', () => ({
   TouchableOpacity: (props: Record<string, unknown>) => ({ type: 'TouchableOpacity', props }),
   ActivityIndicator: (props: Record<string, unknown>) => ({ type: 'ActivityIndicator', props }),
   RefreshControl: (props: Record<string, unknown>) => ({ type: 'RefreshControl', props }),
+  PanResponder: { create: (c: Record<string, unknown>) => ({ panHandlers: c }) },
   Alert: { alert: vi.fn() },
   Platform: { OS: 'ios', select: (s: Record<string, unknown>) => s['ios'] },
 }));
@@ -260,6 +261,13 @@ describe('Tabs Screens & Components', () => {
     it('renders DashboardScreen tree without errors', () => {
       const screen = DashboardScreen();
       expect(screen).toBeDefined();
+    });
+
+    it('renders DashboardScreen loading or content tree without errors', () => {
+      const screen = DashboardScreen();
+      expect(screen).toBeDefined();
+      const props = getProps(screen);
+      expect(props['testID'] === 'dashboard-loading' || props['children']).toBeTruthy();
     });
   });
 

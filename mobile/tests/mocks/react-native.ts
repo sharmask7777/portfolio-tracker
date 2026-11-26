@@ -19,3 +19,8 @@ export const Alert = { alert: vi.fn() };
 export const StatusBar = { currentHeight: 24 };
 export const KeyboardAvoidingView = (props: Record<string, unknown>): Record<string, unknown> => ({ type: 'KeyboardAvoidingView', props });
 export const Modal = (props: Record<string, unknown>): Record<string, unknown> => ({ type: 'Modal', props });
+export const PanResponder = {
+  create: (config: Record<string, unknown>): { panHandlers: Record<string, unknown> } => ({
+    panHandlers: config,
+  }),
+};

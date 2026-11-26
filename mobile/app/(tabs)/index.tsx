@@ -52,14 +52,8 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 13, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   title: { fontSize: 26, fontWeight: '800', color: '#f4f4f5' },
   emptyCard: {
-    backgroundColor: '#18181b',
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 20,
+    backgroundColor: '#18181b', borderRadius: 16, padding: 24, borderWidth: 1,
+    borderColor: '#27272a', alignItems: 'center', marginTop: 10, marginBottom: 20,
   },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#f4f4f5', marginBottom: 8 },
   emptySubtitle: { fontSize: 14, color: '#a1a1aa', textAlign: 'center', lineHeight: 20 },
@@ -197,10 +191,11 @@ interface DashboardCardsProps {
   setIsAssumptionsOpen: (open: boolean) => void;
   performanceMode: PerformanceMode;
   onTogglePerformanceMode: (mode: PerformanceMode) => void;
+  onGestureActive?: ((active: boolean) => void) | undefined;
 }
 
 function DashboardCards(props: DashboardCardsProps): React.ReactElement {
-  const { data, historyPoints, performanceMode, onTogglePerformanceMode } = props;
+  const { data, historyPoints, performanceMode, onTogglePerformanceMode, onGestureActive } = props;
   const hasHoldings = data.holdingsCount > 0;
 
   return (
@@ -211,18 +206,12 @@ function DashboardCards(props: DashboardCardsProps): React.ReactElement {
       </View>
       <RealityCheckSection {...props} />
       <NetWorthCard
-        totalCurrentValue={data.totalCurrentValue}
-        totalInvestedCost={data.totalInvestedCost}
-        unrealizedGain={data.unrealizedGain}
-        unrealizedGainPct={data.unrealizedGainPct}
-        performanceMode={performanceMode}
-        overallXirr={data.overallXirr}
-        onTogglePerformanceMode={onTogglePerformanceMode}
-        realityCheckMode={props.realityCheckMode}
-        netRealizableValue={data.netRealizableValue}
-        estimatedTax={data.estimatedTax}
-        realPostTaxXirr={data.realPostTaxXirr}
-        postTaxTotalValue={data.postTaxTotalValue}
+        totalCurrentValue={data.totalCurrentValue} totalInvestedCost={data.totalInvestedCost}
+        unrealizedGain={data.unrealizedGain} unrealizedGainPct={data.unrealizedGainPct}
+        performanceMode={performanceMode} overallXirr={data.overallXirr}
+        onTogglePerformanceMode={onTogglePerformanceMode} realityCheckMode={props.realityCheckMode}
+        netRealizableValue={data.netRealizableValue} estimatedTax={data.estimatedTax}
+        realPostTaxXirr={data.realPostTaxXirr} postTaxTotalValue={data.postTaxTotalValue}
         postTaxXirr={data.postTaxXirr}
       />
       <DayReturnBanner dayGain={data.dayGain} dayGainPct={data.dayGainPct} isOfflineFallback={data.isOfflineFallback} />
@@ -230,6 +219,7 @@ function DashboardCards(props: DashboardCardsProps): React.ReactElement {
         currentValue={data.totalCurrentValue}
         investedCost={data.totalInvestedCost}
         historyPoints={historyPoints}
+        onGestureActive={onGestureActive}
       />
       {hasHoldings ? <AssetAllocationCard allocation={data.assetAllocation} totalValue={data.totalCurrentValue} /> : renderEmptyState()}
     </>
@@ -286,6 +276,7 @@ export default function DashboardScreen(): React.ReactElement {
   });
   const [performanceMode, setPerformanceMode] = usePerformanceMode();
   const [realityCheckMode, setRealityCheckMode] = useState(false);
+  const [chartGestureActive, setChartGestureActive] = useState(false);
   const [assumptions, setAssumptions] = useState<RealityCheckAssumptions>(DEFAULT_ASSUMPTIONS);
   const [isAssumptionsOpen, setIsAssumptionsOpen] = useState(false);
   const handleSaveAssumptions = useCallback((next: RealityCheckAssumptions) => {
@@ -309,7 +300,9 @@ export default function DashboardScreen(): React.ReactElement {
         onSelectMember={scopeState.setMemberScope} totalFolios={dash.folios.length}
       />
       <ScrollView
-        contentContainerStyle={styles.content} testID="dashboard-scroll"
+        contentContainerStyle={styles.content}
+        testID="dashboard-scroll"
+        scrollEnabled={!chartGestureActive}
         refreshControl={<RefreshControl refreshing={dash.isRefreshing} onRefresh={() => void dash.handleRefresh(assumptions)} tintColor="#3b82f6" colors={['#3b82f6']} />}
       >
         <DashboardCards
@@ -318,6 +311,7 @@ export default function DashboardScreen(): React.ReactElement {
           assumptions={assumptions} setAssumptions={handleSaveAssumptions}
           isAssumptionsOpen={isAssumptionsOpen} setIsAssumptionsOpen={setIsAssumptionsOpen}
           performanceMode={performanceMode} onTogglePerformanceMode={setPerformanceMode}
+          onGestureActive={setChartGestureActive}
         />
       </ScrollView>
     </View>
