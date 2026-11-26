@@ -912,4 +912,17 @@ mod tests {
         assert_eq!(empty_summary.day_change, Money::ZERO);
         assert_eq!(empty_summary.day_change_pct, 0.0);
     }
+
+    #[test]
+    fn test_compute_ex_arbitrage_summary() {
+        let items = vec![
+            (money("100000"), money("80000"), false),
+            (money("50000"), money("45000"), true),
+        ];
+        let summary = compute_ex_arbitrage_summary(&items);
+        assert_eq!(summary.total_value, money("150000"));
+        assert_eq!(summary.arbitrage_value, money("50000"));
+        assert_eq!(summary.ex_arbitrage_value, money("100000"));
+        assert_eq!(summary.ex_arbitrage_invested, money("80000"));
+    }
 }

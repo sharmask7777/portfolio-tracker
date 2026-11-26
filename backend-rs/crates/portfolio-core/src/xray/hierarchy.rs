@@ -476,5 +476,35 @@ mod tests {
             explicit_ter_pct: None,
         }]);
         assert!(expenses.estimated_annual_fee > Money::ZERO);
+
+        let arb_schemes = vec![
+            HierarchySchemeInput {
+                scheme_name: "HDFC Top 100 Fund".to_string(),
+                asset_class: "Equity".to_string(),
+                is_arbitrage: false,
+                current_value: Money::from_str("100000").unwrap(),
+                holdings: vec![CatalogHolding {
+                    name: "HDFC Bank Ltd.".to_string(),
+                    sector: Some("Financial Services".to_string()),
+                    weight_pct: Decimal::from_str("60").unwrap(),
+                }],
+            },
+            HierarchySchemeInput {
+                scheme_name: "Kotak Equity Arbitrage Fund".to_string(),
+                asset_class: "Hybrid".to_string(),
+                is_arbitrage: true,
+                current_value: Money::from_str("50000").unwrap(),
+                holdings: vec![],
+            },
+        ];
+        let tree_ex_arb = build_portfolio_hierarchy(&arb_schemes, true);
+        assert_eq!(tree_ex_arb.len(), 1);
+        assert_eq!(tree_ex_arb[0].value, Money::from_str("100000").unwrap());
+
+        let exposures = compute_portfolio_exposures(&arb_schemes);
+        assert!(!exposures.is_empty());
+
+        let xray = compute_xray_report(&arb_schemes);
+        assert!(xray.total_value > Money::ZERO);
     }
 }
