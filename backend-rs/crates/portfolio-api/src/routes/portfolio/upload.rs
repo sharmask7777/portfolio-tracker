@@ -259,3 +259,17 @@ pub async fn get_upload_status(
 
     Ok(Json(job))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_magic_bytes() {
+        assert!(validate_magic_bytes(true, b"  {\"ok\":true}").is_ok());
+        assert!(validate_magic_bytes(true, b"[1,2]").is_ok());
+        assert!(validate_magic_bytes(true, b"not json").is_err());
+        assert!(validate_magic_bytes(false, b"%PDF-1.7").is_ok());
+        assert!(validate_magic_bytes(false, b"not pdf").is_err());
+    }
+}
