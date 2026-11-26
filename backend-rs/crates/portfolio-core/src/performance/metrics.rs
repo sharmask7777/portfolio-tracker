@@ -299,10 +299,6 @@ pub fn calculate_drag_attribution_with_slab(
                 let inf_drag = (pt - real).round_dp(6);
                 (d_drag, eq_drag, c_drag, inf_drag)
             }
-            (Some(_nom), Some(pt), Some(real)) => {
-                let inf_drag = (pt - real).round_dp(6);
-                (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, inf_drag)
-            }
             _ => (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
         };
 
