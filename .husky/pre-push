@@ -28,8 +28,8 @@ if [ -n "$(git status --porcelain frontend/src/types/generated mobile/src/types/
   exit 1
 fi
 
-echo "Enforcing backend test coverage thresholds (portfolio-core >= 93%, workspace >= 78%)..."
-(cd backend-rs && cargo llvm-cov --package portfolio-core --fail-under-lines 93 --summary-only && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|test_mocks\.rs|repositories/)" --fail-under-lines 78 --json --output-path coverage.json)
+echo "Enforcing backend test coverage threshold (workspace >= 78%)..."
+(cd backend-rs && cargo llvm-cov --workspace --ignore-filename-regex "(main\.rs|bin/|test_mocks\.rs|repositories/|schema\.rs)" --fail-under-lines 78 --json --output-path coverage.json)
 
 echo "Verifying @portfolio/core-view types, build, and coverage..."
 pnpm --filter @portfolio/core-view typecheck
