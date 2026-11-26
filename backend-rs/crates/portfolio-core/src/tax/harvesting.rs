@@ -778,6 +778,6 @@ mod tests {
 
         let as_of = date(2024, 6, 1);
         let summary = get_harvesting_opportunities(&[input], as_of, Money::ZERO, None);
-        assert!(!summary.opportunities.is_empty());
+        assert_ne!(summary.opportunities.len(), 0);
     }
 }
