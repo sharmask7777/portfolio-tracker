@@ -1,0 +1,212 @@
+diff --git a/backend-rs/Cargo.toml b/backend-rs/Cargo.toml
+index 905e3ec..8f4e349 100644
+--- a/backend-rs/Cargo.toml
++++ b/backend-rs/Cargo.toml
+@@ -33,3 +33,34 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
+ tracing = "0.1"
+ ts-rs = { version = "10.1", features = ["chrono-impl", "uuid-impl", "no-serde-warnings"] }
+ 
++[workspace.lints.rust]
++missing_docs = "warn"
++rust_2018_idioms = "warn"
++unreachable_pub = "warn"
++unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
++
++[workspace.lints.rustdoc]
++broken_intra_doc_links = "deny"
++bare_urls = "warn"
++
++[workspace.lints.clippy]
++all = { level = "deny", priority = -1 }
++pedantic = { level = "warn", priority = -1 }
++unwrap_used = "deny"
++panic = "deny"
++todo = "deny"
++redundant_clone = "deny"
++undocumented_unsafe_blocks = "deny"
++doc_markdown = "warn"
++missing_errors_doc = "warn"
++module_name_repetitions = "allow"
++must_use_candidate = "allow"
++cast_possible_truncation = "allow"
++cast_precision_loss = "allow"
++cast_sign_loss = "allow"
++similar_names = "allow"
++too_many_lines = "allow"
++match_same_arms = "allow"
++struct_excessive_bools = "allow"
++needless_pass_by_value = "allow"
++
+diff --git a/backend-rs/crates/portfolio-api/Cargo.toml b/backend-rs/crates/portfolio-api/Cargo.toml
+index 9f7cd7b..edb19a2 100644
+--- a/backend-rs/crates/portfolio-api/Cargo.toml
++++ b/backend-rs/crates/portfolio-api/Cargo.toml
+@@ -3,6 +3,9 @@ name = "portfolio-api"
+ version.workspace = true
+ edition.workspace = true
+ 
++[lints]
++workspace = true
++
+ [dependencies]
+ portfolio-core = { path = "../portfolio-core" }
+ portfolio-db = { path = "../portfolio-db" }
+diff --git a/backend-rs/crates/portfolio-api/src/lib.rs b/backend-rs/crates/portfolio-api/src/lib.rs
+index c33229e..fa01149 100644
+--- a/backend-rs/crates/portfolio-api/src/lib.rs
++++ b/backend-rs/crates/portfolio-api/src/lib.rs
+@@ -3,6 +3,8 @@
+ //! Provides camelCase JSON endpoints with JWT authentication,
+ //! hermetic contract parity, and integration with `portfolio-core` and `portfolio-db`.
+ 
++#![forbid(unsafe_code)]
++
+ pub mod errors;
+ pub mod middleware;
+ pub mod routes;
+diff --git a/backend-rs/crates/portfolio-api/src/main.rs b/backend-rs/crates/portfolio-api/src/main.rs
+index 38934f2..08581c9 100644
+--- a/backend-rs/crates/portfolio-api/src/main.rs
++++ b/backend-rs/crates/portfolio-api/src/main.rs
+@@ -1,5 +1,7 @@
+ //! Production entrypoint binary for the Axum REST API server (`portfolio-api`).
+ 
++#![forbid(unsafe_code)]
++
+ use std::sync::Arc;
+ 
+ use portfolio_api::{AppState, create_app};
+diff --git a/backend-rs/crates/portfolio-core/Cargo.toml b/backend-rs/crates/portfolio-core/Cargo.toml
+index 0e4c07a..8657982 100644
+--- a/backend-rs/crates/portfolio-core/Cargo.toml
++++ b/backend-rs/crates/portfolio-core/Cargo.toml
+@@ -3,6 +3,9 @@ name = "portfolio-core"
+ version.workspace = true
+ edition.workspace = true
+ 
++[lints]
++workspace = true
++
+ [dependencies]
+ rust_decimal.workspace = true
+ chrono.workspace = true
+diff --git a/backend-rs/crates/portfolio-core/src/lib.rs b/backend-rs/crates/portfolio-core/src/lib.rs
+index db9c725..9d4bde8 100644
+--- a/backend-rs/crates/portfolio-core/src/lib.rs
++++ b/backend-rs/crates/portfolio-core/src/lib.rs
+@@ -1,5 +1,7 @@
+ //! Zero-I/O deterministic financial calculations for Portfolio Tracker.
+ 
++#![forbid(unsafe_code)]
++
+ pub mod error;
+ pub mod holdings;
+ pub mod parser;
+diff --git a/backend-rs/crates/portfolio-db/Cargo.toml b/backend-rs/crates/portfolio-db/Cargo.toml
+index 9b23255..22c2ee2 100644
+--- a/backend-rs/crates/portfolio-db/Cargo.toml
++++ b/backend-rs/crates/portfolio-db/Cargo.toml
+@@ -3,6 +3,9 @@ name = "portfolio-db"
+ version.workspace = true
+ edition.workspace = true
+ 
++[lints]
++workspace = true
++
+ [dependencies]
+ portfolio-core = { path = "../portfolio-core" }
+ sqlx = { workspace = true }
+diff --git a/backend-rs/crates/portfolio-db/src/lib.rs b/backend-rs/crates/portfolio-db/src/lib.rs
+index 75db78c..243cba3 100644
+--- a/backend-rs/crates/portfolio-db/src/lib.rs
++++ b/backend-rs/crates/portfolio-db/src/lib.rs
+@@ -3,6 +3,8 @@
+ //! Provides SQLx database models, repository traits, PostgreSQL implementations,
+ //! and an in-memory test database mock for fast hermetic unit and integration testing.
+ 
++#![forbid(unsafe_code)]
++
+ pub mod entities;
+ pub mod error;
+ pub mod market_data;
+diff --git a/backend-rs/crates/portfolio-parity/Cargo.toml b/backend-rs/crates/portfolio-parity/Cargo.toml
+index 196fb99..c011ba0 100644
+--- a/backend-rs/crates/portfolio-parity/Cargo.toml
++++ b/backend-rs/crates/portfolio-parity/Cargo.toml
+@@ -3,6 +3,9 @@ name = "portfolio-parity"
+ version.workspace = true
+ edition.workspace = true
+ 
++[lints]
++workspace = true
++
+ [dependencies]
+ portfolio-core = { path = "../portfolio-core" }
+ chrono = { workspace = true }
+diff --git a/backend-rs/crates/portfolio-parity/src/lib.rs b/backend-rs/crates/portfolio-parity/src/lib.rs
+index f8a3f2d..a51b9aa 100644
+--- a/backend-rs/crates/portfolio-parity/src/lib.rs
++++ b/backend-rs/crates/portfolio-parity/src/lib.rs
+@@ -8,6 +8,9 @@
+ //! - Currency amounts (gain, cost, tax) within <= ₹0.01
+ //! - Returns and XIRR within <= 10^-6
+ 
++#![forbid(unsafe_code)]
++#![allow(clippy::unwrap_used, clippy::panic)]
++
+ use std::fs;
+ use std::path::{Path, PathBuf};
+ use std::str::FromStr;
+diff --git a/backend-rs/crates/portfolio-parity/src/main.rs b/backend-rs/crates/portfolio-parity/src/main.rs
+index cd2d86a..1efb6b1 100644
+--- a/backend-rs/crates/portfolio-parity/src/main.rs
++++ b/backend-rs/crates/portfolio-parity/src/main.rs
+@@ -3,6 +3,9 @@
+ //! Executes all synthetic scenarios through `portfolio-core`, validates precision bounds
+ //! against TypeScript benchmark outputs, and prints a formatted certification report.
+ 
++#![forbid(unsafe_code)]
++#![allow(clippy::unwrap_used, clippy::panic)]
++
+ use std::process::ExitCode;
+ 
+ use portfolio_parity::run_differential_tests;
+diff --git a/backend-rs/crates/portfolio-worker/Cargo.toml b/backend-rs/crates/portfolio-worker/Cargo.toml
+index cbc159e..6ad4004 100644
+--- a/backend-rs/crates/portfolio-worker/Cargo.toml
++++ b/backend-rs/crates/portfolio-worker/Cargo.toml
+@@ -3,6 +3,9 @@ name = "portfolio-worker"
+ version.workspace = true
+ edition.workspace = true
+ 
++[lints]
++workspace = true
++
+ [dependencies]
+ portfolio-core = { path = "../portfolio-core" }
+ portfolio-db = { path = "../portfolio-db" }
+diff --git a/backend-rs/crates/portfolio-worker/src/lib.rs b/backend-rs/crates/portfolio-worker/src/lib.rs
+index 5694ffb..2d94c20 100644
+--- a/backend-rs/crates/portfolio-worker/src/lib.rs
++++ b/backend-rs/crates/portfolio-worker/src/lib.rs
+@@ -6,6 +6,8 @@
+ //! - Portfolio historical valuation timeline calculation
+ //! - Pluggable queue abstractions (`JobQueue`, `InMemoryJobQueue`, `RedisBullQueue`)
+ 
++#![forbid(unsafe_code)]
++
+ pub mod error;
+ pub mod jobs;
+ pub mod queue;
+diff --git a/backend-rs/crates/portfolio-worker/src/main.rs b/backend-rs/crates/portfolio-worker/src/main.rs
+index 63c7438..a78b920 100644
+--- a/backend-rs/crates/portfolio-worker/src/main.rs
++++ b/backend-rs/crates/portfolio-worker/src/main.rs
+@@ -1,5 +1,7 @@
+ //! Production entrypoint binary for the background queue worker (`portfolio-worker`).
+ 
++#![forbid(unsafe_code)]
++
+ use std::sync::Arc;
+ use std::time::Duration;
+ 
