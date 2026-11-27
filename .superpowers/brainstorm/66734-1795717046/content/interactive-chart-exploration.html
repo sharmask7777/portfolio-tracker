@@ -1,0 +1,106 @@
+<h2>Interactive Valuation Chart & Inspection Designs</h2>
+<p class="subtitle">Comparing touch probing, pinch-to-zoom ergonomics, and historical point details</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#09090b; padding:16px; border-radius:12px; color:#f4f4f5; font-family:sans-serif;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="font-size:12px; font-weight:600; color:#fafafa;">Valuation Trend & Checkpoints</span>
+        <span style="background:rgba(16,185,129,0.15); color:#10b981; font-size:10px; padding:2px 8px; border-radius:12px; border:1px solid rgba(16,185,129,0.3);">All-Time High</span>
+      </div>
+      
+      <!-- Range bar -->
+      <div style="display:flex; gap:6px; margin-bottom:12px;">
+        <span style="font-size:10px; padding:3px 7px; background:#27272a; color:#a1a1aa; border-radius:6px;">1M</span>
+        <span style="font-size:10px; padding:3px 7px; background:#27272a; color:#a1a1aa; border-radius:6px;">6M</span>
+        <span style="font-size:10px; padding:3px 7px; background:#3b82f6; color:#fff; border-radius:6px; font-weight:bold;">1Y</span>
+        <span style="font-size:10px; padding:3px 7px; background:#27272a; color:#a1a1aa; border-radius:6px;">ALL</span>
+        <span style="margin-left:auto; font-size:10px; color:#60a5fa; background:rgba(59,130,246,0.15); padding:3px 8px; border-radius:6px;">🔍 2.4x Zoomed</span>
+      </div>
+
+      <!-- Detail Card (Docked HUD) -->
+      <div style="background:#18181b; border:1px solid #3f3f46; border-radius:8px; padding:10px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px; border-bottom:1px solid #27272a; padding-bottom:4px;">
+          <span style="font-size:11px; color:#a1a1aa; font-weight:600;">14 Oct 2024 (Probed Checkpoint)</span>
+          <span style="font-size:11px; color:#10b981; font-weight:bold;">+₹2,48,210 (+18.4%)</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; text-align:left;">
+          <div>
+            <div style="font-size:9px; color:#71717a;">Valuation</div>
+            <div style="font-size:12px; font-weight:bold; color:#60a5fa;">₹15,96,410</div>
+          </div>
+          <div>
+            <div style="font-size:9px; color:#71717a;">Invested Capital</div>
+            <div style="font-size:12px; font-weight:bold; color:#e4e4e7;">₹13,48,200</div>
+          </div>
+          <div>
+            <div style="font-size:9px; color:#71717a;">Peak Drawdown</div>
+            <div style="font-size:12px; font-weight:bold; color:#f59e0b;">-1.2%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mock SVG Chart with Hairline and Touch Point -->
+      <div style="position:relative; height:120px; background:#121215; border-radius:8px; overflow:hidden; border:1px solid #27272a;">
+        <svg width="100%" height="120" viewBox="0 0 300 120" style="display:block;">
+          <defs>
+            <linearGradient id="gA" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stop-color="#3b82f6" stop-opacity="0.35" />
+              <Stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0" />
+            </linearGradient>
+          </defs>
+          <path d="M 0 90 Q 70 75 140 50 T 220 35 T 300 20 L 300 120 L 0 120 Z" fill="url(#gA)" />
+          <path d="M 0 95 L 70 90 L 140 85 L 220 80 L 300 75" stroke="#71717a" stroke-width="1.5" stroke-dasharray="3 3" fill="none" />
+          <path d="M 0 90 Q 70 75 140 50 T 220 35 T 300 20" stroke="#3b82f6" stroke-width="2.5" fill="none" />
+          
+          <!-- Scrub Hairline -->
+          <line x1="170" y1="0" x2="170" y2="120" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="2 2" />
+          <!-- Active Probed Point -->
+          <circle cx="170" cy="42" r="6" fill="#f59e0b" stroke="#ffffff" stroke-width="2" />
+        </svg>
+        <div style="position:absolute; bottom:6px; left:12px; font-size:9px; color:#71717a;">👈 Pinch to Zoom | Drag to Scrub 👉</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Option A: Scrub Hairline + Docked Precision Card</h3>
+      <p>Continuous pan-to-scrub snaps to checkpoints with haptic ticks. The top HUD stays fixed so your finger never blocks the numbers. Pinching smoothly zooms into any date range with an instant "Reset Zoom" pill.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#09090b; padding:16px; border-radius:12px; color:#f4f4f5; font-family:sans-serif;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="font-size:12px; font-weight:600; color:#fafafa;">Valuation Trend & Checkpoints</span>
+        <span style="background:rgba(59,130,246,0.15); color:#60a5fa; font-size:10px; padding:2px 8px; border-radius:12px;">Zoom Active (3x)</span>
+      </div>
+
+      <!-- Floating Tooltip directly on graph -->
+      <div style="position:relative; height:140px; background:#121215; border-radius:8px; overflow:hidden; border:1px solid #27272a; margin-bottom:8px;">
+        <svg width="100%" height="140" viewBox="0 0 300 140" style="display:block;">
+          <path d="M 0 110 Q 80 80 150 40 T 300 15 L 300 140 L 0 140 Z" fill="#3b82f620" />
+          <path d="M 0 110 Q 80 80 150 40 T 300 15" stroke="#3b82f6" stroke-width="2.5" fill="none" />
+          
+          <line x1="150" y1="10" x2="150" y2="140" stroke="#a1a1aa" stroke-width="1" />
+          <circle cx="150" cy="40" r="6" fill="#3b82f6" stroke="#fff" stroke-width="2" />
+        </svg>
+
+        <!-- Floating bubble above finger -->
+        <div style="position:absolute; top:8px; left:90px; background:#27272a; border:1px solid #3b82f6; border-radius:6px; padding:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+          <div style="font-size:10px; font-weight:bold; color:#fff;">14 Oct 2024</div>
+          <div style="font-size:11px; color:#60a5fa; font-weight:bold;">Val: ₹15,96,410</div>
+          <div style="font-size:10px; color:#a1a1aa;">Inv: ₹13,48,200 (Gain: +18.4%)</div>
+        </div>
+      </div>
+
+      <!-- Quick Mini Scroller / Overview Minimap -->
+      <div style="background:#18181b; padding:6px 10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:10px; color:#a1a1aa;">Window: Jul 2024 - Nov 2024</span>
+        <span style="font-size:10px; color:#ef4444; font-weight:600; cursor:pointer;">Reset Zoom ✕</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Option B: Floating Tooltip Bubble + Range Minimap</h3>
+      <p>Floating callout bubble tracks right above your finger as you probe. Below the chart, an overview timeline minimap shows the current zoomed slice with easy pan navigation.</p>
+    </div>
+  </div>
+</div>

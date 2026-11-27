@@ -1,0 +1,24 @@
+<h2>Gesture Mechanics for Zoom & Scrub</h2>
+<p class="subtitle">How one-finger and two-finger touch gestures should behave when interacting with the chart</p>
+
+<div class="options">
+  <div class="option" data-choice="gesture-hybrid" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>One-Finger Scrub + Two-Finger Pinch & Pan</h3>
+      <p><strong>One finger anywhere on the chart:</strong> Immediately scrubs through checkpoints and locks vertical hairline to probe date & amounts.<br/>
+      <strong>Two fingers:</strong> Pinch in/out smoothly zooms the time window (up to 5x magnification, down to 7-day window); two-finger drag pans horizontally.<br/>
+      <strong>When zoomed:</strong> An animated "Reset Zoom" button appears next to the range bar to immediately return to 100%.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="gesture-hold-to-scrub" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>One-Finger Pan When Zoomed + Tap/Hold to Probe</h3>
+      <p><strong>Normal swipe:</strong> When zoomed in, swiping with one finger pans across the timeline horizontally.<br/>
+      <strong>Press and hold (or tap):</strong> Activates the scrub hairline and locks inspection HUD onto that date until finger lifts.<br/>
+      <strong>Pinch:</strong> Two-finger pinch zooms in and out.</p>
+    </div>
+  </div>
+</div>
