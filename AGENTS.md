@@ -126,7 +126,10 @@ Comprehensive documentation of all backend and frontend test suites, financial i
 
 ## Mandatory Testing Requirement
 
-For any new functionalities or bug fixes, you MUST mandatorily update and run both hermetic tests (backend/frontend unit tests) and Playwright E2E tests to cover the new code paths. These test updates must be committed as part of the primary change itself.
+- **Hermetic Unit & Integration Tests**: For any new functionalities or bug fixes across backend (`backend-rs`), web (`frontend`), or mobile (`mobile`), you MUST mandatorily update and run hermetic unit tests (`cargo test`, `pnpm --filter frontend test:unit`, `pnpm --filter mobile test`) to cover the new code paths.
+- **Web E2E Tests**: All web frontend changes MUST update and pass Playwright E2E tests (`pnpm --filter frontend test:e2e`).
+- **Mobile Native E2E & Maestro Tests**: All mobile changes MUST update and pass mobile simulation tests (`pnpm --filter mobile test:e2e`), register/verify Maestro E2E flows (`mobile/e2e/flows/`), and verify on native Android and iOS emulators per Section 12.
+These test updates must be committed as part of the primary change itself.
 
 ## Mandatory Data Anonymization & Privacy Protection
 
