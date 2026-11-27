@@ -1,0 +1,1886 @@
+diff --git a/frontend/src/components/Analytics/IntersectionView.tsx b/frontend/src/components/Analytics/IntersectionView.tsx
+index 7698f9d..7e4acd1 100644
+--- a/frontend/src/components/Analytics/IntersectionView.tsx
++++ b/frontend/src/components/Analytics/IntersectionView.tsx
+@@ -1,31 +1,93 @@
++/**
++ * @file IntersectionView.tsx
++ * @module components/Analytics/IntersectionView
++ * @description Provides portfolio look-through stock exposure analysis and cross-fund overlap tracking.
++ *
++ * Deconstructs active mutual fund scheme holdings to reveal aggregated look-through equity exposures
++ * across the entire portfolio, surfacing company-level concentration, multi-fund overlaps, sector
++ * weightings, and arbitrage hedging exclusions.
++ */
++
+ import React, { useState, useMemo } from 'react';
+ import { Search, Layers, ArrowUpDown, ArrowUp, ArrowDown, Upload, X } from 'lucide-react';
+ 
++/**
++ * Contribution of an individual mutual fund scheme to an underlying company's portfolio exposure.
++ */
+ export interface StockContribution {
++  /** Name of the mutual fund scheme holding the underlying company. */
+   schemeName: string;
++  /** Look-through rupee valuation of the stock held via this specific scheme. */
+   value: number;
++  /** Percentage portfolio weight of this stock within the specific scheme's asset portfolio. */
+   weight: number;
+ }
+ 
++/**
++ * Aggregated look-through exposure in a single underlying publicly traded company.
++ */
+ export interface StockExposure {
++  /** Canonical name of the underlying company (e.g., 'HDFC Bank Ltd.'). */
+   name: string;
++  /** Macro industrial sector classification (e.g., 'Financial Services', 'Technology'). */
+   sector: string;
++  /** Aggregated monetary value held across all portfolio mutual funds and direct equities. */
+   absoluteValue: number;
++  /** Effective portfolio-level percentage weight (0.0 to 1.0). */
+   percentage: number;
++  /** Breakdown of individual mutual fund schemes contributing to this stock position. */
+   contributions: StockContribution[];
+ }
+ 
++/**
++ * Properties for the {@link IntersectionView} component.
++ */
+ export interface IntersectionViewProps {
++  /** Array of aggregated look-through stock exposure objects. */
+   exposures: StockExposure[];
++  /** Whether portfolio look-through exposures are currently loading or recalculating. */
+   isLoading?: boolean;
++  /** Callback triggered when user clicks the upload CTA in an empty portfolio state. */
+   onUploadClick?: () => void;
++  /**
++   * Whether arbitrage mutual funds are excluded from look-through exposure calculations.
++   *
++   * Arbitrage funds hold equity shares hedged with equal short futures positions (cash-futures
++   * spread) to deliver risk-free debt-like yields while retaining equity tax treatment.
++   * Excluding them prevents distortion of directional equity allocation percentages.
++   */
+   excludeArbitrage?: boolean;
+-  onToggleExcludeArbitrage?: (val: boolean) => void;
++  /** Callback triggered when user toggles the arbitrage exclusion switch. */
++  onToggleExcludeArbitrage?: (exclude: boolean) => void;
+ }
+ 
++/** Sortable column field names for the stock exposure table. */
+ type SortField = 'percentage' | 'absoluteValue' | 'name' | 'sector';
++
++/** Sorting order direction. */
+ type SortDirection = 'asc' | 'desc';
+ 
++/**
++ * Renders the Portfolio Look-Through Stock Intersection & Overlap Analysis view.
++ *
++ * ### Look-Through Stock Exposure Formulation
++ * Mutual fund schemes publish monthly portfolio disclosures detailing individual company holdings.
++ * By multiplying an investor's scheme valuation by each fund's published company weight, the portfolio
++ * engine derives true effective exposure to individual companies:
++ *
++ * $$ \text{Effective Stock Value} = \sum_{f \in \text{Funds}} \Big( \text{Valuation}_f \times \text{Weight}_{f,\text{Stock}} \Big) $$
++ *
++ * ### Multi-Fund Overlap Detection
++ * When an underlying stock is held across two or more schemes, a prominent badge is rendered
++ * (e.g., `"2 Funds Overlap"`). This alerts the investor to unintended concentration risk where
++ * multiple funds simultaneously bet on identical corporate names.
++ *
++ * ### Arbitrage Exclusion Denominator Adjustment
++ * Arbitrage funds maintain ~65-70% gross equity exposure solely to qualify for Section 112A equity
++ * capital gains taxation, but hedge 100% of directional market risk with stock futures.
++ * When `excludeArbitrage` is enabled, the backend eliminates hedged arbitrage holdings from both
++ * company contributions and the total portfolio denominator, reflecting pure directional equity risk.
++ */
+ export const IntersectionView: React.FC<IntersectionViewProps> = ({
+   exposures,
+   isLoading = false,
+@@ -38,81 +100,95 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
+   const [sortField, setSortField] = useState<SortField>('percentage');
+   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+ 
+-  const formatCurrency = (val: unknown) => {
+-    const num = typeof val === 'number' && Number.isFinite(val) ? val : 0;
++  /**
++   * Formats a monetary value to Indian Rupee currency format (e.g. ₹1,50,000).
++   */
++  const formatCurrency = (amount: unknown): string => {
++    const numericAmount = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
+     return new Intl.NumberFormat('en-IN', {
+       style: 'currency',
+       currency: 'INR',
+       maximumFractionDigits: 0,
+-    }).format(num);
++    }).format(numericAmount);
+   };
+ 
+-  const formatPercent = (val: unknown) => {
+-    if (typeof val !== 'number' || !Number.isFinite(val)) return '0.00%';
+-    return `${(val * 100).toFixed(2)}%`;
++  /**
++   * Formats a decimal ratio into a percentage display string (e.g. 0.1523 -> "15.23%").
++   */
++  const formatPercent = (ratio: unknown): string => {
++    if (typeof ratio !== 'number' || !Number.isFinite(ratio)) return '0.00%';
++    return `${(ratio * 100).toFixed(2)}%`;
+   };
+ 
+-  const formatWeight = (val: unknown) => {
+-    if (typeof val !== 'number' || !Number.isFinite(val)) return '0.0%';
+-    return `${val.toFixed(1)}%`;
++  /**
++   * Formats a fund-level percentage weight (e.g. 8.2 -> "8.2%").
++   */
++  const formatWeight = (percentageValue: unknown): string => {
++    if (typeof percentageValue !== 'number' || !Number.isFinite(percentageValue)) return '0.0%';
++    return `${percentageValue.toFixed(1)}%`;
+   };
+ 
+-  // Extract unique sectors for dropdown filter
++  // Extract unique industrial sectors for the filter dropdown
+   const sectorList = useMemo(() => {
+     if (!exposures || !Array.isArray(exposures)) return ['All Sectors'];
+-    const sectors = new Set<string>();
+-    exposures.forEach((e) => {
+-      if (e.sector) sectors.add(e.sector);
++    const uniqueSectors = new Set<string>();
++    exposures.forEach((exposure) => {
++      if (exposure.sector) uniqueSectors.add(exposure.sector);
+     });
+-    return ['All Sectors', ...Array.from(sectors).sort()];
++    return ['All Sectors', ...Array.from(uniqueSectors).sort()];
+   }, [exposures]);
+ 
+-  // Filter and sort exposures
++  // Filter and sort exposures based on user selection, search query, and sorting column
+   const filteredExposures = useMemo(() => {
+     if (!exposures || !Array.isArray(exposures)) return [];
+ 
+     return exposures
+       .filter((item) => {
+-        // Sector filter
++        // Industrial Sector filter
+         if (selectedSector !== 'All Sectors' && item.sector !== selectedSector) {
+           return false;
+         }
+ 
+-        // Search query filter (matches stock name, sector, or contributing fund schemeName)
++        // Full-text search matching stock name, sector, or constituent contributing fund scheme name
+         if (searchQuery.trim()) {
+           const query = searchQuery.toLowerCase().trim();
+           const matchesName = (item.name || '').toLowerCase().includes(query);
+           const matchesSector = (item.sector || '').toLowerCase().includes(query);
+-          const matchesContribution = item.contributions?.some((c) =>
+-            (c.schemeName || '').toLowerCase().includes(query)
++          const matchesContribution = item.contributions?.some((contribution) =>
++            (contribution.schemeName || '').toLowerCase().includes(query)
+           );
+           return matchesName || matchesSector || matchesContribution;
+         }
+ 
+         return true;
+       })
+-      .sort((a, b) => {
+-        let diff = 0;
++      .sort((first, second) => {
++        let difference = 0;
+         if (sortField === 'name') {
+-          diff = (a.name || '').localeCompare(b.name || '');
++          difference = (first.name || '').localeCompare(second.name || '');
+         } else if (sortField === 'sector') {
+-          diff = (a.sector || '').localeCompare(b.sector || '');
++          difference = (first.sector || '').localeCompare(second.sector || '');
+         } else if (sortField === 'percentage') {
+-          diff = (a.percentage || 0) - (b.percentage || 0);
++          difference = (first.percentage || 0) - (second.percentage || 0);
+         } else if (sortField === 'absoluteValue') {
+-          diff = (a.absoluteValue || 0) - (b.absoluteValue || 0);
++          difference = (first.absoluteValue || 0) - (second.absoluteValue || 0);
+         }
+-        return sortDirection === 'asc' ? diff : -diff;
++        return sortDirection === 'asc' ? difference : -difference;
+       });
+   }, [exposures, searchQuery, selectedSector, sortField, sortDirection]);
+ 
+-  // Aggregate metrics for summary bar
++  // Aggregate summary metrics across currently filtered exposures
+   const summaryMetrics = useMemo(() => {
+     if (!filteredExposures || filteredExposures.length === 0) {
+       return { totalValue: 0, multiFundCount: 0, count: 0 };
+     }
+-    const totalValue = filteredExposures.reduce((acc, e) => acc + (e.absoluteValue || 0), 0);
+-    const multiFundCount = filteredExposures.filter((e) => (e.contributions?.length || 0) > 1).length;
++    const totalValue = filteredExposures.reduce(
++      (accumulated, exposure) => accumulated + (exposure.absoluteValue || 0),
++      0
++    );
++    const multiFundCount = filteredExposures.filter(
++      (exposure) => (exposure.contributions?.length || 0) > 1
++    ).length;
+     return {
+       totalValue,
+       multiFundCount,
+@@ -120,15 +196,22 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
+     };
+   }, [filteredExposures]);
+ 
++  /**
++   * Toggles column sorting direction or changes the active sorting column.
++   */
+   const handleSort = (field: SortField) => {
+     if (sortField === field) {
+-      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
++      setSortDirection((prevDirection) => (prevDirection === 'asc' ? 'desc' : 'asc'));
+     } else {
+       setSortField(field);
++      // Alphabetical columns default to ascending; numerical values default to descending
+       setSortDirection(field === 'name' || field === 'sector' ? 'asc' : 'desc');
+     }
+   };
+ 
++  /**
++   * Renders sort direction arrows for the table header cells.
++   */
+   const renderSortIndicator = (field: SortField) => {
+     if (sortField !== field) {
+       return <ArrowUpDown size={14} style={{ opacity: 0.4, marginLeft: '4px' }} />;
+@@ -160,8 +243,8 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
+               </tr>
+             </thead>
+             <tbody>
+-              {[1, 2, 3, 4, 5].map((i) => (
+-                <tr key={i}>
++              {[1, 2, 3, 4, 5].map((index) => (
++                <tr key={index}>
+                   <td><div style={{ height: '16px', width: '140px', backgroundColor: 'var(--border-color)', borderRadius: '4px', opacity: 0.5 }} /></td>
+                   <td><div style={{ height: '16px', width: '100px', backgroundColor: 'var(--border-color)', borderRadius: '4px', opacity: 0.5 }} /></td>
+                   <td><div style={{ height: '16px', width: '60px', backgroundColor: 'var(--border-color)', borderRadius: '4px', opacity: 0.5 }} /></td>
+@@ -244,7 +327,7 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
+           marginBottom: '1.25rem',
+         }}
+       >
+-        {/* Search & Sector Filters */}
++        {/* Search, Sector, and Arbitrage Exclusion Filters */}
+         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', flex: 1, minWidth: '280px' }}>
+           <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+             <Search
+@@ -306,13 +389,14 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
+               cursor: 'pointer',
+             }}
+           >
+-            {sectorList.map((sec) => (
+-              <option key={sec} value={sec}>
+-                {sec}
++            {sectorList.map((sector) => (
++              <option key={sector} value={sector}>
++                {sector}
+               </option>
+             ))}
+           </select>
+ 
++          {/* Arbitrage Fund Exclusion Toggle */}
+           <label
+             style={{
+               display: 'inline-flex',
+@@ -463,11 +547,11 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
+               </tr>
+             </thead>
+             <tbody>
+-              {filteredExposures.map((item, idx) => {
++              {filteredExposures.map((item, index) => {
+                 const isMultiFund = (item.contributions?.length || 0) > 1;
+ 
+                 return (
+-                  <tr key={`${item.name}-${idx}`}>
++                  <tr key={`${item.name}-${index}`}>
+                     <td style={{ fontWeight: 600 }}>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                         <span>{item.name}</span>
+@@ -509,15 +593,15 @@ export const IntersectionView: React.FC<IntersectionViewProps> = ({
+                     <td style={{ fontWeight: 500 }}>{formatCurrency(item.absoluteValue)}</td>
+                     <td>
+                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+-                        {(item.contributions || []).map((c, cIdx) => (
++                        {(item.contributions || []).map((contribution, contributionIndex) => (
+                           <span
+-                            key={cIdx}
++                            key={contributionIndex}
+                             className="contribution-tag"
+-                            title={`${formatCurrency(c.value)} (${formatWeight(c.weight)} allocation in ${c.schemeName})`}
++                            title={`${formatCurrency(contribution.value)} (${formatWeight(contribution.weight)} allocation in ${contribution.schemeName})`}
+                           >
+-                            {c.schemeName}{' '}
++                            {contribution.schemeName}{' '}
+                             <strong style={{ color: 'var(--text-primary)', marginLeft: '2px' }}>
+-                              ({formatWeight(c.weight)})
++                              ({formatWeight(contribution.weight)})
+                             </strong>
+                           </span>
+                         ))}
+diff --git a/frontend/src/types/generated/AdvanceTaxQuarter.ts b/frontend/src/types/generated/AdvanceTaxQuarter.ts
+index 27948f3..7c459c5 100644
+--- a/frontend/src/types/generated/AdvanceTaxQuarter.ts
++++ b/frontend/src/types/generated/AdvanceTaxQuarter.ts
+@@ -2,5 +2,14 @@
+ 
+ /**
+  * Statutory advance tax quarters adjusted for Budget 2024 (23 July 2024).
++ *
++ * In FY 2024-25, Quarter 2 was split into two sub-periods (`Q2a` and `Q2b`) because
++ * the Finance Act (No. 2) 2024 changed capital gains tax rates effective July 23, 2024:
++ * - `Q1`: April 1 to June 15
++ * - `Q2a`: June 16 to July 22 (Pre-Budget 2024 rates apply)
++ * - `Q2b`: July 23 to September 15 (Post-Budget 2024 rates apply)
++ * - `Q3`: September 16 to December 15
++ * - `Q4`: December 16 to March 15
++ * - `Q5`: March 16 to March 31
+  */
+ export type AdvanceTaxQuarter = "Q1 (01/04 - 15/06)" | "Q2a (16/06 - 22/07)" | "Q2b (23/07 - 15/09)" | "Q3 (16/09 - 15/12)" | "Q4 (16/12 - 15/03)" | "Q5 (16/03 - 31/03)";
+diff --git a/frontend/src/types/generated/RealizedGain.ts b/frontend/src/types/generated/RealizedGain.ts
+index 595e210..585bb1b 100644
+--- a/frontend/src/types/generated/RealizedGain.ts
++++ b/frontend/src/types/generated/RealizedGain.ts
+@@ -13,4 +13,116 @@ import type { Units } from "./Units";
+ /**
+  * Detailed calculation for a single realized gain matching a redemption to a buy lot.
+  */
+-export type RealizedGain = { assetName: string, folioNumber: FolioNumber | null, isin: Isin | null, pan: Pan | null, assetClass: string, section: TaxSection, buyDate: string, sellDate: string, holdingPeriodDays: number, holdingType: HoldingType, units: Units, buyNav: Nav, sellNav: Nav, grossConsideration: Money, costOfAcquisition: Money, fmvAsOfJan312018: Nav, totalFmvJan312018: Money, deemedCostOfAcquisition: Money, transferExpenses: Money, gain: Money, taxType: TaxType, taxRate: number, taxBeforeCess: Money, cess: Money, estimatedTax: Money, isGrandfathered: boolean, grandfatheredStatus: string, advanceTaxQuarter: AdvanceTaxQuarter | null, };
++export type RealizedGain = { 
++/**
++ * Asset or mutual fund scheme name.
++ */
++assetName: string, 
++/**
++ * Account folio number.
++ */
++folioNumber: FolioNumber | null, 
++/**
++ * ISIN of the underlying security.
++ */
++isin: Isin | null, 
++/**
++ * Permanent Account Number (PAN) of the folio owner.
++ */
++pan: Pan | null, 
++/**
++ * Asset class (e.g. "Equity", "Debt", "Fixed Deposit").
++ */
++assetClass: string, 
++/**
++ * Statutory section under which gain is taxed (e.g. Sec112A12_5, Sec111A20).
++ */
++section: TaxSection, 
++/**
++ * Acquisition date of the matched buy lot.
++ */
++buyDate: string, 
++/**
++ * Date when units were redeemed or sold.
++ */
++sellDate: string, 
++/**
++ * Number of calendar days held.
++ */
++holdingPeriodDays: number, 
++/**
++ * Short-Term vs Long-Term classification.
++ */
++holdingType: HoldingType, 
++/**
++ * Number of units redeemed.
++ */
++units: Units, 
++/**
++ * Original purchase NAV per unit.
++ */
++buyNav: Nav, 
++/**
++ * Redemption NAV per unit.
++ */
++sellNav: Nav, 
++/**
++ * Gross proceeds received on sale (`units * sell_nav`).
++ */
++grossConsideration: Money, 
++/**
++ * Historical cost of acquisition (`units * buy_nav`).
++ */
++costOfAcquisition: Money, 
++/**
++ * Fair Market Value per unit as of 31-Jan-2018 (Section 55(2)(ac)).
++ */
++fmvAsOfJan312018: Nav, 
++/**
++ * Total FMV as of 31-Jan-2018 (`units * fmv`).
++ */
++totalFmvJan312018: Money, 
++/**
++ * Deemed statutory cost of acquisition under Section 55(2)(ac).
++ */
++deemedCostOfAcquisition: Money, 
++/**
++ * Transfer expenses or exit load deducted from proceeds.
++ */
++transferExpenses: Money, 
++/**
++ * Realized capital gain or loss (`gross_consideration - deemed_cost - expenses`).
++ */
++gain: Money, 
++/**
++ * Tax treatment category (Ltcg, Stcg, Slab).
++ */
++taxType: TaxType, 
++/**
++ * Nominal statutory tax rate applied to positive gains.
++ */
++taxRate: number, 
++/**
++ * Tax liability prior to 4% cess.
++ */
++taxBeforeCess: Money, 
++/**
++ * 4% Health and Education Cess.
++ */
++cess: Money, 
++/**
++ * Total estimated statutory tax liability.
++ */
++estimatedTax: Money, 
++/**
++ * Whether Section 55(2)(ac) grandfathering was applied.
++ */
++isGrandfathered: boolean, 
++/**
++ * Descriptive description of grandfathering status.
++ */
++grandfatheredStatus: string, 
++/**
++ * Advance tax quarter in which the redemption occurred.
++ */
++advanceTaxQuarter: AdvanceTaxQuarter | null, };
+diff --git a/frontend/src/types/generated/SimulationSellRequest.ts b/frontend/src/types/generated/SimulationSellRequest.ts
+index dc3aef7..29b590b 100644
+--- a/frontend/src/types/generated/SimulationSellRequest.ts
++++ b/frontend/src/types/generated/SimulationSellRequest.ts
+@@ -1,3 +1,34 @@
+ // This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+ 
+-export type SimulationSellRequest = { folioId?: string | null, assetName?: string | null, assetType?: string | null, units: number, currentPrice?: number, taxSlab?: number, sellDate?: string | null, };
++/**
++ * Request parameters for simulating a mutual fund or asset sale.
++ */
++export type SimulationSellRequest = { 
++/**
++ * Optional folio ID to simulate sale from an existing portfolio position.
++ */
++folioId?: string | null, 
++/**
++ * Asset name if simulating hypothetical asset or when folio ID is not provided.
++ */
++assetName?: string | null, 
++/**
++ * Asset type classification (e.g. `"MUTUAL_FUND"`, `"EQUITY"`, `"GOLD"`).
++ */
++assetType?: string | null, 
++/**
++ * Number of units to simulate selling.
++ */
++units: number, 
++/**
++ * Explicit current price / NAV override (if omitted, looks up latest database/market NAV).
++ */
++currentPrice?: number, 
++/**
++ * Applicable investor income tax slab rate (defaults to 30% / 0.30 if omitted).
++ */
++taxSlab?: number, 
++/**
++ * Hypothetical redemption date (defaults to current UTC date if omitted).
++ */
++sellDate?: string | null, };
+diff --git a/frontend/src/types/generated/SimulationSellResponse.ts b/frontend/src/types/generated/SimulationSellResponse.ts
+index 8bbfef5..24aab38 100644
+--- a/frontend/src/types/generated/SimulationSellResponse.ts
++++ b/frontend/src/types/generated/SimulationSellResponse.ts
+@@ -2,4 +2,43 @@
+ import type { RealizedGain } from "./RealizedGain";
+ import type { TaxBreakdown } from "./TaxBreakdown";
+ 
+-export type SimulationSellResponse = { assetName: string, unitsToSell: number, estimatedValue: number, totalGain: number, taxableGain: number, estimatedTax: number, exitLoad: number, taxBreakdown: TaxBreakdown, matchedLots: Array<RealizedGain>, };
++/**
++ * Response object detailing the simulated tax, gains, and exit load from selling units.
++ */
++export type SimulationSellResponse = { 
++/**
++ * Name of the simulated asset.
++ */
++assetName: string, 
++/**
++ * Number of units requested to sell.
++ */
++unitsToSell: number, 
++/**
++ * Gross proceeds from selling the units.
++ */
++estimatedValue: number, 
++/**
++ * Total nominal capital gain or loss.
++ */
++totalGain: number, 
++/**
++ * Net taxable capital gain after applicable statutory exemptions.
++ */
++taxableGain: number, 
++/**
++ * Estimated tax liability including health and education cess.
++ */
++estimatedTax: number, 
++/**
++ * Exit load penalty deducted by AMC (if redemption occurs within exit load window).
++ */
++exitLoad: number, 
++/**
++ * Breakdown by capital gains tax bucket (STCG, LTCG, Slab).
++ */
++taxBreakdown: TaxBreakdown, 
++/**
++ * FIFO-matched purchase lots realized in this redemption.
++ */
++matchedLots: Array<RealizedGain>, };
+diff --git a/frontend/src/types/generated/TaxBreakdown.ts b/frontend/src/types/generated/TaxBreakdown.ts
+index 89e65b9..b4e92b7 100644
+--- a/frontend/src/types/generated/TaxBreakdown.ts
++++ b/frontend/src/types/generated/TaxBreakdown.ts
+@@ -1,4 +1,23 @@
+ // This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+ import type { TaxBreakdownItem } from "./TaxBreakdownItem";
+ 
+-export type TaxBreakdown = { stcg: TaxBreakdownItem, ltcg: TaxBreakdownItem, slab: TaxBreakdownItem, totalTax: number, };
++/**
++ * Consolidated tax breakdown across Short-Term (STCG), Long-Term (LTCG), and Slab taxation.
++ */
++export type TaxBreakdown = { 
++/**
++ * Section 111A Short-Term Capital Gains component (20% post-July 23, 2024).
++ */
++stcg: TaxBreakdownItem, 
++/**
++ * Section 112A Long-Term Capital Gains component (12.5% post-July 23, 2024).
++ */
++ltcg: TaxBreakdownItem, 
++/**
++ * Section 50AA or regular income tax slab component.
++ */
++slab: TaxBreakdownItem, 
++/**
++ * Total estimated tax liability including cess.
++ */
++totalTax: number, };
+diff --git a/frontend/src/types/generated/TaxBreakdownItem.ts b/frontend/src/types/generated/TaxBreakdownItem.ts
+index 3cef233..28e011b 100644
+--- a/frontend/src/types/generated/TaxBreakdownItem.ts
++++ b/frontend/src/types/generated/TaxBreakdownItem.ts
+@@ -1,3 +1,18 @@
+ // This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+ 
+-export type TaxBreakdownItem = { amount: number, tax: number, cess: number, };
++/**
++ * Tax and cess breakdown component for a specific capital gains classification.
++ */
++export type TaxBreakdownItem = { 
++/**
++ * Taxable capital gain amount.
++ */
++amount: number, 
++/**
++ * Statutory base tax before health and education cess.
++ */
++tax: number, 
++/**
++ * Health & Education Cess (4% of base tax).
++ */
++cess: number, };
+diff --git a/frontend/src/types/generated/TaxViewResponse.ts b/frontend/src/types/generated/TaxViewResponse.ts
+index f64495f..1cf8128 100644
+--- a/frontend/src/types/generated/TaxViewResponse.ts
++++ b/frontend/src/types/generated/TaxViewResponse.ts
+@@ -2,4 +2,7 @@
+ import type { RealizedGain } from "./RealizedGain";
+ import type { TaxBreakdown } from "./TaxBreakdown";
+ 
++/**
++ * Read-only tax breakdown response for portfolio-wide tax reporting.
++ */
+ export type TaxViewResponse = { breakdown: TaxBreakdown, matchedLots: Array<RealizedGain>, };
+diff --git a/frontend/src/utils/consolidation.ts b/frontend/src/utils/consolidation.ts
+index 49274c9..7bf4d2a 100644
+--- a/frontend/src/utils/consolidation.ts
++++ b/frontend/src/utils/consolidation.ts
+@@ -1,25 +1,137 @@
++/**
++ * @file consolidation.ts
++ * @module utils/consolidation
++ * @description Provides financial consolidation algorithms for grouping individual mutual fund
++ * and equity folios across multiple PANs or accounts into unified, scheme-level master views.
++ *
++ * Implements value-weighted annualized performance aggregation (XIRR), prior-day net asset
++ * change derivation, post-tax return computations, and multi-PAN deduplication.
++ */
++
++/**
++ * Constituent asset metadata associated with an individual folio.
++ */
++export interface FolioAssetInfo {
++  /** Unique asset database identifier if assigned. */
++  id?: string;
++  /** Official or reported scheme/stock name. */
++  name?: string;
++  /** Asset classification (e.g., 'MUTUAL_FUND', 'EQUITY', 'DEBT'). */
++  type?: string;
++  /** International Securities Identification Number (12-character alphanumeric code). */
++  isin?: string;
++  /** Association of Mutual Funds in India (AMFI) numeric scheme code. */
++  amfiCode?: string;
++}
++
++/**
++ * Performance, valuation, and statutory tax metrics computed for an individual folio.
++ */
++export interface FolioMetricsInput {
++  /** Cumulative cost basis of units currently held. */
++  investedAmount?: number;
++  /** Latest market valuation (units * current NAV). */
++  currentValue?: number;
++  /** Absolute net gain/loss relative to previous trading session NAV. */
++  dayChange?: number;
++  /** Percentage change relative to prior-day closing valuation. */
++  dayChangePercentage?: number;
++  /** Annualised Internal Rate of Return (money-weighted return). */
++  xirr?: number;
++  /** Net annualised XIRR after accounting for accrued statutory capital gains tax liability. */
++  postTaxXirr?: number;
++  /** Simple holding period return: (currentValue - investedAmount) / investedAmount. */
++  absoluteReturn?: number;
++  /** Simple holding period return net of estimated tax obligations. */
++  postTaxAbsoluteReturn?: number;
++  /** Total estimated accrued capital gains tax liability (STCG + LTCG). */
++  estimatedTax?: number;
++  /** Total unrealized gain/loss: currentValue - investedAmount. */
++  totalGain?: number;
++  /** Latest published Net Asset Value per unit or stock share price. */
++  currentPrice?: number;
++  /** Compound Annual Growth Rate where applicable. */
++  cagr?: number;
++}
++
++/**
++ * Structural contract for an individual investment folio eligible for multi-account scheme consolidation.
++ */
++export interface FolioInput {
++  /** Unique folio identifier in the portfolio database. */
++  id: string;
++  /** Folio account number as reported by the AMC or registrar (CAMS/KFintech). */
++  number?: string;
++  /** Alternative alias for folio account number. */
++  folioNumber?: string;
++  /** Permanent Account Number (PAN) of the investor holding this folio. */
++  pan?: string;
++  /** Underlying security or mutual fund scheme attributes. */
++  asset?: FolioAssetInfo;
++  /** Computed financial performance and valuation metrics. */
++  metrics?: FolioMetricsInput;
++  /** Historical transaction ledger for this folio. */
++  transactions?: unknown[];
++}
++
++/**
++ * Aggregated financial metrics for a consolidated scheme group.
++ */
++export interface ConsolidatedSchemeMetrics {
++  /** Cumulative invested principal across all constituent folios. */
++  investedAmount: number;
++  /** Aggregate current market valuation across all constituent folios. */
++  currentValue: number;
++  /** Combined one-day market valuation fluctuation across all folios. */
++  dayChange: number;
++  /** Percentage change in portfolio value relative to previous day's baseline valuation. */
++  dayChangePercentage: number;
++  /** Value-weighted annualized XIRR across all constituent folios. */
++  xirr: number;
++  /** Value-weighted post-tax annualized XIRR after accrued tax liability deduction. */
++  postTaxXirr: number;
++  /** Aggregate simple holding period return: (currentValue - investedAmount) / investedAmount. */
++  absoluteReturn: number;
++  /** Aggregate post-tax simple return based on post-tax net liquidation valuation. */
++  postTaxAbsoluteReturn: number;
++}
++
++/**
++ * A master consolidated scheme representing multiple folios (across identical or distinct PANs)
++ * merged into a unified scheme position.
++ */
+ export interface ConsolidatedSchemeGroup {
++  /** Deterministic group identifier (`group_${groupKey}` or individual folio id if single). */
+   id: string;
++  /** Canonical name of the scheme or equity asset. */
+   schemeName: string;
++  /** ISIN code shared by constituent folios (empty or undefined if not available). */
+   isin?: string;
++  /** AMFI code shared by constituent folios. */
+   amfiCode?: string;
++  /** Asset category classification (e.g., 'MUTUAL_FUND', 'EQUITY'). */
+   type: string;
++  /** List of distinct PANs holding folios within this consolidated scheme. */
+   pans: string[];
+-  metrics: {
+-    investedAmount: number;
+-    currentValue: number;
+-    dayChange: number;
+-    dayChangePercentage: number;
+-    xirr: number;
+-    postTaxXirr: number;
+-    absoluteReturn: number;
+-    postTaxAbsoluteReturn: number;
+-  };
+-  folios: any[];
++  /** Consolidated performance, valuation, and return metrics. */
++  metrics: ConsolidatedSchemeMetrics;
++  /** Constituent folios grouped under this master scheme, sorted descending by current valuation. */
++  folios: FolioInput[];
++  /** Total count of constituent folios in this scheme group. */
+   folioCount: number;
+ }
+ 
+-function sanitizeReturnRate(rate: number | null | undefined, fallback: number = 0): number {
++/**
++ * Sanitizes and bounds financial return rates (XIRR or absolute return) to prevent numerical
++ * anomalies or layout disruptions caused by non-finite values (NaN, Infinity) or extreme outliers.
++ *
++ * Clamps return rates strictly between -100% (-1.0) and +1000% (+10.0).
++ *
++ * @param rate - Raw numerical return rate or ratio to sanitize.
++ * @param fallback - Default fallback value if the rate is non-finite or null/undefined (default: 0).
++ * @returns A safe, finite return rate bounded within statutory and rendering limits.
++ */
++export function sanitizeReturnRate(rate: number | null | undefined, fallback: number = 0): number {
+   if (rate == null || isNaN(rate) || !isFinite(rate)) {
+     return fallback;
+   }
+@@ -27,26 +139,64 @@ function sanitizeReturnRate(rate: number | null | undefined, fallback: number =
+   return Math.min(10.0, Math.max(-1.0, rate));
+ }
+ 
+-export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeGroup[] {
++/**
++ * Consolidates individual mutual fund and equity folios into unified scheme-level groups.
++ *
++ * ### Grouping Algorithm & Precedence
++ * Folios are grouped using a hierarchical identifier:
++ * 1. **ISIN (`isin_INF...`)**: Preferred grouping key. Direct and Regular mutual fund plans have
++ *    distinct ISINs, ensuring plans are never improperly conflated while multiple folios under
++ *    the exact same plan (even under different PANs) are cleanly consolidated.
++ * 2. **AMFI Code (`amfi_...`)**: Fallback for mutual funds lacking explicit ISIN tags.
++ * 3. **Normalized Asset Name (`name_...`)**: Fallback for unlisted assets, synthetic folios, or
++ *    custom securities.
++ *
++ * ### Multi-Account & Multi-PAN Deduplication
++ * Constituent folios belonging to different PANs (e.g. family members, joint folios) under the
++ * same scheme are consolidated together. The unique list of PANs is captured in `pans`, and
++ * constituent folios are preserved in `folios` sorted descending by current market valuation.
++ *
++ * ### Value-Weighted XIRR Formulation
++ * When combining multiple folios into a single master scheme, an arithmetic average would distort
++ * performance by giving equal weight to small or dormant folios. Instead, XIRR is aggregated using
++ * positive valuation weighting:
++ *
++ * $$ \text{Weighted XIRR} = \sum_{i} \left( \text{XIRR}_i \times \frac{\max(0, \text{Valuation}_i)}{\sum_j \max(0, \text{Valuation}_j)} \right) $$
++ *
++ * If total current valuation is zero (e.g. all folios fully redeemed), the calculation falls back to
++ * an unweighted arithmetic mean across constituent folios.
++ *
++ * ### Day Change Percentage
++ * Calculated relative to the previous trading session's baseline valuation:
++ * $$ \text{Previous Value} = \text{Current Value} - \text{Day Change} $$
++ * $$ \text{Day Change \%} = \frac{\text{Day Change}}{\text{Previous Value}} \times 100 $$
++ *
++ * @param folios - Array of individual folio objects to consolidate.
++ * @returns Array of consolidated scheme groups with aggregated metrics.
++ */
++export function consolidateFoliosIntoSchemes(
++  folios: FolioInput[] | null | undefined
++): ConsolidatedSchemeGroup[] {
+   if (!folios || !Array.isArray(folios) || folios.length === 0) {
+     return [];
+   }
+ 
+-  const groupsMap = new Map<string, any[]>();
++  const groupsMap = new Map<string, FolioInput[]>();
+ 
+   for (const folio of folios) {
+     // Unique key: ISIN is best for mutual funds/stocks, fallback to amfiCode or normalized name
+     const isin = folio.asset?.isin;
+     const amfiCode = folio.asset?.amfiCode;
+-    const name = folio.asset?.name?.trim() || 'Unknown Asset';
+-    
++    const assetName = folio.asset?.name?.trim() || 'Unknown Asset';
++
+     // Direct and Regular plans have distinct ISINs, so ISIN groups cleanly.
+     // If ISIN is missing or synthetic, use amfiCode or normalized name.
+-    const groupKey = isin && !isin.startsWith('MISSING-')
+-      ? `isin_${isin}`
+-      : amfiCode
+-      ? `amfi_${amfiCode}`
+-      : `name_${name.toLowerCase().replace(/\s+/g, '_')}`;
++    const groupKey =
++      isin && !isin.startsWith('MISSING-')
++        ? `isin_${isin}`
++        : amfiCode
++        ? `amfi_${amfiCode}`
++        : `name_${assetName.toLowerCase().replace(/\s+/g, '_')}`;
+ 
+     if (!groupsMap.has(groupKey)) {
+       groupsMap.set(groupKey, []);
+@@ -56,33 +206,35 @@ export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeG
+ 
+   const result: ConsolidatedSchemeGroup[] = [];
+ 
+-  for (const [key, groupFolios] of groupsMap.entries()) {
+-    const first = groupFolios[0];
+-    const schemeName = first.asset?.name || 'Unknown Scheme';
+-    const type = first.asset?.type || 'MUTUAL_FUND';
+-    const isin = first.asset?.isin;
+-    const amfiCode = first.asset?.amfiCode;
++  for (const [groupKey, groupFolios] of groupsMap.entries()) {
++    const firstFolio = groupFolios[0];
++    const schemeName = firstFolio.asset?.name || 'Unknown Scheme';
++    const type = firstFolio.asset?.type || 'MUTUAL_FUND';
++    const isin = firstFolio.asset?.isin;
++    const amfiCode = firstFolio.asset?.amfiCode;
+ 
++    // Single-folio fast path: preserve existing metrics without unnecessary aggregation
+     if (groupFolios.length === 1) {
+-      const f = groupFolios[0];
+-      const absReturn = f.metrics?.absoluteReturn ?? 0;
+-      const postTaxAbsReturn = f.metrics?.postTaxAbsoluteReturn ?? 0;
++      const singleFolio = groupFolios[0];
++      const absoluteReturn = singleFolio.metrics?.absoluteReturn ?? 0;
++      const postTaxAbsoluteReturn = singleFolio.metrics?.postTaxAbsoluteReturn ?? 0;
++
+       result.push({
+-        id: f.id,
++        id: singleFolio.id,
+         schemeName,
+         isin,
+         amfiCode,
+         type,
+-        pans: f.pan ? [f.pan] : [],
++        pans: singleFolio.pan ? [singleFolio.pan] : [],
+         metrics: {
+-          investedAmount: f.metrics?.investedAmount ?? 0,
+-          currentValue: f.metrics?.currentValue ?? 0,
+-          dayChange: f.metrics?.dayChange ?? 0,
+-          dayChangePercentage: f.metrics?.dayChangePercentage ?? 0,
+-          xirr: sanitizeReturnRate(f.metrics?.xirr, absReturn),
+-          postTaxXirr: sanitizeReturnRate(f.metrics?.postTaxXirr, postTaxAbsReturn),
+-          absoluteReturn: absReturn,
+-          postTaxAbsoluteReturn: postTaxAbsReturn,
++          investedAmount: singleFolio.metrics?.investedAmount ?? 0,
++          currentValue: singleFolio.metrics?.currentValue ?? 0,
++          dayChange: singleFolio.metrics?.dayChange ?? 0,
++          dayChangePercentage: singleFolio.metrics?.dayChangePercentage ?? 0,
++          xirr: sanitizeReturnRate(singleFolio.metrics?.xirr, absoluteReturn),
++          postTaxXirr: sanitizeReturnRate(singleFolio.metrics?.postTaxXirr, postTaxAbsoluteReturn),
++          absoluteReturn,
++          postTaxAbsoluteReturn,
+         },
+         folios: groupFolios,
+         folioCount: 1,
+@@ -90,52 +242,104 @@ export function consolidateFoliosIntoSchemes(folios: any[]): ConsolidatedSchemeG
+       continue;
+     }
+ 
+-    // Aggregate metrics across multiple folios of the same scheme
+-    const investedAmount = groupFolios.reduce((acc, f) => acc + (f.metrics?.investedAmount ?? 0), 0);
+-    const currentValue = groupFolios.reduce((acc, f) => acc + (f.metrics?.currentValue ?? 0), 0);
+-    const dayChange = groupFolios.reduce((acc, f) => acc + (f.metrics?.dayChange ?? 0), 0);
+-    
+-    const prevValue = currentValue - dayChange;
+-    const dayChangePercentage = prevValue > 0 ? (dayChange / prevValue) * 100 : 0;
+-    const absoluteReturn = investedAmount > 0 ? (currentValue - investedAmount) / investedAmount : 0;
+-
+-    // Value-weighted XIRR
+-    const totalValWeight = groupFolios.reduce((acc, f) => acc + Math.max(0, f.metrics?.currentValue ?? 0), 0);
++    // Aggregate metrics across multiple constituent folios of the same master scheme
++    const investedAmount = groupFolios.reduce(
++      (accumulated, folio) => accumulated + (folio.metrics?.investedAmount ?? 0),
++      0
++    );
++    const currentValue = groupFolios.reduce(
++      (accumulated, folio) => accumulated + (folio.metrics?.currentValue ?? 0),
++      0
++    );
++    const dayChange = groupFolios.reduce(
++      (accumulated, folio) => accumulated + (folio.metrics?.dayChange ?? 0),
++      0
++    );
++
++    // Derive day change percentage from previous trading day's baseline valuation
++    const previousDayValue = currentValue - dayChange;
++    const dayChangePercentage =
++      previousDayValue > 0 ? (dayChange / previousDayValue) * 100 : 0;
++    const absoluteReturn =
++      investedAmount > 0 ? (currentValue - investedAmount) / investedAmount : 0;
++
++    // Compute value-weighted XIRR to weight constituent returns by their positive market valuation
++    const totalValuationWeight = groupFolios.reduce(
++      (accumulated, folio) => accumulated + Math.max(0, folio.metrics?.currentValue ?? 0),
++      0
++    );
+     let weightedXirr = 0;
+     let weightedPostTaxXirr = 0;
+ 
+-    if (totalValWeight > 0) {
+-      weightedXirr = groupFolios.reduce((acc, f) => {
+-        const val = Math.max(0, f.metrics?.currentValue ?? 0);
+-        const folioXirr = sanitizeReturnRate(f.metrics?.xirr, f.metrics?.absoluteReturn ?? 0);
+-        return acc + folioXirr * (val / totalValWeight);
++    if (totalValuationWeight > 0) {
++      weightedXirr = groupFolios.reduce((accumulated, folio) => {
++        const folioValue = Math.max(0, folio.metrics?.currentValue ?? 0);
++        const folioXirr = sanitizeReturnRate(
++          folio.metrics?.xirr,
++          folio.metrics?.absoluteReturn ?? 0
++        );
++        return accumulated + folioXirr * (folioValue / totalValuationWeight);
+       }, 0);
+-      weightedPostTaxXirr = groupFolios.reduce((acc, f) => {
+-        const val = Math.max(0, f.metrics?.currentValue ?? 0);
+-        const folioPostXirr = sanitizeReturnRate(f.metrics?.postTaxXirr, f.metrics?.postTaxAbsoluteReturn ?? 0);
+-        return acc + folioPostXirr * (val / totalValWeight);
++
++      weightedPostTaxXirr = groupFolios.reduce((accumulated, folio) => {
++        const folioValue = Math.max(0, folio.metrics?.currentValue ?? 0);
++        const folioPostTaxXirr = sanitizeReturnRate(
++          folio.metrics?.postTaxXirr,
++          folio.metrics?.postTaxAbsoluteReturn ?? 0
++        );
++        return accumulated + folioPostTaxXirr * (folioValue / totalValuationWeight);
+       }, 0);
+     } else {
+-      weightedXirr = groupFolios.reduce((acc, f) => acc + sanitizeReturnRate(f.metrics?.xirr, f.metrics?.absoluteReturn ?? 0), 0) / groupFolios.length;
+-      weightedPostTaxXirr = groupFolios.reduce((acc, f) => acc + sanitizeReturnRate(f.metrics?.postTaxXirr, f.metrics?.postTaxAbsoluteReturn ?? 0), 0) / groupFolios.length;
++      // Fallback to unweighted arithmetic mean if all folios have zero current valuation
++      weightedXirr =
++        groupFolios.reduce(
++          (accumulated, folio) =>
++            accumulated +
++            sanitizeReturnRate(folio.metrics?.xirr, folio.metrics?.absoluteReturn ?? 0),
++          0
++        ) / groupFolios.length;
++
++      weightedPostTaxXirr =
++        groupFolios.reduce(
++          (accumulated, folio) =>
++            accumulated +
++            sanitizeReturnRate(
++              folio.metrics?.postTaxXirr,
++              folio.metrics?.postTaxAbsoluteReturn ?? 0
++            ),
++          0
++        ) / groupFolios.length;
+     }
+ 
+     weightedXirr = sanitizeReturnRate(weightedXirr, absoluteReturn);
+     weightedPostTaxXirr = sanitizeReturnRate(weightedPostTaxXirr, 0);
+ 
+-    // Post-tax absolute return based on post-tax current value
+-    const totalEstimatedTax = groupFolios.reduce((acc, f) => acc + (f.metrics?.estimatedTax ?? 0), 0);
++    // Post-tax absolute return based on post-tax net liquidation valuation
++    const totalEstimatedTax = groupFolios.reduce(
++      (accumulated, folio) => accumulated + (folio.metrics?.estimatedTax ?? 0),
++      0
++    );
+     const postTaxCurrentValue = Math.max(0, currentValue - totalEstimatedTax);
+-    const postTaxAbsoluteReturn = investedAmount > 0 ? (postTaxCurrentValue - investedAmount) / investedAmount : 0;
++    const postTaxAbsoluteReturn =
++      investedAmount > 0 ? (postTaxCurrentValue - investedAmount) / investedAmount : 0;
+ 
+-    // Unique PANs
+-    const pans = Array.from(new Set(groupFolios.map(f => f.pan).filter(Boolean))) as string[];
++    // Deduplicate unique PANs across constituent folios
++    const pans = Array.from(
++      new Set(
++        groupFolios
++          .map((folio) => folio.pan)
++          .filter((pan): pan is string => Boolean(pan))
++      )
++    );
+ 
+-    // Sort constituent folios descending by current value
+-    const sortedConstituents = [...groupFolios].sort((a, b) => (b.metrics?.currentValue ?? 0) - (a.metrics?.currentValue ?? 0));
++    // Sort constituent folios descending by current valuation for clear hierarchy
++    const sortedConstituents = [...groupFolios].sort(
++      (first, second) =>
++        (second.metrics?.currentValue ?? 0) - (first.metrics?.currentValue ?? 0)
++    );
+ 
+     result.push({
+-      id: `group_${key}`,
++      id: `group_${groupKey}`,
+       schemeName,
+       isin,
+       amfiCode,
+diff --git a/frontend/src/utils/itrReportGenerator.ts b/frontend/src/utils/itrReportGenerator.ts
+index 9f0baa9..ded6aab 100644
+--- a/frontend/src/utils/itrReportGenerator.ts
++++ b/frontend/src/utils/itrReportGenerator.ts
+@@ -1,85 +1,199 @@
++/**
++ * @file itrReportGenerator.ts
++ * @module utils/itrReportGenerator
++ * @description Generates audit-ready, statutory Capital Gains Tax reports for Indian Income Tax
++ * filings (ITR-2 and ITR-3 Schedule CG) and Advance Tax liability computation (Section 234C Table F).
++ *
++ * ### Key Statutory Compliances:
++ * 1. **Finance Act 2024 Amendments (Budget 2024 Cutoff: July 23, 2024)**:
++ *    - STCG under Section 111A: 15% pre-July 23, 2024; 20% on or post-July 23, 2024.
++ *    - LTCG under Section 112A: 10% pre-July 23, 2024; 12.5% on or post-July 23, 2024.
++ *    - Section 112A Exemption Threshold: ₹1,00,000 for FY 2023-24 and earlier; ₹1,25,000 for FY 2024-25 onwards.
++ *    - Section 50AA: Deemed STCG for specified mutual funds (debt mutual funds acquired on or after April 1, 2023)
++ *      taxed at the assessee's applicable income tax slab rate.
++ *    - Section 112 (Debt / Unlisted): 20% with indexation for grandfathered debt; 12.5% unindexed post-Budget 2024.
++ * 2. **Section 55(2)(ac) Grandfathering Formula**:
++ *    - Protects capital gains accrued up to January 31, 2018 for listed equity and equity mutual funds:
++ *      $$ \text{Deemed Cost} = \max\Big(\text{Actual Cost}, \min(\text{FMV as of 31-Jan-2018}, \text{Gross Consideration})\Big) $$
++ *    - This formula prevents creation of artificial capital losses while exempting all pre-Feb 2018 unrealized gains.
++ * 3. **Schedule CG Table F Quarterly Symmetry**:
++ *    - Advance tax accrual installments under Section 234C:
++ *      Q1 (Apr 1 - Jun 15), Q2a (Jun 16 - Jul 22), Q2b (Jul 23 - Sep 15),
++ *      Q3 (Sep 16 - Dec 15), Q4 (Dec 16 - Mar 15), Q5 (Mar 16 - Mar 31).
++ *    - Invariant: The sum of quarterly capital gains across all 6 periods MUST mathematically equal
++ *      the net realized capital gain for the financial year.
++ */
++
++/**
++ * Standardized advance tax accrual quarters mapped to Indian fiscal calendar dates (April 1 to March 31).
++ *
++ * For FY 2024-25, Quarter 2 is bifurcated into `Q2A` (pre-Budget 2024) and `Q2B` (post-Budget 2024)
++ * due to the statutory tax rate shift effective July 23, 2024.
++ */
+ export const AdvanceTaxQuarter = {
++  /** First installment: April 1 to June 15 (15% advance tax cumulative due date). */
+   Q1: 'Q1 (01/04 - 15/06)',
++  /** Second installment (pre-Budget 2024): June 16 to July 22. */
+   Q2A: 'Q2a (16/06 - 22/07)',
++  /** Second installment (post-Budget 2024): July 23 to September 15 (45% cumulative due date). */
+   Q2B: 'Q2b (23/07 - 15/09)',
++  /** Third installment: September 16 to December 15 (75% cumulative due date). */
+   Q3: 'Q3 (16/09 - 15/12)',
++  /** Fourth installment: December 16 to March 15 (100% cumulative due date). */
+   Q4: 'Q4 (16/12 - 15/03)',
++  /** Final fiscal wrap-up tranche: March 16 to March 31. */
+   Q5: 'Q5 (16/03 - 31/03)',
+ } as const;
++
+ export type AdvanceTaxQuarter = (typeof AdvanceTaxQuarter)[keyof typeof AdvanceTaxQuarter];
+ 
++/**
++ * Statutory Income Tax Section classifications for Schedule CG reporting.
++ */
+ export const TaxSectionName = {
++  /** Listed Equity STCG sold prior to July 23, 2024 taxed at 15%. */
+   SEC_111A_15: '111A (15%)',
++  /** Listed Equity STCG sold on or after July 23, 2024 taxed at 20% (Finance Act 2024). */
+   SEC_111A_20: '111A (20%)',
++  /** Listed Equity LTCG sold prior to July 23, 2024 taxed at 10% beyond statutory exemption. */
+   SEC_112A_10: '112A (10%)',
++  /** Listed Equity LTCG sold on or after July 23, 2024 taxed at 12.5% beyond statutory exemption. */
+   SEC_112A_12_5: '112A (12.5%)',
++  /** Specified Mutual Funds (>65% debt) acquired on or after April 1, 2023 taxed at slab rates. */
+   SEC_50AA: '50AA (Slab)',
++  /** Unlisted securities or post-Budget debt LTCG taxed at 12.5% without indexation. */
+   SEC_112_DEBT_12_5: '112 Debt (12.5%)',
++  /** Grandfathered Debt mutual funds acquired before April 1, 2023 taxed at 20% with indexation. */
+   SEC_112_DEBT_20: '112 Debt (20% Indexed)',
++  /** General regular income taxed at individual slab rates. */
+   SLAB: 'SLAB',
+ } as const;
++
+ export type TaxSectionName = (typeof TaxSectionName)[keyof typeof TaxSectionName];
+ 
++/**
++ * Breakdown of capital gains and estimated tax liabilities accrued within a single advance tax quarter.
++ */
+ export interface TableFQuarterData {
++  /** Section 111A STCG gains taxed at 15% (pre-July 23, 2024). */
+   stcg15: number;
++  /** Section 111A STCG gains taxed at 20% (post-July 23, 2024). */
+   stcg20: number;
++  /** Section 112A LTCG gains taxed at 10% (pre-July 23, 2024). */
+   ltcg10: number;
++  /** Section 112A LTCG gains taxed at 12.5% (post-July 23, 2024). */
+   ltcg12_5: number;
++  /** Section 112 Debt LTCG taxed at 12.5% without indexation. */
+   debtLtcg12_5: number;
++  /** Section 112 Debt LTCG taxed at 20% with indexation. */
+   debtLtcg20: number;
++  /** Section 50AA deemed STCG and slab-taxed gains. */
+   slab: number;
++  /** Aggregate net capital gains accrued in this quarter. */
+   totalGain: number;
++  /** Base statutory tax liability before health and education cess. */
+   taxBeforeCess: number;
++  /** 4% Health and Education Cess on base tax. */
+   cess: number;
++  /** Total estimated tax liability (taxBeforeCess + cess). */
+   estimatedTax: number;
+ }
+ 
++/**
++ * Complete Schedule CG Table F accrual matrix across all 6 advance tax periods.
++ */
+ export interface AdvanceTaxAccrualMatrix {
++  /** Detailed breakdown mapped by advance tax quarter. */
+   quarters: Record<AdvanceTaxQuarter, TableFQuarterData>;
++  /** Total tax payable per quarter. */
+   quarterTotals: Record<AdvanceTaxQuarter, number>;
+ }
+ 
++/**
++ * Detailed audit record for an individual realized capital gain transaction lot.
++ */
+ export interface ITRGainDetail {
++  /** Security or scheme description. */
+   assetName: string;
++  /** Folio account number. */
+   folioNumber?: string;
++  /** International Securities Identification Number. */
+   isin?: string;
++  /** Assessee Permanent Account Number. */
+   pan?: string;
++  /** Assessee legal name. */
+   panName?: string;
++  /** Broad asset classification: 'EQUITY' | 'DEBT' | 'HYBRID' | 'OTHER'. */
+   assetClass?: string;
++  /** Explicit statutory section code override if assigned. */
+   section?: string;
++  /** Date of original unit acquisition. */
+   buyDate: Date | string;
++  /** Date of unit redemption or sale. */
+   sellDate: Date | string;
++  /** Exact holding duration in calendar days. */
+   holdingPeriodDays?: number;
++  /** Holding category: 'Short-Term' | 'Long-Term'. */
+   holdingType?: 'Short-Term' | 'Long-Term' | string;
++  /** Number of units redeemed or transferred. */
+   units: number;
++  /** Acquisition Net Asset Value or purchase price per unit. */
+   buyNav: number;
++  /** Redemption Net Asset Value or sale price per unit. */
+   sellNav: number;
++  /** Gross sale proceeds (units * sellNav). */
+   grossConsideration?: number;
++  /** Original purchase cost (units * buyNav). */
+   costOfAcquisition?: number;
++  /** Fair Market Value per unit as on January 31, 2018 (Section 55(2)(ac)). */
+   fmvAsOfJan31_2018?: number;
++  /** Total FMV as on January 31, 2018 (units * fmvAsOfJan31_2018). */
+   totalFmvJan31_2018?: number;
++  /** Deemed acquisition cost following Section 55(2)(ac) grandfathering formula. */
+   deemedCostOfAcquisition?: number;
++  /** Transfer expenses, brokerage, or AMC exit load incurred. */
+   transferExpenses?: number;
++  /** Net taxable capital gain or loss: grossConsideration - deemedCost - transferExpenses. */
+   gain: number;
++  /** Broad statutory tax classification: 'STCG' | 'LTCG' | 'SLAB'. */
+   taxType: 'STCG' | 'LTCG' | 'SLAB' | string;
++  /** Applicable tax rate as a decimal (e.g. 0.125 for 12.5%). */
+   taxRate?: number;
++  /** Base statutory tax amount before 4% cess. */
+   taxBeforeCess?: number;
++  /** 4% Health and Education Cess on base tax. */
+   cess?: number;
++  /** Total estimated statutory tax payable for this lot. */
+   estimatedTax?: number;
++  /** Specific advance tax quarter string where this transaction accrued. */
+   advanceTaxQuarter?: string;
++  /** Indicates whether Section 55(2)(ac) pre-Feb 2018 grandfathering applies. */
+   isGrandfathered?: boolean;
++  /** Status string describing grandfathering eligibility. */
+   grandfatheredStatus?: string;
++  /** Indicates whether the acquisition date/cost was estimated via synthetic anchor transactions. */
+   isAnchorDependent?: boolean;
+ }
+ 
++/**
++ * Summary aggregates for Schedule CG tax reporting across all realized gains.
++ */
+ export interface ITRSummary {
++  /** Legal name of the assessee/taxpayer. */
+   assesseeName?: string;
++  /** User display name. */
+   userName?: string;
++  /** Assessee PAN. */
+   pan?: string;
++  /** Constituent gain details. */
+   details?: ITRGainDetail[];
++  /** Indicates whether any constituent lots rely on estimated synthetic anchor transactions. */
+   hasSyntheticAnchors?: boolean;
++  /** Pre-computed Advance Tax Accrual Matrix (Table F). */
+   tableF?: AdvanceTaxAccrualMatrix;
++  /** Breakdown of totals by statutory tax section. */
+   sectionTotals?: Record<string, unknown>;
++  /** High-level realized gain aggregates. */
+   realized?: {
+     stcg?: number;
+     ltcg?: number;
+@@ -92,17 +206,36 @@ export interface ITRSummary {
+   };
+ }
+ 
++/**
++ * Parameter configuration supplied to {@link generateITRReportCSV}.
++ */
+ export interface ITRReportParams {
++  /** Legal name of the assessee. */
+   assesseeName?: string;
++  /** Assessee Permanent Account Number. */
+   pan?: string;
++  /** Financial Year in YYYY-YY format (e.g., '2024-25'). */
+   fy: string;
++  /** Assessment Year in YYYY-YY format (computed from `fy` if omitted). */
+   ay?: string;
++  /** List of individual realized gain audit lots. */
+   details: ITRGainDetail[];
++  /** Optional pre-computed ITR summary. */
+   summary?: ITRSummary;
++  /** Pre-computed Table F advance tax accrual matrix. */
+   advanceTaxMatrix?: AdvanceTaxAccrualMatrix;
++  /** Section summary breakdown. */
+   sectionSummary?: Record<string, unknown>;
+ }
+ 
++/**
++ * Computes the official Assessment Year (AY) string corresponding to a Financial Year (FY).
++ *
++ * Example: `computeAY('2024-25')` -> `'2025-26'`
++ *
++ * @param fy - Financial year string (e.g., '2024-25' or '2023-24').
++ * @returns Assessment year string in YYYY-YY format.
++ */
+ export function computeAY(fy: string): string {
+   const startYear = parseInt(fy.split('-')[0], 10);
+   const ayStartYear = startYear + 1;
+@@ -110,39 +243,75 @@ export function computeAY(fy: string): string {
+   return `${ayStartYear}-${ayEndYear}`;
+ }
+ 
++/**
++ * Determines the statutory Advance Tax quarter under Section 234C / Schedule CG Table F
++ * based on the sale or redemption date.
++ *
++ * ### Advance Tax Period Boundaries:
++ * - **Q1**: April 1 to June 15
++ * - **Q2a**: June 16 to July 22 (Pre-Budget 2024 cutoff for FY 2024-25)
++ * - **Q2b**: July 23 to September 15 (Post-Budget 2024 cutoff for FY 2024-25)
++ * - **Q3**: September 16 to December 15
++ * - **Q4**: December 16 to March 15
++ * - **Q5**: March 16 to March 31
++ *
++ * @param date - Redemption or sale date (Date object or ISO-8601 string).
++ * @returns Standardized {@link AdvanceTaxQuarter} enum value.
++ */
+ export function getAdvanceTaxQuarter(date: Date | string): AdvanceTaxQuarter {
+-  let mmdd = '';
++  let monthDayString = '';
+   if (typeof date === 'string') {
+     const match = date.match(/^\d{4}-(\d{2})-(\d{2})/);
+     if (match) {
+-      mmdd = `${match[1]}-${match[2]}`;
++      monthDayString = `${match[1]}-${match[2]}`;
+     }
+   }
+-  if (!mmdd) {
+-    const d = date instanceof Date ? date : new Date(date);
+-    const m = String(d.getMonth() + 1).padStart(2, '0');
+-    const day = String(d.getDate()).padStart(2, '0');
+-    mmdd = `${m}-${day}`;
++  if (!monthDayString) {
++    const parsedDate = date instanceof Date ? date : new Date(date);
++    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
++    const day = String(parsedDate.getDate()).padStart(2, '0');
++    monthDayString = `${month}-${day}`;
+   }
+ 
+-  if (mmdd >= '04-01' && mmdd <= '06-15') {
++  // Statutory date ranges under Section 234C:
++  if (monthDayString >= '04-01' && monthDayString <= '06-15') {
+     return AdvanceTaxQuarter.Q1;
+   }
+-  if (mmdd >= '06-16' && mmdd <= '07-22') {
++  // Q2a: Pre-Budget 2024 window (June 16 to July 22)
++  if (monthDayString >= '06-16' && monthDayString <= '07-22') {
+     return AdvanceTaxQuarter.Q2A;
+   }
+-  if (mmdd >= '07-23' && mmdd <= '09-15') {
++  // Q2b: Post-Budget 2024 window (July 23 to September 15)
++  if (monthDayString >= '07-23' && monthDayString <= '09-15') {
+     return AdvanceTaxQuarter.Q2B;
+   }
+-  if (mmdd >= '09-16' && mmdd <= '12-15') {
++  if (monthDayString >= '09-16' && monthDayString <= '12-15') {
+     return AdvanceTaxQuarter.Q3;
+   }
+-  if (mmdd >= '12-16' || mmdd <= '03-15') {
++  if (monthDayString >= '12-16' || monthDayString <= '03-15') {
+     return AdvanceTaxQuarter.Q4;
+   }
+   return AdvanceTaxQuarter.Q5;
+ }
+ 
++/**
++ * Calculates Section 112A Long-Term Capital Gains statutory exemption allocation.
++ *
++ * ### Sequential Tranche Exhaustion Ordering
++ * Under Section 112A, the statutory exemption (₹1,25,000 for FY 2024-25 onwards, or ₹1,00,000
++ * for FY 2023-24 and earlier) is applied sequentially:
++ * 1. The exemption is first allocated against the **10% tranche** (gains realized prior to July 23, 2024).
++ * 2. Any residual unexhausted exemption is then applied against the **12.5% tranche** (gains realized
++ *    on or post-July 23, 2024).
++ *
++ * This sequential ordering adheres to statutory principles of taxpayer benefit:
++ * consuming the exemption against the earlier-accrued tranche before the later-accrued tranche.
++ *
++ * @param ltcg10 - Total gross LTCG accrued in the 10% tax tranche.
++ * @param ltcg12_5 - Total gross LTCG accrued in the 12.5% tax tranche.
++ * @param fy - Financial year string (e.g. '2024-25').
++ * @returns Detailed breakdown of exemption allocation, taxable balances, and resulting taxes.
++ */
+ export function calculate112AExemption(
+   ltcg10: number,
+   ltcg12_5: number,
+@@ -159,13 +328,16 @@ export function calculate112AExemption(
+ } {
+   const startYear = parseInt(String(fy).split('-')[0], 10);
+   const isFy2425OrLater = !isNaN(startYear) ? startYear >= 2024 : fy >= '2024-25';
+-  const limit = isFy2425OrLater ? 125000 : 100000;
++  const statutoryLimit = isFy2425OrLater ? 125000 : 100000;
+ 
+   const pureLtcg10 = Math.max(0, ltcg10);
+   const pureLtcg12_5 = Math.max(0, ltcg12_5);
+ 
+-  const exempt10 = Math.min(pureLtcg10, limit);
+-  const remainingLimit = limit - exempt10;
++  // 1. Exhaust against 10% tranche first
++  const exempt10 = Math.min(pureLtcg10, statutoryLimit);
++  const remainingLimit = statutoryLimit - exempt10;
++
++  // 2. Exhaust remaining limit against 12.5% tranche
+   const exempt12_5 = Math.min(pureLtcg12_5, remainingLimit);
+ 
+   const taxable10 = pureLtcg10 - exempt10;
+@@ -189,34 +361,46 @@ export function calculate112AExemption(
+   };
+ }
+ 
+-export function classifySection(g: Partial<ITRGainDetail>): string {
+-  if (g.section) return g.section;
++/**
++ * Classifies an individual realized capital gain lot into its exact statutory Income Tax Section.
++ *
++ * Evaluates asset class, holding duration (STCG vs LTCG), transaction sale date
++ * relative to the July 23, 2024 Budget cutoff, and Section 55(2)(ac) grandfathering status.
++ *
++ * @param gainItem - Partial or complete capital gain detail object.
++ * @returns Canonical {@link TaxSectionName} identifier.
++ */
++export function classifySection(gainItem: Partial<ITRGainDetail>): string {
++  if (gainItem.section) return gainItem.section;
+ 
+-  const isLtcg = g.taxType === 'LTCG';
+-  const isStcg = g.taxType === 'STCG';
+-  const isSlab = g.taxType === 'SLAB';
+-  const isDebt = g.assetClass === 'DEBT' || (g.taxRate === 0.20 && g.isGrandfathered);
++  const isLtcg = gainItem.taxType === 'LTCG';
++  const isStcg = gainItem.taxType === 'STCG';
++  const isSlab = gainItem.taxType === 'SLAB';
++  const isDebt = gainItem.assetClass === 'DEBT' || (gainItem.taxRate === 0.20 && gainItem.isGrandfathered);
+ 
++  // Short-Term Capital Gains (Section 111A)
+   if (isStcg) {
+-    if (g.taxRate === 0.20 || (!g.taxRate && g.sellDate && g.sellDate >= '2024-07-23')) {
++    if (gainItem.taxRate === 0.20 || (!gainItem.taxRate && gainItem.sellDate && gainItem.sellDate >= '2024-07-23')) {
+       return TaxSectionName.SEC_111A_20;
+     }
+     return TaxSectionName.SEC_111A_15;
+   }
+ 
++  // Long-Term Capital Gains (Section 112A / Section 112)
+   if (isLtcg) {
+     if (isDebt) {
+-      if (g.taxRate === 0.20) {
++      if (gainItem.taxRate === 0.20) {
+         return TaxSectionName.SEC_112_DEBT_20;
+       }
+       return TaxSectionName.SEC_112_DEBT_12_5;
+     }
+-    if (g.taxRate === 0.125 || (!g.isGrandfathered && g.sellDate && g.sellDate >= '2024-07-23')) {
++    if (gainItem.taxRate === 0.125 || (!gainItem.isGrandfathered && gainItem.sellDate && gainItem.sellDate >= '2024-07-23')) {
+       return TaxSectionName.SEC_112A_12_5;
+     }
+     return TaxSectionName.SEC_112A_10;
+   }
+ 
++  // Deemed Short-Term Capital Gains under Section 50AA (Debt funds acquired on or after 01-Apr-2023)
+   if (isSlab) {
+     return TaxSectionName.SEC_50AA;
+   }
+@@ -224,6 +408,12 @@ export function classifySection(g: Partial<ITRGainDetail>): string {
+   return TaxSectionName.SLAB;
+ }
+ 
++/**
++ * Aggregates individual realized capital gain audit lots into the 6-quarter Schedule CG Table F matrix.
++ *
++ * @param details - Array of realized gain detail items.
++ * @returns Populated {@link AdvanceTaxAccrualMatrix} with quarterly breakdowns and totals.
++ */
+ export function buildAdvanceTaxMatrix(details: Partial<ITRGainDetail>[]): AdvanceTaxAccrualMatrix {
+   const quarters: Record<AdvanceTaxQuarter, TableFQuarterData> = {
+     [AdvanceTaxQuarter.Q1]: { stcg15: 0, stcg20: 0, ltcg10: 0, ltcg12_5: 0, debtLtcg12_5: 0, debtLtcg20: 0, slab: 0, totalGain: 0, taxBeforeCess: 0, cess: 0, estimatedTax: 0 },
+@@ -243,14 +433,16 @@ export function buildAdvanceTaxMatrix(details: Partial<ITRGainDetail>[]): Advanc
+     [AdvanceTaxQuarter.Q5]: 0,
+   };
+ 
+-  for (const g of details) {
+-    if (!g.sellDate && !g.advanceTaxQuarter) continue;
+-    const q = (g.advanceTaxQuarter as AdvanceTaxQuarter) || (g.sellDate ? getAdvanceTaxQuarter(g.sellDate) : AdvanceTaxQuarter.Q1);
+-    const data = quarters[q];
++  for (const gainItem of details) {
++    if (!gainItem.sellDate && !gainItem.advanceTaxQuarter) continue;
++    const quarter =
++      (gainItem.advanceTaxQuarter as AdvanceTaxQuarter) ||
++      (gainItem.sellDate ? getAdvanceTaxQuarter(gainItem.sellDate) : AdvanceTaxQuarter.Q1);
++    const data = quarters[quarter];
+     if (!data) continue;
+ 
+-    const section = classifySection(g);
+-    const gain = g.gain ?? 0;
++    const section = classifySection(gainItem);
++    const gain = gainItem.gain ?? 0;
+ 
+     if (section === TaxSectionName.SEC_111A_15) {
+       data.stcg15 += gain;
+@@ -268,20 +460,24 @@ export function buildAdvanceTaxMatrix(details: Partial<ITRGainDetail>[]): Advanc
+       data.slab += gain;
+     }
+ 
+-    const tbCess = g.taxBeforeCess !== undefined ? g.taxBeforeCess : 0;
+-    const cess = g.cess !== undefined ? g.cess : tbCess * 0.04;
+-    const estTax = g.estimatedTax !== undefined ? g.estimatedTax : tbCess + cess;
++    const taxBeforeCess = gainItem.taxBeforeCess !== undefined ? gainItem.taxBeforeCess : 0;
++    const cess = gainItem.cess !== undefined ? gainItem.cess : taxBeforeCess * 0.04;
++    const estimatedTax =
++      gainItem.estimatedTax !== undefined ? gainItem.estimatedTax : taxBeforeCess + cess;
+ 
+     data.totalGain += gain;
+-    data.taxBeforeCess += tbCess;
++    data.taxBeforeCess += taxBeforeCess;
+     data.cess += cess;
+-    data.estimatedTax += estTax;
+-    quarterTotals[q] += estTax;
++    data.estimatedTax += estimatedTax;
++    quarterTotals[quarter] += estimatedTax;
+   }
+ 
+   return { quarters, quarterTotals };
+ }
+ 
++/**
++ * Quarterly gains summary used in ITR invariant verification.
++ */
+ export interface ITRQuarterlySummary {
+   q1?: number;
+   q2?: number;
+@@ -293,6 +489,9 @@ export interface ITRQuarterlySummary {
+   total?: number;
+ }
+ 
++/**
++ * Validation target structure inspected by {@link verifyItrInvariants}.
++ */
+ export interface ITRVerificationTarget {
+   fy?: string;
+   financialYear?: string;
+@@ -327,10 +526,21 @@ export interface ITRVerificationTarget {
+ }
+ 
+ /**
+- * Verifies statutory ITR capital gains invariants before report generation or export:
+- * 1. Sum of quarterly accrued gains across Table F equals net realized gains.
+- * 2. Exempt LTCG under Sec 112A does not exceed statutory limits (₹1,25,000 post-Budget 2024, ₹1,00,000 pre-Budget 2024).
+- * 3. Taxable gain cannot be negative after set-off.
++ * Verifies statutory ITR capital gains invariants before report generation or export.
++ *
++ * ### Mandated Statutory Invariant Gates:
++ * 1. **Quarterly Symmetry Invariant (Table F Sum $\equiv$ Annual Net Capital Gain)**:
++ *    The sum of quarterly accrued gains across Table F must equal the net realized capital gains
++ *    for the financial year within a $\pm ₹0.01$ floating-point tolerance.
++ * 2. **Section 112A Exemption Statutory Limit Invariant**:
++ *    The claimed Section 112A exemption cannot be negative and cannot exceed the statutory cap
++ *    (₹1,25,000 post-Budget 2024, ₹1,00,000 pre-Budget 2024).
++ * 3. **Non-Negative Taxable Gain Invariant**:
++ *    After intra-head loss set-offs under Section 70, taxable STCG, LTCG, slab gains, and total
++ *    taxable gain cannot be negative ($< -₹0.001$).
++ *
++ * @param report - Complete report or verification target to validate.
++ * @throws Error if any statutory invariant is violated.
+  */
+ export function verifyItrInvariants(report: ITRVerificationTarget): void {
+   if (!report) {
+@@ -348,36 +558,36 @@ export function verifyItrInvariants(report: ITRVerificationTarget): void {
+     report.totalGain ??
+     report.totalCapitalGain ??
+     (Array.isArray(report.details)
+-      ? report.details.reduce((sum: number, g: { gain?: number }) => sum + (g.gain ?? 0), 0)
++      ? report.details.reduce((sum: number, item: { gain?: number }) => sum + (item.gain ?? 0), 0)
+       : undefined);
+ 
+-  // 1. Quarterly Accrual vs Net Realized Total Invariant
++  // 1. Quarterly Accrual vs Net Realized Total Invariant (Table F Symmetry)
+   if (report.quarterlySummary) {
+-    const qs = report.quarterlySummary;
+-    const qSum =
+-      (qs.q1 ?? 0) +
+-      (qs.q2 ?? 0) +
+-      (qs.q2a ?? 0) +
+-      (qs.q2b ?? 0) +
+-      (qs.q3 ?? 0) +
+-      (qs.q4 ?? 0) +
+-      (qs.q5 ?? 0);
+-
+-    if (qs.total !== undefined && Math.abs(qSum - qs.total) > 0.01) {
++    const quarterlySummary = report.quarterlySummary;
++    const quarterlySum =
++      (quarterlySummary.q1 ?? 0) +
++      (quarterlySummary.q2 ?? 0) +
++      (quarterlySummary.q2a ?? 0) +
++      (quarterlySummary.q2b ?? 0) +
++      (quarterlySummary.q3 ?? 0) +
++      (quarterlySummary.q4 ?? 0) +
++      (quarterlySummary.q5 ?? 0);
++
++    if (quarterlySummary.total !== undefined && Math.abs(quarterlySum - quarterlySummary.total) > 0.01) {
+       throw new Error(
+-        `Invariant violated: quarterly accrued gains (${qSum}) do not sum to quarterly total (${qs.total})`
++        `Invariant violated: quarterly accrued gains (${quarterlySum}) do not sum to quarterly total (${quarterlySummary.total})`
+       );
+     }
+ 
+     if (netRealizedTotal !== undefined) {
+-      if (Math.abs(qSum - netRealizedTotal) > 0.01) {
++      if (Math.abs(quarterlySum - netRealizedTotal) > 0.01) {
+         throw new Error(
+-          `Invariant violated: quarterly accrued gains (${qSum}) do not sum to total capital gain (${netRealizedTotal})`
++          `Invariant violated: quarterly accrued gains (${quarterlySum}) do not sum to total capital gain (${netRealizedTotal})`
+         );
+       }
+-      if (qs.total !== undefined && Math.abs(qs.total - netRealizedTotal) > 0.01) {
++      if (quarterlySummary.total !== undefined && Math.abs(quarterlySummary.total - netRealizedTotal) > 0.01) {
+         throw new Error(
+-          `Invariant violated: quarterly total (${qs.total}) does not match portfolio realized total (${netRealizedTotal})`
++          `Invariant violated: quarterly total (${quarterlySummary.total}) does not match portfolio realized total (${netRealizedTotal})`
+         );
+       }
+     }
+@@ -387,10 +597,10 @@ export function verifyItrInvariants(report: ITRVerificationTarget): void {
+     report.advanceTaxMatrix || report.tableF || report.summary?.tableF;
+   if (matrix && matrix.quarters) {
+     let matrixSum = 0;
+-    for (const qKey of Object.keys(matrix.quarters)) {
+-      const qData = matrix.quarters[qKey as AdvanceTaxQuarter];
+-      if (qData) {
+-        matrixSum += qData.totalGain ?? 0;
++    for (const quarterKey of Object.keys(matrix.quarters)) {
++      const quarterData = matrix.quarters[quarterKey as AdvanceTaxQuarter];
++      if (quarterData) {
++        matrixSum += quarterData.totalGain ?? 0;
+       }
+     }
+ 
+@@ -458,6 +668,9 @@ export function verifyItrInvariants(report: ITRVerificationTarget): void {
+   }
+ }
+ 
++/**
++ * Escapes values for safe inclusion in RFC 4180 CSV output.
++ */
+ function escapeCSV(val: unknown): string {
+   if (val === undefined || val === null) return '';
+   const str = String(val);
+@@ -467,6 +680,9 @@ function escapeCSV(val: unknown): string {
+   return str;
+ }
+ 
++/**
++ * Formats a Date or date string to Indian standard DD/MM/YYYY representation.
++ */
+ function formatDate(dateInput: Date | string): string {
+   if (!dateInput) return '';
+   const str = String(dateInput);
+@@ -474,20 +690,46 @@ function formatDate(dateInput: Date | string): string {
+   if (match) {
+     return `${match[3]}/${match[2]}/${match[1]}`;
+   }
+-  const d = new Date(dateInput);
+-  if (isNaN(d.getTime())) return str;
+-  const day = String(d.getDate()).padStart(2, '0');
+-  const month = String(d.getMonth() + 1).padStart(2, '0');
+-  const year = d.getFullYear();
++  const dateObj = new Date(dateInput);
++  if (isNaN(dateObj.getTime())) return str;
++  const day = String(dateObj.getDate()).padStart(2, '0');
++  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
++  const year = dateObj.getFullYear();
+   return `${day}/${month}/${year}`;
+ }
+ 
++/**
++ * Formats a numeric tax rate to percentage display string (e.g. 0.125 -> '12.5%').
++ */
+ function formatTaxRate(rate: number | undefined): string {
+   if (rate === undefined || rate === null) return '0.0%';
+   const num = rate <= 1 ? rate * 100 : rate;
+   return `${num.toFixed(1)}%`;
+ }
+ 
++/**
++ * Generates an audit-ready, 27-column CSV Capital Gains Tax report compliant with
++ * CBDT Schedule CG (ITR-2 / ITR-3) and Advance Tax Section 234C (Table F).
++ *
++ * ### Structure of Generated Output:
++ * 1. **Statutory Metadata Header Block (commented with `#`)**:
++ *    - Assessee Name, PAN, Financial Year, Assessment Year.
++ *    - Consideration, cost, and transfer expense totals.
++ *    - Section 111A STCG pre/post split (15% vs 20%).
++ *    - Section 112A LTCG pre/post split (10% vs 12.5%).
++ *    - Section 112A exemption claimed (exhausted against 10% tranche first).
++ *    - Section 50AA deemed STCG and Section 112 Debt LTCG totals.
++ *    - Total Base Tax, 4% Health & Education Cess, and Total Tax Payable.
++ * 2. **Schedule CG Table F Advance Tax Accrual Matrix (commented with `#`)**:
++ *    - All 6 quarters (Q1, Q2a, Q2b, Q3, Q4, Q5) with statutory due dates and category breakdown.
++ * 3. **27-Column Capital Gains Audit Ledger**:
++ *    - Every realized lot with purchase/sale NAVs, holding days, Section 55(2)(ac) deemed cost,
++ *      grandfathered flags, advance tax quarter allocation, and synthetic anchor warnings.
++ *
++ * @param params - Configuration parameters containing assessee details and realized gain items.
++ * @returns Complete CSV report string.
++ * @throws Error if statutory invariants fail verification before export.
++ */
+ export function generateITRReportCSV(params: ITRReportParams): string {
+   const {
+     assesseeName = 'Portfolio Investor',
+@@ -500,7 +742,7 @@ export function generateITRReportCSV(params: ITRReportParams): string {
+   const startYear = parseInt(fy.split('-')[0], 10);
+   const endYear = startYear + 1;
+ 
+-  // Aggregate totals from details
++  // Aggregate totals across all constituent lots
+   let totalConsideration = 0;
+   let totalCost = 0;
+   let totalTransferExpenses = 0;
+@@ -514,46 +756,46 @@ export function generateITRReportCSV(params: ITRReportParams): string {
+ 
+   let baseTaxPayable = 0;
+ 
+-  for (const g of details) {
+-    const gross = g.grossConsideration ?? ((g.units || 0) * (g.sellNav || 0));
+-    const cost = g.costOfAcquisition ?? ((g.units || 0) * (g.buyNav || 0));
+-    const expenses = g.transferExpenses ?? 0;
+-    const gain = g.gain ?? 0;
++  for (const gainItem of details) {
++    const gross = gainItem.grossConsideration ?? ((gainItem.units || 0) * (gainItem.sellNav || 0));
++    const cost = gainItem.costOfAcquisition ?? ((gainItem.units || 0) * (gainItem.buyNav || 0));
++    const expenses = gainItem.transferExpenses ?? 0;
++    const gain = gainItem.gain ?? 0;
+ 
+     totalConsideration += gross;
+     totalCost += cost;
+     totalTransferExpenses += expenses;
+ 
+-    const section = classifySection(g);
++    const section = classifySection(gainItem);
+ 
+     if (section === TaxSectionName.SEC_111A_15) {
+       stcg15 += gain;
+-      baseTaxPayable += g.taxBeforeCess !== undefined ? g.taxBeforeCess : Math.max(0, gain) * 0.15;
++      baseTaxPayable += gainItem.taxBeforeCess !== undefined ? gainItem.taxBeforeCess : Math.max(0, gain) * 0.15;
+     } else if (section === TaxSectionName.SEC_111A_20) {
+       stcg20 += gain;
+-      baseTaxPayable += g.taxBeforeCess !== undefined ? g.taxBeforeCess : Math.max(0, gain) * 0.20;
++      baseTaxPayable += gainItem.taxBeforeCess !== undefined ? gainItem.taxBeforeCess : Math.max(0, gain) * 0.20;
+     } else if (section === TaxSectionName.SEC_112A_10) {
+       ltcg10 += gain;
+     } else if (section === TaxSectionName.SEC_112A_12_5) {
+       ltcg12_5 += gain;
+     } else if (section === TaxSectionName.SEC_112_DEBT_12_5) {
+       sec112Debt += gain;
+-      baseTaxPayable += g.taxBeforeCess !== undefined ? g.taxBeforeCess : Math.max(0, gain) * 0.125;
++      baseTaxPayable += gainItem.taxBeforeCess !== undefined ? gainItem.taxBeforeCess : Math.max(0, gain) * 0.125;
+     } else if (section === TaxSectionName.SEC_112_DEBT_20) {
+       sec112Debt += gain;
+-      baseTaxPayable += g.taxBeforeCess !== undefined ? g.taxBeforeCess : Math.max(0, gain) * 0.20;
++      baseTaxPayable += gainItem.taxBeforeCess !== undefined ? gainItem.taxBeforeCess : Math.max(0, gain) * 0.20;
+     } else {
+       sec50AA += gain;
+-      const rate = g.taxRate ?? 0.30;
+-      baseTaxPayable += g.taxBeforeCess !== undefined ? g.taxBeforeCess : Math.max(0, gain) * rate;
++      const rate = gainItem.taxRate ?? 0.30;
++      baseTaxPayable += gainItem.taxBeforeCess !== undefined ? gainItem.taxBeforeCess : Math.max(0, gain) * rate;
+     }
+   }
+ 
+-  // 112A sequential exemption
+-  const exemptionRes = calculate112AExemption(ltcg10, ltcg12_5, fy);
+-  // Add 112A base tax
+-  const tax112a10BeforeCess = exemptionRes.taxable10 * 0.10;
+-  const tax112a12_5BeforeCess = exemptionRes.taxable12_5 * 0.125;
++  // Section 112A sequential exemption calculation
++  const exemptionResult = calculate112AExemption(ltcg10, ltcg12_5, fy);
++  // Add 112A taxable base tax
++  const tax112a10BeforeCess = exemptionResult.taxable10 * 0.10;
++  const tax112a12_5BeforeCess = exemptionResult.taxable12_5 * 0.125;
+   baseTaxPayable += tax112a10BeforeCess + tax112a12_5BeforeCess;
+ 
+   const cess = baseTaxPayable * 0.04;
+@@ -562,15 +804,15 @@ export function generateITRReportCSV(params: ITRReportParams): string {
+   const total111A = stcg15 + stcg20;
+   const total112A = ltcg10 + ltcg12_5;
+ 
+-  // Build Advance Tax Matrix (Table F)
++  // Build or reuse Advance Tax Matrix (Table F)
+   const matrix = params.advanceTaxMatrix || buildAdvanceTaxMatrix(details);
+ 
+-  // Invariant verification gate before report export
++  // Statutory invariant verification gate prior to report export
+   verifyItrInvariants({
+     ...params,
+     fy,
+     advanceTaxMatrix: matrix,
+-    totalExemption: exemptionRes.totalExemption,
++    totalExemption: exemptionResult.totalExemption,
+   });
+ 
+   const dueDates: Record<AdvanceTaxQuarter, string> = {
+@@ -599,14 +841,14 @@ export function generateITRReportCSV(params: ITRReportParams): string {
+     `# Total Consideration: Rs ${totalConsideration.toFixed(2)} | Total Cost: Rs ${totalCost.toFixed(2)} | Transfer Expenses: Rs ${totalTransferExpenses.toFixed(2)}`,
+     `# Section 111A STCG: Rs ${total111A.toFixed(2)} (Pre: Rs ${stcg15.toFixed(2)} @ 15% | Post: Rs ${stcg20.toFixed(2)} @ 20%)`,
+     `# Section 112A LTCG: Rs ${total112A.toFixed(2)} (Pre: Rs ${ltcg10.toFixed(2)} @ 10% | Post: Rs ${ltcg12_5.toFixed(2)} @ 12.5%)`,
+-    `# Section 112A Exemption Claimed: Rs ${exemptionRes.totalExemption.toFixed(2)} (Exhausted against 10% tranche first)`,
++    `# Section 112A Exemption Claimed: Rs ${exemptionResult.totalExemption.toFixed(2)} (Exhausted against 10% tranche first)`,
+     `# Section 50AA Deemed STCG (Slab): Rs ${sec50AA.toFixed(2)} | Section 112 Debt LTCG: Rs ${sec112Debt.toFixed(2)}`,
+     `# Base Tax Payable: Rs ${baseTaxPayable.toFixed(2)} | Health & Education Cess (4%): Rs ${cess.toFixed(2)} | Total Tax: Rs ${totalTax.toFixed(2)}`,
+     '# ----------------------------------------------------------------------------------------------------',
+     '# ADVANCE TAX ACCRUAL MATRIX (SECTION 234C / SCHEDULE CG TABLE F)',
+     '# Quarter,Due Date,Sec 111A (15%),Sec 111A (20%),Sec 112A (10%),Sec 112A (12.5%),Sec 50AA (Slab),Sec 112 Debt,Total Gains',
+-    ...quartersOrder.map((q) => {
+-      const qData = matrix.quarters[q] || {
++    ...quartersOrder.map((quarter) => {
++      const quarterData = matrix.quarters[quarter] || {
+         stcg15: 0,
+         stcg20: 0,
+         ltcg10: 0,
+@@ -616,16 +858,16 @@ export function generateITRReportCSV(params: ITRReportParams): string {
+         slab: 0,
+         totalGain: 0,
+       };
+-      const debtTotal = (qData.debtLtcg12_5 || 0) + (qData.debtLtcg20 || 0);
++      const debtTotal = (quarterData.debtLtcg12_5 || 0) + (quarterData.debtLtcg20 || 0);
+       const rowTotal =
+-        (qData.stcg15 || 0) +
+-        (qData.stcg20 || 0) +
+-        (qData.ltcg10 || 0) +
+-        (qData.ltcg12_5 || 0) +
+-        (qData.slab || 0) +
++        (quarterData.stcg15 || 0) +
++        (quarterData.stcg20 || 0) +
++        (quarterData.ltcg10 || 0) +
++        (quarterData.ltcg12_5 || 0) +
++        (quarterData.slab || 0) +
+         debtTotal;
+ 
+-      return `# ${q},${dueDates[q]},${qData.stcg15.toFixed(2)},${qData.stcg20.toFixed(2)},${qData.ltcg10.toFixed(2)},${qData.ltcg12_5.toFixed(2)},${qData.slab.toFixed(2)},${debtTotal.toFixed(2)},${rowTotal.toFixed(2)}`;
++      return `# ${quarter},${dueDates[quarter]},${quarterData.stcg15.toFixed(2)},${quarterData.stcg20.toFixed(2)},${quarterData.ltcg10.toFixed(2)},${quarterData.ltcg12_5.toFixed(2)},${quarterData.slab.toFixed(2)},${debtTotal.toFixed(2)},${rowTotal.toFixed(2)}`;
+     }),
+     '# ====================================================================================================',
+   ];
+@@ -633,38 +875,39 @@ export function generateITRReportCSV(params: ITRReportParams): string {
+   const tableHeader =
+     'Sr. No.,Folio Number,ISIN,Asset / Scheme Name,Asset Class,Tax Section,Buy Date,Sell Date,Holding Period (Days),Holding Type,Units,Buy NAV (Rs),Sell NAV (Rs),Gross Consideration (Rs),Cost of Acquisition (Rs),FMV as on 31-Jan-2018 (Rs),Total FMV 2018 (Rs),Deemed Cost u/s 55(2)(ac) (Rs),Transfer Expenses / Exit Load (Rs),Net Capital Gain / (Loss) (Rs),Tax Rate (%),Tax Before Cess (Rs),Health & Education Cess (4%) (Rs),Total Tax Payable (Rs),Advance Tax Quarter,Grandfathered Flag,Anchor / Estimate Warning';
+ 
+-  const rows = details.map((g, idx) => {
+-    const srNo = idx + 1;
+-    const folioNumber = escapeCSV(g.folioNumber || 'N/A');
+-    const isin = escapeCSV(g.isin || 'N/A');
+-    const assetName = escapeCSV(g.assetName || '');
+-    const assetClass = escapeCSV(g.assetClass || (g.taxType === 'SLAB' ? 'DEBT' : 'EQUITY'));
+-    const section = escapeCSV(classifySection(g));
+-    const buyDate = formatDate(g.buyDate);
+-    const sellDate = formatDate(g.sellDate);
+-    const holdingPeriodDays = g.holdingPeriodDays !== undefined ? g.holdingPeriodDays : '';
+-    const holdingType = g.holdingType || (g.taxType === 'LTCG' ? 'Long-Term' : 'Short-Term');
+-    const units = (g.units || 0).toFixed(3);
+-    const buyNav = (g.buyNav || 0).toFixed(4);
+-    const sellNav = (g.sellNav || 0).toFixed(4);
+-    const grossConsideration = (g.grossConsideration ?? ((g.units || 0) * (g.sellNav || 0))).toFixed(2);
+-    const costOfAcquisition = (g.costOfAcquisition ?? ((g.units || 0) * (g.buyNav || 0))).toFixed(2);
+-    const fmv2018 = (g.fmvAsOfJan31_2018 ?? 0).toFixed(4);
+-    const totalFmv2018 = (g.totalFmvJan31_2018 ?? 0).toFixed(2);
++  const rows = details.map((gainItem, rowIndex) => {
++    const srNo = rowIndex + 1;
++    const folioNumber = escapeCSV(gainItem.folioNumber || 'N/A');
++    const isin = escapeCSV(gainItem.isin || 'N/A');
++    const assetName = escapeCSV(gainItem.assetName || '');
++    const assetClass = escapeCSV(gainItem.assetClass || (gainItem.taxType === 'SLAB' ? 'DEBT' : 'EQUITY'));
++    const section = escapeCSV(classifySection(gainItem));
++    const buyDate = formatDate(gainItem.buyDate);
++    const sellDate = formatDate(gainItem.sellDate);
++    const holdingPeriodDays = gainItem.holdingPeriodDays !== undefined ? gainItem.holdingPeriodDays : '';
++    const holdingType = gainItem.holdingType || (gainItem.taxType === 'LTCG' ? 'Long-Term' : 'Short-Term');
++    const units = (gainItem.units || 0).toFixed(3);
++    const buyNav = (gainItem.buyNav || 0).toFixed(4);
++    const sellNav = (gainItem.sellNav || 0).toFixed(4);
++    const grossConsideration = (gainItem.grossConsideration ?? ((gainItem.units || 0) * (gainItem.sellNav || 0))).toFixed(2);
++    const costOfAcquisition = (gainItem.costOfAcquisition ?? ((gainItem.units || 0) * (gainItem.buyNav || 0))).toFixed(2);
++    const fmv2018 = (gainItem.fmvAsOfJan31_2018 ?? 0).toFixed(4);
++    const totalFmv2018 = (gainItem.totalFmvJan31_2018 ?? 0).toFixed(2);
++    // Section 55(2)(ac) statutory deemed cost: max(cost, min(fmv, salePrice))
+     const deemedCost = (
+-      g.deemedCostOfAcquisition ?? (g.costOfAcquisition ?? ((g.units || 0) * (g.buyNav || 0)))
++      gainItem.deemedCostOfAcquisition ?? (gainItem.costOfAcquisition ?? ((gainItem.units || 0) * (gainItem.buyNav || 0)))
+     ).toFixed(2);
+-    const transferExpenses = (g.transferExpenses ?? 0).toFixed(2);
+-    const gain = (g.gain ?? 0).toFixed(2);
+-    const taxRate = formatTaxRate(g.taxRate);
+-    const taxBeforeCess = (g.taxBeforeCess ?? 0).toFixed(2);
+-    const cessAmount = (g.cess ?? ((g.taxBeforeCess ?? 0) * 0.04)).toFixed(2);
++    const transferExpenses = (gainItem.transferExpenses ?? 0).toFixed(2);
++    const gain = (gainItem.gain ?? 0).toFixed(2);
++    const taxRate = formatTaxRate(gainItem.taxRate);
++    const taxBeforeCess = (gainItem.taxBeforeCess ?? 0).toFixed(2);
++    const cessAmount = (gainItem.cess ?? ((gainItem.taxBeforeCess ?? 0) * 0.04)).toFixed(2);
+     const totalTaxPayable = (
+-      g.estimatedTax ?? ((g.taxBeforeCess ?? 0) + (g.cess ?? 0))
++      gainItem.estimatedTax ?? ((gainItem.taxBeforeCess ?? 0) + (gainItem.cess ?? 0))
+     ).toFixed(2);
+-    const quarter = escapeCSV(g.advanceTaxQuarter || (g.sellDate ? getAdvanceTaxQuarter(g.sellDate) : ''));
+-    const grandfatheredFlag = g.isGrandfathered ? 'Yes' : 'No';
+-    const anchorWarning = g.isAnchorDependent ? 'Estimated' : 'Actual';
++    const quarter = escapeCSV(gainItem.advanceTaxQuarter || (gainItem.sellDate ? getAdvanceTaxQuarter(gainItem.sellDate) : ''));
++    const grandfatheredFlag = gainItem.isGrandfathered ? 'Yes' : 'No';
++    const anchorWarning = gainItem.isAnchorDependent ? 'Estimated' : 'Actual';
+ 
+     return [
+       srNo,

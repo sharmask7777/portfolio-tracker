@@ -1,0 +1,1795 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index d176fad..b615d18 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -41,6 +41,12 @@ Comprehensive documentation of all backend and frontend test suites, financial i
+ - **Frontend Test Catalog:** [`frontend/tests/README.md`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/frontend/tests/README.md)
+   - Documents the 4-domain E2E taxonomy across 16 Playwright spec suites (Core Portfolio Operations, Tax & Statutory Compliance, Analytics & Reporting, Platform & UX Safeguards), all 12 Vitest unit test suites (`frontend/src/`), Page Object Models (`frontend/tests/pom/`), and privacy rules.
+ 
++### 7. Universal Generality Mandate (No Portfolio-Specific Hacks)
++- **Zero Portfolio-Specific Hacks**: Agents must NEVER introduce fixes, heuristics, conditional branches, or hardcoded overrides tailored to a single specific portfolio, account, user, or single statement instance.
++- **Generic Across All Portfolios**: All fixes, parsers, calculations, classification algorithms, and data representations MUST be inherently generic and apply uniformly across all portfolios.
++- **Permissible Broad Overrides**: Non-standard representations, parser quirks, or data anomalies that are generic across all portfolios encountering that provider/format (e.g., CAMS vs. KFintech statement quirks, AMC disclosure formats, statutory scheme naming anomalies) are acceptable overrides, provided they are structured generically rather than keyed to specific users or portfolios.
++- **Mandatory Validation Gate**: All review and validation agents (`review`, `research` auditors, task reviewers) MUST critically evaluate any proposed change for portfolio-specific logic and block any non-generic workarounds.
++
+ ## Mandatory Testing Requirement
+ 
+ For any new functionalities or bug fixes, you MUST mandatorily update and run both hermetic tests (backend/frontend unit tests) and Playwright E2E tests to cover the new code paths. These test updates must be committed as part of the primary change itself.
+diff --git a/backend-rs/crates/portfolio-api/src/routes/fund_holdings.rs b/backend-rs/crates/portfolio-api/src/routes/fund_holdings.rs
+new file mode 100644
+index 0000000..b581fba
+--- /dev/null
++++ b/backend-rs/crates/portfolio-api/src/routes/fund_holdings.rs
+@@ -0,0 +1,158 @@
++//! Fund holdings ingestion and lookup routes.
++
++use axum::extract::{Path, State};
++use axum::routing::{get, post};
++use axum::{Json, Router};
++use chrono::{NaiveDate, Utc};
++use rust_decimal::Decimal;
++use rust_decimal::prelude::ToPrimitive;
++use serde::{Deserialize, Serialize};
++use uuid::Uuid;
++
++use portfolio_db::entities::FundHoldingEntity;
++use portfolio_db::error::DbError;
++use portfolio_db::repositories::{FundHoldingsRepository, SqlxFundHoldingsRepo};
++
++use crate::errors::ApiError;
++use crate::state::{AppState, DbBackend};
++
++fn default_sector() -> String {
++    "Other".to_string()
++}
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct IngestHoldingItem {
++    pub stock_name: String,
++    pub stock_isin: Option<String>,
++    #[serde(default = "default_sector")]
++    pub sector: String,
++    pub weight: Decimal,
++}
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct IngestFundHoldingsRequest {
++    pub isin: String,
++    pub scheme_name: String,
++    pub as_of_date: NaiveDate,
++    pub holdings: Vec<IngestHoldingItem>,
++}
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct IngestFundHoldingsResponse {
++    pub isin: String,
++    pub count: usize,
++    pub as_of_date: NaiveDate,
++    pub status: String,
++}
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct FundHoldingDto {
++    pub stock_name: String,
++    pub stock_isin: Option<String>,
++    pub sector: String,
++    pub weight: f64,
++}
++
++/// Dispatches fund holdings persistence to the active database backend (in-memory or postgres).
++async fn upsert_holdings(state: &AppState, holdings: &[FundHoldingEntity]) -> Result<(), DbError> {
++    match &state.backend {
++        DbBackend::InMemory(mem) => mem.upsert_fund_holdings(holdings).await,
++        DbBackend::Postgres(pool) => {
++            let repo = SqlxFundHoldingsRepo::new(pool.clone());
++            repo.upsert_fund_holdings(holdings).await
++        }
++    }
++}
++
++/// Dispatches fund holdings retrieval to the active database backend (in-memory or postgres).
++async fn get_latest_holdings(
++    state: &AppState,
++    isin: &str,
++) -> Result<Vec<FundHoldingEntity>, DbError> {
++    match &state.backend {
++        DbBackend::InMemory(mem) => mem.get_latest_holdings_by_isin(isin).await,
++        DbBackend::Postgres(pool) => {
++            let repo = SqlxFundHoldingsRepo::new(pool.clone());
++            repo.get_latest_holdings_by_isin(isin).await
++        }
++    }
++}
++
++/// Ingests a batch of disclosed fund holdings for a mutual fund scheme.
++pub async fn ingest_fund_holdings(
++    State(state): State<AppState>,
++    Json(payload): Json<IngestFundHoldingsRequest>,
++) -> Result<Json<IngestFundHoldingsResponse>, ApiError> {
++    if payload.isin.trim().is_empty() {
++        return Err(ApiError::BadRequest("ISIN cannot be empty".to_string()));
++    }
++    if payload.holdings.is_empty() {
++        return Err(ApiError::BadRequest("Holdings cannot be empty".to_string()));
++    }
++    for item in &payload.holdings {
++        if item.weight <= Decimal::ZERO {
++            return Err(ApiError::BadRequest(
++                "Holding weight must be greater than zero".to_string(),
++            ));
++        }
++    }
++
++    let entities: Vec<FundHoldingEntity> = payload
++        .holdings
++        .iter()
++        .map(|item| FundHoldingEntity {
++            id: Uuid::new_v4(),
++            isin: payload.isin.clone(),
++            scheme_name: payload.scheme_name.clone(),
++            as_of_date: payload.as_of_date,
++            stock_name: item.stock_name.clone(),
++            stock_isin: item.stock_isin.clone(),
++            sector: if item.sector.trim().is_empty() {
++                "Other".to_string()
++            } else {
++                item.sector.clone()
++            },
++            weight: item.weight,
++            created_at: Utc::now(),
++        })
++        .collect();
++
++    let count = entities.len();
++    upsert_holdings(&state, &entities).await?;
++
++    Ok(Json(IngestFundHoldingsResponse {
++        isin: payload.isin,
++        count,
++        as_of_date: payload.as_of_date,
++        status: "success".to_string(),
++    }))
++}
++
++/// Retrieves latest disclosed holdings for a mutual fund scheme by its ISIN.
++pub async fn get_fund_holdings(
++    State(state): State<AppState>,
++    Path(isin): Path<String>,
++) -> Result<Json<Vec<FundHoldingDto>>, ApiError> {
++    let holdings = get_latest_holdings(&state, &isin).await?;
++    let dtos = holdings
++        .into_iter()
++        .map(|h| FundHoldingDto {
++            stock_name: h.stock_name,
++            stock_isin: h.stock_isin,
++            sector: h.sector,
++            weight: h.weight.to_f64().unwrap_or(0.0),
++        })
++        .collect();
++
++    Ok(Json(dtos))
++}
++
++pub fn routes() -> Router<AppState> {
++    Router::new()
++        .route("/ingest", post(ingest_fund_holdings))
++        .route("/{isin}", get(get_fund_holdings))
++}
+diff --git a/backend-rs/crates/portfolio-api/src/routes/mod.rs b/backend-rs/crates/portfolio-api/src/routes/mod.rs
+index 18b568a..681d85c 100644
+--- a/backend-rs/crates/portfolio-api/src/routes/mod.rs
++++ b/backend-rs/crates/portfolio-api/src/routes/mod.rs
+@@ -2,6 +2,7 @@
+ 
+ pub mod auth;
+ pub mod family;
++pub mod fund_holdings;
+ pub mod health;
+ pub mod holdings;
+ pub mod portfolio;
+diff --git a/backend-rs/crates/portfolio-api/src/routes/portfolio.rs b/backend-rs/crates/portfolio-api/src/routes/portfolio.rs
+index 3ffb927..c09f091 100644
+--- a/backend-rs/crates/portfolio-api/src/routes/portfolio.rs
++++ b/backend-rs/crates/portfolio-api/src/routes/portfolio.rs
+@@ -24,12 +24,14 @@ use portfolio_db::entities::{
+     AssetEntity, FolioEntity, PortfolioEntity, TransactionEntity, UploadJobEntity, UploadJobStatus,
+ };
+ use portfolio_db::error::DbError;
+-use portfolio_db::repositories::{PortfolioRepository, TransactionRepository};
++use portfolio_db::repositories::{
++    FundHoldingsRepository, PortfolioRepository, SqlxFundHoldingsRepo, TransactionRepository,
++};
+ 
+ use crate::errors::ApiError;
+ use crate::middleware::AuthUser;
+ use crate::services::NavSyncService;
+-use crate::state::AppState;
++use crate::state::{AppState, DbBackend};
+ 
+ #[derive(Debug, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+@@ -1397,6 +1399,24 @@ pub async fn compute_portfolio_exposures(
+         return Ok(Vec::new());
+     }
+ 
++    let isin_list: Vec<&str> = active_equity_folios
++        .iter()
++        .filter_map(|(a, _)| a.isin.as_deref())
++        .filter(|s| !s.is_empty())
++        .collect();
++
++    let db_holdings = if !isin_list.is_empty() {
++        match &state.backend {
++            DbBackend::InMemory(mem) => mem.get_latest_holdings_batch(&isin_list).await?,
++            DbBackend::Postgres(pool) => {
++                let repo = SqlxFundHoldingsRepo::new(pool.clone());
++                repo.get_latest_holdings_batch(&isin_list).await?
++            }
++        }
++    } else {
++        std::collections::HashMap::new()
++    };
++
+     let mut stock_map: std::collections::BTreeMap<
+         String,
+         (String, String, f64, Vec<StockContribution>),
+@@ -1404,28 +1424,75 @@ pub async fn compute_portfolio_exposures(
+ 
+     for (asset, folio_val) in active_equity_folios {
+         let isin = asset.isin.as_deref().unwrap_or("");
+-        let (fund_name, holdings) = resolve_holdings(isin, &asset.name);
+-        let effective_name = if asset.name.is_empty() {
+-            fund_name
++        let db_entries = if !isin.is_empty() {
++            db_holdings.get(isin)
+         } else {
+-            asset.name
++            None
+         };
+ 
+-        for h in holdings {
+-            let norm_key = portfolio_core::xray::overlap::normalize_stock_name(&h.name);
+-            let sector = get_stock_sector(&h.name).to_string();
+-            let weight_pct = h.weight.to_f64().unwrap_or(0.0);
+-            let stock_val = folio_val * (weight_pct / 100.0);
+-
+-            let entry = stock_map
+-                .entry(norm_key)
+-                .or_insert_with(|| (h.name.clone(), sector, 0.0, Vec::new()));
+-            entry.2 += stock_val;
+-            entry.3.push(StockContribution {
+-                scheme_name: effective_name.clone(),
+-                value: stock_val,
+-                weight: weight_pct,
+-            });
++        if let Some(entries) = db_entries.filter(|e| !e.is_empty()) {
++            let effective_name = if !asset.name.is_empty() {
++                asset.name
++            } else if let Some(first) = entries.first() {
++                if !first.scheme_name.is_empty() {
++                    first.scheme_name.clone()
++                } else {
++                    format!("Fund {}", isin)
++                }
++            } else {
++                format!("Fund {}", isin)
++            };
++
++            for h in entries {
++                let norm_key = portfolio_core::xray::overlap::normalize_stock_name(&h.stock_name);
++                let sector = if !h.sector.is_empty() && h.sector != "Other" {
++                    h.sector.clone()
++                } else {
++                    get_stock_sector(&h.stock_name).to_string()
++                };
++                let weight_pct = h.weight.to_f64().unwrap_or(0.0);
++                let stock_val = folio_val * (weight_pct / 100.0);
++
++                let entry = stock_map
++                    .entry(norm_key)
++                    .or_insert_with(|| (h.stock_name.clone(), sector.clone(), 0.0, Vec::new()));
++                if entry.1 == "Other" && sector != "Other" {
++                    entry.1 = sector;
++                }
++                entry.2 += stock_val;
++                entry.3.push(StockContribution {
++                    scheme_name: effective_name.clone(),
++                    value: stock_val,
++                    weight: weight_pct,
++                });
++            }
++        } else {
++            let (fund_name, holdings) = resolve_holdings(isin, &asset.name);
++            let effective_name = if asset.name.is_empty() {
++                fund_name
++            } else {
++                asset.name
++            };
++
++            for h in holdings {
++                let norm_key = portfolio_core::xray::overlap::normalize_stock_name(&h.name);
++                let sector = get_stock_sector(&h.name).to_string();
++                let weight_pct = h.weight.to_f64().unwrap_or(0.0);
++                let stock_val = folio_val * (weight_pct / 100.0);
++
++                let entry = stock_map
++                    .entry(norm_key)
++                    .or_insert_with(|| (h.name.clone(), sector.clone(), 0.0, Vec::new()));
++                if entry.1 == "Other" && sector != "Other" {
++                    entry.1 = sector;
++                }
++                entry.2 += stock_val;
++                entry.3.push(StockContribution {
++                    scheme_name: effective_name.clone(),
++                    value: stock_val,
++                    weight: weight_pct,
++                });
++            }
+         }
+     }
+ 
+diff --git a/backend-rs/crates/portfolio-api/src/state.rs b/backend-rs/crates/portfolio-api/src/state.rs
+index 4664242..8d0c346 100644
+--- a/backend-rs/crates/portfolio-api/src/state.rs
++++ b/backend-rs/crates/portfolio-api/src/state.rs
+@@ -8,7 +8,7 @@ use portfolio_db::InMemoryDatabase;
+ use tokio::sync::RwLock;
+ use tower_http::cors::CorsLayer;
+ 
+-use crate::routes::{auth, family, health, portfolio, tax};
++use crate::routes::{auth, family, fund_holdings, health, portfolio, tax};
+ 
+ /// Database backend variant powering the API service (in-memory or live PostgreSQL).
+ #[derive(Clone, Debug)]
+@@ -102,6 +102,7 @@ pub fn create_app(state: AppState) -> Router {
+         .nest("/api/portfolio", portfolio::routes())
+         .nest("/api/tax", tax::routes())
+         .nest("/api/family", family::routes())
++        .nest("/api/fund-holdings", fund_holdings::routes())
+         .layer(CorsLayer::permissive())
+         .with_state(state)
+ }
+diff --git a/backend-rs/crates/portfolio-api/tests/contract_tests.rs b/backend-rs/crates/portfolio-api/tests/contract_tests.rs
+index bd3eb5c..747dee6 100644
+--- a/backend-rs/crates/portfolio-api/tests/contract_tests.rs
++++ b/backend-rs/crates/portfolio-api/tests/contract_tests.rs
+@@ -1694,3 +1694,392 @@ async fn test_exposures_exclude_arbitrage_query_param() {
+         "Exposures with exclude_arbitrage=true must NOT include stocks solely from Arbitrage fund"
+     );
+ }
++
++#[tokio::test]
++async fn test_ingest_fund_holdings_success() {
++    let (app, _, _) = setup_test_app();
++
++    let payload = json!({
++        "isin": "INF209K01157",
++        "schemeName": "Aditya Birla Sun Life Frontline Equity Fund",
++        "asOfDate": "2024-03-31",
++        "holdings": [
++            {
++                "stockName": "HDFC Bank Ltd",
++                "stockIsin": "INE040A01034",
++                "sector": "Financial Services",
++                "weight": "0.0925"
++            },
++            {
++                "stockName": "Reliance Industries Ltd",
++                "stockIsin": "INE002A01018",
++                "sector": "Energy",
++                "weight": "0.0810"
++            }
++        ]
++    });
++
++    let req = Request::builder()
++        .uri("/api/fund-holdings/ingest")
++        .method("POST")
++        .header(header::CONTENT_TYPE, "application/json")
++        .body(Body::from(payload.to_string()))
++        .unwrap();
++
++    let res = app.oneshot(req).await.unwrap();
++    assert_eq!(res.status(), StatusCode::OK);
++
++    let json = parse_json(res.into_body()).await;
++    assert_eq!(json["isin"], "INF209K01157");
++    assert_eq!(json["count"], 2);
++    assert_eq!(json["asOfDate"], "2024-03-31");
++    assert_eq!(json["status"], "success");
++}
++
++#[tokio::test]
++async fn test_ingest_fund_holdings_validation_failure() {
++    let (app, _, _) = setup_test_app();
++
++    // Empty ISIN
++    let empty_isin_payload = json!({
++        "isin": "",
++        "schemeName": "Test Fund",
++        "asOfDate": "2024-03-31",
++        "holdings": [
++            {
++                "stockName": "HDFC Bank Ltd",
++                "weight": "0.05"
++            }
++        ]
++    });
++
++    let req1 = Request::builder()
++        .uri("/api/fund-holdings/ingest")
++        .method("POST")
++        .header(header::CONTENT_TYPE, "application/json")
++        .body(Body::from(empty_isin_payload.to_string()))
++        .unwrap();
++
++    let res1 = app.clone().oneshot(req1).await.unwrap();
++    assert_eq!(res1.status(), StatusCode::BAD_REQUEST);
++
++    // Empty holdings array
++    let empty_holdings_payload = json!({
++        "isin": "INF209K01157",
++        "schemeName": "Test Fund",
++        "asOfDate": "2024-03-31",
++        "holdings": []
++    });
++
++    let req2 = Request::builder()
++        .uri("/api/fund-holdings/ingest")
++        .method("POST")
++        .header(header::CONTENT_TYPE, "application/json")
++        .body(Body::from(empty_holdings_payload.to_string()))
++        .unwrap();
++
++    let res2 = app.clone().oneshot(req2).await.unwrap();
++    assert_eq!(res2.status(), StatusCode::BAD_REQUEST);
++
++    // Zero weight
++    let zero_weight_payload = json!({
++        "isin": "INF209K01157",
++        "schemeName": "Test Fund",
++        "asOfDate": "2024-03-31",
++        "holdings": [
++            {
++                "stockName": "HDFC Bank Ltd",
++                "weight": "0.0"
++            }
++        ]
++    });
++
++    let req3 = Request::builder()
++        .uri("/api/fund-holdings/ingest")
++        .method("POST")
++        .header(header::CONTENT_TYPE, "application/json")
++        .body(Body::from(zero_weight_payload.to_string()))
++        .unwrap();
++
++    let res3 = app.clone().oneshot(req3).await.unwrap();
++    assert_eq!(res3.status(), StatusCode::BAD_REQUEST);
++}
++
++#[tokio::test]
++async fn test_get_fund_holdings_by_isin() {
++    let (app, _, _) = setup_test_app();
++
++    let payload = json!({
++        "isin": "INF209K01157",
++        "schemeName": "Aditya Birla Sun Life Frontline Equity Fund",
++        "asOfDate": "2024-03-31",
++        "holdings": [
++            {
++                "stockName": "HDFC Bank Ltd",
++                "stockIsin": "INE040A01034",
++                "sector": "Financial Services",
++                "weight": "0.0925"
++            },
++            {
++                "stockName": "Reliance Industries Ltd",
++                "stockIsin": "INE002A01018",
++                "sector": "Energy",
++                "weight": "0.0810"
++            }
++        ]
++    });
++
++    let ingest_req = Request::builder()
++        .uri("/api/fund-holdings/ingest")
++        .method("POST")
++        .header(header::CONTENT_TYPE, "application/json")
++        .body(Body::from(payload.to_string()))
++        .unwrap();
++
++    let ingest_res = app.clone().oneshot(ingest_req).await.unwrap();
++    assert_eq!(ingest_res.status(), StatusCode::OK);
++
++    let get_req = Request::builder()
++        .uri("/api/fund-holdings/INF209K01157")
++        .method("GET")
++        .body(Body::empty())
++        .unwrap();
++
++    let get_res = app.oneshot(get_req).await.unwrap();
++    assert_eq!(get_res.status(), StatusCode::OK);
++
++    let holdings = parse_json(get_res.into_body()).await;
++    let list = holdings.as_array().expect("expected array of holdings");
++    assert_eq!(list.len(), 2);
++    assert_eq!(list[0]["stockName"], "HDFC Bank Ltd");
++    assert_eq!(list[0]["stockIsin"], "INE040A01034");
++    assert_eq!(list[0]["sector"], "Financial Services");
++    assert!((list[0]["weight"].as_f64().unwrap() - 0.0925).abs() < 1e-6);
++
++    assert_eq!(list[1]["stockName"], "Reliance Industries Ltd");
++    assert_eq!(list[1]["stockIsin"], "INE002A01018");
++    assert_eq!(list[1]["sector"], "Energy");
++    assert!((list[1]["weight"].as_f64().unwrap() - 0.0810).abs() < 1e-6);
++}
++
++#[tokio::test]
++async fn test_get_fund_holdings_empty_when_not_found() {
++    let (app, _, _) = setup_test_app();
++
++    let req = Request::builder()
++        .uri("/api/fund-holdings/INF999999999")
++        .method("GET")
++        .body(Body::empty())
++        .unwrap();
++
++    let res = app.oneshot(req).await.unwrap();
++    assert_eq!(res.status(), StatusCode::OK);
++
++    let json = parse_json(res.into_body()).await;
++    let list = json.as_array().expect("expected array");
++    assert!(list.is_empty());
++}
++
++#[tokio::test]
++async fn test_dynamic_exposure_uses_db_holdings_when_available() {
++    let (app, db, _) = setup_test_app();
++
++    // Register user
++    let reg_payload = serde_json::json!({
++        "email": "dynamic_exposure_test@example.com",
++        "name": "Dynamic Exposure Tester",
++        "password": "SecurePassword123!"
++    });
++    let reg_req = Request::builder()
++        .uri("/api/auth/register")
++        .method("POST")
++        .header(header::CONTENT_TYPE, "application/json")
++        .body(Body::from(reg_payload.to_string()))
++        .unwrap();
++
++    let reg_res = app.clone().oneshot(reg_req).await.unwrap();
++    assert_eq!(reg_res.status(), StatusCode::CREATED);
++    let reg_json = parse_json(reg_res.into_body()).await;
++    let token = reg_json["token"].as_str().unwrap().to_string();
++    let user_id = Uuid::parse_str(reg_json["id"].as_str().unwrap()).unwrap();
++
++    // Create user portfolio
++    let portfolio = db
++        .create_portfolio(user_id, "Dynamic Exposure Portfolio", None)
++        .await
++        .unwrap();
++    let port_id = portfolio.id.to_string();
++
++    // 1. Folio with ISIN INF209K01157 (100,000 INR)
++    let asset_sbi = db.create_asset(
++        "MUTUAL_FUND",
++        "SBI Large Cap Fund",
++        Some("INF209K01157"),
++        Some("119598"),
++        Some("SBI_LC"),
++        None,
++    );
++    let folio_sbi = db
++        .create_folio(
++            portfolio.id,
++            asset_sbi.id,
++            "10001000",
++            Some("SBI_MF"),
++            Some("ABCDE1234F"),
++        )
++        .unwrap();
++    db.create_transaction(
++        folio_sbi.id,
++        chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap(),
++        "PURCHASE",
++        Decimal::from(100000),
++        Decimal::from(1000),
++        Decimal::from(100),
++        Decimal::from(1000),
++        None,
++    )
++    .await
++    .unwrap();
++
++    // 2. Un-ingested fund folio: UTI Nifty 50 Index Fund (50,000 INR)
++    let asset_uti = db.create_asset(
++        "MUTUAL_FUND",
++        "UTI Nifty 50 Index Fund",
++        Some("INF789F01058"),
++        Some("120716"),
++        Some("UTI_NIFTY50"),
++        None,
++    );
++    let folio_uti = db
++        .create_folio(
++            portfolio.id,
++            asset_uti.id,
++            "20002000",
++            Some("UTI_MF"),
++            Some("ABCDE1234F"),
++        )
++        .unwrap();
++    db.create_transaction(
++        folio_uti.id,
++        chrono::NaiveDate::from_ymd_opt(2023, 1, 15).unwrap(),
++        "PURCHASE",
++        Decimal::from(50000),
++        Decimal::from(500),
++        Decimal::from(100),
++        Decimal::from(500),
++        None,
++    )
++    .await
++    .unwrap();
++
++    // Step A: Prior to disclosure ingestion, GET /api/portfolio/{id}/exposures resolves via resolve_holdings heuristic.
++    let get_exp_req_before = Request::builder()
++        .uri(format!("/api/portfolio/{port_id}/exposures"))
++        .method("GET")
++        .header(header::AUTHORIZATION, format!("Bearer {token}"))
++        .body(Body::empty())
++        .unwrap();
++    let get_exp_res_before = app.clone().oneshot(get_exp_req_before).await.unwrap();
++    assert_eq!(get_exp_res_before.status(), StatusCode::OK);
++    let exp_before = parse_json(get_exp_res_before.into_body()).await;
++    let list_before = exp_before.as_array().expect("expected array");
++
++    // "Synthetic Cloud Technologies Ltd." must NOT be present before ingestion
++    assert!(
++        !list_before.iter().any(|e| e["name"]
++            .as_str()
++            .unwrap_or("")
++            .contains("Synthetic Cloud Technologies")),
++        "Synthetic stock should not exist prior to ingestion"
++    );
++    // UTI Nifty 50 resolved via heuristic should contain common large cap stocks (e.g. Reliance or HDFC)
++    assert!(
++        list_before.iter().any(|e| e["name"]
++            .as_str()
++            .unwrap_or("")
++            .contains("Reliance Industries")),
++        "Heuristic exposures must contain fallback holdings"
++    );
++
++    // Step B: Ingest disclosure for INF209K01157 with custom synthetic stock
++    let ingest_payload = json!({
++        "isin": "INF209K01157",
++        "schemeName": "SBI Large Cap Fund",
++        "asOfDate": "2024-03-31",
++        "holdings": [
++            {
++                "stockName": "Synthetic Cloud Technologies Ltd.",
++                "stockIsin": "INE999X01099",
++                "sector": "Technology",
++                "weight": "15.0"
++            },
++            {
++                "stockName": "Synthetic Green Power Ltd.",
++                "stockIsin": "INE888Y01088",
++                "sector": "Energy",
++                "weight": "10.0"
++            }
++        ]
++    });
++    let ingest_req = Request::builder()
++        .uri("/api/fund-holdings/ingest")
++        .method("POST")
++        .header(header::CONTENT_TYPE, "application/json")
++        .body(Body::from(ingest_payload.to_string()))
++        .unwrap();
++    let ingest_res = app.clone().oneshot(ingest_req).await.unwrap();
++    assert_eq!(ingest_res.status(), StatusCode::OK);
++
++    // Step C: After ingestion, GET /api/portfolio/{id}/exposures dynamically resolves "Synthetic Cloud Technologies Ltd."
++    let get_exp_req_after = Request::builder()
++        .uri(format!("/api/portfolio/{port_id}/exposures"))
++        .method("GET")
++        .header(header::AUTHORIZATION, format!("Bearer {token}"))
++        .body(Body::empty())
++        .unwrap();
++    let get_exp_res_after = app.clone().oneshot(get_exp_req_after).await.unwrap();
++    assert_eq!(get_exp_res_after.status(), StatusCode::OK);
++    let exp_after = parse_json(get_exp_res_after.into_body()).await;
++    let list_after = exp_after.as_array().expect("expected array");
++
++    let cloud_tech = list_after
++        .iter()
++        .find(|e| {
++            e["name"]
++                .as_str()
++                .unwrap_or("")
++                .contains("Synthetic Cloud Technologies")
++        })
++        .expect("Synthetic Cloud Technologies Ltd. must be present in dynamic exposures");
++
++    assert_eq!(cloud_tech["name"], "Synthetic Cloud Technologies Ltd.");
++    assert_eq!(cloud_tech["sector"], "Technology");
++    // Folio val = 100,000 INR; weight = 15.0% -> absolute_value = 15,000.0
++    let abs_val = cloud_tech["absoluteValue"].as_f64().unwrap();
++    assert!(
++        (abs_val - 15000.0).abs() < 1e-2,
++        "Expected absoluteValue ~15000.0, got {abs_val}"
++    );
++
++    // Check contributions
++    let contribs = cloud_tech["contributions"].as_array().unwrap();
++    assert_eq!(contribs.len(), 1);
++    assert_eq!(contribs[0]["schemeName"], "SBI Large Cap Fund");
++    assert!((contribs[0]["weight"].as_f64().unwrap() - 15.0).abs() < 1e-4);
++    assert!((contribs[0]["value"].as_f64().unwrap() - 15000.0).abs() < 1e-2);
++
++    // Step D: Un-ingested fund (UTI Nifty 50) continues to resolve seamlessly via resolve_holdings heuristic!
++    let uti_stock = list_after.iter().find(|e| {
++        e["contributions"]
++            .as_array()
++            .map(|c| {
++                c.iter()
++                    .any(|item| item["schemeName"].as_str().unwrap_or("").contains("UTI"))
++            })
++            .unwrap_or(false)
++    });
++    assert!(
++        uti_stock.is_some(),
++        "Un-ingested fund (UTI Nifty 50) must continue resolving via resolve_holdings fallback"
++    );
++}
+diff --git a/backend-rs/crates/portfolio-db/src/entities.rs b/backend-rs/crates/portfolio-db/src/entities.rs
+index 14c39e7..634032e 100644
+--- a/backend-rs/crates/portfolio-db/src/entities.rs
++++ b/backend-rs/crates/portfolio-db/src/entities.rs
+@@ -272,6 +272,36 @@ pub struct HistoricalValuationEntity {
+     pub created_at: DateTime<Utc>,
+ }
+ 
++fn default_fund_holding_sector() -> String {
++    "Other".to_string()
++}
++
++/// Database entity for FundHolding table storing monthly AMC stock disclosures.
++#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
++#[serde(rename_all = "camelCase")]
++pub struct FundHoldingEntity {
++    pub id: Uuid,
++    pub isin: String,
++    #[sqlx(rename = "schemeName")]
++    #[serde(rename = "schemeName", alias = "scheme_name")]
++    pub scheme_name: String,
++    #[sqlx(rename = "asOfDate")]
++    #[serde(rename = "asOfDate", alias = "as_of_date")]
++    pub as_of_date: NaiveDate,
++    #[sqlx(rename = "stockName")]
++    #[serde(rename = "stockName", alias = "stock_name")]
++    pub stock_name: String,
++    #[sqlx(rename = "stockIsin")]
++    #[serde(default, rename = "stockIsin", alias = "stock_isin")]
++    pub stock_isin: Option<String>,
++    #[serde(default = "default_fund_holding_sector")]
++    pub sector: String,
++    pub weight: Decimal,
++    #[sqlx(rename = "createdAt")]
++    #[serde(rename = "createdAt", alias = "created_at")]
++    pub created_at: DateTime<Utc>,
++}
++
+ // ---------------------------------------------------------------------------
+ // Conversion to / from portfolio-core domain models
+ // ---------------------------------------------------------------------------
+diff --git a/backend-rs/crates/portfolio-db/src/repositories/fund_holdings_repo.rs b/backend-rs/crates/portfolio-db/src/repositories/fund_holdings_repo.rs
+new file mode 100644
+index 0000000..1d79a20
+--- /dev/null
++++ b/backend-rs/crates/portfolio-db/src/repositories/fund_holdings_repo.rs
+@@ -0,0 +1,151 @@
++//! Fund holdings repository trait and SQLx implementation.
++
++use std::collections::HashMap;
++
++use async_trait::async_trait;
++
++use crate::entities::FundHoldingEntity;
++use crate::error::DbError;
++
++#[async_trait]
++pub trait FundHoldingsRepository: Send + Sync {
++    /// Upserts a batch of fund holdings (disclosed portfolio holdings) into the database.
++    ///
++    /// Conflicting rows matching `(isin, asOfDate, stockName)` will have their
++    /// metadata (schemeName, stockIsin, sector, weight) updated.
++    async fn upsert_fund_holdings(&self, holdings: &[FundHoldingEntity]) -> Result<(), DbError>;
++
++    /// Gets the latest disclosed holdings for a mutual fund scheme by its ISIN.
++    ///
++    /// Selects all holdings for the latest `asOfDate` available for that ISIN,
++    /// ordered by weight descending.
++    async fn get_latest_holdings_by_isin(
++        &self,
++        isin: &str,
++    ) -> Result<Vec<FundHoldingEntity>, DbError>;
++
++    /// Gets the latest disclosed holdings in batch for multiple mutual fund ISINs.
++    ///
++    /// Returns a map keyed by ISIN containing the holdings for that fund's latest
++    /// `asOfDate`.
++    async fn get_latest_holdings_batch(
++        &self,
++        isins: &[&str],
++    ) -> Result<HashMap<String, Vec<FundHoldingEntity>>, DbError>;
++}
++
++/// Production PostgreSQL repository for FundHoldings using SQLx.
++#[derive(Clone, Debug)]
++pub struct SqlxFundHoldingsRepo {
++    pool: sqlx::PgPool,
++}
++
++impl SqlxFundHoldingsRepo {
++    pub fn new(pool: sqlx::PgPool) -> Self {
++        Self { pool }
++    }
++}
++
++#[async_trait]
++impl FundHoldingsRepository for SqlxFundHoldingsRepo {
++    async fn upsert_fund_holdings(&self, holdings: &[FundHoldingEntity]) -> Result<(), DbError> {
++        if holdings.is_empty() {
++            return Ok(());
++        }
++
++        let mut tx = self.pool.begin().await?;
++
++        for holding in holdings {
++            sqlx::query(
++                r#"
++                INSERT INTO "FundHolding" (
++                    id, isin, "schemeName", "asOfDate", "stockName", "stockIsin", sector, weight, "createdAt"
++                )
++                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
++                ON CONFLICT ("isin", "asOfDate", "stockName") DO UPDATE SET
++                    "schemeName" = EXCLUDED."schemeName",
++                    "stockIsin" = EXCLUDED."stockIsin",
++                    "sector" = EXCLUDED."sector",
++                    "weight" = EXCLUDED."weight"
++                "#,
++            )
++            .bind(holding.id.to_string())
++            .bind(&holding.isin)
++            .bind(&holding.scheme_name)
++            .bind(holding.as_of_date)
++            .bind(&holding.stock_name)
++            .bind(holding.stock_isin.as_deref())
++            .bind(&holding.sector)
++            .bind(holding.weight)
++            .bind(holding.created_at)
++            .execute(&mut *tx)
++            .await?;
++        }
++
++        tx.commit().await?;
++        Ok(())
++    }
++
++    async fn get_latest_holdings_by_isin(
++        &self,
++        isin: &str,
++    ) -> Result<Vec<FundHoldingEntity>, DbError> {
++        let records = sqlx::query_as::<_, FundHoldingEntity>(
++            r#"
++            SELECT id::uuid, isin, "schemeName", "asOfDate", "stockName", "stockIsin", sector, weight,
++                   "createdAt" AT TIME ZONE 'UTC' as "createdAt"
++            FROM "FundHolding"
++            WHERE isin = $1 AND "asOfDate" = (
++                SELECT MAX("asOfDate") FROM "FundHolding" WHERE isin = $1
++            )
++            ORDER BY weight DESC, "stockName" ASC
++            "#,
++        )
++        .bind(isin)
++        .fetch_all(&self.pool)
++        .await?;
++
++        Ok(records)
++    }
++
++    async fn get_latest_holdings_batch(
++        &self,
++        isins: &[&str],
++    ) -> Result<HashMap<String, Vec<FundHoldingEntity>>, DbError> {
++        let mut result: HashMap<String, Vec<FundHoldingEntity>> = HashMap::new();
++        if isins.is_empty() {
++            return Ok(result);
++        }
++
++        for &isin in isins {
++            result.entry(isin.to_string()).or_default();
++        }
++
++        let isin_strings: Vec<String> = isins.iter().map(|s| s.to_string()).collect();
++
++        let records = sqlx::query_as::<_, FundHoldingEntity>(
++            r#"
++            WITH latest_dates AS (
++                SELECT isin, MAX("asOfDate") as max_date
++                FROM "FundHolding"
++                WHERE isin = ANY($1)
++                GROUP BY isin
++            )
++            SELECT h.id::uuid, h.isin, h."schemeName", h."asOfDate", h."stockName", h."stockIsin", h.sector, h.weight,
++                   h."createdAt" AT TIME ZONE 'UTC' as "createdAt"
++            FROM "FundHolding" h
++            JOIN latest_dates ld ON h.isin = ld.isin AND h."asOfDate" = ld.max_date
++            ORDER BY h.isin ASC, h.weight DESC, h."stockName" ASC
++            "#,
++        )
++        .bind(&isin_strings[..])
++        .fetch_all(&self.pool)
++        .await?;
++
++        for record in records {
++            result.entry(record.isin.clone()).or_default().push(record);
++        }
++
++        Ok(result)
++    }
++}
+diff --git a/backend-rs/crates/portfolio-db/src/repositories/mod.rs b/backend-rs/crates/portfolio-db/src/repositories/mod.rs
+index 66c4e2f..1d488fd 100644
+--- a/backend-rs/crates/portfolio-db/src/repositories/mod.rs
++++ b/backend-rs/crates/portfolio-db/src/repositories/mod.rs
+@@ -1,9 +1,11 @@
+ //! Repository traits and SQLx database implementations.
+ 
+ pub mod family_repo;
++pub mod fund_holdings_repo;
+ pub mod portfolio_repo;
+ pub mod transaction_repo;
+ 
+ pub use family_repo::{FamilyRepository, SqlxFamilyRepo};
++pub use fund_holdings_repo::{FundHoldingsRepository, SqlxFundHoldingsRepo};
+ pub use portfolio_repo::{PortfolioRepository, SqlxPortfolioRepo};
+ pub use transaction_repo::{SqlxTransactionRepo, TransactionRepository};
+diff --git a/backend-rs/crates/portfolio-db/src/schema.rs b/backend-rs/crates/portfolio-db/src/schema.rs
+index b3dd084..191fad7 100644
+--- a/backend-rs/crates/portfolio-db/src/schema.rs
++++ b/backend-rs/crates/portfolio-db/src/schema.rs
+@@ -168,6 +168,21 @@ pub fn generate_ddl() -> &'static str {
+     );
+     CREATE INDEX IF NOT EXISTS "_GoalAssets_B_index" ON "_GoalAssets"("B");
+ 
++    CREATE TABLE IF NOT EXISTS "FundHolding" (
++        "id" TEXT PRIMARY KEY,
++        "isin" TEXT NOT NULL,
++        "schemeName" TEXT NOT NULL,
++        "asOfDate" DATE NOT NULL,
++        "stockName" TEXT NOT NULL,
++        "stockIsin" TEXT,
++        "sector" TEXT NOT NULL DEFAULT 'Other',
++        "weight" NUMERIC(6, 3) NOT NULL,
++        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++        CONSTRAINT "FundHolding_isin_asOfDate_stockName_key" UNIQUE ("isin", "asOfDate", "stockName")
++    );
++    CREATE INDEX IF NOT EXISTS "FundHolding_isin_idx" ON "FundHolding"("isin");
++    CREATE INDEX IF NOT EXISTS "FundHolding_asOfDate_idx" ON "FundHolding"("asOfDate");
++
+     INSERT INTO "User" ("id", "email", "password", "createdAt", "updatedAt")
+     VALUES ('00000000-0000-0000-0000-000000000001', 'test@example.com', '$2b$12$dummyhashforplaywrighttestuser', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ON CONFLICT ("id") DO NOTHING;
+diff --git a/backend-rs/crates/portfolio-db/src/test_mocks.rs b/backend-rs/crates/portfolio-db/src/test_mocks.rs
+index f8ed6e2..0815e2f 100644
+--- a/backend-rs/crates/portfolio-db/src/test_mocks.rs
++++ b/backend-rs/crates/portfolio-db/src/test_mocks.rs
+@@ -9,12 +9,14 @@ use rust_decimal::Decimal;
+ use uuid::Uuid;
+ 
+ use crate::entities::{
+-    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, HistoricalNavEntity,
+-    HistoricalValuationEntity, ManagedProfileEntity, PortfolioEntity, TransactionEntity,
+-    UploadJobEntity, UploadJobStatus, UserEntity,
++    AssetEntity, FamilyGroupEntity, FamilyMemberEntity, FolioEntity, FundHoldingEntity,
++    HistoricalNavEntity, HistoricalValuationEntity, ManagedProfileEntity, PortfolioEntity,
++    TransactionEntity, UploadJobEntity, UploadJobStatus, UserEntity,
+ };
+ use crate::error::DbError;
+-use crate::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
++use crate::repositories::{
++    FamilyRepository, FundHoldingsRepository, PortfolioRepository, TransactionRepository,
++};
+ 
+ /// In-memory storage state holding entity tables.
+ #[derive(Debug, Default, Clone)]
+@@ -30,6 +32,7 @@ pub struct InMemoryDatabaseState {
+     pub upload_jobs: HashMap<Uuid, UploadJobEntity>,
+     pub historical_navs: HashMap<(String, NaiveDate), HistoricalNavEntity>,
+     pub historical_valuations: HashMap<(Uuid, NaiveDate), HistoricalValuationEntity>,
++    pub fund_holdings: HashMap<(String, NaiveDate, String), FundHoldingEntity>,
+ }
+ 
+ /// Thread-safe in-memory database mock.
+@@ -743,3 +746,60 @@ impl FamilyRepository for InMemoryDatabase {
+         Ok(profile)
+     }
+ }
++
++#[async_trait]
++impl FundHoldingsRepository for InMemoryDatabase {
++    async fn upsert_fund_holdings(&self, holdings: &[FundHoldingEntity]) -> Result<(), DbError> {
++        let mut state = self.state.write().expect("lock poisoned");
++        for h in holdings {
++            state.fund_holdings.insert(
++                (h.isin.clone(), h.as_of_date, h.stock_name.clone()),
++                h.clone(),
++            );
++        }
++        Ok(())
++    }
++
++    async fn get_latest_holdings_by_isin(
++        &self,
++        isin: &str,
++    ) -> Result<Vec<FundHoldingEntity>, DbError> {
++        let state = self.state.read().expect("lock poisoned");
++        let max_date = state
++            .fund_holdings
++            .values()
++            .filter(|h| h.isin == isin)
++            .map(|h| h.as_of_date)
++            .max();
++
++        let Some(date) = max_date else {
++            return Ok(Vec::new());
++        };
++
++        let mut holdings: Vec<FundHoldingEntity> = state
++            .fund_holdings
++            .values()
++            .filter(|h| h.isin == isin && h.as_of_date == date)
++            .cloned()
++            .collect();
++
++        holdings.sort_by(|a, b| {
++            b.weight
++                .cmp(&a.weight)
++                .then_with(|| a.stock_name.cmp(&b.stock_name))
++        });
++        Ok(holdings)
++    }
++
++    async fn get_latest_holdings_batch(
++        &self,
++        isins: &[&str],
++    ) -> Result<HashMap<String, Vec<FundHoldingEntity>>, DbError> {
++        let mut result: HashMap<String, Vec<FundHoldingEntity>> = HashMap::new();
++        for &isin in isins {
++            let holdings = self.get_latest_holdings_by_isin(isin).await?;
++            result.insert(isin.to_string(), holdings);
++        }
++        Ok(result)
++    }
++}
+diff --git a/backend-rs/crates/portfolio-db/tests/persistence_tests.rs b/backend-rs/crates/portfolio-db/tests/persistence_tests.rs
+index 14fae64..6572481 100644
+--- a/backend-rs/crates/portfolio-db/tests/persistence_tests.rs
++++ b/backend-rs/crates/portfolio-db/tests/persistence_tests.rs
+@@ -9,7 +9,7 @@
+ 
+ use std::str::FromStr;
+ 
+-use chrono::NaiveDate;
++use chrono::{NaiveDate, Utc};
+ use rust_decimal::Decimal;
+ use uuid::Uuid;
+ 
+@@ -18,7 +18,9 @@ use portfolio_core::performance::xirr::{CashFlow, calculate_xirr};
+ use portfolio_core::types::{Money, Nav, Units};
+ use portfolio_db::entities::*;
+ use portfolio_db::error::DbError;
+-use portfolio_db::repositories::{FamilyRepository, PortfolioRepository, TransactionRepository};
++use portfolio_db::repositories::{
++    FamilyRepository, FundHoldingsRepository, PortfolioRepository, TransactionRepository,
++};
+ use portfolio_db::test_mocks::InMemoryDatabase;
+ 
+ fn dec(s: &str) -> Decimal {
+@@ -720,3 +722,190 @@ async fn test_portfolio_cascading_deletion_of_folios_and_transactions() {
+     assert!(db.list_by_folio(folio2.id).await.unwrap().is_empty());
+     assert!(db.list_by_portfolio(portfolio.id).await.unwrap().is_empty());
+ }
++
++#[test]
++fn test_fund_holding_entity_serde() {
++    let now = Utc::now();
++    let as_of_date = NaiveDate::from_ymd_opt(2024, 3, 31).unwrap();
++    let id = Uuid::new_v4();
++
++    let holding = FundHoldingEntity {
++        id,
++        isin: "INF879O01019".to_string(),
++        scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
++        as_of_date,
++        stock_name: "HDFC Bank Ltd".to_string(),
++        stock_isin: Some("INE040A01034".to_string()),
++        sector: "Financial Services".to_string(),
++        weight: dec("8.250"),
++        created_at: now,
++    };
++
++    // Serialize to JSON
++    let json = serde_json::to_string(&holding).expect("serialize holding");
++    assert!(json.contains("\"schemeName\""));
++    assert!(json.contains("\"asOfDate\""));
++    assert!(json.contains("\"stockName\""));
++    assert!(json.contains("\"stockIsin\""));
++    assert!(json.contains("\"sector\""));
++    assert!(json.contains("\"weight\""));
++    assert!(json.contains("\"createdAt\""));
++
++    // Deserialize roundtrip
++    let deserialized: FundHoldingEntity = serde_json::from_str(&json).expect("deserialize holding");
++    assert_eq!(deserialized, holding);
++
++    // Test deserializing with missing optional/default fields
++    let minimal_json = serde_json::json!({
++        "id": id,
++        "isin": "INF879O01019",
++        "schemeName": "Parag Parikh Flexi Cap Fund",
++        "asOfDate": "2024-03-31",
++        "stockName": "ITC Ltd",
++        "weight": "4.500",
++        "createdAt": now
++    });
++    let holding_minimal: FundHoldingEntity =
++        serde_json::from_value(minimal_json).expect("deserialize minimal");
++    assert_eq!(holding_minimal.stock_isin, None);
++    assert_eq!(holding_minimal.sector, "Other");
++    assert_eq!(holding_minimal.weight, dec("4.500"));
++}
++
++#[tokio::test]
++async fn test_fund_holdings_repository_crud() {
++    let db = InMemoryDatabase::new();
++    let now = Utc::now();
++    let d1 = NaiveDate::from_ymd_opt(2024, 1, 31).unwrap();
++    let d2 = NaiveDate::from_ymd_opt(2024, 2, 29).unwrap();
++
++    let fund_isin = "INF879O01019";
++    let other_isin = "INF200K01123";
++
++    // Older disclosure for fund_isin (2024-01-31)
++    let old_holdings = vec![
++        FundHoldingEntity {
++            id: Uuid::new_v4(),
++            isin: fund_isin.to_string(),
++            scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
++            as_of_date: d1,
++            stock_name: "HDFC Bank Ltd".to_string(),
++            stock_isin: Some("INE040A01034".to_string()),
++            sector: "Financial Services".to_string(),
++            weight: dec("7.500"),
++            created_at: now,
++        },
++        FundHoldingEntity {
++            id: Uuid::new_v4(),
++            isin: fund_isin.to_string(),
++            scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
++            as_of_date: d1,
++            stock_name: "Bajaj Holdings".to_string(),
++            stock_isin: Some("INE118A01012".to_string()),
++            sector: "Financial Services".to_string(),
++            weight: dec("6.200"),
++            created_at: now,
++        },
++    ];
++    db.upsert_fund_holdings(&old_holdings)
++        .await
++        .expect("upsert old holdings");
++
++    // Latest disclosure for fund_isin (2024-02-29)
++    let new_holdings = vec![
++        FundHoldingEntity {
++            id: Uuid::new_v4(),
++            isin: fund_isin.to_string(),
++            scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
++            as_of_date: d2,
++            stock_name: "HDFC Bank Ltd".to_string(),
++            stock_isin: Some("INE040A01034".to_string()),
++            sector: "Financial Services".to_string(),
++            weight: dec("8.100"),
++            created_at: now,
++        },
++        FundHoldingEntity {
++            id: Uuid::new_v4(),
++            isin: fund_isin.to_string(),
++            scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
++            as_of_date: d2,
++            stock_name: "ITC Ltd".to_string(),
++            stock_isin: Some("INE154A01025".to_string()),
++            sector: "Consumer Defensive".to_string(),
++            weight: dec("5.500"),
++            created_at: now,
++        },
++    ];
++    db.upsert_fund_holdings(&new_holdings)
++        .await
++        .expect("upsert new holdings");
++
++    // Holdings for another fund
++    let other_holdings = vec![FundHoldingEntity {
++        id: Uuid::new_v4(),
++        isin: other_isin.to_string(),
++        scheme_name: "SBI Bluechip Fund".to_string(),
++        as_of_date: d2,
++        stock_name: "Infosys Ltd".to_string(),
++        stock_isin: Some("INE009A01021".to_string()),
++        sector: "Technology".to_string(),
++        weight: dec("9.300"),
++        created_at: now,
++    }];
++    db.upsert_fund_holdings(&other_holdings)
++        .await
++        .expect("upsert other holdings");
++
++    // 1. Test get_latest_holdings_by_isin retrieves only the latest date (2024-02-29)
++    let latest = db
++        .get_latest_holdings_by_isin(fund_isin)
++        .await
++        .expect("get latest");
++    assert_eq!(latest.len(), 2);
++    assert_eq!(latest[0].stock_name, "HDFC Bank Ltd");
++    assert_eq!(latest[0].weight, dec("8.100"));
++    assert_eq!(latest[1].stock_name, "ITC Ltd");
++    assert_eq!(latest[1].weight, dec("5.500"));
++
++    // 2. Test get_latest_holdings_by_isin for non-existent fund returns empty
++    let empty = db
++        .get_latest_holdings_by_isin("UNKNOWN_ISIN")
++        .await
++        .expect("get empty");
++    assert!(empty.is_empty());
++
++    // 3. Test get_latest_holdings_batch
++    let batch = db
++        .get_latest_holdings_batch(&[fund_isin, other_isin, "NON_EXISTENT"])
++        .await
++        .expect("get batch");
++    assert_eq!(batch.len(), 3);
++    assert_eq!(batch.get(fund_isin).unwrap().len(), 2);
++    assert_eq!(batch.get(other_isin).unwrap().len(), 1);
++    assert_eq!(batch.get("NON_EXISTENT").unwrap().len(), 0);
++
++    // 4. Test upsert overwrite on conflict (same isin, as_of_date, stock_name)
++    let updated = vec![FundHoldingEntity {
++        id: Uuid::new_v4(),
++        isin: fund_isin.to_string(),
++        scheme_name: "Parag Parikh Flexi Cap Fund".to_string(),
++        as_of_date: d2,
++        stock_name: "HDFC Bank Ltd".to_string(),
++        stock_isin: Some("INE040A01034".to_string()),
++        sector: "Banking".to_string(), // updated sector
++        weight: dec("8.500"),          // updated weight
++        created_at: now,
++    }];
++    db.upsert_fund_holdings(&updated)
++        .await
++        .expect("upsert update");
++
++    let latest_after_update = db
++        .get_latest_holdings_by_isin(fund_isin)
++        .await
++        .expect("get after update");
++    assert_eq!(latest_after_update.len(), 2);
++    assert_eq!(latest_after_update[0].stock_name, "HDFC Bank Ltd");
++    assert_eq!(latest_after_update[0].weight, dec("8.500"));
++    assert_eq!(latest_after_update[0].sector, "Banking");
++}
+diff --git a/backend-rs/crates/portfolio-db/tests/schema_test.rs b/backend-rs/crates/portfolio-db/tests/schema_test.rs
+index 63601ea..4136abc 100644
+--- a/backend-rs/crates/portfolio-db/tests/schema_test.rs
++++ b/backend-rs/crates/portfolio-db/tests/schema_test.rs
+@@ -16,6 +16,7 @@ fn test_schema_ddl_contains_all_core_tables() {
+     assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"HistoricalNAV\""));
+     assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"Goal\""));
+     assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"_GoalAssets\""));
++    assert!(ddl.contains("CREATE TABLE IF NOT EXISTS \"FundHolding\""));
+     assert!(ddl.contains("CREATE TYPE \"AssetType\" AS ENUM"));
+     assert!(ddl.contains("CREATE TYPE \"UploadJobStatus\" AS ENUM"));
+ }
+diff --git a/docs/superpowers/plans/2026-11-01-database-backed-fund-holdings-pipeline.md b/docs/superpowers/plans/2026-11-01-database-backed-fund-holdings-pipeline.md
+new file mode 100644
+index 0000000..22de69e
+--- /dev/null
++++ b/docs/superpowers/plans/2026-11-01-database-backed-fund-holdings-pipeline.md
+@@ -0,0 +1,334 @@
++# Database-Backed Fund Holdings Pipeline & Ingestion Engine Implementation Plan
++
++> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
++
++**Goal:** Build a robust, generic, database-backed mutual fund holdings repository in PostgreSQL with an in-memory mock for hermetic testing, ingestion API endpoints for monthly AMC portfolio disclosures, and dynamic look-through in the Stock Intersection and portfolio exposures pipeline with fallback heuristics.
++
++**Architecture:** A new `"FundHolding"` table in `portfolio-db` stores normalized monthly disclosures (ISIN, asOfDate, stockName, stockIsin, sector, weight) with a composite unique constraint for date-versioned idempotent upserts. A `FundHoldingsRepository` trait is implemented for both `SqlxFundHoldingsRepo` and `InMemoryDatabase`. `portfolio-api` exposes authenticated ingestion and lookup routes (`/api/fund-holdings`), while `compute_portfolio_exposures` queries the repository in batch, dynamically prioritizing database disclosures over in-memory fallback heuristics.
++
++**Tech Stack:** Rust (`axum`, `sqlx`, `rust_decimal`, `serde`, `chrono`, `uuid`), PostgreSQL 15, TypeScript (generated types).
++
++**Spec:** [`docs/superpowers/specs/2026-11-01-database-backed-fund-holdings-pipeline-design.md`](file:///Users/shaleensharma/workplace/gemini_ws/portfolio-tracker/docs/superpowers/specs/2026-11-01-database-backed-fund-holdings-pipeline-design.md)
++
++## Global Constraints
++
++- **Universal Generality Mandate:** Strictly zero portfolio-specific hacks or single-instance heuristics; all fixes, parsers, and data pipelines must apply uniformly across all portfolios.
++- **Strict Zero-I/O Invariant:** `portfolio-core` must remain 100% pure in-memory calculation functions with zero I/O, network, or database dependencies.
++- **The Invariant Oracle Law:** Never relax numerical bounds (Units $\Delta \le 0.0001$, Money $\Delta \le ₹0.01$, Returns & XIRR $\Delta \le 10^{-6}$).
++- **The Zero-Any Mandate:** No `any` types in TypeScript code; shared data contracts must use generated TypeScript bindings.
++- **Mandatory Synthetic Data:** Strictly zero real PII, PANs, user names, or CAS statements in tests and fixtures.
++- **Hermetic Test Speed:** Sub-millisecond test execution via `InMemoryDatabase` mock; `cargo test --workspace` must run completely Docker-free.
++
++## Review Focus
++
++1. **Date-Versioned Idempotent Upserts:** Re-ingesting an identical disclosure batch for the same `(isin, as_of_date, stock_name)` updates existing weights rather than duplicating rows or erroring out.
++2. **Latest Disclosure Resolution:** When multiple `as_of_date` disclosures exist for the same fund ISIN, `get_latest_holdings_by_isin` and `get_latest_holdings_batch` must return only the latest available disclosure date.
++3. **Seamless Heuristic Fallback:** If a fund ISIN is not present in `"FundHolding"`, `compute_portfolio_exposures` must seamlessly fall back to `resolve_holdings` without throwing errors or dropping the fund from total portfolio value.
++4. **Weight Normalization & Sector Assignment:** Persisted disclosure sectors take precedence over keyword-based heuristic sector guessing; weights are properly scaled to Decimal percentages.
++5. **Contract Drift Guard:** All new API models must be exported to TypeScript contracts and pass `git diff --exit-code frontend/src/types/generated`.
++
++---
++
++### Task 1: DDL Schema, `FundHoldingEntity`, and `FundHoldingsRepository` Trait in `portfolio-db`
++
++**Files:**
++- Modify: `backend-rs/crates/portfolio-db/src/schema.rs`
++- Modify: `backend-rs/crates/portfolio-db/src/entities.rs`
++- Create: `backend-rs/crates/portfolio-db/src/repositories/fund_holdings_repo.rs`
++- Modify: `backend-rs/crates/portfolio-db/src/repositories/mod.rs`
++- Modify: `backend-rs/crates/portfolio-db/src/lib.rs`
++- Test: `backend-rs/crates/portfolio-db/tests/entities_test.rs` or inline unit tests
++
++**Interfaces:**
++- Produces:
++  ```rust
++  #[derive(Debug, Clone, Serialize, Deserialize)]
++  pub struct FundHoldingEntity {
++      pub id: Uuid,
++      pub isin: String,
++      pub scheme_name: String,
++      pub as_of_date: NaiveDate,
++      pub stock_name: String,
++      pub stock_isin: Option<String>,
++      pub sector: String,
++      pub weight: Decimal,
++      pub created_at: DateTime<Utc>,
++  }
++
++  #[async_trait]
++  pub trait FundHoldingsRepository: Send + Sync {
++      async fn upsert_fund_holdings(&self, holdings: &[FundHoldingEntity]) -> Result<(), DbError>;
++      async fn get_latest_holdings_by_isin(&self, isin: &str) -> Result<Vec<FundHoldingEntity>, DbError>;
++      async fn get_latest_holdings_batch(&self, isins: &[&str]) -> Result<HashMap<String, Vec<FundHoldingEntity>>, DbError>;
++  }
++
++  pub struct SqlxFundHoldingsRepo { pool: sqlx::PgPool }
++  ```
++
++- [ ] **Step 1: Write the failing unit tests for `FundHoldingEntity` and schema definitions**
++
++Add test in `backend-rs/crates/portfolio-db/src/entities.rs` (or a dedicated test module) verifying JSON serialization/deserialization and Decimal conversion of `FundHoldingEntity`.
++```rust
++#[test]
++fn test_fund_holding_entity_serde() {
++    let entity = FundHoldingEntity {
++        id: Uuid::new_v4(),
++        isin: "INF209K01157".to_string(),
++        scheme_name: "SBI Large Cap Fund".to_string(),
++        as_of_date: NaiveDate::from_ymd_opt(2026, 10, 31).unwrap(),
++        stock_name: "HDFC Bank Ltd.".to_string(),
++        stock_isin: Some("INE040A01034".to_string()),
++        sector: "Financial Services".to_string(),
++        weight: Decimal::from_str("8.50").unwrap(),
++        created_at: Utc::now(),
++    };
++    let json = serde_json::to_string(&entity).unwrap();
++    let decoded: FundHoldingEntity = serde_json::from_str(&json).unwrap();
++    assert_eq!(decoded.isin, entity.isin);
++    assert_eq!(decoded.weight, entity.weight);
++}
++```
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `(cd backend-rs && cargo test --package portfolio-db test_fund_holding_entity_serde)`
++Expected: FAIL with "cannot find type `FundHoldingEntity` in this scope"
++
++- [ ] **Step 3: Implement DDL in `schema.rs`, `FundHoldingEntity` in `entities.rs`, and repository in `repositories/fund_holdings_repo.rs`**
++
++1. In `schema.rs`, add:
++```sql
++CREATE TABLE IF NOT EXISTS "FundHolding" (
++    "id" TEXT PRIMARY KEY,
++    "isin" TEXT NOT NULL,
++    "schemeName" TEXT NOT NULL,
++    "asOfDate" DATE NOT NULL,
++    "stockName" TEXT NOT NULL,
++    "stockIsin" TEXT,
++    "sector" TEXT NOT NULL DEFAULT 'Other',
++    "weight" NUMERIC(6, 3) NOT NULL,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    CONSTRAINT "FundHolding_isin_asOfDate_stockName_key" UNIQUE ("isin", "asOfDate", "stockName")
++);
++CREATE INDEX IF NOT EXISTS "FundHolding_isin_idx" ON "FundHolding"("isin");
++CREATE INDEX IF NOT EXISTS "FundHolding_asOfDate_idx" ON "FundHolding"("asOfDate");
++```
++2. In `entities.rs`, define `FundHoldingEntity` with `sqlx::FromRow` and Serde attributes.
++3. In `fund_holdings_repo.rs`, define `FundHoldingsRepository` trait and `SqlxFundHoldingsRepo` implementing:
++   - `upsert_fund_holdings`: Batch `INSERT INTO "FundHolding" ... ON CONFLICT ("isin", "asOfDate", "stockName") DO UPDATE SET "weight" = EXCLUDED."weight", "sector" = EXCLUDED."sector"`
++   - `get_latest_holdings_by_isin`: Queries holdings for the max `asOfDate` of the given ISIN.
++   - `get_latest_holdings_batch`: Queries holdings for the max `asOfDate` partitioned by ISIN.
++4. Export in `repositories/mod.rs` and `lib.rs`.
++
++- [ ] **Step 4: Run test to verify it passes**
++
++Run: `(cd backend-rs && cargo test --package portfolio-db)`
++Expected: PASS
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add backend-rs/crates/portfolio-db
++git commit -m "feat(portfolio-db): add FundHolding schema, entity, and Sqlx repository"
++```
++
++---
++
++### Task 2: Implement `FundHoldingsRepository` on `InMemoryDatabase` for Hermetic Testing
++
++**Files:**
++- Modify: `backend-rs/crates/portfolio-db/src/test_mocks.rs`
++- Test: `backend-rs/crates/portfolio-db/src/test_mocks.rs` (add unit tests)
++
++**Interfaces:**
++- Consumes: `FundHoldingEntity`, `FundHoldingsRepository` from Task 1.
++- Produces: Full in-memory mock supporting sub-millisecond, Zero-I/O tests for fund holding ingestion and lookups.
++
++- [ ] **Step 1: Write failing unit tests for `InMemoryDatabase` fund holdings operations**
++
++Add tests in `test_mocks.rs`:
++- `test_in_memory_fund_holdings_upsert_and_latest_lookup`: Ingest 2 dates for the same ISIN, assert only the latest date's holdings are returned.
++- `test_in_memory_fund_holdings_idempotent_update`: Ingest revised weight for existing (isin, date, stock), assert weight is updated without duplicate entries.
++- `test_in_memory_fund_holdings_batch_lookup`: Ingest for 2 ISINs, query batch for 3 ISINs (one non-existent), assert correct mapping and missing ISIN omitted or empty.
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `(cd backend-rs && cargo test --package portfolio-db test_in_memory_fund_holdings)`
++Expected: FAIL with "no method named `upsert_fund_holdings` on `InMemoryDatabase`"
++
++- [ ] **Step 3: Implement `FundHoldingsRepository` for `InMemoryDatabase` in `test_mocks.rs`**
++
++1. Add `fund_holdings: HashMap<(String, NaiveDate, String), FundHoldingEntity>` to `InMemoryDatabaseState`.
++2. Implement `FundHoldingsRepository` for `InMemoryDatabase`:
++   - `upsert_fund_holdings`: Write lock state, insert/overwrite keyed by `(isin, as_of_date, stock_name)`.
++   - `get_latest_holdings_by_isin`: Read lock, filter by ISIN, find max `as_of_date`, return all holdings for that date sorted by weight descending.
++   - `get_latest_holdings_batch`: Group by ISIN, find max date per ISIN, return map.
++3. Reset `fund_holdings` in `clear()`.
++
++- [ ] **Step 4: Run tests to verify they pass**
++
++Run: `(cd backend-rs && cargo test --package portfolio-db)`
++Expected: All tests PASS
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add backend-rs/crates/portfolio-db/src/test_mocks.rs
++git commit -m "feat(portfolio-db): implement FundHoldingsRepository for InMemoryDatabase"
++```
++
++---
++
++### Task 3: API Ingestion and Lookup Endpoints in `portfolio-api`
++
++**Files:**
++- Create: `backend-rs/crates/portfolio-api/src/routes/fund_holdings.rs`
++- Modify: `backend-rs/crates/portfolio-api/src/routes/mod.rs`
++- Modify: `backend-rs/crates/portfolio-api/src/state.rs`
++- Test: `backend-rs/crates/portfolio-api/tests/contract_tests.rs`
++
++**Interfaces:**
++- Consumes: `FundHoldingEntity`, `FundHoldingsRepository` from `portfolio-db`.
++- Produces:
++  - `POST /api/fund-holdings/ingest`: Accepts `IngestFundHoldingsRequest`, validates total weight and mandatory fields, returns `IngestFundHoldingsResponse`.
++  - `GET /api/fund-holdings/:isin`: Returns `Vec<FundHoldingDto>` for the latest disclosure date.
++
++- [ ] **Step 1: Write failing contract tests for fund holdings API endpoints**
++
++In `backend-rs/crates/portfolio-api/tests/contract_tests.rs`, add tests:
++- `test_ingest_fund_holdings_success`: Ingest valid SBI Large Cap Fund disclosure batch, assert 200 OK and response with count.
++- `test_ingest_fund_holdings_validation_failure`: Ingest with empty ISIN or empty holdings, assert 400 Bad Request.
++- `test_get_fund_holdings_by_isin`: Ingest and then query `GET /api/fund-holdings/INF209K01157`, assert returned holdings match with correct Decimal weights and stock names.
++- `test_get_fund_holdings_not_found`: Query unknown ISIN, assert 404 or empty array (200 with `[]`).
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `(cd backend-rs && cargo test --package portfolio-api --test contract_tests test_ingest_fund_holdings)`
++Expected: FAIL with route not found (404) or missing types.
++
++- [ ] **Step 3: Implement `fund_holdings.rs` and wire into `AppState`**
++
++1. Create `backend-rs/crates/portfolio-api/src/routes/fund_holdings.rs`:
++   - DTOs: `IngestHoldingItem`, `IngestFundHoldingsRequest`, `IngestFundHoldingsResponse`, `FundHoldingDto`.
++   - Route handlers:
++     - `pub async fn ingest_fund_holdings(State(state): State<AppState>, Json(req): Json<IngestFundHoldingsRequest>) -> Result<Json<IngestFundHoldingsResponse>, ApiError>`
++     - `pub async fn get_fund_holdings(State(state): State<AppState>, Path(isin): Path<String>) -> Result<Json<Vec<FundHoldingDto>>, ApiError>`
++   - Validation: Ensure `isin` is non-empty, `holdings` is non-empty, and weights are positive.
++2. In `state.rs`, mount routes:
++   - `.route("/api/fund-holdings/ingest", post(fund_holdings::ingest_fund_holdings))`
++   - `.route("/api/fund-holdings/:isin", get(fund_holdings::get_fund_holdings))`
++3. Handle repository routing for both `DbBackend::InMemory` and `DbBackend::Postgres`.
++
++- [ ] **Step 4: Run contract tests to verify they pass**
++
++Run: `(cd backend-rs && cargo test --package portfolio-api --test contract_tests test_ingest_fund_holdings)`
++Expected: PASS
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add backend-rs/crates/portfolio-api
++git commit -m "feat(portfolio-api): add fund holdings ingestion and lookup API routes"
++```
++
++---
++
++### Task 4: Dynamic Look-Through Integration in `compute_portfolio_exposures`
++
++**Files:**
++- Modify: `backend-rs/crates/portfolio-api/src/routes/portfolio.rs`
++- Test: `backend-rs/crates/portfolio-api/tests/contract_tests.rs`
++
++**Interfaces:**
++- Consumes: `FundHoldingsRepository` via `state.backend`, `resolve_holdings` as fallback.
++- Produces: Dynamic exposure resolution that automatically utilizes persisted database disclosures if available, falling back seamlessly to `resolve_holdings` heuristics if missing.
++
++- [ ] **Step 1: Write failing contract test for dynamic database look-through with fallback**
++
++In `contract_tests.rs`:
++Add test `test_dynamic_exposure_uses_db_holdings_when_available`:
++1. Create a user portfolio containing a folio with ISIN `"INF209K01157"` and value 100,000.
++2. Before ingestion: `GET /api/portfolio/{id}/exposures` returns exposure based on `resolve_holdings` heuristic.
++3. Ingest custom disclosure for `"INF209K01157"` with unique stock "Custom Synth Tech Ltd." (weight 15.0%) and sector "Technology".
++4. After ingestion: `GET /api/portfolio/{id}/exposures` returns "Custom Synth Tech Ltd." at 15.0% and allocated value 15,000.
++5. In the same portfolio, a fund without DB disclosure (e.g. UTI Nifty 50) still resolves via fallback heuristics without error.
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `(cd backend-rs && cargo test --package portfolio-api --test contract_tests test_dynamic_exposure_uses_db_holdings_when_available)`
++Expected: FAIL because `compute_portfolio_exposures` only calls `resolve_holdings` and ignores the DB.
++
++- [ ] **Step 3: Update `compute_portfolio_exposures` in `portfolio.rs`**
++
++1. In `compute_portfolio_exposures`:
++   - Collect unique active equity folios' ISINs.
++   - Batch query latest holdings:
++     - If `DbBackend::InMemory(ref mem)`, call `mem.get_latest_holdings_batch(&isin_refs).await`.
++     - If `DbBackend::Postgres(ref pool)`, call `SqlxFundHoldingsRepo::new(pool.clone()).get_latest_holdings_batch(&isin_refs).await`.
++   - When iterating over `active_equity_folios`:
++     - If `db_holdings_map.get(isin)` has entries, map them into `FundHolding` structs, using the persisted `stock_name`, `weight`, and `sector`.
++     - If not found or empty, call `resolve_holdings(isin, &asset.name)`.
++2. Normalize stock names and aggregate values into `StockExposure` contributions as before.
++
++- [ ] **Step 4: Run contract tests to verify they pass**
++
++Run: `(cd backend-rs && cargo test --package portfolio-api --test contract_tests test_dynamic_exposure_uses_db_holdings_when_available)`
++Expected: PASS
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add backend-rs/crates/portfolio-api
++git commit -m "feat(portfolio-api): dynamically prioritize database fund disclosures in portfolio exposures"
++```
++
++---
++
++### Task 5: Export Type Bindings, Parity Verification, & Full Hermetic Gate Execution
++
++**Files:**
++- Modify: `frontend/src/types/generated/` (via export bindings)
++- Test: Full Hermetic Verification Sequence (Steps 1-7 from `AGENTS.md`)
++
++- [ ] **Step 1: Export TypeScript bindings and verify no contract drift**
++
++Run:
++```bash
++(cd backend-rs && cargo test --package portfolio-api --test export_bindings)
++git status frontend/src/types/generated
++```
++Expected: Any newly introduced public structs have generated `.ts` definitions in `frontend/src/types/generated/`.
++
++- [ ] **Step 2: Run backend tests, clippy, and formatting checks**
++
++Run:
++```bash
++(cd backend-rs && cargo test --workspace)
++(cd backend-rs && cargo clippy --workspace --all-targets -- -D warnings)
++(cd backend-rs && cargo fmt --check)
++```
++Expected: Zero compilation errors, zero clippy warnings, clean formatting.
++
++- [ ] **Step 3: Run parity validation harness and frontend unit tests**
++
++Run:
++```bash
++(cd backend-rs && cargo run --package portfolio-parity)
++(cd frontend && npm run build && npm run test:unit)
++```
++Expected: All parity vectors within precision bounds; TypeScript build and unit tests pass cleanly.
++
++- [ ] **Step 4: Check coverage gates**
++
++Run:
++```bash
++npm run test:coverage
++```
++Expected: Backend line coverage $\ge 80\%$, frontend coverage gates pass.
++
++- [ ] **Step 5: Commit any generated bindings or test adjustments**
++
++```bash
++git add frontend/src/types/generated
++git commit -m "chore: update generated typescript bindings and verify hermetic test suite"
++```
+diff --git a/docs/superpowers/specs/2026-11-01-database-backed-fund-holdings-pipeline-design.md b/docs/superpowers/specs/2026-11-01-database-backed-fund-holdings-pipeline-design.md
+new file mode 100644
+index 0000000..c88d309
+--- /dev/null
++++ b/docs/superpowers/specs/2026-11-01-database-backed-fund-holdings-pipeline-design.md
+@@ -0,0 +1,138 @@
++# Design Document: Database-Backed Fund Holdings Pipeline & Ingestion Engine
++
++**Date:** 2026-11-01  
++**Status:** In Review  
++**Target File:** `docs/superpowers/specs/2026-11-01-database-backed-fund-holdings-pipeline-design.md`
++
++---
++
++## 1. Intent & The Why
++
++Mutual fund investors hold portfolios containing arbitrary mutual fund schemes whose underlying holdings and weights change monthly. While in-memory heuristics work well for canonical benchmark index funds, real-world portfolio tracking requires:
++1. **Authentic Holdings Persistence:** A database repository storing monthly AMC portfolio disclosures (stock name, stock ISIN, sector, and exact percentage weight).
++2. **Dynamic Exposure Resolution:** When calculating portfolio stock look-through and X-Ray, schemes with persisted disclosures should use authentic database holdings, while falling back to category heuristics if no disclosure exists yet.
++3. **Disclosure Ingestion Interface:** An API and worker ingestion interface to ingest standardized monthly portfolio disclosures (JSON/CSV) into PostgreSQL with idempotent upserts.
++4. **Hermetic Test Support:** Full in-memory database mock support in `InMemoryDatabase` for sub-millisecond, Zero-I/O hermetic testing.
++
++---
++
++## 2. Goals, Non-Goals, and Anti-Goals
++
++### Goals
++- **Database Entity & Schema:**
++  - Create table `"FundHolding"` in `portfolio-db` matching Prisma structure.
++  - Add `FundHoldingEntity` with fields: `id`, `isin`, `scheme_name`, `as_of_date`, `stock_name`, `stock_isin`, `sector`, `weight`, `created_at`.
++  - Add repository methods: `upsert_fund_holdings`, `get_latest_holdings_by_isin`, `get_latest_holdings_batch`.
++  - Implement both PostgreSQL (`sqlx`) and `InMemoryDatabase` mock for hermetic testing.
++- **Dynamic Ingestion API:**
++  - Endpoint `POST /api/fund-holdings/ingest` in `portfolio-api` accepting authenticated disclosure batches.
++  - Endpoint `GET /api/fund-holdings/:isin` returning the latest disclosure for an ISIN.
++- **Exposure Pipeline Integration:**
++  - In `portfolio-api::compute_portfolio_exposures`:
++    - Collect active equity folios' ISINs.
++    - Query database for persisted disclosures.
++    - If found, use database holdings and actual sectors.
++    - If not found (or ISIN missing), seamlessly fallback to `resolve_holdings` heuristic.
++- **Hermetic Testing & Invariant Preservation:**
++  - Strict zero-I/O in `portfolio-core`.
++  - All existing 10 mock portfolios and differential parity checks must continue to pass with exact precision bounds ($\Delta \le 0.0001$ units, $\Delta \le ₹0.01$ amounts, $\Delta \le 10^{-6}$ returns).
++  - Strict Zero-Any Mandate in TypeScript.
++
++### Non-Goals
++- Directly connecting to third-party scraping targets during test runs (mandated zero external I/O during test execution).
++- Modifying tax oracle or Schedule CG tax calculation algorithms.
++
++### Anti-Goals
++- Breaking existing synthetic test suites or requiring external databases for `cargo test`.
++- Overwriting existing portfolio holdings without date versioning (`as_of_date` composite constraint).
++
++---
++
++## 3. Architecture & Data Contracts
++
++### A. Database Layer (`portfolio-db`)
++
++#### Schema Definition (`schema.rs`)
++```sql
++CREATE TABLE IF NOT EXISTS "FundHolding" (
++    "id" TEXT PRIMARY KEY,
++    "isin" TEXT NOT NULL,
++    "schemeName" TEXT NOT NULL,
++    "asOfDate" TIMESTAMP(3) NOT NULL,
++    "stockName" TEXT NOT NULL,
++    "stockIsin" TEXT,
++    "sector" TEXT NOT NULL DEFAULT 'Other',
++    "weight" DOUBLE PRECISION NOT NULL,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    CONSTRAINT "FundHolding_isin_asOfDate_stockName_key" UNIQUE ("isin", "asOfDate", "stockName")
++);
++CREATE INDEX IF NOT EXISTS "FundHolding_isin_idx" ON "FundHolding"("isin");
++CREATE INDEX IF NOT EXISTS "FundHolding_asOfDate_idx" ON "FundHolding"("asOfDate");
++```
++
++#### Entity Definition (`entities.rs`)
++```rust
++#[derive(Debug, Clone, Serialize, Deserialize)]
++pub struct FundHoldingEntity {
++    pub id: Uuid,
++    pub isin: String,
++    pub scheme_name: String,
++    pub as_of_date: NaiveDate,
++    pub stock_name: String,
++    pub stock_isin: Option<String>,
++    pub sector: String,
++    pub weight: Decimal,
++    pub created_at: DateTime<Utc>,
++}
++```
++
++#### Repository Methods (`repositories/portfolio_repo.rs` & `test_mocks.rs`)
++```rust
++#[async_trait]
++pub trait FundHoldingsRepository: Send + Sync {
++    async fn upsert_fund_holdings(&self, holdings: &[FundHoldingEntity]) -> Result<(), DbError>;
++    async fn get_latest_holdings_by_isin(&self, isin: &str) -> Result<Vec<FundHoldingEntity>, DbError>;
++    async fn get_latest_holdings_batch(&self, isins: &[&str]) -> Result<HashMap<String, Vec<FundHoldingEntity>>, DbError>;
++}
++```
++
++---
++
++### B. API Route Layer (`portfolio-api`)
++
++1. **Ingest Endpoint:**
++   `POST /api/fund-holdings/ingest`
++   - Request Body:
++     ```json
++     {
++       "isin": "INF209K01157",
++       "schemeName": "SBI Large Cap Fund",
++       "asOfDate": "2026-10-31",
++       "holdings": [
++         {
++           "stockName": "HDFC Bank Ltd.",
++           "stockIsin": "INE040A01034",
++           "sector": "Financial Services",
++           "weight": 8.5
++         }
++       ]
++     }
++     ```
++   - Validates total weights and formats.
++   - Atomically upserts into `"FundHolding"`.
++
++2. **Lookup Endpoint:**
++   `GET /api/fund-holdings/:isin`
++   - Returns latest disclosure records for the specified fund ISIN.
++
++3. **Dynamic Look-Through in `compute_portfolio_exposures`:**
++   - Queries `get_latest_holdings_batch` for all unique active equity ISINs.
++   - If the ISIN has holdings in DB, maps to `FundHolding` with persisted weights and sectors.
++   - If DB returns empty for that ISIN, falls back to `resolve_holdings(isin, scheme_name)`.
++
++---
++
++## 4. What's Left to the Builder
++
++- Exact batch query optimizations in `portfolio_repo.rs` (PostgreSQL window function `ROW_NUMBER() OVER (PARTITION BY "isin", "stockName" ORDER BY "asOfDate" DESC)` or subquery for latest date).
++- DTO deserialization validation helpers in `portfolio-api`.

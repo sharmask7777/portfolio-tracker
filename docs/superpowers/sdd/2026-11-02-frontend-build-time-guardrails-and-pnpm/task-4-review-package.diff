@@ -1,0 +1,152 @@
+diff --git a/frontend/package.json b/frontend/package.json
+index 4c9958b..369136c 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -16,13 +16,15 @@
+     "test:coverage": "vitest run --coverage"
+   },
+   "dependencies": {
++    "@t3-oss/env-core": "^0.13.11",
+     "axios": "^1.16.1",
+     "lucide-react": "^1.16.0",
+     "react": "^19.2.6",
+     "react-dom": "^19.2.6",
+     "react-is": "^19.3.1",
+     "react-router-dom": "^7.15.1",
+-    "recharts": "^3.8.1"
++    "recharts": "^3.8.1",
++    "zod": "^4.6.7"
+   },
+   "devDependencies": {
+     "@axe-core/playwright": "^4.12.1",
+diff --git a/frontend/src/api.ts b/frontend/src/api.ts
+index 4d1397a..567dc23 100644
+--- a/frontend/src/api.ts
++++ b/frontend/src/api.ts
+@@ -1,7 +1,8 @@
+ import axios from 'axios';
++import { env } from './env';
+ 
+ export const API_CONFIG = {
+-  BASE_URL: import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001'),
++  BASE_URL: env.VITE_API_URL || (env.PROD ? '' : 'http://localhost:3001'),
+ };
+ 
+ const api = axios.create({
+diff --git a/frontend/src/config.ts b/frontend/src/config.ts
+index 06be51e..88dd91a 100644
+--- a/frontend/src/config.ts
++++ b/frontend/src/config.ts
+@@ -1,7 +1,9 @@
++import { env } from './env';
++
+ export const API_CONFIG = {
+   // In production, we use the relative path so the Nginx proxy handles it.
+   // This ensures cross-device connectivity (phone, laptop) works without hardcoding IPs.
+-  BASE_URL: import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001'),
++  BASE_URL: env.VITE_API_URL || (env.PROD ? '' : 'http://localhost:3001'),
+ };
+ 
+ export const API_ENDPOINTS = {
+diff --git a/frontend/src/env.test.ts b/frontend/src/env.test.ts
+new file mode 100644
+index 0000000..a39b746
+--- /dev/null
++++ b/frontend/src/env.test.ts
+@@ -0,0 +1,9 @@
++import { describe, it, expect } from 'vitest';
++import { env } from './env';
++
++describe('env configuration', () => {
++  it('provides validated env object', () => {
++    expect(env).toBeDefined();
++    expect(typeof env.VITE_API_URL === 'string' || env.VITE_API_URL === undefined).toBe(true);
++  });
++});
+diff --git a/frontend/src/env.ts b/frontend/src/env.ts
+new file mode 100644
+index 0000000..21fcdca
+--- /dev/null
++++ b/frontend/src/env.ts
+@@ -0,0 +1,21 @@
++import { createEnv } from '@t3-oss/env-core';
++import { z } from 'zod';
++
++/**
++ * Validated schema for frontend client-side environment variables using @t3-oss/env-core and Zod.
++ * Enforces strong typing and validates environment variables at build and run time.
++ */
++export const env = createEnv({
++  clientPrefix: 'VITE_',
++  client: {
++    // Allows empty string, relative URLs (for production Nginx proxying), or absolute URLs
++    VITE_API_URL: z.string().optional(),
++  },
++  shared: {
++    MODE: z.string().optional(),
++    DEV: z.boolean().optional(),
++    PROD: z.boolean().optional(),
++  },
++  runtimeEnv: import.meta.env,
++  emptyStringAsUndefined: true,
++});
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 18189e3..65995e0 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -17,6 +17,9 @@ importers:
+ 
+   frontend:
+     dependencies:
++      '@t3-oss/env-core':
++        specifier: ^0.13.11
++        version: 0.13.11(typescript@6.0.3)(zod@4.6.7)
+       axios:
+         specifier: ^1.16.1
+         version: 1.21.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
+@@ -38,6 +41,9 @@ importers:
+       recharts:
+         specifier: ^3.8.1
+         version: 3.10.1(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react-is@19.3.1)(react@19.3.1)(redux@5.0.1)
++      zod:
++        specifier: ^4.6.7
++        version: 4.6.7
+     devDependencies:
+       '@axe-core/playwright':
+         specifier: ^4.12.1
+@@ -493,6 +499,23 @@ packages:
+   '@standard-schema/utils@0.3.0':
+     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
+ 
++  '@t3-oss/env-core@0.13.11':
++    resolution: {integrity: sha512-sM7GYY+KL7H/Hl0BE0inWfk3nRHZOLhmVn7sHGxaZt9FAR6KqREXAE+6TqKfiavfXmpRxO/OZ2QgKRd+oiBYRQ==}
++    peerDependencies:
++      arktype: ^2.1.0
++      typescript: '>=5.0.0'
++      valibot: ^1.0.0-beta.7 || ^1.0.0
++      zod: ^3.24.0 || ^4.0.0
++    peerDependenciesMeta:
++      arktype:
++        optional: true
++      typescript:
++        optional: true
++      valibot:
++        optional: true
++      zod:
++        optional: true
++
+   '@testing-library/dom@10.4.2':
+     resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
+     engines: {node: '>=18'}
+@@ -2306,6 +2329,11 @@ snapshots:
+ 
+   '@standard-schema/utils@0.3.0': {}
+ 
++  '@t3-oss/env-core@0.13.11(typescript@6.0.3)(zod@4.6.7)':
++    optionalDependencies:
++      typescript: 6.0.3
++      zod: 4.6.7
++
+   '@testing-library/dom@10.4.2':
+     dependencies:
+       '@babel/code-frame': 7.29.7

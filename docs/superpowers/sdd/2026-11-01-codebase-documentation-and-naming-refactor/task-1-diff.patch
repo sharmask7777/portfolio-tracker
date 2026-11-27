@@ -1,0 +1,2158 @@
+diff --git a/backend-rs/crates/portfolio-core/src/holdings/lot.rs b/backend-rs/crates/portfolio-core/src/holdings/lot.rs
+index 7a177ff..ae0bd5e 100644
+--- a/backend-rs/crates/portfolio-core/src/holdings/lot.rs
++++ b/backend-rs/crates/portfolio-core/src/holdings/lot.rs
+@@ -1,4 +1,16 @@
+-//! FIFO Tax Lot tracking and depletion engine.
++//! FIFO (First-In, First-Out) Tax Lot tracking and depletion engine.
++//!
++//! This module provides pure, deterministic bookkeeping for investment unit lots and redemptions.
++//! It implements standard financial and statutory tax accounting rules:
++//!
++//! 1. **Lot Depletion Order**: Lots purchased earliest are redeemed first (FIFO).
++//! 2. **Same-Day Ordering**: On the same calendar date, purchases/inflows are processed before
++//!    redemptions/sells to ensure units are available for redemption on the same transaction day.
++//! 3. **Deterministic Tie-Breaking**: Any ties on the same date and transaction direction are broken
++//!    deterministically by transaction identifier (`id`).
++//! 4. **Cost Basis & Gain Realization**: When a lot is partially or fully depleted, the proportional
++//!    cost basis (`units * purchase_nav`) and realized gain (`proceeds - cost_basis`) are tracked
++//!    in an immutable [`LotDepletion`] record.
+ 
+ use chrono::NaiveDate;
+ use serde::{Deserialize, Serialize};
+@@ -6,7 +18,10 @@ use serde::{Deserialize, Serialize};
+ use crate::holdings::{Transaction, TransactionType};
+ use crate::types::{Money, Nav, Units};
+ 
+-/// Classification helper: transactions that add units to the folio.
++/// Classification helper: determines whether a transaction type adds units to the folio.
++///
++/// Returns `true` for inflows including purchases, Systematic Investment Plans (SIP),
++/// direct buys, switch-ins from other schemes, and dividend reinvestments.
+ pub fn is_unit_addition(tx_type: TransactionType) -> bool {
+     matches!(
+         tx_type,
+@@ -18,7 +33,10 @@ pub fn is_unit_addition(tx_type: TransactionType) -> bool {
+     )
+ }
+ 
+-/// Classification helper: transactions that redeem or remove units from the folio.
++/// Classification helper: determines whether a transaction type redeems or removes units from the folio.
++///
++/// Returns `true` for outflows including redemptions, direct sells, switch-outs to other schemes,
++/// and transaction reversals.
+ pub fn is_unit_redemption(tx_type: TransactionType) -> bool {
+     matches!(
+         tx_type,
+@@ -29,10 +47,15 @@ pub fn is_unit_redemption(tx_type: TransactionType) -> bool {
+     )
+ }
+ 
+-/// Sorts transactions chronologically with deterministic tie-breaking.
++/// Sorts transactions chronologically with deterministic, multi-tier tie-breaking.
+ ///
+-/// On the same date, unit additions (buys/inflows) precede redemptions (sells),
+-/// followed by transaction ID tie-breaking.
++/// # Sorting Hierarchy:
++/// 1. **Transaction Date (`date`)**: Chronological order (earliest first).
++/// 2. **Direction (Buys before Sells)**: On the same transaction date, unit additions precede
++///    redemptions to reflect realistic broker/AMC settlement order where purchases clear before
++///    sales execute against available balances.
++/// 3. **Identifier (`id`)**: Lexicographical comparison of transaction IDs ensures identical,
++///    reproducible ordering across platforms and test harnesses.
+ pub fn sort_transactions(transactions: &[Transaction]) -> Vec<Transaction> {
+     let mut sorted = transactions.to_vec();
+     sorted.sort_by(|a, b| {
+@@ -48,17 +71,32 @@ pub fn sort_transactions(transactions: &[Transaction]) -> Vec<Transaction> {
+     sorted
+ }
+ 
+-/// An individual tax lot representing a purchase of units on a specific date.
++/// An individual tax lot representing a purchase or acquisition of units on a specific date.
++///
++/// Tracks the original units acquired, units remaining after subsequent FIFO redemptions,
++/// and the acquisition NAV used to compute the original cost basis.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct TaxLot {
++    /// Date when the units were originally purchased or acquired.
+     pub purchase_date: NaiveDate,
++    /// Total quantity of units initially acquired in this lot.
+     pub original_units: Units,
++    /// Unsold quantity of units currently remaining in this lot.
+     pub remaining_units: Units,
++    /// Net Asset Value per unit at the time of purchase.
+     pub purchase_nav: Nav,
++    /// Total monetary amount paid for the lot (`original_units * purchase_nav`).
+     pub purchase_amount: Money,
+ }
+ 
+ impl TaxLot {
++    /// Constructs a new [`TaxLot`] with full remaining units equal to the original units.
++    ///
++    /// # Arguments
++    /// * `purchase_date` - Calendar date of acquisition.
++    /// * `units` - Number of units purchased.
++    /// * `purchase_nav` - Per-unit NAV on purchase date.
++    /// * `purchase_amount` - Total invested amount.
+     pub fn new(
+         purchase_date: NaiveDate,
+         units: Units,
+@@ -74,10 +112,18 @@ impl TaxLot {
+         }
+     }
+ 
+-    /// Depletes up to `units_to_consume` from this lot using FIFO.
++    /// Depletes up to `units_to_consume` from this tax lot using FIFO accounting.
+     ///
+-    /// Returns a tuple of `(units_consumed, cost_basis)`.
+-    /// `cost_basis` is computed as `units_consumed * purchase_nav`.
++    /// # Mathematical Formulation:
++    /// - `consumed = min(units_to_consume, remaining_units)`
++    /// - `cost_basis = consumed * purchase_nav`
++    /// - `remaining_units' = remaining_units - consumed`
++    ///
++    /// If `units_to_consume <= 0` or `remaining_units <= 0`, no units are depleted
++    /// and `(Units::ZERO, Money::ZERO)` is returned.
++    ///
++    /// # Returns
++    /// A tuple of `(units_consumed, cost_basis)`.
+     pub fn deplete(&mut self, units_to_consume: Units) -> (Units, Money) {
+         if self.remaining_units <= Units::ZERO || units_to_consume <= Units::ZERO {
+             return (Units::ZERO, Money::ZERO);
+@@ -94,26 +140,49 @@ impl TaxLot {
+         (consumed, cost_basis)
+     }
+ 
+-    /// Returns whether this lot is completely depleted (zero remaining units).
++    /// Returns `true` if this tax lot has zero remaining units (completely depleted).
+     pub fn is_depleted(&self) -> bool {
+         self.remaining_units.is_zero()
+     }
+ }
+ 
+-/// Record of an individual redemption matched against a lot.
++/// Audit record of an individual redemption matched against a specific purchase tax lot.
++///
++/// Provides complete traceability linking a redemption back to the original acquisition date,
++/// holding period, purchase NAV, redemption NAV, cost basis, gross proceeds, and realized gain.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct LotDepletion {
++    /// Date when the matched purchase lot was originally acquired.
+     pub lot_purchase_date: NaiveDate,
++    /// Date when the redemption/sale occurred.
+     pub redemption_date: NaiveDate,
++    /// Number of units depleted from the lot in this redemption.
+     pub units: Units,
++    /// Purchase NAV of the depleted lot.
+     pub purchase_nav: Nav,
++    /// Effective redemption NAV at which units were sold.
+     pub redemption_nav: Nav,
++    /// Proportional cost of acquisition for the depleted units (`units * purchase_nav`).
+     pub cost_basis: Money,
++    /// Gross consideration received for the depleted units (`units * redemption_nav`).
+     pub proceeds: Money,
++    /// Net realized capital gain or loss (`proceeds - cost_basis`).
+     pub realized_gain: Money,
+ }
+ 
+-/// Processes a chronological slice of transactions into active lots and closed lot depletions.
++/// Processes a chronological slice of transactions into active holding lots and closed lot depletions.
++///
++/// # Mechanics:
++/// 1. Sorts all transactions using [`sort_transactions`] to ensure purchases precede sales on same-day trades.
++/// 2. Iterates sequentially through transactions:
++///    - **Unit Additions**: Instantiates a new [`TaxLot`]. If transaction NAV is missing or zero,
++///      derives `purchase_nav = amount / units`.
++///    - **Unit Redemptions**: Iterates through existing non-depleted lots in FIFO order, depleting units
++///      via [`TaxLot::deplete`] until the requested redemption quantity is fully satisfied.
++///      Records each match as a [`LotDepletion`].
++/// 3. Returns a tuple containing:
++///    - `Vec<TaxLot>`: Remaining active lots with positive unsold units.
++///    - `Vec<LotDepletion>`: Chronological history of all closed/depleted lot segments.
+ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotDepletion>) {
+     let sorted = sort_transactions(transactions);
+     let mut lots: Vec<TaxLot> = Vec::new();
+@@ -127,6 +196,7 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
+         if is_addition {
+             let units = tx.units.abs();
+             if units.is_positive() {
++                // Determine acquisition NAV: prefer explicit NAV; if zero, derive from amount / units
+                 let nav = if tx.nav.is_positive() {
+                     tx.nav
+                 } else if tx.amount.abs().is_positive() {
+@@ -143,6 +213,7 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
+             }
+         } else if is_redemption {
+             let mut units_to_sell = tx.units.abs();
++            // Determine effective redemption NAV: prefer explicit NAV; if zero, derive from amount / units
+             let effective_nav = if tx.nav.is_positive() {
+                 tx.nav
+             } else if tx.units.abs().is_positive() && tx.amount.abs().is_positive() {
+@@ -151,6 +222,7 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
+                 Nav::ZERO
+             };
+ 
++            // Deplete against existing active lots in FIFO order
+             for lot in &mut lots {
+                 if units_to_sell.is_zero() {
+                     break;
+@@ -179,6 +251,7 @@ pub fn process_fifo_lots(transactions: &[Transaction]) -> (Vec<TaxLot>, Vec<LotD
+         }
+     }
+ 
++    // Retain only active lots with positive unsold units
+     let active_lots = lots.into_iter().filter(|l| !l.is_depleted()).collect();
+     (active_lots, depletions)
+ }
+diff --git a/backend-rs/crates/portfolio-core/src/holdings/mod.rs b/backend-rs/crates/portfolio-core/src/holdings/mod.rs
+index e089739..f83eba3 100644
+--- a/backend-rs/crates/portfolio-core/src/holdings/mod.rs
++++ b/backend-rs/crates/portfolio-core/src/holdings/mod.rs
+@@ -1,4 +1,11 @@
+ //! Holdings aggregation, transaction processing, and position calculations.
++//!
++//! Provides the primary domain entities for portfolios, folios, and transactions:
++//! - [`Transaction`]: Immutable record of an individual investment activity (buy, sell, dividend, etc.).
++//! - [`Folio`]: An account holding units of an asset under an AMC or depository.
++//! - [`Portfolio`]: A logical group of folios belonging to a managed profile.
++//! - [`ManagedProfile`]: An investor identity (PAN, user profile) tracking tax slabs and portfolios.
++//! - [`ConsolidatedScheme`]: Scheme-level consolidation across folios sharing the same ISIN/name.
+ 
+ use chrono::NaiveDate;
+ use serde::{Deserialize, Serialize};
+@@ -9,22 +16,34 @@ use crate::types::{AssetType, FolioNumber, Isin, Money, Nav, Pan, Units};
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+ #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+ pub enum TransactionType {
++    /// Lumpsum mutual fund purchase.
+     Purchase,
++    /// Systematic Investment Plan installment purchase.
+     PurchaseSip,
++    /// Mutual fund unit redemption.
+     Redemption,
++    /// Direct equity/stock buy.
+     Buy,
++    /// Direct equity/stock sell.
+     Sell,
++    /// Switch-in from another scheme within the same AMC.
+     SwitchIn,
++    /// Switch-out to another scheme within the same AMC.
+     SwitchOut,
++    /// Cash dividend payout directly credited to investor's bank account.
+     DividendPayout,
++    /// Dividend reinvested into additional units within the scheme.
+     DividendReinvestment,
++    /// Transaction reversal or cancellation by registrar/transfer agent.
+     Reversal,
++    /// Government statutory stamp duty deducted from invested principal.
+     StampDuty,
++    /// Miscellaneous administrative or auxiliary transaction.
+     Other,
+ }
+ 
+ impl TransactionType {
+-    /// Inflows to investor (cash realized / out of portfolio).
++    /// Cash inflows to investor (cash realized / out of portfolio into bank account).
+     pub fn is_inflow(&self) -> bool {
+         matches!(
+             self,
+@@ -36,7 +55,7 @@ impl TransactionType {
+         )
+     }
+ 
+-    /// Outflows from investor (cash invested / into portfolio).
++    /// Cash outflows from investor (cash invested / out of bank account into portfolio).
+     pub fn is_outflow(&self) -> bool {
+         matches!(
+             self,
+@@ -58,17 +77,26 @@ impl TransactionType {
+ /// A single immutable financial transaction record in a folio.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct Transaction {
++    /// Unique internal identifier for the transaction.
+     pub id: String,
++    /// Trade or settlement date of the transaction.
+     pub date: NaiveDate,
++    /// Categorization of the transaction.
+     pub tx_type: TransactionType,
++    /// Gross monetary amount associated with the transaction.
+     pub amount: Money,
++    /// Number of units transacted (positive for additions, negative/positive for sells depending on CAS format).
+     pub units: Units,
++    /// Net Asset Value per unit at which transaction executed.
+     pub nav: Nav,
++    /// Running cumulative unit balance reported by the CAS statement after this transaction.
+     pub balance: Units,
++    /// External registrar or broker transaction reference ID.
+     pub external_id: Option<String>,
+ }
+ 
+ impl Transaction {
++    /// Constructs a new [`Transaction`].
+     pub fn new(
+         id: impl Into<String>,
+         date: NaiveDate,
+@@ -90,13 +118,19 @@ impl Transaction {
+         }
+     }
+ 
++    /// Builder method attaching an external reference identifier to this transaction.
+     pub fn with_external_id(mut self, ext_id: impl Into<String>) -> Self {
+         self.external_id = Some(ext_id.into());
+         self
+     }
+ 
+     /// Returns the signed cash flow amount from the investor's perspective.
+-    /// Outflows (investments/purchases) are negative, inflows (redemptions/payouts) are positive.
++    ///
++    /// # Directionality:
++    /// - **Outflows** (purchases/investments): Negative (`-amount.abs()`).
++    /// - **Inflows** (redemptions/payouts): Positive (`amount.abs()`).
++    /// - **Dividend Reinvestment**: `Money::ZERO` because dividend reinvestment is an internal
++    ///   scheme NAV distribution converted into units without net cash crossing the investor's bank boundary.
+     pub fn cash_flow_amount(&self) -> Money {
+         if self.tx_type == TransactionType::DividendReinvestment {
+             // Dividend reinvestment is an internal scheme action; no cash leaves investor's bank account
+@@ -119,16 +153,24 @@ impl Transaction {
+ /// A folio representing an account with an AMC or broker holding units of an asset.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct Folio {
++    /// Internal unique identifier for the folio.
+     pub id: String,
++    /// Folio number assigned by the Asset Management Company.
+     pub folio_number: FolioNumber,
++    /// Permanent Account Number (PAN) associated with the folio holder.
+     pub pan: Option<Pan>,
++    /// International Securities Identification Number (ISIN) for the security.
+     pub isin: Option<Isin>,
++    /// Human-readable scheme or stock name.
+     pub asset_name: String,
++    /// Asset class classification (MutualFund, Stock, etc.).
+     pub asset_type: AssetType,
++    /// Chronological list of transactions recorded in this folio.
+     pub transactions: Vec<Transaction>,
+ }
+ 
+ impl Folio {
++    /// Creates a new [`Folio`] instance.
+     pub fn new(
+         id: impl Into<String>,
+         folio_number: FolioNumber,
+@@ -146,16 +188,19 @@ impl Folio {
+         }
+     }
+ 
++    /// Builder method attaching an ISIN to the folio.
+     pub fn with_isin(mut self, isin: Isin) -> Self {
+         self.isin = Some(isin);
+         self
+     }
+ 
++    /// Builder method attaching a PAN to the folio.
+     pub fn with_pan(mut self, pan: Pan) -> Self {
+         self.pan = Some(pan);
+         self
+     }
+ 
++    /// Builder method setting the transaction list of the folio.
+     pub fn with_transactions(mut self, txs: Vec<Transaction>) -> Self {
+         self.transactions = txs;
+         self
+@@ -165,23 +210,33 @@ impl Folio {
+ /// Consolidated scheme grouping multiple folios/PANs for the same scheme without duplicate valuation.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct ConsolidatedScheme {
++    /// ISIN of the underlying scheme, if available.
+     pub isin: Option<Isin>,
++    /// Standardized name of the asset scheme.
+     pub asset_name: String,
++    /// Sum of all active unsold units across constituent folios.
+     pub total_units: Units,
++    /// Total current valuation of all active units across constituent folios.
+     pub total_current_value: Money,
++    /// Total invested capital across all constituent folios.
+     pub total_invested_amount: Money,
++    /// Constituent folios consolidated under this scheme.
+     pub folios: Vec<Folio>,
+ }
+ 
+ /// A portfolio collection of folios under a managed profile.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct Portfolio {
++    /// Unique identifier for the portfolio.
+     pub id: String,
++    /// Display name of the portfolio (e.g. "Core Wealth", "Retirement").
+     pub name: String,
++    /// List of member folios included in this portfolio.
+     pub folios: Vec<Folio>,
+ }
+ 
+ impl Portfolio {
++    /// Constructs a new [`Portfolio`].
+     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+         Self {
+             id: id.into(),
+@@ -190,6 +245,7 @@ impl Portfolio {
+         }
+     }
+ 
++    /// Builder method setting the member folios of the portfolio.
+     pub fn with_folios(mut self, folios: Vec<Folio>) -> Self {
+         self.folios = folios;
+         self
+@@ -199,15 +255,22 @@ impl Portfolio {
+ /// A managed family profile with an associated PAN, tax slab, and constituent portfolios.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct ManagedProfile {
++    /// Unique identifier for this managed profile.
+     pub id: String,
++    /// Identifier of the parent user owning this profile.
+     pub user_id: String,
++    /// Display name for the family member (e.g. "Self", "Spouse", "Parent").
+     pub name: String,
++    /// Tax Permanent Account Number (PAN) identifying the individual for tax reporting.
+     pub pan: Pan,
++    /// Investor's personal marginal income tax rate (e.g. `0.30` for 30% slab).
+     pub tax_slab: rust_decimal::Decimal,
++    /// Constituent investment portfolios managed under this profile.
+     pub portfolios: Vec<Portfolio>,
+ }
+ 
+ impl ManagedProfile {
++    /// Constructs a new [`ManagedProfile`].
+     pub fn new(
+         id: impl Into<String>,
+         user_id: impl Into<String>,
+@@ -225,6 +288,7 @@ impl ManagedProfile {
+         }
+     }
+ 
++    /// Builder method attaching portfolios to the managed profile.
+     pub fn with_portfolios(mut self, portfolios: Vec<Portfolio>) -> Self {
+         self.portfolios = portfolios;
+         self
+diff --git a/backend-rs/crates/portfolio-core/src/holdings/registry.rs b/backend-rs/crates/portfolio-core/src/holdings/registry.rs
+index 57e0184..54a75b4 100644
+--- a/backend-rs/crates/portfolio-core/src/holdings/registry.rs
++++ b/backend-rs/crates/portfolio-core/src/holdings/registry.rs
+@@ -1,4 +1,11 @@
+-//! Family profile registry and scheme consolidation.
++//! Family profile registry and multi-folio scheme consolidation.
++//!
++//! Provides in-memory domain coordination for multi-member family profiles and schemes:
++//! - [`FamilyRegistry`]: Manages member profiles, ensuring strict isolation between user accounts.
++//! - [`consolidate_by_scheme`]: Groups multiple folios sharing the same ISIN or scheme name,
++//!   aggregating units, invested amount, and current valuation without double-counting.
++//! - [`get_latest_units`] and [`get_latest_nav`]: Extracts the current holding units and latest
++//!   valuation prices from raw transaction histories with robust threshold checks for fractional dust.
+ 
+ use crate::error::PortfolioError;
+ use crate::holdings::lot::process_fifo_lots;
+@@ -7,55 +14,85 @@ use crate::performance::{PerformanceOptions, get_metrics};
+ use crate::types::{Isin, Money, Nav, Units};
+ 
+ /// In-memory domain registry for managing multi-member family profiles.
++///
++/// Ensures profiles across different family members or accounts are stored cleanly
++/// and provides atomic cascading deletion operations.
+ #[derive(Debug, Clone, Default)]
+ pub struct FamilyRegistry {
+     profiles: Vec<ManagedProfile>,
+ }
+ 
+ impl FamilyRegistry {
++    /// Creates a new empty [`FamilyRegistry`].
+     pub fn new() -> Self {
+         Self {
+             profiles: Vec::new(),
+         }
+     }
+ 
++    /// Adds a managed family profile to the registry.
+     pub fn add_profile(&mut self, profile: ManagedProfile) {
+         self.profiles.push(profile);
+     }
+ 
++    /// Finds a managed profile by its unique profile identifier.
++    ///
++    /// Returns `Some(&ManagedProfile)` if found, or `None` if no profile matches `profile_id`.
+     pub fn get_profile(&self, profile_id: &str) -> Option<&ManagedProfile> {
+-        self.profiles.iter().find(|p| p.id == profile_id)
++        self.profiles
++            .iter()
++            .find(|profile| profile.id == profile_id)
+     }
+ 
++    /// Retrieves all managed profiles belonging to a specific user account.
++    ///
++    /// # Arguments
++    /// * `user_id` - Identifier of the owning user.
+     pub fn get_profiles_for_user(&self, user_id: &str) -> Vec<&ManagedProfile> {
+         self.profiles
+             .iter()
+-            .filter(|p| p.user_id == user_id)
++            .filter(|profile| profile.user_id == user_id)
+             .collect()
+     }
+ 
+     /// Transactionally deletes a managed profile and cascades to all its portfolios and folios,
+     /// strictly isolating and leaving all other profiles untouched.
++    ///
++    /// # Errors
++    /// Returns [`PortfolioError::ProfileNotFound`] if no profile matching `profile_id`
++    /// exists for the given `user_id`.
+     pub fn delete_managed_profile(
+         &mut self,
+         user_id: &str,
+         profile_id: &str,
+     ) -> Result<ManagedProfile, PortfolioError> {
+-        let pos = self
++        let position = self
+             .profiles
+             .iter()
+-            .position(|p| p.id == profile_id && p.user_id == user_id)
++            .position(|profile| profile.id == profile_id && profile.user_id == user_id)
+             .ok_or_else(|| PortfolioError::ProfileNotFound(profile_id.to_string()))?;
+-        Ok(self.profiles.remove(pos))
++        Ok(self.profiles.remove(position))
+     }
+ }
+ 
+-/// Safely gets the latest unit balance from a list of transactions.
++/// Safely extracts the latest active unit balance from a slice of transactions.
++///
++/// # Balance Resolution Hierarchy:
++/// 1. **CAS Explicit Running Balance**: If transactions contain running cumulative balances
++///    (standard in CAMS/KFintech statements), inspects the latest non-auxiliary transaction
++///    (ignoring zero-unit stamp duty or administrative fee entries).
++/// 2. **Fractional Dust Suppression**: If the final balance is below `0.001` units, treats the
++///    holding as fully redeemed (`Units::ZERO`) to prevent fractional rounding dust from
++///    resurrecting closed positions.
++/// 3. **FIFO Reconstruction Fallback**: If explicit balances are absent, reconstructs active
++///    lots via [`process_fifo_lots`] and sums the remaining units.
+ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
+     if transactions.is_empty() {
+         return Units::ZERO;
+     }
+-    let threshold = Units::new(rust_decimal::Decimal::from_parts(1, 0, 0, false, 3)); // 0.001
++    // 0.001 unit threshold to eliminate fractional truncation dust
++    let fractional_dust_threshold =
++        Units::new(rust_decimal::Decimal::from_parts(1, 0, 0, false, 3));
+ 
+     // Check if transactions carry explicit cumulative balance tracking (matching CAS statements)
+     let sorted = crate::holdings::lot::sort_transactions(transactions);
+@@ -67,9 +104,9 @@ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
+                 || tx.tx_type == TransactionType::StampDuty)
+                 && tx.units.is_zero();
+             if !is_auxiliary {
+-                let bal = tx.balance;
+-                if bal >= threshold {
+-                    return bal;
++                let current_balance = tx.balance;
++                if current_balance >= fractional_dust_threshold {
++                    return current_balance;
+                 } else {
+                     return Units::ZERO;
+                 }
+@@ -78,15 +115,19 @@ pub fn get_latest_units(transactions: &[Transaction]) -> Units {
+     }
+ 
+     let (active_lots, _) = process_fifo_lots(transactions);
+-    let total_remaining: Units = active_lots.iter().map(|l| l.remaining_units).sum();
+-    if total_remaining < threshold {
++    let total_remaining: Units = active_lots.iter().map(|lot| lot.remaining_units).sum();
++    if total_remaining < fractional_dust_threshold {
+         Units::ZERO
+     } else {
+         total_remaining
+     }
+ }
+ 
+-/// Safely gets the latest NAV from a list of transactions.
++/// Safely retrieves the latest known Net Asset Value (NAV) from a slice of transactions.
++///
++/// Scans transactions in reverse chronological order to find the latest transaction
++/// with a strictly positive NAV. If no transactions carry a positive NAV, falls back
++/// to the last chronological transaction's NAV (or `Nav::ZERO` if empty).
+ pub fn get_latest_nav(transactions: &[Transaction]) -> Nav {
+     if transactions.is_empty() {
+         return Nav::ZERO;
+@@ -102,21 +143,32 @@ pub fn get_latest_nav(transactions: &[Transaction]) -> Nav {
+ 
+ /// Consolidates multiple folios for the same scheme (grouped by ISIN if present, or asset name),
+ /// aggregating total units, current valuation, and invested amount without duplicate counting.
++///
++/// # Arguments
++/// * `folios` - Slice of individual folios potentially across multiple accounts or brokers.
++/// * `current_nav` - Optional valuation NAV override. If positive, used for valuation;
++///   otherwise, each folio's latest transaction NAV is used.
++///
++/// # Returns
++/// A vector of [`ConsolidatedScheme`] structs with deduplicated scheme-level totals.
+ pub fn consolidate_by_scheme(folios: &[Folio], current_nav: Nav) -> Vec<ConsolidatedScheme> {
+-    // Preserve deterministic order of scheme occurrence
+-    let mut groups: Vec<(String, Option<Isin>, String, Vec<Folio>)> = Vec::new();
++    // Preserve deterministic order of scheme occurrence: (group_key, isin, asset_name, folios)
++    let mut scheme_groups: Vec<(String, Option<Isin>, String, Vec<Folio>)> = Vec::new();
+ 
+     for folio in folios {
+-        let key = match &folio.isin {
++        let scheme_key = match &folio.isin {
+             Some(isin) => isin.as_str().to_string(),
+             None => folio.asset_name.clone(),
+         };
+ 
+-        if let Some(group) = groups.iter_mut().find(|(k, _, _, _)| k == &key) {
+-            group.3.push(folio.clone());
++        if let Some(existing_group) = scheme_groups
++            .iter_mut()
++            .find(|(key, _, _, _)| key == &scheme_key)
++        {
++            existing_group.3.push(folio.clone());
+         } else {
+-            groups.push((
+-                key,
++            scheme_groups.push((
++                scheme_key,
+                 folio.isin.clone(),
+                 folio.asset_name.clone(),
+                 vec![folio.clone()],
+@@ -124,13 +176,13 @@ pub fn consolidate_by_scheme(folios: &[Folio], current_nav: Nav) -> Vec<Consolid
+         }
+     }
+ 
+-    let mut result = Vec::with_capacity(groups.len());
+-    for (_key, isin, asset_name, group_folios) in groups {
++    let mut consolidated_schemes = Vec::with_capacity(scheme_groups.len());
++    for (_key, isin, asset_name, member_folios) in scheme_groups {
+         let mut total_units = Units::ZERO;
+         let mut total_current_value = Money::ZERO;
+         let mut total_invested_amount = Money::ZERO;
+ 
+-        for folio in &group_folios {
++        for folio in &member_folios {
+             let units = get_latest_units(&folio.transactions);
+             let nav_to_use = if current_nav.is_positive() {
+                 current_nav
+@@ -147,17 +199,17 @@ pub fn consolidate_by_scheme(folios: &[Folio], current_nav: Nav) -> Vec<Consolid
+             total_invested_amount += metrics.invested_amount;
+         }
+ 
+-        result.push(ConsolidatedScheme {
++        consolidated_schemes.push(ConsolidatedScheme {
+             isin,
+             asset_name,
+             total_units,
+             total_current_value,
+             total_invested_amount,
+-            folios: group_folios,
++            folios: member_folios,
+         });
+     }
+ 
+-    result
++    consolidated_schemes
+ }
+ 
+ #[cfg(test)]
+diff --git a/backend-rs/crates/portfolio-core/src/performance/metrics.rs b/backend-rs/crates/portfolio-core/src/performance/metrics.rs
+index 5edc916..ad63c76 100644
+--- a/backend-rs/crates/portfolio-core/src/performance/metrics.rs
++++ b/backend-rs/crates/portfolio-core/src/performance/metrics.rs
+@@ -1,4 +1,14 @@
+ //! Performance metrics calculation (Invested, Current Value, Gains, Absolute Return, CAGR, XIRR).
++//!
++//! Provides comprehensive portfolio return analytics adhering to institutional financial standards:
++//!
++//! - **Absolute Return**: Net nominal gain as a percentage of total invested capital:
++//!   $$\text{Absolute Return} = \frac{\text{Current Value} - \text{Invested Capital}}{\text{Invested Capital}}$$
++//! - **CAGR (Compound Annual Growth Rate)**: Point-to-point geometric progression rate:
++//!   $$\text{CAGR} = \left(\frac{\text{Current Value}}{\text{Invested Capital}}\right)^{\frac{365.25}{\text{days}}} - 1$$
++//! - **XIRR (Internal Rate of Return)**: Cash-flow-weighted annualized return solving $NPV(r) = 0$.
++//! - **Post-Tax Returns**: Calculates estimated unrealized tax liability using applicable tax slabs
++//!   and derives net-of-tax portfolio value, post-tax absolute return, and post-tax XIRR.
+ 
+ use chrono::NaiveDate;
+ use rust_decimal::Decimal;
+@@ -14,52 +24,72 @@ use crate::types::{AssetType, Money, Nav, Units};
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct PerformanceMetrics {
++    /// Total capital invested across active holding units.
+     pub invested_amount: Money,
++    /// Current gross market valuation (`units * current_nav`).
+     pub current_value: Money,
++    /// Total nominal capital gain or loss (`current_value - invested_amount`).
+     pub total_gain: Money,
++    /// Simple nominal percentage return (`total_gain / invested_amount`).
+     pub absolute_return: Decimal,
++    /// Annualized compound growth rate for multi-day single-investment spans.
+     pub cagr: Option<Decimal>,
++    /// Money-weighted annualized internal rate of return across all cash flows.
+     pub xirr: Option<Decimal>,
++    /// Annualized internal rate of return net of estimated unrealized capital gains tax.
+     pub post_tax_xirr: Option<Decimal>,
++    /// Absolute percentage return net of estimated unrealized capital gains tax.
+     pub post_tax_absolute_return: Option<Decimal>,
++    /// Estimated statutory tax liability on unrealized gains.
+     pub estimated_tax: Option<Money>,
+ }
+ 
+ /// Optional configuration and overrides for performance calculation.
+ #[derive(Debug, Clone, Default)]
+ pub struct PerformanceOptions {
++    /// Explicit unit balance override (e.g. from CAMS/KFintech CAS statement).
+     pub current_units_override: Option<Units>,
++    /// Marginal tax slab applicable to the investor (e.g. `0.30` for 30%).
+     pub tax_slab: Option<Decimal>,
++    /// Asset class (MutualFund, Stock, etc.).
+     pub asset_type: Option<AssetType>,
++    /// Scheme or security name.
+     pub asset_name: Option<String>,
++    /// As-of evaluation date for valuation and XIRR terminal cash flow.
+     pub as_of_date: Option<NaiveDate>,
+ }
+ 
+ impl PerformanceOptions {
++    /// Creates a new default [`PerformanceOptions`].
+     pub fn new() -> Self {
+         Self::default()
+     }
+ 
++    /// Builder method specifying an explicit active unit balance override.
+     pub fn with_units_override(mut self, units: Units) -> Self {
+         self.current_units_override = Some(units);
+         self
+     }
+ 
++    /// Builder method specifying the investor's tax slab.
+     pub fn with_tax_slab(mut self, slab: Decimal) -> Self {
+         self.tax_slab = Some(slab);
+         self
+     }
+ 
++    /// Builder method specifying the asset type.
+     pub fn with_asset_type(mut self, asset_type: AssetType) -> Self {
+         self.asset_type = Some(asset_type);
+         self
+     }
+ 
++    /// Builder method specifying the asset name.
+     pub fn with_asset_name(mut self, asset_name: impl Into<String>) -> Self {
+         self.asset_name = Some(asset_name.into());
+         self
+     }
+ 
++    /// Builder method specifying the valuation as-of date.
+     pub fn with_as_of_date(mut self, date: NaiveDate) -> Self {
+         self.as_of_date = Some(date);
+         self
+@@ -67,6 +97,8 @@ impl PerformanceOptions {
+ }
+ 
+ /// Calculates absolute return: `(current_value - invested_amount) / invested_amount`.
++///
++/// Returns `Decimal::ZERO` if invested amount is zero or negative.
+ pub fn calculate_absolute_return(invested_amount: Money, current_value: Money) -> Decimal {
+     if invested_amount.is_zero() || invested_amount.is_negative() {
+         return Decimal::ZERO;
+@@ -77,7 +109,16 @@ pub fn calculate_absolute_return(invested_amount: Money, current_value: Money) -
+ 
+ /// Calculates Compound Annual Growth Rate (CAGR).
+ ///
+-/// Formula: `(current_value / invested_amount) ^ (1 / years) - 1`, where `years = diff_days / 365.25`.
++/// # Mathematical Formulation:
++///
++/// $$\text{CAGR} = \left(\frac{\text{current\_value}}{\text{invested\_amount}}\right)^{\frac{1}{\text{years}}} - 1$$
++///
++/// where $\text{years} = \frac{\text{end\_date} - \text{start\_date}}{365.25}$.
++/// The 365.25 factor accounts for leap years over multi-year holding periods.
++///
++/// # Errors
++/// - [`PortfolioError::InvalidTransaction`] if `invested_amount <= 0`, `current_value < 0`,
++///   or `end_date <= start_date`.
+ pub fn calculate_cagr(
+     invested_amount: Money,
+     current_value: Money,
+@@ -132,7 +173,18 @@ pub fn calculate_cagr(
+     }
+ }
+ 
+-/// Aggregates metrics for a given set of transactions and current valuation price.
++/// Aggregates performance metrics for a given set of transactions and current valuation price.
++///
++/// # Return Computation Process:
++/// 1. Resolves active units using options override or [`crate::holdings::get_latest_units`].
++/// 2. If active units are zero or negative, computes realized XIRR across past cash flows
++///    and sets current holding values to zero.
++/// 3. Computes active invested capital via FIFO tax lot cost basis (`units * purchase_nav`).
++/// 4. Computes gross market value, nominal gain, absolute return, and CAGR.
++/// 5. Constructs dated cash flows including a terminal cash flow `+current_value` at `as_of_date`
++///    and solves for annualized XIRR.
++/// 6. If tax slab and asset details are provided, calculates estimated unrealized capital gains tax,
++///    post-tax valuation, post-tax absolute return, and post-tax XIRR.
+ pub fn get_metrics(
+     transactions: &[Transaction],
+     current_price: Nav,
+diff --git a/backend-rs/crates/portfolio-core/src/performance/xirr.rs b/backend-rs/crates/portfolio-core/src/performance/xirr.rs
+index 1cbbe53..7e5fd0d 100644
+--- a/backend-rs/crates/portfolio-core/src/performance/xirr.rs
++++ b/backend-rs/crates/portfolio-core/src/performance/xirr.rs
+@@ -1,7 +1,26 @@
+ //! Deterministic Extended Internal Rate of Return (XIRR) solver.
+ //!
+-//! Uses Brent's method with interval bracketing `[-0.9999, 10.0]` (with expanding bounds if needed)
+-//! and a damped Newton-Raphson fallback. Zero I/O, deterministic, and free of NaN / indefinite loops.
++//! # Mathematical Background & Numerical Architecture:
++//! The Extended Internal Rate of Return (XIRR) is the annualized discount rate $r$ that satisfies:
++//!
++//! $$f(r) = \sum_{i=0}^{n} C_i (1 + r)^{-\frac{t_i - t_0}{365}} = 0$$
++//!
++//! where:
++//! - $C_i$ is the cash flow amount at date $t_i$ (negative for investments/outflows, positive for redemptions/inflows).
++//! - $t_0$ is the date of the initial cash flow.
++//! - $w_i = \frac{t_i - t_0}{365}$ is the year fraction elapsed between $t_0$ and $t_i$.
++//!
++//! # Numerical Stability Safeguards:
++//! 1. **Brent-Dekker Hybrid Solver**: Combines bisection, the secant method, and inverse quadratic
++//!    interpolation. Guarantees linear bisection convergence in worst cases while achieving superlinear
++//!    speed in standard scenarios.
++//! 2. **Damped Newton-Raphson Fallback**: If bracket search fails, a multi-guess Newton-Raphson solver
++//!    with derivative singularity protection and step damping toward the $r > -1.0$ singularity is employed.
++//! 3. **Cash Flow Normalization**: Amounts are normalized by $\max_i |C_i|$ to prevent floating-point
++//!    overflow when evaluating cash flows in crores / millions.
++//! 4. **Duration Guardrail**: For periods under 30 days, annualized compounding creates astronomically
++//!    distorted figures; absolute return is returned instead as an industry-standard proxy.
++//! 5. **Zero-I/O & Pure Determinism**: Free of memory allocation loops, random jitter, or non-deterministic floats.
+ 
+ use chrono::NaiveDate;
+ use rust_decimal::Decimal;
+@@ -14,154 +33,210 @@ use crate::types::Money;
+ /// A dated cash flow record for XIRR calculation.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct CashFlow {
++    /// Date when the cash flow transpired.
+     pub date: NaiveDate,
++    /// Signed monetary amount (negative for outflows/investments, positive for inflows/redemptions).
+     pub amount: Decimal,
+ }
+ 
+ impl CashFlow {
++    /// Constructs a new [`CashFlow`].
+     pub fn new(date: NaiveDate, amount: Decimal) -> Self {
+         Self { date, amount }
+     }
+ 
++    /// Alternate constructor accepting `(amount, date)`.
+     pub fn from_amount(amount: Decimal, date: NaiveDate) -> Self {
+         Self { date, amount }
+     }
+ }
+ 
+-/// Evaluates the Net Present Value function f(r) = sum_i C_i * (1 + r)^(-(t_i - t_0)/365).
+-fn evaluate_npv(pairs: &[(f64, f64)], r: f64) -> f64 {
+-    if r <= -1.0 {
++/// Evaluates Net Present Value: $f(r) = \sum_i C_i (1 + r)^{-w_i}$.
++///
++/// Computed using exponents of logarithms for numerical stability:
++/// $(1 + r)^{-w_i} = \exp(-w_i \cdot \ln(1 + r))$.
++///
++/// Returns `f64::NAN` if $r \le -1.0$ (undefined logarithm).
++fn evaluate_npv(weight_amount_pairs: &[(f64, f64)], rate: f64) -> f64 {
++    if rate <= -1.0 {
+         return f64::NAN;
+     }
+-    let one_plus_r = 1.0 + r;
++    let one_plus_r = 1.0 + rate;
+     let ln_one_plus_r = one_plus_r.ln();
+-    pairs
++    weight_amount_pairs
+         .iter()
+-        .map(|&(w, c)| c * (-w * ln_one_plus_r).exp())
++        .map(|&(year_weight, scaled_amount)| scaled_amount * (-year_weight * ln_one_plus_r).exp())
+         .sum()
+ }
+ 
+-/// Evaluates the derivative f'(r) = - (1 / (1 + r)) * sum_i w_i * C_i * (1 + r)^(-w_i).
+-fn evaluate_d_npv(pairs: &[(f64, f64)], r: f64) -> f64 {
+-    if r <= -1.0 {
++/// Evaluates the first derivative of NPV:
++///
++/// $$f'(r) = -\frac{1}{1 + r} \sum_i w_i C_i (1 + r)^{-w_i}$$
++///
++/// Derived via chain rule: $\frac{d}{dr} \exp(-w_i \ln(1+r)) = -\frac{w_i}{1+r} \exp(-w_i \ln(1+r))$.
++fn evaluate_d_npv(weight_amount_pairs: &[(f64, f64)], rate: f64) -> f64 {
++    if rate <= -1.0 {
+         return f64::NAN;
+     }
+-    let one_plus_r = 1.0 + r;
++    let one_plus_r = 1.0 + rate;
+     let ln_one_plus_r = one_plus_r.ln();
+-    let sum: f64 = pairs
++    let sum: f64 = weight_amount_pairs
+         .iter()
+-        .map(|&(w, c)| -w * c * (-w * ln_one_plus_r).exp())
++        .map(|&(year_weight, scaled_amount)| {
++            -year_weight * scaled_amount * (-year_weight * ln_one_plus_r).exp()
++        })
+         .sum();
+     sum / one_plus_r
+ }
+ 
+ /// Brent's root-finding method on bracket `[a, b]` where `f(a) * f(b) <= 0`.
+-fn brent_root<F>(f: F, mut a: f64, mut b: f64, tol: f64, max_iter: usize) -> Result<f64, ()>
++///
++/// Combines inverse quadratic interpolation, secant method, and bisection safeguards.
++fn brent_root<F>(
++    objective_fn: F,
++    mut lower_bound: f64,
++    mut upper_bound: f64,
++    tolerance: f64,
++    max_iter: usize,
++) -> Result<f64, ()>
+ where
+     F: Fn(f64) -> f64,
+ {
+-    let mut fa = f(a);
+-    let mut fb = f(b);
++    let mut f_lower = objective_fn(lower_bound);
++    let mut f_upper = objective_fn(upper_bound);
+ 
+-    if fa.abs() < tol {
+-        return Ok(a);
++    if f_lower.abs() < tolerance {
++        return Ok(lower_bound);
+     }
+-    if fb.abs() < tol {
+-        return Ok(b);
++    if f_upper.abs() < tolerance {
++        return Ok(upper_bound);
+     }
+-    if fa * fb > 0.0 {
++    if f_lower * f_upper > 0.0 {
+         return Err(());
+     }
+ 
+-    if fa.abs() < fb.abs() {
+-        std::mem::swap(&mut a, &mut b);
+-        std::mem::swap(&mut fa, &mut fb);
++    // Ensure |f(upper_bound)| <= |f(lower_bound)| so upper_bound is the best guess
++    if f_lower.abs() < f_upper.abs() {
++        std::mem::swap(&mut lower_bound, &mut upper_bound);
++        std::mem::swap(&mut f_lower, &mut f_upper);
+     }
+ 
+-    let mut c = a;
+-    let mut fc = fa;
+-    let mut mflag = true;
+-    let mut d = 0.0;
++    let mut previous_bound = lower_bound;
++    let mut f_previous = f_lower;
++    let mut force_bisection = true;
++    let mut step_two_iterations_ago = 0.0;
+ 
+     for _ in 0..max_iter {
+-        if fb.abs() < tol || (b - a).abs() < tol {
+-            return Ok(b);
++        if f_upper.abs() < tolerance || (upper_bound - lower_bound).abs() < tolerance {
++            return Ok(upper_bound);
+         }
+ 
+-        let mut s = if (fa - fc).abs() > 1e-15 && (fb - fc).abs() > 1e-15 {
++        // Interpolation step: inverse quadratic if 3 distinct points, otherwise secant
++        let mut candidate_root = if (f_lower - f_previous).abs() > 1e-15
++            && (f_upper - f_previous).abs() > 1e-15
++        {
+             // Inverse quadratic interpolation
+-            (a * fb * fc) / ((fa - fb) * (fa - fc))
+-                + (b * fa * fc) / ((fb - fa) * (fb - fc))
+-                + (c * fa * fb) / ((fc - fa) * (fc - fb))
+-        } else if (fb - fa).abs() > 1e-15 {
++            (lower_bound * f_upper * f_previous) / ((f_lower - f_upper) * (f_lower - f_previous))
++                + (upper_bound * f_lower * f_previous)
++                    / ((f_upper - f_lower) * (f_upper - f_previous))
++                + (previous_bound * f_lower * f_upper)
++                    / ((f_previous - f_lower) * (f_previous - f_upper))
++        } else if (f_upper - f_lower).abs() > 1e-15 {
+             // Secant method
+-            b - fb * (b - a) / (fb - fa)
++            upper_bound - f_upper * (upper_bound - lower_bound) / (f_upper - f_lower)
+         } else {
+-            (a + b) / 2.0
++            (lower_bound + upper_bound) / 2.0
+         };
+ 
+-        let condition1 =
+-            !(((3.0 * a + b) / 4.0 <= s && s <= b) || (b <= s && s <= (3.0 * a + b) / 4.0));
+-        let condition2 = mflag && (s - b).abs() >= (b - c).abs() / 2.0;
+-        let condition3 = !mflag && (s - b).abs() >= (c - d).abs() / 2.0;
+-        let condition4 = mflag && (b - c).abs() < tol;
+-        let condition5 = !mflag && (c - d).abs() < tol;
+-
+-        if condition1 || condition2 || condition3 || condition4 || condition5 || !s.is_finite() {
+-            s = (a + b) / 2.0;
+-            mflag = true;
++        // Verification conditions deciding whether to accept interpolation or fall back to bisection
++        let condition1 = !(((3.0 * lower_bound + upper_bound) / 4.0 <= candidate_root
++            && candidate_root <= upper_bound)
++            || (upper_bound <= candidate_root
++                && candidate_root <= (3.0 * lower_bound + upper_bound) / 4.0));
++        let condition2 = force_bisection
++            && (candidate_root - upper_bound).abs() >= (upper_bound - previous_bound).abs() / 2.0;
++        let condition3 = !force_bisection
++            && (candidate_root - upper_bound).abs()
++                >= (previous_bound - step_two_iterations_ago).abs() / 2.0;
++        let condition4 = force_bisection && (upper_bound - previous_bound).abs() < tolerance;
++        let condition5 =
++            !force_bisection && (previous_bound - step_two_iterations_ago).abs() < tolerance;
++
++        if condition1
++            || condition2
++            || condition3
++            || condition4
++            || condition5
++            || !candidate_root.is_finite()
++        {
++            candidate_root = (lower_bound + upper_bound) / 2.0;
++            force_bisection = true;
+         } else {
+-            mflag = false;
++            force_bisection = false;
+         }
+ 
+-        let fs = f(s);
+-        d = c;
+-        c = b;
+-        fc = fb;
++        let f_candidate = objective_fn(candidate_root);
++        step_two_iterations_ago = previous_bound;
++        previous_bound = upper_bound;
++        f_previous = f_upper;
+ 
+-        if fa * fs < 0.0 {
+-            b = s;
+-            fb = fs;
++        if f_lower * f_candidate < 0.0 {
++            upper_bound = candidate_root;
++            f_upper = f_candidate;
+         } else {
+-            a = s;
+-            fa = fs;
++            lower_bound = candidate_root;
++            f_lower = f_candidate;
+         }
+ 
+-        if fa.abs() < fb.abs() {
+-            std::mem::swap(&mut a, &mut b);
+-            std::mem::swap(&mut fa, &mut fb);
++        if f_lower.abs() < f_upper.abs() {
++            std::mem::swap(&mut lower_bound, &mut upper_bound);
++            std::mem::swap(&mut f_lower, &mut f_upper);
+         }
+     }
+ 
+-    if fb.abs() < 1e-5 { Ok(b) } else { Err(()) }
++    if f_upper.abs() < 1e-5 {
++        Ok(upper_bound)
++    } else {
++        Err(())
++    }
+ }
+ 
+-/// Fallback Newton-Raphson method with step damping.
+-fn newton_raphson<F, DF>(f: F, df: DF, initial_guess: f64, max_iter: usize) -> Result<f64, ()>
++/// Fallback Newton-Raphson root-finder with step damping toward the $r = -1.0$ boundary.
++fn newton_raphson<F, DF>(
++    objective_fn: F,
++    derivative_fn: DF,
++    initial_guess: f64,
++    max_iter: usize,
++) -> Result<f64, ()>
+ where
+     F: Fn(f64) -> f64,
+     DF: Fn(f64) -> f64,
+ {
+-    let mut r = initial_guess;
++    let mut rate = initial_guess;
+     for _ in 0..max_iter {
+-        let y = f(r);
+-        if y.abs() < 1e-10 {
+-            return Ok(r);
++        let value = objective_fn(rate);
++        if value.abs() < 1e-10 {
++            return Ok(rate);
+         }
+-        let dy = df(r);
+-        if dy.abs() < 1e-14 || !dy.is_finite() {
++        let derivative = derivative_fn(rate);
++        if derivative.abs() < 1e-14 || !derivative.is_finite() {
+             break;
+         }
+-        let mut r_next = r - y / dy;
+-        if r_next <= -0.999999 {
+-            r_next = (r - 0.999999) / 2.0;
++        let mut rate_next = rate - value / derivative;
++        // Damping: prevent step from crashing into or below the -100% boundary
++        if rate_next <= -0.999999 {
++            rate_next = (rate - 0.999999) / 2.0;
+         }
+-        if (r_next - r).abs() < 1e-11 && f(r_next).abs() < 1e-6 {
+-            return Ok(r_next);
++        if (rate_next - rate).abs() < 1e-11 && objective_fn(rate_next).abs() < 1e-6 {
++            return Ok(rate_next);
+         }
+-        r = r_next;
++        rate = rate_next;
++    }
++    if objective_fn(rate).abs() < 1e-5 {
++        Ok(rate)
++    } else {
++        Err(())
+     }
+-    if f(r).abs() < 1e-5 { Ok(r) } else { Err(()) }
+ }
+ 
+ /// Calculates the Extended Internal Rate of Return (XIRR) from a series of cash flows.
+@@ -169,9 +244,9 @@ where
+ /// Returns `Ok(Decimal)` representing the annualized internal rate of return.
+ ///
+ /// # Errors
+-/// - `PortfolioError::InvalidTransaction` if cash flows are empty, contain only identical dates,
++/// - [`PortfolioError::InvalidTransaction`] if cash flows are empty, contain only identical dates,
+ ///   or lack at least one positive and one negative cash flow.
+-/// - `PortfolioError::XirrConvergenceFailure` if root-finding fails to converge within 100 iterations.
++/// - [`PortfolioError::XirrConvergenceFailure`] if root-finding fails to converge within 100 iterations.
+ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
+     if flows.is_empty() {
+         return Err(PortfolioError::InvalidTransaction {
+@@ -250,15 +325,15 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
+         })
+         .collect();
+ 
+-    let f = |r: f64| evaluate_npv(&pairs, r);
+-    let df = |r: f64| evaluate_d_npv(&pairs, r);
++    let objective_npv = |r: f64| evaluate_npv(&pairs, r);
++    let derivative_npv = |r: f64| evaluate_d_npv(&pairs, r);
+ 
+     // 1. Initial Bracket [-0.9999, 10.0]
+     let initial_a = -0.9999;
+     let initial_b = 10.0;
+     let mut bracket = None;
+ 
+-    if f(initial_a) * f(initial_b) <= 0.0 {
++    if objective_npv(initial_a) * objective_npv(initial_b) <= 0.0 {
+         bracket = Some((initial_a, initial_b));
+     } else {
+         // Grid search in [-0.9999, 10.0]
+@@ -269,7 +344,7 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
+         for i in 0..sample_points.len() - 1 {
+             let x0 = sample_points[i];
+             let x1 = sample_points[i + 1];
+-            if f(x0) * f(x1) <= 0.0 {
++            if objective_npv(x0) * objective_npv(x1) <= 0.0 {
+                 bracket = Some((x0, x1));
+                 break;
+             }
+@@ -280,7 +355,7 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
+             let upper_points = [20.0, 50.0, 100.0, 500.0, 1000.0, 10000.0];
+             let mut prev = initial_b;
+             for &next in &upper_points {
+-                if f(prev) * f(next) <= 0.0 {
++                if objective_npv(prev) * objective_npv(next) <= 0.0 {
+                     bracket = Some((prev, next));
+                     break;
+                 }
+@@ -293,7 +368,7 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
+             let lower_points = [-0.99999, -0.999999];
+             let mut prev = initial_a;
+             for &next in &lower_points {
+-                if f(prev) * f(next) <= 0.0 {
++                if objective_npv(prev) * objective_npv(next) <= 0.0 {
+                     bracket = Some((next, prev));
+                     break;
+                 }
+@@ -305,14 +380,14 @@ pub fn calculate_xirr(flows: &[CashFlow]) -> Result<Decimal, PortfolioError> {
+     // Solve via Brent's method if bracketed
+     let mut solved_rate = None;
+     if let Some((a, b)) = bracket {
+-        solved_rate = brent_root(f, a, b, 1e-11, 100).ok();
++        solved_rate = brent_root(objective_npv, a, b, 1e-11, 100).ok();
+     }
+ 
+     // Fallback to Newton-Raphson if Brent failed or bracket was not found
+     if solved_rate.is_none() {
+         let guesses = [0.1, 0.0, -0.2, 0.5, 1.0, -0.5, 2.0];
+         for &guess in &guesses {
+-            if let Ok(root) = newton_raphson(f, df, guess, 100) {
++            if let Ok(root) = newton_raphson(objective_npv, derivative_npv, guess, 100) {
+                 solved_rate = Some(root);
+                 break;
+             }
+diff --git a/backend-rs/crates/portfolio-core/src/tax/classification.rs b/backend-rs/crates/portfolio-core/src/tax/classification.rs
+index 74c8795..ee72422 100644
+--- a/backend-rs/crates/portfolio-core/src/tax/classification.rs
++++ b/backend-rs/crates/portfolio-core/src/tax/classification.rs
+@@ -1,9 +1,20 @@
+ //! Unified statutory tax classification and capital gains lot categorization.
+ //!
+-//! Evaluates:
+-//! - Holding period against statutory equity (365 days) and debt (730 / 1095 days) thresholds.
+-//! - Finance Act 2023 Section 50AA debt mutual fund regime (purchases on/after 01-Apr-2023).
+-//! - Pre vs Post Budget 2024 (23-Jul-2024) rates for equity and debt.
++//! Evaluates transactions and holding lots against Indian statutory tax provisions:
++//!
++//! 1. **Holding Period Thresholds**:
++//!    - **Equity & Equity Mutual Funds**: 12 calendar months (Section 2(42A)).
++//!    - **Debt Mutual Funds (Pre-Budget 2024)**: 36 calendar months.
++//!    - **Debt Mutual Funds (Post-Budget 2024, >= 23-Jul-2024)**: 24 calendar months.
++//!
++//! 2. **Finance Act 2023 Section 50AA (Debt Mutual Fund Regime)**:
++//!    - Debt mutual funds acquired on or after 01-Apr-2023 are statutorily deemed as short-term capital
++//!      assets, with capital gains taxed at the investor's applicable marginal income tax slab rate.
++//!
++//! 3. **Union Budget 2024 Statutory Rate Cutoff (23-Jul-2024)**:
++//!    - **Equity LTCG (Section 112A)**: 12.5% for sales on/after 23-Jul-2024 (previously 10%).
++//!    - **Equity STCG (Section 111A)**: 20.0% for sales on/after 23-Jul-2024 (previously 15%).
++//!    - **Pre-50AA Debt LTCG (Section 112)**: 12.5% without indexation on/after 23-Jul-2024 (previously 20% with indexation).
+ 
+ use chrono::NaiveDate;
+ use rust_decimal::Decimal;
+@@ -12,17 +23,43 @@ use crate::tax::constants::*;
+ use crate::tax::{HoldingType, TaxSection, TaxType};
+ 
+ /// Unified statutory classification result for a transaction or holding lot.
++///
++/// Encapsulates the holding period, tax classification, statutory section, and nominal tax rate.
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ pub struct TaxClassification {
++    /// Long-Term vs Short-Term asset holding classification.
+     pub holding_type: HoldingType,
++    /// Tax treatment category: LTCG, STCG, or Slab income.
+     pub tax_type: TaxType,
++    /// Statutory section under the Indian Income Tax Act, 1961 (e.g. 112A, 111A, 50AA).
+     pub section: TaxSection,
++    /// Nominal statutory tax rate before health and education cess (e.g. `0.125` for 12.5%).
+     pub tax_rate: Decimal,
++    /// Exact elapsed calendar days between acquisition and realization.
+     pub holding_days: i64,
+ }
+ 
+ impl TaxClassification {
+-    /// Classifies an asset holding or transaction lot based on Indian Income Tax rules.
++    /// Classifies an asset holding or transaction lot based on Indian Income Tax statutory rules.
++    ///
++    /// # Statutory Logic:
++    /// 1. **Holding Period Determination**:
++    ///    - Equity: Checks if `realization_date >= purchase_date + 12 months` using calendar month arithmetic.
++    ///    - Debt: Checks against 24 months (if realized on/after 23-Jul-2024) or 36 months (prior to 23-Jul-2024).
++    /// 2. **Equity Classification**:
++    ///    - Long-Term: [`TaxSection::Sec112A12_5`] (12.5%) post-Budget 2024, or [`TaxSection::Sec112A10`] (10%) pre-Budget 2024.
++    ///    - Short-Term: [`TaxSection::Sec111A20`] (20%) post-Budget 2024, or [`TaxSection::Sec111A15`] (15%) pre-Budget 2024.
++    /// 3. **Debt Classification**:
++    ///    - Acquired on/after 01-Apr-2023: Statutorily deemed short-term under **Section 50AA**, taxed at `tax_slab`.
++    ///    - Acquired before 01-Apr-2023 (Grandfathered under pre-50AA rules):
++    ///      - Long-Term: [`TaxSection::Sec112Debt12_5`] (12.5%) post-Budget 2024, or [`TaxSection::Sec112Debt20`] (20% indexed) pre-Budget 2024.
++    ///      - Short-Term: Taxed at `tax_slab`.
++    ///
++    /// # Arguments
++    /// * `is_equity` - Whether the underlying security is classified as an equity asset.
++    /// * `purchase_date` - Date of lot acquisition.
++    /// * `realization_date` - Date of lot redemption, sale, or portfolio valuation as-of date.
++    /// * `tax_slab` - Investor's marginal income tax slab rate (e.g. `0.30` for 30%).
+     pub fn classify(
+         is_equity: bool,
+         purchase_date: NaiveDate,
+@@ -33,16 +70,17 @@ impl TaxClassification {
+         let is_post_budget_2024 = realization_date >= BUDGET_2024_DATE;
+         let is_post_debt_regime = purchase_date >= DEBT_NEW_REGIME_DATE;
+ 
++        // Holding period threshold evaluation using calendar-month addition (preserves leap-year accuracy)
+         let is_ltcg = if is_equity {
+             let anniversary = purchase_date
+                 .checked_add_months(chrono::Months::new(12))
+                 .unwrap_or(purchase_date + chrono::Duration::days(365));
+             realization_date >= anniversary
+         } else {
+-            let months = if is_post_budget_2024 { 24 } else { 36 };
++            let threshold_months = if is_post_budget_2024 { 24 } else { 36 };
+             let anniversary = purchase_date
+-                .checked_add_months(chrono::Months::new(months))
+-                .unwrap_or(purchase_date + chrono::Duration::days(months as i64 * 30));
++                .checked_add_months(chrono::Months::new(threshold_months))
++                .unwrap_or(purchase_date + chrono::Duration::days(threshold_months as i64 * 30));
+             realization_date >= anniversary
+         };
+ 
+diff --git a/backend-rs/crates/portfolio-core/src/tax/grandfathering.rs b/backend-rs/crates/portfolio-core/src/tax/grandfathering.rs
+index f97d30e..a7761ea 100644
+--- a/backend-rs/crates/portfolio-core/src/tax/grandfathering.rs
++++ b/backend-rs/crates/portfolio-core/src/tax/grandfathering.rs
+@@ -1,7 +1,7 @@
+ //! Section 112A Statutory Grandfathering and Capital Gains calculation.
+ //!
+ //! Implements Indian Income Tax Act capital gains taxation rules:
+-//! - Section 112A / Section 55(2)(ac) LTCG grandfathering using 31-Jan-2018 FMV NAV.
++//! - Section 112A / Section 55(2)(ac) LTCG grandfathering using 31-Jan-2018 Fair Market Value (FMV) NAV.
+ //! - Pre/Post-Budget 2024 (23-Jul-2024) rates and holding period thresholds.
+ //! - Finance Act 2023 Section 50AA debt mutual fund taxation (post 01-Apr-2023 purchase).
+ //! - Pre-Finance Act 2023 debt fund indexation / LTCG holding periods.
+@@ -15,16 +15,48 @@ use crate::tax::rules::is_equity;
+ use crate::tax::{BuyLot, RealizedGain};
+ use crate::types::{AssetType, Money, Nav, Units};
+ 
+-/// Computes Section 55(2)(ac) / Section 112A deemed cost of acquisition:
++/// Computes deemed cost of acquisition under Section 55(2)(ac) of the Income Tax Act, 1961.
+ ///
+-/// If asset is equity and purchase date <= 31-Jan-2018 with FMV provided:
+-///   `deemed_nav = max(actual_purchase_nav, min(fmv, sell_nav))`
+-///   `deemed_cost = units * deemed_nav`
+-///   `is_grandfathered = true`
++/// # Statutory Context & Grandfathering Formula:
++/// Introduced by Finance Act 2018 when LTCG tax on listed equity and equity mutual funds was
++/// reintroduced under Section 112A. Any gains accrued up to January 31, 2018 are grandfathered (tax-exempt).
+ ///
+-/// Loss limitation rule: if `sell_nav < fmv`, deemed NAV drops to `sell_nav`
+-/// (or `actual_purchase_nav` if `sell_nav < actual_purchase_nav`),
+-/// preventing artificial capital loss claims while allowing genuine economic loss.
++/// For an equity asset acquired on or before January 31, 2018 and held long-term (> 12 months):
++/// ```text
++/// deemed_unit_nav = max(actual_purchase_nav, min(fmv_as_of_jan31_2018, sell_nav))
++/// deemed_cost = units * deemed_unit_nav
++/// ```
++///
++/// # Statutory Scenarios & Loss Limitation:
++/// 1. **Sell Price > FMV > Buy Price**:
++///    `min(fmv, sell) = fmv`, so `deemed_unit_nav = fmv`.
++///    Capital gain is calculated only on appreciation occurring after Jan 31, 2018 (`sell - fmv`).
++///    All historical gains accrued up to Jan 31, 2018 are completely tax-exempt.
++///
++/// 2. **Buy Price < Sell Price < FMV (Loss Limitation Rule)**:
++///    `min(fmv, sell) = sell`, so `deemed_unit_nav = max(buy, sell) = sell`.
++///    Taxable gain is `sell - sell = 0`.
++///    The statute explicitly prevents taxpayers from creating artificial capital losses against the
++///    Jan 31, 2018 FMV when the position is actually sold at a net economic profit over original cost.
++///
++/// 3. **Sell Price < Buy Price < FMV (Genuine Economic Loss)**:
++///    `min(fmv, sell) = sell`, so `deemed_unit_nav = max(buy, sell) = buy`.
++///    Capital loss is `sell - buy`.
++///    The genuine out-of-pocket economic loss is fully preserved and eligible for capital loss set-off.
++///
++/// # Arguments
++/// * `buy_date` - Calendar date when units were acquired.
++/// * `sell_date` - Calendar date when units were redeemed or sold.
++/// * `units` - Number of units being redeemed.
++/// * `actual_nav` - Original purchase price per unit.
++/// * `sell_nav` - Redemption price per unit.
++/// * `grandfather_nav` - Highest NAV recorded on January 31, 2018 (FMV).
++/// * `is_equity_asset` - Whether the security is classified as an equity instrument.
++/// * `is_anchor` - Whether the lot is a synthetic anchor lot (bypasses grandfathering).
++///
++/// # Returns
++/// A tuple containing:
++/// `(deemed_cost, is_grandfathered, status_description, fmv_nav, total_fmv_amount)`
+ #[allow(clippy::too_many_arguments)]
+ pub fn compute_deemed_cost(
+     buy_date: NaiveDate,
+@@ -47,7 +79,7 @@ pub fn compute_deemed_cost(
+         let status = "Grandfathered u/s 55(2)(ac)".to_string();
+ 
+         if let Some(fmv) = grandfather_nav {
+-            // Deemed Unit Cost = max(Buy Price, min(Grandfather NAV, Sell Price))
++            // Statutory formula: Deemed Unit Cost = max(Buy Price, min(Grandfather NAV, Sell Price))
+             let deemed_unit_nav = actual_nav.max(fmv.min(sell_nav));
+             let deemed_cost = deemed_unit_nav * units;
+             let total_fmv = fmv * units;
+@@ -81,6 +113,8 @@ pub fn compute_deemed_cost(
+ }
+ 
+ /// Calculates capital gain for a specific buy lot redemption under Section 112A / Section 55(2)(ac).
++///
++/// Convenience wrapper over [`calculate_gain_with_expenses`] with zero transfer expenses.
+ #[allow(clippy::too_many_arguments)]
+ pub fn calculate_gain(
+     asset_name: &str,
+@@ -106,6 +140,28 @@ pub fn calculate_gain(
+ }
+ 
+ /// Calculates capital gain with optional transfer expenses / exit load.
++///
++/// # Statutory Computation Steps:
++/// 1. Classifies the transaction under [`TaxClassification::classify`].
++/// 2. Derives deemed cost of acquisition via [`compute_deemed_cost`].
++/// 3. Computes net capital gain:
++///    `gain = gross_consideration - deemed_cost_of_acquisition - transfer_expenses`
++/// 4. If `gain > 0`, applies statutory tax rate:
++///    `tax_before_cess = gain * tax_rate`
++/// 5. Computes statutory 4% Health and Education Cess:
++///    `cess = tax_before_cess * 0.04`
++///    `estimated_tax = tax_before_cess + cess`
++///
++/// # Arguments
++/// * `asset_name` - Descriptive name of the asset/fund.
++/// * `asset_type` - Mutual fund, stock, fixed deposit, etc.
++/// * `lot` - Matched acquisition [`BuyLot`].
++/// * `units_sold` - Number of units being redeemed.
++/// * `sell_nav` - Per-unit realization price.
++/// * `sell_date` - Date of realization.
++/// * `tax_slab` - Applicable slab rate for short-term debt gains.
++/// * `grandfather_nav` - Optional FMV NAV as of 31-Jan-2018.
++/// * `transfer_expenses` - Exit load or brokerage expenses deducted from proceeds.
+ #[allow(clippy::too_many_arguments)]
+ pub fn calculate_gain_with_expenses(
+     asset_name: &str,
+diff --git a/backend-rs/crates/portfolio-core/src/tax/harvesting.rs b/backend-rs/crates/portfolio-core/src/tax/harvesting.rs
+index 161ea3d..6dd7823 100644
+--- a/backend-rs/crates/portfolio-core/src/tax/harvesting.rs
++++ b/backend-rs/crates/portfolio-core/src/tax/harvesting.rs
+@@ -1,10 +1,16 @@
+-//! Tax Harvesting Engine and Unrealized Gain Analytics.
++//! Tax Harvesting Engine and Unrealized Capital Gains Analytics.
+ //!
+-//! Identifies tax-loss and tax-gain harvesting opportunities under Section 112A:
+-//! - Up to ₹1,25,000 annual LTCG exemption limit (Budget 2024).
+-//! - Identifies eligible long-term equity lots (holding period >= 365 days).
+-//! - Excludes debt funds, alternative assets, and locked ELSS lots (< 3 years).
+-//! - Provides precision-safe unit harvesting calculations up to available exemption.
++//! Implements statutory Section 112A Long-Term Capital Gains (LTCG) tax harvesting:
++//! - **Annual Exemption Threshold**: Section 112A grants an annual tax exemption on long-term capital
++//!   gains from equity shares and equity mutual funds (₹1,25,000 post-Budget 2024; ₹1,00,000 prior).
++//! - **Harvesting Optimization**: Identifies unsold equity lots held for at least 365 days whose unrealized
++//!   gains can be realized without triggering any income tax liability.
++//! - **Statutory Exclusion Filters**:
++//!   - Debt and commodity/international funds are excluded (they do not qualify for Section 112A).
++//!   - ELSS funds within their statutory 3-year lock-in are excluded (redemptions are legally barred).
++//!   - Losses and short-term holdings are excluded from LTCG gain harvesting.
++//! - **Fractional Lot Harvesting**: When remaining exemption is smaller than a lot's full gain, computes
++//!   the exact fractional unit count to redeem (`units = exemption_portion / (current_nav - buy_nav)`).
+ 
+ use chrono::NaiveDate;
+ use rust_decimal::Decimal;
+@@ -20,24 +26,37 @@ use crate::types::{AssetType, Money, Nav, Units};
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct HarvestingOpportunity {
++    /// Identifier of the folio holding the units, if available.
+     pub folio_id: Option<String>,
++    /// Name of the scheme recommended for tax harvesting.
+     pub scheme_name: String,
++    /// Number of units to sell to harvest the targeted capital gain.
+     pub units_to_harvest: Units,
++    /// Capital gain amount that will be realized tax-free under Section 112A.
+     pub unrealized_gain: Money,
++    /// Current gross market value of the units to be harvested (`units * current_nav`).
+     pub current_value: Money,
+ }
+ 
+-/// An individual unrealized lot analysis.
++/// An individual unrealized holding lot analysis.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct UnrealizedLotGain {
++    /// Name of the mutual fund or equity scheme.
+     pub scheme_name: String,
++    /// Calendar date when units were acquired.
+     pub buy_date: NaiveDate,
++    /// Number of unsold units currently held in this lot.
+     pub units: Units,
++    /// Original purchase NAV of the lot.
+     pub purchase_nav: Nav,
++    /// Current valuation NAV as of the evaluation date.
+     pub current_nav: Nav,
++    /// Elapsed calendar days since purchase.
+     pub holding_days: i64,
++    /// Whether the lot qualifies as Long-Term Capital Asset under statutory rules.
+     pub is_ltcg: bool,
++    /// Current unrealized gain or loss (`(current_nav - purchase_nav) * units`).
+     pub unrealized_gain: Money,
+ }
+ 
+@@ -45,10 +64,15 @@ pub struct UnrealizedLotGain {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+ #[serde(rename_all = "camelCase")]
+ pub struct UnrealizedTaxSummary {
++    /// Total unrealized short-term capital gains across all active lots.
+     pub stcg: Money,
++    /// Total unrealized long-term capital gains across all active lots.
+     pub ltcg: Money,
++    /// Total unrealized capital losses across all active lots.
+     pub losses: Money,
++    /// Net unrealized position across all active holdings (`stcg + ltcg - losses`).
+     pub net_gain: Money,
++    /// Detailed lot-by-lot breakdown for each active position.
+     pub lots: Vec<UnrealizedLotGain>,
+ }
+ 
+@@ -56,25 +80,37 @@ pub struct UnrealizedTaxSummary {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct HarvestingSummary {
++    /// Long-term capital gains already realized in the current Financial Year.
+     pub realized_ltcg_fy: Money,
++    /// Remaining statutory Section 112A exemption available (`exemption_limit - realized_ltcg_fy`).
+     pub remaining_exemption: Money,
++    /// Total capital gains that can be harvested tax-free across all eligible positions.
+     pub total_potential_harvest: Money,
++    /// Actionable list of specific scheme lots recommended for harvesting.
+     pub opportunities: Vec<HarvestingOpportunity>,
++    /// Estimated statutory tax saved by harvesting before fiscal year end (`harvest * 12.5%`).
+     pub estimated_tax_savings: Money,
++    /// Complete unrealized gains and losses analysis.
+     pub unrealized_summary: UnrealizedTaxSummary,
+ }
+ 
+ /// Input descriptor for a folio holding with current valuation NAV.
+ #[derive(Debug, Clone)]
+ pub struct FolioHarvestingInput<'a> {
++    /// Identifier of the folio.
+     pub folio_id: Option<&'a str>,
++    /// Scheme or security name.
+     pub scheme_name: &'a str,
++    /// Asset type (Equity, Debt, etc.).
+     pub asset_type: AssetType,
++    /// Historical transaction records in the folio.
+     pub transactions: &'a [Transaction],
++    /// Current valuation NAV for the scheme.
+     pub current_nav: Nav,
+ }
+ 
+ impl<'a> FolioHarvestingInput<'a> {
++    /// Constructs a new [`FolioHarvestingInput`].
+     pub fn new(
+         scheme_name: &'a str,
+         asset_type: AssetType,
+@@ -90,11 +126,13 @@ impl<'a> FolioHarvestingInput<'a> {
+         }
+     }
+ 
++    /// Builder method attaching a folio ID to this input.
+     pub fn with_folio_id(mut self, folio_id: &'a str) -> Self {
+         self.folio_id = Some(folio_id);
+         self
+     }
+ 
++    /// Convenience constructor converting a domain [`Folio`] reference into harvesting input.
+     pub fn from_folio(folio: &'a Folio, current_nav: Nav) -> Self {
+         Self {
+             folio_id: Some(&folio.id),
+@@ -169,6 +207,20 @@ pub fn compute_unrealized_gains(
+ }
+ 
+ /// Identifies LTCG harvesting opportunities up to the statutory Section 112A annual exemption limit.
++///
++/// # Optimization Algorithm:
++/// 1. Determines remaining exemption limit:
++///    `remaining_exemption = max(0, statutory_limit - realized_ltcg_fy)`.
++/// 2. Iterates over active equity lots:
++///    - Skips non-equity holdings (debt/commodity do not qualify for Section 112A exemption).
++///    - Skips ELSS lots still subject to the 3-year statutory lock-in.
++///    - Only considers long-term lots (holding >= 365 days) where `current_nav > purchase_nav`.
++/// 3. Computes the harvestable gain capped by remaining exemption:
++///    - If `lot_gain <= available_limit`: Harvest entire lot units.
++///    - If `lot_gain > available_limit`: Harvest fractional units:
++///      `units_to_harvest = available_limit / (current_nav - purchase_nav)`.
++/// 4. Discards negligible gains (< ₹1) to prevent precision dust.
++/// 5. Computes statutory tax savings: `total_potential_harvest * 12.5%`.
+ pub fn get_harvesting_opportunities(
+     inputs: &[FolioHarvestingInput],
+     as_of: NaiveDate,
+diff --git a/backend-rs/crates/portfolio-core/src/tax/mod.rs b/backend-rs/crates/portfolio-core/src/tax/mod.rs
+index 433e4d3..5b2cba4 100644
+--- a/backend-rs/crates/portfolio-core/src/tax/mod.rs
++++ b/backend-rs/crates/portfolio-core/src/tax/mod.rs
+@@ -30,8 +30,11 @@ pub use rules::{
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+ #[ts(export_to = "TaxType.ts")]
+ pub enum TaxType {
++    /// Short-Term Capital Gains (Section 111A or general STCG).
+     Stcg,
++    /// Long-Term Capital Gains (Section 112A or Section 112).
+     Ltcg,
++    /// Gains taxed at normal marginal income tax slab rates (e.g. Section 50AA debt mutual funds).
+     Slab,
+ }
+ 
+@@ -39,13 +42,21 @@ pub enum TaxType {
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+ #[ts(export_to = "TaxSection.ts")]
+ pub enum TaxSection {
++    /// Section 111A equity STCG at 15% (sales executed prior to 23-Jul-2024).
+     Sec111A15,
++    /// Section 111A equity STCG at 20% (sales executed on or after 23-Jul-2024).
+     Sec111A20,
++    /// Section 112A equity LTCG at 10% (sales executed prior to 23-Jul-2024).
+     Sec112A10,
++    /// Section 112A equity LTCG at 12.5% (sales executed on or after 23-Jul-2024).
+     Sec112A12_5,
++    /// Finance Act 2023 Section 50AA debt mutual funds taxed at slab rates (purchased on/after 01-Apr-2023).
+     Sec50AA,
++    /// Section 112 debt LTCG at 12.5% unindexed (purchased before 01-Apr-2023, sold on/after 23-Jul-2024).
+     Sec112Debt12_5,
++    /// Section 112 debt LTCG at 20% with Cost Inflation Index (CII) indexation (sold prior to 23-Jul-2024).
+     Sec112Debt20,
++    /// General short-term capital gains or other income taxed at slab rates.
+     Slab,
+ }
+ 
+@@ -68,11 +79,22 @@ impl std::fmt::Display for TaxSection {
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+ #[ts(export_to = "HoldingType.ts")]
+ pub enum HoldingType {
++    /// Asset held for less than the statutory long-term threshold.
+     ShortTerm,
++    /// Asset held for at least the statutory long-term threshold.
+     LongTerm,
+ }
+ 
+ /// Statutory advance tax quarters adjusted for Budget 2024 (23 July 2024).
++///
++/// In FY 2024-25, Quarter 2 was split into two sub-periods (`Q2a` and `Q2b`) because
++/// the Finance Act (No. 2) 2024 changed capital gains tax rates effective July 23, 2024:
++/// - `Q1`: April 1 to June 15
++/// - `Q2a`: June 16 to July 22 (Pre-Budget 2024 rates apply)
++/// - `Q2b`: July 23 to September 15 (Post-Budget 2024 rates apply)
++/// - `Q3`: September 16 to December 15
++/// - `Q4`: December 16 to March 15
++/// - `Q5`: March 16 to March 31
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+ #[ts(export_to = "AdvanceTaxQuarter.ts")]
+ pub enum AdvanceTaxQuarter {
+@@ -141,16 +163,27 @@ impl std::fmt::Display for AdvanceTaxQuarter {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+ #[serde(rename_all = "camelCase")]
+ pub struct TableFQuarterData {
++    /// Section 111A STCG realized at 15%.
+     pub stcg15: Money,
++    /// Section 111A STCG realized at 20%.
+     pub stcg20: Money,
++    /// Section 112A LTCG realized at 10%.
+     pub ltcg10: Money,
++    /// Section 112A LTCG realized at 12.5%.
+     pub ltcg12_5: Money,
++    /// Section 112 debt LTCG realized at 12.5% unindexed.
+     pub debt_ltcg12_5: Money,
++    /// Section 112 debt LTCG realized at 20% indexed.
+     pub debt_ltcg20: Money,
++    /// Short-term debt gains taxed at slab rates (Section 50AA).
+     pub slab: Money,
++    /// Total net capital gain accrued in this quarter.
+     pub total_gain: Money,
++    /// Base tax liability before health and education cess.
+     pub tax_before_cess: Money,
++    /// 4% Health and Education Cess.
+     pub cess: Money,
++    /// Total estimated advance tax due for this quarter.
+     pub estimated_tax: Money,
+ }
+ 
+@@ -158,7 +191,9 @@ pub struct TableFQuarterData {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+ #[serde(rename_all = "camelCase")]
+ pub struct AdvanceTaxAccrualMatrix {
++    /// Detailed quarterly accruals mapped by quarter key (e.g. "Q1 (01/04 - 15/06)").
+     pub quarters: std::collections::HashMap<String, TableFQuarterData>,
++    /// Cumulative tax total per quarter for advance tax payment tracking.
+     pub quarter_totals: std::collections::HashMap<String, Money>,
+ }
+ 
+@@ -166,15 +201,25 @@ pub struct AdvanceTaxAccrualMatrix {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct SectionTotalData {
++    /// Statutory section label (e.g. "112A (12.5%)").
+     pub section: String,
++    /// Total full value of consideration received on sale of assets.
+     pub gross_consideration: Money,
++    /// Original cost of acquisition before any deemed cost adjustment.
+     pub cost_of_acquisition: Money,
++    /// Statutory cost of acquisition (adjusted for Section 55(2)(ac) grandfathering).
+     pub deemed_cost_of_acquisition: Money,
++    /// Allowable expenditure wholly and exclusively incurred in connection with transfer.
+     pub transfer_expenses: Money,
++    /// Net capital gain or loss under this section.
+     pub total_gain: Money,
++    /// Applicable nominal statutory tax rate.
+     pub tax_rate: Decimal,
++    /// Base tax liability before cess.
+     pub tax_before_cess: Money,
++    /// 4% Health and Education Cess.
+     pub cess: Money,
++    /// Total tax liability under this section.
+     pub total_tax: Money,
+ }
+ 
+@@ -183,17 +228,26 @@ pub type SectionTotalsMap = std::collections::HashMap<String, SectionTotalData>;
+ /// An active or historical purchase lot tracked for FIFO matching.
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct BuyLot {
++    /// Date when units were purchased.
+     pub date: NaiveDate,
++    /// Current unsold units remaining in the lot.
+     pub units: Units,
++    /// Acquisition NAV per unit.
+     pub nav: Nav,
++    /// Total acquisition cost of remaining units.
+     pub amount: Money,
++    /// Original units originally purchased in this lot.
+     pub original_units: Units,
++    /// ISIN of the security.
+     pub isin: Option<Isin>,
++    /// Whether this lot represents bonus shares (zero cost of acquisition).
+     pub is_bonus: bool,
++    /// Whether this is a synthetic anchor lot (representing opening balance).
+     pub is_anchor: bool,
+ }
+ 
+ impl BuyLot {
++    /// Constructs a new [`BuyLot`].
+     pub fn new(date: NaiveDate, units: Units, nav: Nav, amount: Money) -> Self {
+         Self {
+             date,
+@@ -207,16 +261,19 @@ impl BuyLot {
+         }
+     }
+ 
++    /// Builder method attaching an ISIN to the lot.
+     pub fn with_isin(mut self, isin: Isin) -> Self {
+         self.isin = Some(isin);
+         self
+     }
+ 
++    /// Builder method marking the lot as bonus units (zero cost basis).
+     pub fn with_bonus(mut self, is_bonus: bool) -> Self {
+         self.is_bonus = is_bonus;
+         self
+     }
+ 
++    /// Builder method marking the lot as an anchor lot.
+     pub fn with_anchor(mut self, is_anchor: bool) -> Self {
+         self.is_anchor = is_anchor;
+         self
+@@ -228,35 +285,63 @@ impl BuyLot {
+ #[serde(rename_all = "camelCase")]
+ #[ts(export_to = "RealizedGain.ts", rename_all = "camelCase")]
+ pub struct RealizedGain {
++    /// Asset or mutual fund scheme name.
+     pub asset_name: String,
++    /// Account folio number.
+     pub folio_number: Option<FolioNumber>,
++    /// ISIN of the underlying security.
+     pub isin: Option<Isin>,
++    /// Permanent Account Number (PAN) of the folio owner.
+     pub pan: Option<Pan>,
++    /// Asset class (e.g. "Equity", "Debt", "Fixed Deposit").
+     pub asset_class: String,
++    /// Statutory section under which gain is taxed (e.g. Sec112A12_5, Sec111A20).
+     pub section: TaxSection,
++    /// Acquisition date of the matched buy lot.
+     pub buy_date: NaiveDate,
++    /// Date when units were redeemed or sold.
+     pub sell_date: NaiveDate,
++    /// Number of calendar days held.
+     #[ts(type = "number")]
+     pub holding_period_days: i64,
++    /// Short-Term vs Long-Term classification.
+     pub holding_type: HoldingType,
++    /// Number of units redeemed.
+     pub units: Units,
++    /// Original purchase NAV per unit.
+     pub buy_nav: Nav,
++    /// Redemption NAV per unit.
+     pub sell_nav: Nav,
++    /// Gross proceeds received on sale (`units * sell_nav`).
+     pub gross_consideration: Money,
++    /// Historical cost of acquisition (`units * buy_nav`).
+     pub cost_of_acquisition: Money,
++    /// Fair Market Value per unit as of 31-Jan-2018 (Section 55(2)(ac)).
+     pub fmv_as_of_jan31_2018: Nav,
++    /// Total FMV as of 31-Jan-2018 (`units * fmv`).
+     pub total_fmv_jan31_2018: Money,
++    /// Deemed statutory cost of acquisition under Section 55(2)(ac).
+     pub deemed_cost_of_acquisition: Money,
++    /// Transfer expenses or exit load deducted from proceeds.
+     pub transfer_expenses: Money,
++    /// Realized capital gain or loss (`gross_consideration - deemed_cost - expenses`).
+     pub gain: Money,
++    /// Tax treatment category (Ltcg, Stcg, Slab).
+     pub tax_type: TaxType,
++    /// Nominal statutory tax rate applied to positive gains.
+     #[ts(type = "number")]
+     pub tax_rate: Decimal,
++    /// Tax liability prior to 4% cess.
+     pub tax_before_cess: Money,
++    /// 4% Health and Education Cess.
+     pub cess: Money,
++    /// Total estimated statutory tax liability.
+     pub estimated_tax: Money,
++    /// Whether Section 55(2)(ac) grandfathering was applied.
+     pub is_grandfathered: bool,
++    /// Descriptive description of grandfathering status.
+     pub grandfathered_status: String,
++    /// Advance tax quarter in which the redemption occurred.
+     pub advance_tax_quarter: Option<AdvanceTaxQuarter>,
+ }
+ 
+@@ -264,14 +349,22 @@ pub struct RealizedGain {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+ #[serde(rename_all = "camelCase")]
+ pub struct TaxCategorySummary {
++    /// Total short-term capital gains across lots.
+     pub stcg: Money,
++    /// Total long-term capital gains across lots.
+     pub ltcg: Money,
++    /// Total gains subject to slab rates (e.g. Section 50AA debt funds).
+     pub slab: Money,
++    /// Total gross gain across all categories (`stcg + ltcg + slab`).
+     pub total: Money,
++    /// Net taxable STCG after Section 70 loss set-offs.
+     pub taxable_stcg: Money,
++    /// Net taxable LTCG after Section 70 loss set-offs.
+     pub taxable_ltcg: Money,
++    /// Net taxable slab gain after Section 70 loss set-offs.
+     #[serde(default)]
+     pub taxable_slab: Money,
++    /// Individual lot redemption details.
+     pub details: Vec<RealizedGain>,
+ }
+ 
+@@ -279,10 +372,15 @@ pub struct TaxCategorySummary {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+ #[serde(rename_all = "camelCase")]
+ pub struct TaxPortfolioSummary {
++    /// Whether any transactions depend on synthetic opening balances.
+     pub has_synthetic_anchors: bool,
++    /// Summary of realized capital gains from historical sales/redemptions.
+     pub realized: TaxCategorySummary,
++    /// Summary of unrealized capital gains on active unsold holdings.
+     pub unrealized: TaxCategorySummary,
++    /// Advance tax accrual matrix matching Schedule CG Table F.
+     pub table_f: Option<AdvanceTaxAccrualMatrix>,
++    /// Totals broken down by statutory section matching ITR-2/ITR-3.
+     pub section_totals: Option<SectionTotalsMap>,
+ }
+ 
+@@ -316,15 +414,22 @@ pub enum TaxInvariantError {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct TaxReport {
++    /// Financial Year covered by this report (e.g. "2024-25").
+     pub financial_year: String,
++    /// Assessment Year corresponding to the financial year (e.g. "2025-26").
+     pub assessment_year: Option<String>,
++    /// Full legal name of the taxpayer / assessee.
+     pub assessee_name: Option<String>,
++    /// Permanent Account Number (PAN) of the taxpayer.
+     pub pan: Option<Pan>,
++    /// Comprehensive summary of realized and unrealized tax liabilities.
+     pub summary: TaxPortfolioSummary,
++    /// Total Section 112A exempt long-term capital gains claimed (capped by statutory limits).
+     pub exempt_ltcg_112a: Money,
+ }
+ 
+ impl TaxReport {
++    /// Constructs a new [`TaxReport`].
+     pub fn new(
+         financial_year: impl Into<String>,
+         summary: TaxPortfolioSummary,
+@@ -340,16 +445,19 @@ impl TaxReport {
+         }
+     }
+ 
++    /// Builder method attaching a PAN to the tax report.
+     pub fn with_pan(mut self, pan: Pan) -> Self {
+         self.pan = Some(pan);
+         self
+     }
+ 
++    /// Builder method attaching the assessee name to the tax report.
+     pub fn with_assessee_name(mut self, name: impl Into<String>) -> Self {
+         self.assessee_name = Some(name.into());
+         self
+     }
+ 
++    /// Builder method attaching the assessment year to the tax report.
+     pub fn with_assessment_year(mut self, ay: impl Into<String>) -> Self {
+         self.assessment_year = Some(ay.into());
+         self
+@@ -436,13 +544,21 @@ pub fn verify_itr_invariants(report: &TaxReport) -> Result<(), TaxInvariantError
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct SellSimulation {
++    /// Scheme or asset name being simulated.
+     pub asset_name: String,
++    /// Number of units requested for redemption.
+     pub units_to_sell: Units,
++    /// Gross market value of the units at the redemption NAV.
+     pub estimated_value: Money,
++    /// Total net capital gain or loss across all matched lots (`estimated_value - cost - exit_load`).
+     pub total_gain: Money,
++    /// Taxable portion of the capital gain (`max(0, total_gain)`).
+     pub taxable_gain: Money,
++    /// Estimated statutory tax liability including 4% cess.
+     pub estimated_tax: Money,
++    /// Total exit load deducted from proceeds.
+     pub exit_load: Money,
++    /// Detailed lot-by-lot realized gain records.
+     pub matched_lots: Vec<RealizedGain>,
+ }
+ 
+diff --git a/backend-rs/crates/portfolio-core/src/tax/rules.rs b/backend-rs/crates/portfolio-core/src/tax/rules.rs
+index 6d7b1fb..077f351 100644
+--- a/backend-rs/crates/portfolio-core/src/tax/rules.rs
++++ b/backend-rs/crates/portfolio-core/src/tax/rules.rs
+@@ -1,9 +1,14 @@
+ //! Statutory lock-in rules, asset classification, and redemption simulation.
+ //!
+-//! Enforces:
+-//! - ELSS (Equity Linked Savings Scheme) 3-year statutory lock-in from each SIP/purchase lot date.
+-//! - Leap-year robust lock-in maturity date arithmetic.
+-//! - Sell simulation verifying unlocked unit availability before calculating tax consequences.
++//! Enforces Indian mutual fund statutory requirements and operational constraints:
++//! - **ELSS 3-Year Lock-In**: Under Section 80C, each individual ELSS purchase or SIP installment
++//!   is statutorily locked for exactly 3 years from its acquisition date.
++//! - **Leap-Year Robust Arithmetic**: Handles leap-day acquisitions (Feb 29) maturing deterministically
++//!   on Feb 28 in non-leap target years.
++//! - **Exit Load Schedules**: Accurately computes exit load penalties from scheme metadata or standard
++//!   SEBI fund-category rules (e.g. liquid fund 7-day graduated exit load, equity 1% within 1 year).
++//! - **Redemption Simulation**: Validates unlocked unit availability before simulating FIFO lot depletion,
++//!   calculating realized gains, exit load expenses, and estimated tax liabilities.
+ 
+ use std::str::FromStr;
+ 
+@@ -17,7 +22,9 @@ use crate::tax::grandfathering::calculate_gain_with_expenses;
+ use crate::tax::{BuyLot, SellSimulation};
+ use crate::types::{AssetType, Money, Nav, Units};
+ 
+-/// Checks if a mutual fund scheme is an ELSS (Equity Linked Savings Scheme) based on scheme name.
++/// Checks if a mutual fund scheme is an ELSS (Equity Linked Savings Scheme) based on its name.
++///
++/// Looks for standard indicators like "elss", "tax saver", or "tax plan".
+ pub fn is_elss(asset_name: &str) -> bool {
+     let lower = asset_name.to_lowercase();
+     lower.contains("elss") || lower.contains("tax saver") || lower.contains("tax plan")
+@@ -29,6 +36,12 @@ pub fn is_elss_scheme(asset_type: AssetType, asset_name: &str) -> bool {
+ }
+ 
+ /// Checks if an asset is classified as equity for Indian capital gains taxation.
++///
++/// # Classification Rules:
++/// - Direct stocks (`AssetType::Stock`) are unconditionally classified as equity.
++/// - Mutual funds (`AssetType::MutualFund`) are classified as equity unless their scheme name contains
++///   keywords denoting debt, money market, liquid, commodity (gold/silver), fund-of-funds (FoF),
++///   or international/overseas equities (which do not qualify for domestic equity tax treatment).
+ pub fn is_equity(asset_type: AssetType, asset_name: &str) -> bool {
+     if asset_type == AssetType::Stock {
+         return true;
+@@ -69,8 +82,9 @@ pub fn is_equity(asset_type: AssetType, asset_name: &str) -> bool {
+ 
+ /// Computes the exact 3-year lock-in maturity date for an ELSS lot.
+ ///
+-/// Handles leap-year transitions deterministically:
+-/// A purchase made on Feb 29 (leap year) matures on Feb 28 of the non-leap target year.
++/// # Leap-Year Transition Handling:
++/// A purchase made on February 29 during a leap year matures on February 28 of the non-leap
++/// target year (`year + 3`), matching standard Indian AMC and registrar statutory practice.
+ pub fn elss_lock_in_expiry(purchase_date: NaiveDate) -> NaiveDate {
+     let target_year = purchase_date.year() + 3;
+     let month = purchase_date.month();
+@@ -83,7 +97,7 @@ pub fn elss_lock_in_expiry(purchase_date: NaiveDate) -> NaiveDate {
+     })
+ }
+ 
+-/// Returns true if an ELSS purchase lot is still within its 3-year statutory lock-in period as of `as_of`.
++/// Returns `true` if an ELSS purchase lot is still within its 3-year statutory lock-in period as of `as_of`.
+ pub fn is_lot_locked(purchase_date: NaiveDate, as_of: NaiveDate) -> bool {
+     as_of < elss_lock_in_expiry(purchase_date)
+ }
+@@ -277,6 +291,11 @@ pub fn get_exit_load(
+ }
+ 
+ /// Simulates a redemption across a raw transaction slice, enforcing lock-in, exit load, and FIFO lot depletion.
++///
++/// # Validation Checks:
++/// 1. Verifies `units_to_sell <= total_active_units`. Returns [`PortfolioError::InsufficientUnits`] otherwise.
++/// 2. For ELSS funds, checks `units_to_sell <= available_unlocked_units`. Returns [`PortfolioError::UnitsLocked`] otherwise.
++/// 3. Depletes matched lots in FIFO order, computing per-lot exit loads and realized capital gains.
+ #[allow(clippy::too_many_arguments)]
+ pub fn simulate_sell_transactions_with_metadata(
+     asset_name: &str,
+diff --git a/backend-rs/crates/portfolio-core/src/xray/allocation.rs b/backend-rs/crates/portfolio-core/src/xray/allocation.rs
+index 2bd0bb2..03c5bdb 100644
+--- a/backend-rs/crates/portfolio-core/src/xray/allocation.rs
++++ b/backend-rs/crates/portfolio-core/src/xray/allocation.rs
+@@ -1,4 +1,13 @@
+ //! Market capitalization and asset allocation breakdown structures and calculators.
++//!
++//! Provides portfolio asset exposure and market-cap distribution modeling:
++//! - **Market Cap Breakdown**: Aggregates equity exposure across Large Cap, Mid Cap, and Small Cap.
++//! - **Asset Allocation Breakdown**: Aggregates exposure across broad asset classes: Equity, Debt, Cash, and Alternatives.
++//! - **Portfolio-Weighted Normalization**: Combines multiple funds or holdings weighted by their respective
++//!   portfolio market values:
++//!
++//!   $$\text{Weight}_i = \frac{\text{Value}_i}{\sum_{j} \text{Value}_j}$$
++//!   $$\text{Metric}_{\text{aggregated}} = \sum_{i} \text{Weight}_i \cdot \text{Metric}_i$$
+ 
+ use rust_decimal::Decimal;
+ use serde::{Deserialize, Serialize};
+@@ -7,12 +16,16 @@ use serde::{Deserialize, Serialize};
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+ #[serde(rename_all = "camelCase", default)]
+ pub struct MarketCapBreakdown {
++    /// Large-cap equity exposure percentage (top 100 market-cap companies).
+     pub large_cap: Decimal,
++    /// Mid-cap equity exposure percentage (101st to 250th market-cap companies).
+     pub mid_cap: Decimal,
++    /// Small-cap equity exposure percentage (251st and beyond market-cap companies).
+     pub small_cap: Decimal,
+ }
+ 
+ impl MarketCapBreakdown {
++    /// Constructs a new [`MarketCapBreakdown`].
+     pub fn new(large_cap: Decimal, mid_cap: Decimal, small_cap: Decimal) -> Self {
+         Self {
+             large_cap,
+@@ -21,15 +34,19 @@ impl MarketCapBreakdown {
+         }
+     }
+ 
++    /// Constructs a zeroed [`MarketCapBreakdown`].
+     pub fn zero() -> Self {
+         Self::default()
+     }
+ 
++    /// Calculates the sum of large, mid, and small cap exposure percentages.
+     pub fn total(&self) -> Decimal {
+         self.large_cap + self.mid_cap + self.small_cap
+     }
+ 
+-    /// Normalizes components to sum to 100% (or Decimal::ZERO if total is zero).
++    /// Normalizes components proportionally to sum exactly to 100%.
++    ///
++    /// If total exposure is zero, returns [`MarketCapBreakdown::zero`].
+     pub fn normalize(&self) -> Self {
+         let total = self.total();
+         if total.is_zero() {
+@@ -48,13 +65,18 @@ impl MarketCapBreakdown {
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+ #[serde(rename_all = "camelCase", default)]
+ pub struct AssetAllocationBreakdown {
++    /// Exposure percentage in equity instruments.
+     pub equity: Decimal,
++    /// Exposure percentage in fixed income and debt securities.
+     pub debt: Decimal,
++    /// Exposure percentage in cash, liquid equivalents, and net current assets.
+     pub cash: Decimal,
++    /// Exposure percentage in alternatives (Gold, Silver, REITs, InvITs, commodities).
+     pub alternatives: Decimal,
+ }
+ 
+ impl AssetAllocationBreakdown {
++    /// Constructs a new [`AssetAllocationBreakdown`].
+     pub fn new(equity: Decimal, debt: Decimal, cash: Decimal, alternatives: Decimal) -> Self {
+         Self {
+             equity,
+@@ -64,15 +86,19 @@ impl AssetAllocationBreakdown {
+         }
+     }
+ 
++    /// Constructs a zeroed [`AssetAllocationBreakdown`].
+     pub fn zero() -> Self {
+         Self::default()
+     }
+ 
++    /// Calculates the sum of all broad asset class percentage allocations.
+     pub fn total(&self) -> Decimal {
+         self.equity + self.debt + self.cash + self.alternatives
+     }
+ 
+-    /// Normalizes components to sum to 100% (or Decimal::ZERO if total is zero).
++    /// Normalizes components proportionally to sum exactly to 100%.
++    ///
++    /// If total exposure is zero, returns [`AssetAllocationBreakdown::zero`].
+     pub fn normalize(&self) -> Self {
+         let total = self.total();
+         if total.is_zero() {
+@@ -91,6 +117,8 @@ impl AssetAllocationBreakdown {
+ /// Aggregates multiple fund market cap breakdowns weighted by portfolio value.
+ ///
+ /// Each tuple is `(portfolio_value, breakdown)`.
++///
++/// If total value is zero or non-positive, returns [`MarketCapBreakdown::zero`].
+ pub fn aggregate_market_cap(funds: &[(Decimal, MarketCapBreakdown)]) -> MarketCapBreakdown {
+     let total_value: Decimal = funds.iter().map(|(val, _)| (*val).max(Decimal::ZERO)).sum();
+ 
+@@ -123,6 +151,8 @@ pub fn aggregate_market_cap(funds: &[(Decimal, MarketCapBreakdown)]) -> MarketCa
+ /// Aggregates multiple fund asset allocation breakdowns weighted by portfolio value.
+ ///
+ /// Each tuple is `(portfolio_value, breakdown)`.
++///
++/// If total value is zero or non-positive, returns [`AssetAllocationBreakdown::zero`].
+ pub fn aggregate_asset_allocation(
+     funds: &[(Decimal, AssetAllocationBreakdown)],
+ ) -> AssetAllocationBreakdown {
+diff --git a/backend-rs/crates/portfolio-core/src/xray/overlap.rs b/backend-rs/crates/portfolio-core/src/xray/overlap.rs
+index aa90126..5884057 100644
+--- a/backend-rs/crates/portfolio-core/src/xray/overlap.rs
++++ b/backend-rs/crates/portfolio-core/src/xray/overlap.rs
+@@ -1,4 +1,19 @@
+ //! Mutual fund portfolio overlap and stock intersection engine.
++//!
++//! Provides institutional portfolio look-through analytics calculating the commonality
++//! between two mutual funds or investment portfolios:
++//!
++//! # Mathematical Formulation:
++//! For two funds $A$ and $B$ holding constituent stocks with weights $w_A(c)$ and $w_B(c)$:
++//!
++//! $$\text{Overlap}(A, B) = \sum_{c \in A \cap B} \min(w_A(c), w_B(c))$$
++//!
++//! # Invariant Properties:
++//! 1. **Symmetry**: $\text{Overlap}(A, B) = \text{Overlap}(B, A)$.
++//! 2. **Identity / Self-Overlap**: $\text{Overlap}(A, A) = \sum_{c \in A} w_A(c)$ ($100\%$ for a fully invested fund).
++//! 3. **Boundedness**: $0.0 \le \text{Overlap}(A, B) \le 100.0$ for all valid weight distributions.
++//! 4. **Deterministic Ordering**: Common stocks are sorted by $\max(w_A(c), w_B(c))$ descending,
++//!    with alphabetical tie-breaking on normalized company names.
+ 
+ use std::collections::BTreeMap;
+ 
+@@ -9,11 +24,14 @@ use serde::{Deserialize, Serialize};
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct FundHolding {
++    /// Company or security name (e.g. "HDFC Bank Ltd.").
+     pub name: String,
++    /// Percentage portfolio weight (e.g. `10.0` for 10.0%).
+     pub weight: Decimal,
+ }
+ 
+ impl FundHolding {
++    /// Constructs a new [`FundHolding`].
+     pub fn new(name: impl Into<String>, weight: Decimal) -> Self {
+         Self {
+             name: name.into(),
+@@ -26,9 +44,12 @@ impl FundHolding {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct CommonStock {
++    /// Display name of the common holding.
+     pub name: String,
++    /// Percentage weight of this holding in Fund A.
+     #[serde(with = "rust_decimal::serde::float")]
+     pub weight_a: Decimal,
++    /// Percentage weight of this holding in Fund B.
+     #[serde(with = "rust_decimal::serde::float")]
+     pub weight_b: Decimal,
+ }
+@@ -37,10 +58,14 @@ pub struct CommonStock {
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct FundOverlap {
++    /// Name of the first fund.
+     pub fund_a: String,
++    /// Name of the second fund.
+     pub fund_b: String,
++    /// Total percentage overlap: $\sum_{c} \min(w_A(c), w_B(c))$.
+     #[serde(with = "rust_decimal::serde::float")]
+     pub overlap_percentage: Decimal,
++    /// Common stocks held by both funds, ordered by maximum weight descending.
+     pub common_stocks: Vec<CommonStock>,
+ }
+ 

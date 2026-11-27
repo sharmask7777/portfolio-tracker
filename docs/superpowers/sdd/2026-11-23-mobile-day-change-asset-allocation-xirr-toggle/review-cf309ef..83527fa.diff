@@ -1,0 +1,1081 @@
+# Review package: cf309ef9527df36ac58755fedd4d137a684e6fcf..83527fab9256f2c790a537ad7fecc7d02aa96380
+
+## Commits
+83527fa feat(mobile): granular asset allocation and market cap breakdown
+
+## Files changed
+ mobile/app/(tabs)/analytics.tsx                    |  44 +++++-
+ mobile/src/components/AssetAllocationCard.test.tsx |  48 +++++++
+ mobile/src/components/AssetAllocationCard.tsx      |  44 +++---
+ mobile/src/services/analytics-service.test.ts      |  99 ++++++++++++++
+ mobile/src/services/analytics-service.ts           |  48 +++++--
+ mobile/src/services/hierarchy-types.ts             |   1 +
+ mobile/src/services/portfolio-calculations.test.ts |  89 ++++++++++++
+ mobile/src/services/portfolio-calculations.ts      | 150 +++++++++++----------
+ mobile/src/services/portfolio-service.test.ts      |   7 +-
+ mobile/tests/analytics-tab.test.tsx                |   4 +
+ 10 files changed, 427 insertions(+), 107 deletions(-)
+
+## Diff
+diff --git a/mobile/app/(tabs)/analytics.tsx b/mobile/app/(tabs)/analytics.tsx
+index 6f75b83..045ffb6 100644
+--- a/mobile/app/(tabs)/analytics.tsx
++++ b/mobile/app/(tabs)/analytics.tsx
+@@ -72,39 +72,76 @@ export function AllocationCard({ name, value, pct, color }: AllocationCardProps)
+     <View style={styles.allocationCard} key={name}>
+       <Text style={styles.allocationName}>{name}</Text>
+       <Text style={styles.allocationValue}>{formatIndianRupee(value)}</Text>
+       <Text style={[styles.allocationPct, { color }]}>{displayPct.toFixed(1)}%</Text>
+     </View>
+   );
+ }
+ 
+ export function AllocationCardsGrid({ xrayData }: { xrayData: XRayData }): React.ReactElement {
+   const alloc = xrayData.assetAllocation;
+-  const items: AllocationCardProps[] = [
++  const rawItems: AllocationCardProps[] = [
+     { name: 'Equity', value: alloc.equity.value, pct: alloc.equity.percentage, color: '#38bdf8' },
+     { name: 'Debt', value: alloc.debt.value, pct: alloc.debt.percentage, color: '#10b981' },
+-    { name: 'Cash', value: alloc.cash.value, pct: alloc.cash.percentage, color: '#a855f7' },
++    { name: 'Arbitrage', value: alloc.arbitrage?.value ?? 0, pct: alloc.arbitrage?.percentage ?? 0, color: '#ec4899' },
++    { name: 'Cash', value: alloc.cash.value, pct: alloc.cash.percentage, color: '#06b6d4' },
+     { name: 'Gold', value: alloc.gold.value, pct: alloc.gold.percentage, color: '#f59e0b' },
++    { name: 'Other', value: alloc.other.value, pct: alloc.other.percentage, color: '#71717a' },
+   ];
++  const items = rawItems.filter(
++    (it) => it.value > 0 || ['Equity', 'Debt', 'Cash', 'Gold'].includes(it.name),
++  );
+ 
+   return (
+-    <View style={styles.allocationSection}>
++    <View style={styles.allocationSection} testID="allocation-cards-grid">
+       <Text style={styles.sectionTitle}>Asset Allocation</Text>
+       <View style={styles.allocationGrid}>
+         {items.map((it) => (
+           <AllocationCard key={it.name} {...it} />
+         ))}
+       </View>
+     </View>
+   );
+ }
+ 
++export interface MarketCapSectionProps {
++  marketCap: XRayData['marketCap'];
++}
++
++export function MarketCapSection({ marketCap }: MarketCapSectionProps): React.ReactElement {
++  const items: AllocationCardProps[] = [
++    { name: 'Large Cap', value: marketCap.large.value, pct: marketCap.large.percentage, color: '#38bdf8' },
++    { name: 'Mid Cap', value: marketCap.mid.value, pct: marketCap.mid.percentage, color: '#a855f7' },
++    { name: 'Small Cap', value: marketCap.small.value, pct: marketCap.small.percentage, color: '#f59e0b' },
++  ];
++
++  if (marketCap.other && marketCap.other.value > 0) {
++    items.push({
++      name: 'Other',
++      value: marketCap.other.value,
++      pct: marketCap.other.percentage,
++      color: '#71717a',
++    });
++  }
++
++  return (
++    <View style={styles.allocationSection} testID="market-cap-section">
++      <Text style={styles.sectionTitle}>Market Cap Breakdown</Text>
++      <View style={styles.allocationGrid}>
++        {items.map((it) => (
++          <AllocationCard key={it.name} {...it} />
++        ))}
++      </View>
++    </View>
++  );
++}
++
+ export function AnalyticsHeader(): React.ReactElement {
+   return (
+     <View style={styles.header}>
+       <Text style={styles.category}>Look-Through Analytics</Text>
+       <Text style={styles.title}>Portfolio X-Ray</Text>
+     </View>
+   );
+ }
+ 
+ function useAnalyticsData() {
+@@ -222,19 +259,20 @@ export default function AnalyticsScreen(): React.ReactElement {
+       <ScopeSelectorHeader
+         scope={scopeState.scope}
+         profiles={profiles}
+         onSelectConsolidated={scopeState.setConsolidated}
+         onSelectMember={scopeState.setMemberScope}
+         totalFolios={folios.length}
+       />
+       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38bdf8" />}>
+         <AnalyticsHeader />
+         <AllocationCardsGrid xrayData={xrayData} />
++        <MarketCapSection marketCap={xrayData.marketCap} />
+         <ExpenseAnalysisCard {...expenseAnalysis} />
+         <Text style={styles.sectionTitle}>Visual Treemap</Text>
+         <SvgTreemap rootNode={rootHierarchyNode} onSelectStock={handleSelectFromTreemap} />
+         <StockOverlapTable exposures={exposures} totalPortfolioValue={xrayData.totalValue} excludeArbitrage={excludeArbitrage} onToggleExcludeArbitrage={setExcludeArbitrage} onSelectStock={setSelectedStock} />
+       </ScrollView>
+       <StockDetailModal visible={selectedStock !== null} stock={selectedStock} totalPortfolioValue={xrayData.totalValue} onClose={() => setSelectedStock(null)} />
+     </View>
+   );
+ }
+diff --git a/mobile/src/components/AssetAllocationCard.test.tsx b/mobile/src/components/AssetAllocationCard.test.tsx
+new file mode 100644
+index 0000000..bc29a04
+--- /dev/null
++++ b/mobile/src/components/AssetAllocationCard.test.tsx
+@@ -0,0 +1,48 @@
++import React from 'react';
++import { describe, it, expect, vi } from 'vitest';
++
++vi.mock('react-native', () => ({
++  StyleSheet: { create: (s: Record<string, unknown>) => s },
++  View: (props: Record<string, unknown>) => ({ type: 'View', props }),
++  Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
++}));
++
++import {
++  AssetAllocationCard,
++  ASSET_CLASS_COLORS,
++} from './AssetAllocationCard';
++import type { AssetAllocationItem } from '../services/portfolio-calculations';
++
++function getProps(element: React.ReactElement): Record<string, unknown> {
++  return element.props as Record<string, unknown>;
++}
++
++describe('AssetAllocationCard', () => {
++  it('renders empty message when allocation array is empty', () => {
++    const element = AssetAllocationCard({ allocation: [], totalValue: 0 });
++    expect(getProps(element)['testID']).toBe('asset-allocation-card');
++  });
++
++  it('renders segmented bars and legend for canonical categories', () => {
++    const allocation: AssetAllocationItem[] = [
++      { name: 'Equity', amount: 600000, percentage: 60, color: '#38bdf8' },
++      { name: 'Debt', amount: 200000, percentage: 20, color: '#10b981' },
++      { name: 'Arbitrage', amount: 100000, percentage: 10, color: '#ec4899' },
++      { name: 'Gold', amount: 50000, percentage: 5, color: '#f59e0b' },
++      { name: 'Cash', amount: 30000, percentage: 3, color: '#06b6d4' },
++      { name: 'Other', amount: 20000, percentage: 2, color: '#71717a' },
++    ];
++
++    const element = AssetAllocationCard({ allocation, totalValue: 1000000 });
++    expect(getProps(element)['testID']).toBe('asset-allocation-card');
++  });
++
++  it('provides canonical colors in ASSET_CLASS_COLORS map', () => {
++    expect(ASSET_CLASS_COLORS['Equity']).toBe('#38bdf8');
++    expect(ASSET_CLASS_COLORS['Debt']).toBe('#10b981');
++    expect(ASSET_CLASS_COLORS['Arbitrage']).toBe('#ec4899');
++    expect(ASSET_CLASS_COLORS['Gold']).toBe('#f59e0b');
++    expect(ASSET_CLASS_COLORS['Cash']).toBe('#06b6d4');
++    expect(ASSET_CLASS_COLORS['Other']).toBe('#71717a');
++  });
++});
+diff --git a/mobile/src/components/AssetAllocationCard.tsx b/mobile/src/components/AssetAllocationCard.tsx
+index 4783eb0..ef15c5c 100644
+--- a/mobile/src/components/AssetAllocationCard.tsx
++++ b/mobile/src/components/AssetAllocationCard.tsx
+@@ -1,13 +1,13 @@
+ import React from 'react';
+ import { StyleSheet, Text, View } from 'react-native';
+-import { formatInr, type AssetAllocationItem } from '../services/portfolio-service';
++import { formatInr, type AssetAllocationItem } from '../services/portfolio-calculations';
+ 
+ /**
+  * Props for {@link AssetAllocationCard}.
+  */
+ export interface AssetAllocationCardProps {
+   /** Array of asset allocation breakdown items */
+   allocation: AssetAllocationItem[];
+   /** Total portfolio current valuation amount in INR */
+   totalValue: number;
+ }
+@@ -70,65 +70,79 @@ const styles = StyleSheet.create({
+     fontWeight: '600',
+     color: '#f4f4f5',
+   },
+   emptyText: {
+     fontSize: 13,
+     color: '#71717a',
+     fontStyle: 'italic',
+   },
+ });
+ 
++/** Standard hex color map for canonical asset classes. */
++export const ASSET_CLASS_COLORS: Record<string, string> = {
++  Equity: '#38bdf8',
++  Debt: '#10b981',
++  Arbitrage: '#ec4899',
++  Gold: '#f59e0b',
++  Cash: '#06b6d4',
++  Other: '#71717a',
++};
++
+ function renderAllocationRow(item: AssetAllocationItem): React.ReactElement {
++  const color = item.color || ASSET_CLASS_COLORS[item.name] || '#71717a';
+   return (
+     <View key={item.name} style={styles.legendRow}>
+       <View style={styles.legendLabelGroup}>
+-        <View style={[styles.dot, { backgroundColor: item.color }]} />
++        <View style={[styles.dot, { backgroundColor: color }]} />
+         <Text style={styles.className}>{item.name}</Text>
+         <Text style={styles.percentBadge}>{item.percentage}%</Text>
+       </View>
+       <Text style={styles.classAmount}>{formatInr(item.amount)}</Text>
+     </View>
+   );
+ }
+ 
+ /**
+- * Card displaying portfolio asset class distribution (Equity, Debt, Hybrid, Commodities)
++ * Card displaying portfolio asset class distribution (Equity, Debt, Arbitrage, Gold, Cash, Other)
+  * as a horizontal segmented progress bar with legend.
+  *
+  * @param props - Component properties {@link AssetAllocationCardProps}
+  * @returns React Native element
+  */
+ export function AssetAllocationCard({
+   allocation,
+   totalValue: _totalValue,
+ }: AssetAllocationCardProps): React.ReactElement {
+   return (
+     <View style={styles.card} testID="asset-allocation-card">
+       <Text style={styles.header}>Asset Allocation</Text>
+ 
+       {allocation.length === 0 ? (
+         <Text style={styles.emptyText}>No asset allocation data available</Text>
+       ) : (
+         <>
+           <View style={styles.barContainer}>
+-            {allocation.map((item) => (
+-              <View
+-                key={item.name}
+-                style={[
+-                  styles.barSegment,
+-                  {
+-                    backgroundColor: item.color,
+-                    flex: item.percentage > 0 ? item.percentage : 1,
+-                  },
+-                ]}
+-              />
+-            ))}
++            {allocation.map((item) => {
++              const color = item.color || ASSET_CLASS_COLORS[item.name] || '#71717a';
++              return (
++                <View
++                  key={item.name}
++                  style={[
++                    styles.barSegment,
++                    {
++                      backgroundColor: color,
++                      flex: item.percentage > 0 ? item.percentage : 1,
++                    },
++                  ]}
++                />
++              );
++            })}
+           </View>
+ 
+           <View style={styles.legend}>
+             {allocation.map((item) => renderAllocationRow(item))}
+           </View>
+         </>
+       )}
+     </View>
+   );
+ }
+diff --git a/mobile/src/services/analytics-service.test.ts b/mobile/src/services/analytics-service.test.ts
+new file mode 100644
+index 0000000..153fe45
+--- /dev/null
++++ b/mobile/src/services/analytics-service.test.ts
+@@ -0,0 +1,99 @@
++import { describe, it, expect } from 'vitest';
++import { deriveAnalyticsFromHoldings } from './analytics-service';
++import type { EnrichedHolding } from './portfolio-calculations';
++
++describe('analytics-service', () => {
++  const mockHoldings: EnrichedHolding[] = [
++    {
++      id: 'hold-1',
++      folio_number: 'FOLIO-101',
++      amfi_code: '120503',
++      scheme_name: 'Synthetic Flexi Cap Fund Direct Growth',
++      isin: 'INF879O01018',
++      units: 1000,
++      invested_cost: 400000,
++      current_nav: 600,
++      current_value: 600000,
++      asset_class: 'EQUITY',
++      nav_date: '2026-03-31',
++      updated_at: '2026-03-31T10:00:00.000Z',
++      day_change: 2000,
++      day_change_pct: 0.33,
++      xirr: 0.15,
++      absolute_return: 0.5,
++      asset_category: 'EQUITY',
++      dayChange: 2000,
++      dayChangePct: 0.33,
++      gainLoss: 200000,
++      gainLossPct: 50,
++    },
++    {
++      id: 'hold-2',
++      folio_number: 'FOLIO-102',
++      amfi_code: '119551',
++      scheme_name: 'Synthetic Equity Arbitrage Fund Direct Growth',
++      isin: 'INF174K01LS2',
++      units: 5000,
++      invested_cost: 150000,
++      current_nav: 40,
++      current_value: 200000,
++      asset_class: 'HYBRID',
++      nav_date: '2026-03-31',
++      updated_at: '2026-03-31T10:00:00.000Z',
++      day_change: 100,
++      day_change_pct: 0.05,
++      xirr: 0.08,
++      absolute_return: 0.33,
++      asset_category: 'ARBITRAGE',
++      dayChange: 100,
++      dayChangePct: 0.05,
++      gainLoss: 50000,
++      gainLossPct: 33.33,
++    },
++    {
++      id: 'hold-3',
++      folio_number: 'FOLIO-103',
++      amfi_code: '100123',
++      scheme_name: 'Synthetic Liquid Fund Direct Growth',
++      isin: 'INF200K01VA8',
++      units: 100,
++      invested_cost: 100000,
++      current_nav: 1000,
++      current_value: 100000,
++      asset_class: 'DEBT',
++      nav_date: '2026-03-31',
++      updated_at: '2026-03-31T10:00:00.000Z',
++      day_change: 50,
++      day_change_pct: 0.05,
++      xirr: 0.06,
++      absolute_return: 0.05,
++      asset_category: 'CASH',
++      dayChange: 50,
++      dayChangePct: 0.05,
++      gainLoss: 0,
++      gainLossPct: 0,
++    },
++  ];
++
++  it('produces non-empty marketCap with large, mid, small allocations', () => {
++    const { xrayData } = deriveAnalyticsFromHoldings(mockHoldings);
++
++    expect(xrayData.marketCap).toBeDefined();
++    expect(xrayData.marketCap.large).toBeDefined();
++    expect(xrayData.marketCap.large.percentage).toBeGreaterThan(0);
++    expect(xrayData.marketCap.large.value).toBeGreaterThan(0);
++    expect(xrayData.marketCap.mid).toBeDefined();
++    expect(xrayData.marketCap.mid.percentage).toBeGreaterThan(0);
++    expect(xrayData.marketCap.small).toBeDefined();
++    expect(xrayData.marketCap.small.percentage).toBeGreaterThan(0);
++  });
++
++  it('produces assetAllocation with arbitrage category breakdown', () => {
++    const { xrayData } = deriveAnalyticsFromHoldings(mockHoldings);
++
++    expect(xrayData.assetAllocation).toBeDefined();
++    expect(xrayData.assetAllocation.arbitrage).toBeDefined();
++    expect(xrayData.assetAllocation.arbitrage?.value).toBe(200000);
++    expect(xrayData.assetAllocation.arbitrage?.percentage).toBeCloseTo(22.22, 1);
++  });
++});
+diff --git a/mobile/src/services/analytics-service.ts b/mobile/src/services/analytics-service.ts
+index a116441..e1cad38 100644
+--- a/mobile/src/services/analytics-service.ts
++++ b/mobile/src/services/analytics-service.ts
+@@ -21,53 +21,76 @@ function isGold(name: string, assetClass: string): boolean {
+ }
+ 
+ function isDebt(assetClass: string): boolean {
+   return assetClass.includes('debt') || assetClass.includes('bond');
+ }
+ 
+ function isHybrid(assetClass: string): boolean {
+   return assetClass.includes('hybrid') || assetClass.includes('balanced');
+ }
+ 
+-function categorizeHolding(nameLower: string, assetClassLower: string): AssetCategory {
++function matchHoldingCategory(cat: string): AssetCategory | null {
++  if (cat.includes('arbitrage')) return 'arbitrage';
++  if (cat.includes('cash')) return 'cash';
++  if (cat.includes('gold')) return 'gold';
++  if (cat.includes('debt')) return 'debt';
++  if (cat.includes('hybrid')) return 'hybrid';
++  return null;
++}
++
++function matchHoldingTokens(nameLower: string, assetClassLower: string): AssetCategory {
+   if (nameLower.includes('arbitrage')) return 'arbitrage';
+   if (isCashOrLiquid(nameLower)) return 'cash';
+   if (isGold(nameLower, assetClassLower)) return 'gold';
+   if (isDebt(assetClassLower)) return 'debt';
+   if (isHybrid(assetClassLower)) return 'hybrid';
+   return 'equity';
+ }
+ 
++function categorizeHolding(
++  nameLower: string,
++  assetClassLower: string,
++  categoryLower?: string,
++): AssetCategory {
++  if (categoryLower) {
++    const matched = matchHoldingCategory(categoryLower);
++    if (matched) return matched;
++  }
++  return matchHoldingTokens(nameLower, assetClassLower);
++}
++
+ function accumulateVal(acc: AllocationAccumulator, cat: AssetCategory, val: number): void {
+   if (cat === 'arbitrage') {
+     acc.arbitrage += val;
+-    acc.equity += val * 0.65;
+-    acc.debt += val * 0.35;
+   } else if (cat === 'cash') {
+     acc.cash += val;
+   } else if (cat === 'gold') {
+     acc.gold += val;
+   } else if (cat === 'debt') {
+     acc.debt += val;
+   } else if (cat === 'hybrid') {
+     acc.equity += val * 0.65;
+     acc.debt += val * 0.35;
+   } else {
+     acc.equity += val;
+   }
+ }
+ 
+ function classifyHoldingAmounts(holdings: EnrichedHolding[]): AllocationAccumulator {
+   const acc: AllocationAccumulator = { equity: 0, debt: 0, cash: 0, gold: 0, other: 0, arbitrage: 0 };
+   for (const h of holdings) {
+     const val = Math.max(0, h.current_value);
+-    const cat = categorizeHolding(h.scheme_name.toLowerCase(), (h.asset_class || '').toLowerCase());
++    const cat = categorizeHolding(
++      h.scheme_name.toLowerCase(),
++      (h.asset_class || '').toLowerCase(),
++      (h.asset_category || '').toLowerCase(),
++    );
+     accumulateVal(acc, cat, val);
+   }
+   return acc;
+ }
+ 
+ const TOP_STOCKS_BLUEPRINT: Array<{ name: string; sector: string; weightShare: number }> = [
+   { name: 'HDFC Bank Ltd.', sector: 'Financial Services', weightShare: 0.28 },
+   { name: 'ICICI Bank Ltd.', sector: 'Financial Services', weightShare: 0.22 },
+   { name: 'Infosys Ltd.', sector: 'Technology', weightShare: 0.20 },
+   { name: 'Reliance Industries Ltd.', sector: 'Energy', weightShare: 0.18 },
+@@ -117,42 +140,43 @@ function buildXRayData(totalValue: number, acc: AllocationAccumulator): XRayData
+       ]
+     : [];
+ 
+   return {
+     totalValue,
+     assetAllocation: {
+       equity: { percentage: toPct(eq), value: eq },
+       debt: { percentage: toPct(acc.debt), value: acc.debt },
+       cash: { percentage: toPct(acc.cash), value: acc.cash },
+       gold: { percentage: toPct(acc.gold), value: acc.gold },
++      arbitrage: { percentage: toPct(acc.arbitrage), value: acc.arbitrage },
+       other: { percentage: toPct(acc.other), value: acc.other },
+     },
+     sectors,
+     marketCap: {
+-      large: { percentage: 65, value: Math.round(eq * 0.65 * 100) / 100 },
+-      mid: { percentage: 25, value: Math.round(eq * 0.25 * 100) / 100 },
+-      small: { percentage: 10, value: Math.round(eq * 0.10 * 100) / 100 },
++      large: { percentage: eq > 0 ? 65 : 0, value: Math.round(eq * 0.65 * 100) / 100 },
++      mid: { percentage: eq > 0 ? 25 : 0, value: Math.round(eq * 0.25 * 100) / 100 },
++      small: { percentage: eq > 0 ? 10 : 0, value: Math.round(eq * 0.10 * 100) / 100 },
+     },
+     exArbitrage: {
+       assetAllocation: {
+-        equity: { percentage: toPct(eq - acc.arbitrage * 0.65), value: Math.max(0, eq - acc.arbitrage * 0.65) },
++        equity: { percentage: toPct(eq), value: eq },
+         debt: { percentage: toPct(acc.debt), value: acc.debt },
+         cash: { percentage: toPct(acc.cash), value: acc.cash },
+         gold: { percentage: toPct(acc.gold), value: acc.gold },
+         arbitrage: { percentage: toPct(acc.arbitrage), value: acc.arbitrage },
+-        other: { percentage: 0, value: 0 },
++        other: { percentage: toPct(acc.other), value: acc.other },
+       },
+       sectors,
+       marketCap: {
+-        large: { percentage: 65, value: Math.round(eq * 0.65 * 100) / 100 },
+-        mid: { percentage: 25, value: Math.round(eq * 0.25 * 100) / 100 },
+-        small: { percentage: 10, value: Math.round(eq * 0.10 * 100) / 100 },
++        large: { percentage: eq > 0 ? 65 : 0, value: Math.round(eq * 0.65 * 100) / 100 },
++        mid: { percentage: eq > 0 ? 25 : 0, value: Math.round(eq * 0.25 * 100) / 100 },
++        small: { percentage: eq > 0 ? 10 : 0, value: Math.round(eq * 0.10 * 100) / 100 },
+       },
+     },
+   };
+ }
+ 
+ /**
+  * Derives comprehensive macro XRayData and individual stock look-through exposures from holdings.
+  *
+  * @param holdings Array of enriched portfolio holdings
+  * @returns Derived XRay analytics data and stock exposures
+diff --git a/mobile/src/services/hierarchy-types.ts b/mobile/src/services/hierarchy-types.ts
+index 1c5d9ea..d723cc4 100644
+--- a/mobile/src/services/hierarchy-types.ts
++++ b/mobile/src/services/hierarchy-types.ts
+@@ -39,20 +39,21 @@ export interface StockExposure {
+  * Macro portfolio analytical composition and allocations.
+  */
+ export interface XRayData {
+   totalValue: number;
+   assetAllocation: {
+     equity: { percentage: number; value: number };
+     debt: { percentage: number; value: number };
+     cash: { percentage: number; value: number };
+     gold: { percentage: number; value: number };
+     other: { percentage: number; value: number };
++    arbitrage?: { percentage: number; value: number } | undefined;
+   };
+   sectors: { name: string; percentage: number; value: number }[];
+   marketCap: {
+     large: { percentage: number; value: number };
+     mid: { percentage: number; value: number };
+     small: { percentage: number; value: number };
+     other?: { percentage: number; value: number } | undefined;
+   };
+   expenseAnalysis?: {
+     totalAnnualFees: number;
+diff --git a/mobile/src/services/portfolio-calculations.test.ts b/mobile/src/services/portfolio-calculations.test.ts
+index 59407c0..34606ae 100644
+--- a/mobile/src/services/portfolio-calculations.test.ts
++++ b/mobile/src/services/portfolio-calculations.test.ts
+@@ -1,14 +1,16 @@
+ import { describe, it, expect } from 'vitest';
+ import {
+   mapRawFolioToHolding,
+   summarizeHoldings,
++  normalizeAssetClass,
++  buildAssetAllocation,
+   type ServerFolioData,
+   type EnrichedHolding,
+ } from './portfolio-calculations';
+ 
+ describe('portfolio-calculations', () => {
+   describe('mapRawFolioToHolding', () => {
+     it('extracts dayChange, dayChangePercentage, xirr, absoluteReturn, and assetCategory from ServerFolioData', () => {
+       const serverFolio: ServerFolioData = {
+         id: 'folio-synthetic-01',
+         number: 'FOLIO-SYN-101',
+@@ -118,11 +120,98 @@ describe('portfolio-calculations', () => {
+       ];
+ 
+       const summary = summarizeHoldings(holdings);
+ 
+       expect(summary.totalCurrentValue).toBe(16200);
+       expect(summary.totalInvestedCost).toBe(15000);
+       expect(summary.dayGain).toBe(150);
+       expect(summary.dayGainPct).toBe(0.93);
+     });
+   });
++
++  describe('normalizeAssetClass canonical mapping', () => {
++    it('maps schemes with AssetCategory ARBITRAGE or name containing Arbitrage to Arbitrage', () => {
++      expect(normalizeAssetClass('Kotak Arbitrage Fund', 'ARBITRAGE')).toBe('Arbitrage');
++      expect(normalizeAssetClass('Kotak Equity Arbitrage Fund')).toBe('Arbitrage');
++      expect(normalizeAssetClass('', 'ARBITRAGE')).toBe('Arbitrage');
++    });
++
++    it('maps schemes with AssetCategory EQUITY, DEBT, GOLD, CASH to respective classes', () => {
++      expect(normalizeAssetClass('Flexi Cap Fund', 'EQUITY')).toBe('Equity');
++      expect(normalizeAssetClass('Short Term Bond', 'DEBT')).toBe('Debt');
++      expect(normalizeAssetClass('Gold BeES', 'GOLD')).toBe('Gold');
++      expect(normalizeAssetClass('Overnight Liquid', 'CASH')).toBe('Cash');
++    });
++
++    it('maps unknown schemes to Other and never Gold/Others, preventing rogue gold bug', () => {
++      expect(normalizeAssetClass('Unclassified Real Estate Venture')).toBe('Other');
++      expect(normalizeAssetClass('', '')).toBe('Other');
++      expect(normalizeAssetClass('Random Instrument', 'OTHER')).toBe('Other');
++      expect(normalizeAssetClass('Unknown XYZ')).not.toBe('Gold/Others');
++    });
++  });
++
++  describe('buildAssetAllocation canonical categories and colors', () => {
++    it('maps 6 canonical categories with standard palette', () => {
++      const holdings: EnrichedHolding[] = [
++        {
++          id: 'h1',
++          folio_number: 'F1',
++          amfi_code: '1',
++          scheme_name: 'Equity Fund',
++          isin: 'INF1',
++          units: 10,
++          invested_cost: 1000,
++          current_nav: 100,
++          current_value: 1000,
++          asset_class: 'EQUITY',
++          nav_date: '2026-03-31',
++          updated_at: '2026-03-31T10:00:00.000Z',
++          day_change: 0,
++          day_change_pct: 0,
++          xirr: 0,
++          absolute_return: 0,
++          asset_category: 'EQUITY',
++          dayChange: 0,
++          dayChangePct: 0,
++          gainLoss: 0,
++          gainLossPct: 0,
++        },
++        {
++          id: 'h2',
++          folio_number: 'F2',
++          amfi_code: '2',
++          scheme_name: 'Arbitrage Fund',
++          isin: 'INF2',
++          units: 10,
++          invested_cost: 500,
++          current_nav: 50,
++          current_value: 500,
++          asset_class: 'HYBRID',
++          nav_date: '2026-03-31',
++          updated_at: '2026-03-31T10:00:00.000Z',
++          day_change: 0,
++          day_change_pct: 0,
++          xirr: 0,
++          absolute_return: 0,
++          asset_category: 'ARBITRAGE',
++          dayChange: 0,
++          dayChangePct: 0,
++          gainLoss: 0,
++          gainLossPct: 0,
++        },
++      ];
++
++      const allocation = buildAssetAllocation(holdings, 1500);
++      const names = allocation.map((a) => a.name);
++      expect(names).toContain('Equity');
++      expect(names).toContain('Arbitrage');
++      expect(names).not.toContain('Gold/Others');
++
++      const eq = allocation.find((a) => a.name === 'Equity');
++      expect(eq?.color).toBe('#38bdf8');
++
++      const arb = allocation.find((a) => a.name === 'Arbitrage');
++      expect(arb?.color).toBe('#ec4899');
++    });
++  });
+ });
+diff --git a/mobile/src/services/portfolio-calculations.ts b/mobile/src/services/portfolio-calculations.ts
+index ce506b9..b08e42f 100644
+--- a/mobile/src/services/portfolio-calculations.ts
++++ b/mobile/src/services/portfolio-calculations.ts
+@@ -1,78 +1,101 @@
+ import type { HoldingEntity } from '../db/schema';
+ import { generateUuid } from '../db/repository';
+ 
++export type CanonicalAssetClass = 'Equity' | 'Debt' | 'Arbitrage' | 'Gold' | 'Cash' | 'Other';
++
+ export interface AssetAllocationItem {
+-  name: 'Equity' | 'Debt' | 'Hybrid' | 'Gold/Others';
++  name: CanonicalAssetClass;
+   amount: number;
+   percentage: number;
+   color: string;
+ }
+ 
+ export interface EnrichedHolding extends HoldingEntity {
+   dayChange: number;
+   dayChangePct: number;
+   gainLoss: number;
+   gainLossPct: number;
+ }
+ 
+ export interface GroupedHoldings {
+-  assetClass: 'Equity' | 'Debt' | 'Hybrid' | 'Gold/Others';
++  assetClass: CanonicalAssetClass;
+   totalValue: number;
+   totalInvested: number;
+   holdings: EnrichedHolding[];
+ }
+ 
+ export interface ServerTransactionData {
+-  id?: string;
+-  type?: string;
+-  date?: string;
+-  units?: number;
+-  nav?: number;
+-  amount?: number;
++  id?: string; type?: string; date?: string; units?: number; nav?: number; amount?: number;
+ }
+ 
+ export interface ServerFolioData {
+   id?: string | undefined;
+   number?: string | undefined;
+   folioNumber?: string | undefined;
+   amc?: string | undefined;
+   amcName?: string | undefined;
+   pan?: string | undefined;
+   units?: number | string | undefined;
+   assetCategory?: string | undefined;
+-  asset?: {
+-    amfiCode?: string | null | undefined;
+-    name?: string | undefined;
+-    isin?: string | null | undefined;
+-    assetType?: string | undefined;
+-  } | undefined;
++  asset?: { amfiCode?: string | null | undefined; name?: string | undefined; isin?: string | null | undefined; assetType?: string | undefined } | undefined;
+   metrics?: {
+     investedAmount?: number | undefined;
+     currentValue?: number | undefined;
+     currentPrice?: number | undefined;
+     dayChange?: number | undefined;
+     dayChangePercentage?: number | undefined;
+     xirr?: number | undefined;
+     absoluteReturn?: number | undefined;
+   } | undefined;
+   transactions?: ServerTransactionData[] | undefined;
+ }
+ 
++function matchCategory(cat: string): CanonicalAssetClass | null {
++  const u = cat.trim().toUpperCase();
++  if (u.includes('ARBITRAGE')) return 'Arbitrage';
++  if (u.includes('EQUITY')) return 'Equity';
++  if (u.includes('DEBT')) return 'Debt';
++  if (u.includes('GOLD')) return 'Gold';
++  if (u.includes('CASH')) return 'Cash';
++  if (u.includes('OTHER')) return 'Other';
++  return null;
++}
++
++const DEBT_TOKENS = ['debt', 'bond', 'liquid', 'gilt', 'treasury'];
++const EQUITY_TOKENS = ['equity', 'stock', 'index'];
++const GOLD_TOKENS = ['gold', 'sgb', 'silver'];
++const CASH_TOKENS = ['cash', 'overnight'];
++
++function hasToken(str: string, tokens: readonly string[]): boolean {
++  return tokens.some((t) => str.includes(t));
++}
++
++function matchTokens(combined: string): CanonicalAssetClass {
++  const l = combined.toLowerCase();
++  if (l.includes('arbitrage')) return 'Arbitrage';
++  if (hasToken(l, EQUITY_TOKENS)) return 'Equity';
++  if (hasToken(l, DEBT_TOKENS)) return 'Debt';
++  if (hasToken(l, GOLD_TOKENS)) return 'Gold';
++  if (hasToken(l, CASH_TOKENS)) return 'Cash';
++  return 'Other';
++}
++
+ export function normalizeAssetClass(
+   raw: string,
+-): 'Equity' | 'Debt' | 'Hybrid' | 'Gold/Others' {
+-  const upper = (raw || '').toUpperCase().trim();
+-  if (upper.includes('EQ') || upper.includes('EQUITY') || upper.includes('STOCK')) return 'Equity';
+-  if (upper.includes('DEBT') || upper.includes('BOND') || upper.includes('LIQUID')) return 'Debt';
+-  if (upper.includes('HYBRID') || upper.includes('BALANCED')) return 'Hybrid';
+-  return 'Gold/Others';
++  category?: string | null,
++): CanonicalAssetClass {
++  if (category) {
++    const matched = matchCategory(category);
++    if (matched) return matched;
++  }
++  return matchTokens(`${raw || ''} ${category || ''}`);
+ }
+ 
+ export function formatInr(amount: number): string {
+   const isNegative = amount < 0;
+   const abs = Math.abs(amount);
+   const formatted = abs.toLocaleString('en-IN', {
+     maximumFractionDigits: 2,
+     minimumFractionDigits: 2,
+   });
+   return `${isNegative ? '-' : ''}₹${formatted}`;
+@@ -84,48 +107,55 @@ export function formatPct(pct: number): string {
+ }
+ 
+ export function filterHoldings(
+   holdings: EnrichedHolding[],
+   query?: string,
+   assetClass?: string,
+ ): EnrichedHolding[] {
+   let list = holdings;
+   if (query && query.trim().length > 0) {
+     const q = query.trim().toLowerCase();
+-    list = list.filter(
+-      (h) =>
+-        h.scheme_name.toLowerCase().includes(q) ||
+-        h.folio_number.toLowerCase().includes(q),
+-    );
++    list = list.filter((h) => h.scheme_name.toLowerCase().includes(q) || h.folio_number.toLowerCase().includes(q));
+   }
+   if (assetClass && assetClass.trim().length > 0) {
+-    list = list.filter((h) => normalizeAssetClass(h.asset_class) === assetClass);
++    list = list.filter((h) => normalizeAssetClass(h.asset_class, h.asset_category) === assetClass);
+   }
+   return list;
+ }
+ 
+-const ASSET_CLASSES = ['Equity', 'Debt', 'Hybrid', 'Gold/Others'] as const;
++export const ASSET_CLASSES: readonly CanonicalAssetClass[] = [
++  'Equity',
++  'Debt',
++  'Arbitrage',
++  'Gold',
++  'Cash',
++  'Other',
++] as const;
+ 
+-const ALLOCATION_COLORS: Record<string, string> = {
+-  Equity: '#3b82f6',
++export const ALLOCATION_COLORS: Record<CanonicalAssetClass, string> = {
++  Equity: '#38bdf8',
+   Debt: '#10b981',
+-  Hybrid: '#8b5cf6',
+-  'Gold/Others': '#f59e0b',
++  Arbitrage: '#ec4899',
++  Gold: '#f59e0b',
++  Cash: '#06b6d4',
++  Other: '#71717a',
+ };
+ 
+ export function groupHoldingsByAssetClass(
+   holdings: EnrichedHolding[],
+ ): GroupedHoldings[] {
+   const groups: GroupedHoldings[] = [];
+ 
+   for (const c of ASSET_CLASSES) {
+-    const list = holdings.filter((h) => normalizeAssetClass(h.asset_class) === c);
++    const list = holdings.filter(
++      (h) => normalizeAssetClass(h.asset_class, h.asset_category) === c,
++    );
+     if (list.length > 0) {
+       const val = list.reduce((sum, item) => sum + item.current_value, 0);
+       const inv = list.reduce((sum, item) => sum + item.invested_cost, 0);
+       groups.push({
+         assetClass: c,
+         totalValue: Math.round(val * 100) / 100,
+         totalInvested: Math.round(inv * 100) / 100,
+         holdings: list,
+       });
+     }
+@@ -134,84 +164,60 @@ export function groupHoldingsByAssetClass(
+ }
+ 
+ export function buildAssetAllocation(
+   holdings: EnrichedHolding[],
+   totalValue: number,
+ ): AssetAllocationItem[] {
+   const items: AssetAllocationItem[] = [];
+ 
+   for (const c of ASSET_CLASSES) {
+     const sum = holdings
+-      .filter((h) => normalizeAssetClass(h.asset_class) === c)
++      .filter((h) => normalizeAssetClass(h.asset_class, h.asset_category) === c)
+       .reduce((acc, h) => acc + h.current_value, 0);
+     if (sum > 0) {
+       const percentage = totalValue > 0
+         ? Math.round((sum / totalValue) * 100 * 10) / 10
+         : 0;
+       items.push({
+         name: c,
+         amount: Math.round(sum * 100) / 100,
+         percentage,
+-        color: ALLOCATION_COLORS[c] ?? '#94a3b8',
++        color: ALLOCATION_COLORS[c],
+       });
+     }
+   }
+   return items;
+ }
+ 
+ function extractFolioNumber(f: ServerFolioData): string {
+   return f.number || f.folioNumber || 'UNKNOWN';
+ }
+ 
+-function extractHoldingPrices(
+-  f: ServerFolioData,
+-  units: number,
+-): { price: number; val: number } {
+-  const metrics = f.metrics;
+-  const price = metrics && typeof metrics.currentPrice === 'number' ? metrics.currentPrice : 0;
+-  const val = metrics && typeof metrics.currentValue === 'number'
+-    ? metrics.currentValue
+-    : units * price;
++function extractHoldingPrices(f: ServerFolioData, units: number): { price: number; val: number } {
++  const price = typeof f.metrics?.currentPrice === 'number' ? f.metrics.currentPrice : 0;
++  const val = typeof f.metrics?.currentValue === 'number' ? f.metrics.currentValue : units * price;
+   return { price, val };
+ }
+ 
+-function extractAssetMeta(f: ServerFolioData): {
+-  schemeName: string;
+-  amfiCode: string | null;
+-  isin: string | null;
+-  assetClass: string;
+-} {
+-  const asset = f.asset;
++function extractAssetMeta(f: ServerFolioData) {
+   return {
+-    schemeName: asset?.name || 'Unknown Scheme',
+-    amfiCode: asset?.amfiCode || null,
+-    isin: asset?.isin || null,
+-    assetClass: asset?.assetType || 'EQUITY',
++    schemeName: f.asset?.name || 'Unknown Scheme', amfiCode: f.asset?.amfiCode || null,
++    isin: f.asset?.isin || null, assetClass: f.asset?.assetType || 'EQUITY',
+   };
+ }
+ 
+-function extractHoldingMetrics(metrics?: ServerFolioData['metrics']): {
+-  investedCost: number;
+-  dayChange: number;
+-  dayChangePct: number;
+-  xirr: number;
+-  absoluteReturn: number;
+-} {
+-  if (!metrics) {
+-    return { investedCost: 0, dayChange: 0, dayChangePct: 0, xirr: 0, absoluteReturn: 0 };
+-  }
++function extractHoldingMetrics(m?: ServerFolioData['metrics']) {
++  if (!m) return { investedCost: 0, dayChange: 0, dayChangePct: 0, xirr: 0, absoluteReturn: 0 };
+   return {
+-    investedCost: Number(metrics.investedAmount || 0),
+-    dayChange: metrics.dayChange ?? 0,
+-    dayChangePct: metrics.dayChangePercentage ?? 0,
+-    xirr: metrics.xirr ?? 0,
+-    absoluteReturn: metrics.absoluteReturn ?? 0,
++    investedCost: Number(m.investedAmount || 0),
++    dayChange: m.dayChange ?? 0, dayChangePct: m.dayChangePercentage ?? 0,
++    xirr: m.xirr ?? 0, absoluteReturn: m.absoluteReturn ?? 0,
+   };
+ }
+ 
+ export function mapRawFolioToHolding(
+   f: ServerFolioData,
+   now: string,
+ ): HoldingEntity | null {
+   const units = Number(f.units || 0);
+   const folioNumber = extractFolioNumber(f);
+   const { price, val } = extractHoldingPrices(f, units);
+@@ -267,25 +273,23 @@ export function summarizeHoldings(holdings: EnrichedHolding[]): {
+     totalValue += h.current_value;
+     totalInvested += h.invested_cost;
+     totalDayGain += h.dayChange;
+     prevTotalValue += h.current_value - h.dayChange;
+     if (!latestUpdate || h.updated_at > latestUpdate) latestUpdate = h.updated_at;
+   }
+ 
+   const roundedValue = Math.round(totalValue * 100) / 100;
+   const roundedInvested = Math.round(totalInvested * 100) / 100;
+   const unrealizedGain = Math.round((roundedValue - roundedInvested) * 100) / 100;
+-  const unrealizedGainPct = roundedInvested > 0
+-    ? Math.round((unrealizedGain / roundedInvested) * 100 * 100) / 100 : 0;
++  const unrealizedGainPct = roundedInvested > 0 ? Math.round((unrealizedGain / roundedInvested) * 10000) / 100 : 0;
+   const roundedDayGain = Math.round(totalDayGain * 100) / 100;
+-  const dayGainPct = prevTotalValue > 0
+-    ? Math.round((roundedDayGain / prevTotalValue) * 100 * 100) / 100 : 0;
++  const dayGainPct = prevTotalValue > 0 ? Math.round((roundedDayGain / prevTotalValue) * 10000) / 100 : 0;
+ 
+   return {
+     totalCurrentValue: roundedValue,
+     totalInvestedCost: roundedInvested,
+     unrealizedGain,
+     unrealizedGainPct,
+     dayGain: roundedDayGain,
+     dayGainPct,
+     assetAllocation: buildAssetAllocation(holdings, roundedValue),
+     holdingsCount: holdings.length,
+diff --git a/mobile/src/services/portfolio-service.test.ts b/mobile/src/services/portfolio-service.test.ts
+index e69d267..b45cd32 100644
+--- a/mobile/src/services/portfolio-service.test.ts
++++ b/mobile/src/services/portfolio-service.test.ts
+@@ -149,24 +149,23 @@ describe('portfolio-service', () => {
+     await closeDatabase(db);
+     setDatabaseInstance(null);
+   });
+ 
+   describe('Formatting & Normalization', () => {
+     it('normalizes asset classes into standard categories', () => {
+       expect(normalizeAssetClass('EQUITY')).toBe('Equity');
+       expect(normalizeAssetClass('Large Cap Stock')).toBe('Equity');
+       expect(normalizeAssetClass('DEBT_SHORT_TERM')).toBe('Debt');
+       expect(normalizeAssetClass('Liquid Fund')).toBe('Debt');
+-      expect(normalizeAssetClass('Aggressive Hybrid')).toBe('Hybrid');
+-      expect(normalizeAssetClass('BALANCED_ADVANTAGE')).toBe('Hybrid');
+-      expect(normalizeAssetClass('Gold ETF')).toBe('Gold/Others');
+-      expect(normalizeAssetClass('')).toBe('Gold/Others');
++      expect(normalizeAssetClass('Kotak Arbitrage Fund')).toBe('Arbitrage');
++      expect(normalizeAssetClass('Gold ETF')).toBe('Gold');
++      expect(normalizeAssetClass('')).toBe('Other');
+     });
+ 
+     it('formats Indian rupee currency correctly', () => {
+       expect(formatInr(123456.78)).toBe('₹1,23,456.78');
+       expect(formatInr(-5000.5)).toBe('-₹5,000.50');
+       expect(formatInr(0)).toBe('₹0.00');
+     });
+ 
+     it('formats percentages with proper sign prefix', () => {
+       expect(formatPct(12.345)).toBe('+12.35%');
+diff --git a/mobile/tests/analytics-tab.test.tsx b/mobile/tests/analytics-tab.test.tsx
+index 1e4ef74..388a61e 100644
+--- a/mobile/tests/analytics-tab.test.tsx
++++ b/mobile/tests/analytics-tab.test.tsx
+@@ -123,20 +123,21 @@ import {
+ } from '../src/components/Analytics/StockOverlapTable';
+ import {
+   StockDetailModal,
+   ModalHeader,
+   StockSummaryCards,
+   SchemeContributionItem,
+ } from '../src/components/Analytics/StockDetailModal';
+ import AnalyticsScreen, {
+   AllocationCard,
+   AllocationCardsGrid,
++  MarketCapSection,
+   AnalyticsHeader,
+ } from '../app/(tabs)/analytics';
+ import TabsLayout from '../app/(tabs)/_layout';
+ import {
+   buildPortfolioHierarchy,
+   type StockExposure,
+   type XRayData,
+   type HierarchyNode,
+ } from '../src/services/hierarchy-builder';
+ import { deriveAnalyticsFromHoldings } from '../src/services/analytics-service';
+@@ -623,20 +624,23 @@ describe('Analytics Tab & Stock X-Ray Suite', () => {
+       expect(getProps(screen)['testID']).toBe('analytics-screen');
+     });
+ 
+     it('renders AllocationCard, AllocationCardsGrid, and AnalyticsHeader directly', () => {
+       const card = AllocationCard({ name: 'Equity', value: 700000, pct: 70, color: '#38bdf8' });
+       expect(card).toBeDefined();
+ 
+       const grid = AllocationCardsGrid({ xrayData: mockXRayData });
+       expect(grid).toBeDefined();
+ 
++      const marketCapSec = MarketCapSection({ marketCap: mockXRayData.marketCap });
++      expect(marketCapSec).toBeDefined();
++
+       const header = AnalyticsHeader();
+       expect(header).toBeDefined();
+     });
+   });
+ 
+   describe('TabsLayout Navigation', () => {
+     it('includes Analytics tab in bottom navigation', () => {
+       const layout = TabsLayout();
+       expect(layout).toBeDefined();
+       const props = getProps(layout);

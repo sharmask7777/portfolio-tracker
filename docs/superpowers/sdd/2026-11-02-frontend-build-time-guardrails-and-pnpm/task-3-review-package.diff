@@ -1,0 +1,802 @@
+diff --git a/frontend/eslint.config.js b/frontend/eslint.config.js
+index ef614d2..fe70ef4 100644
+--- a/frontend/eslint.config.js
++++ b/frontend/eslint.config.js
+@@ -3,20 +3,111 @@ import globals from 'globals'
+ import reactHooks from 'eslint-plugin-react-hooks'
+ import reactRefresh from 'eslint-plugin-react-refresh'
+ import tseslint from 'typescript-eslint'
++import boundaries from 'eslint-plugin-boundaries'
++import checkFile from 'eslint-plugin-check-file'
+ import { defineConfig, globalIgnores } from 'eslint/config'
+ 
++const boundaryPolicies = [
++  {
++    from: { element: { type: 'utils' } },
++    disallow: { to: { element: { types: { anyOf: ['components', 'contexts'] } } } },
++    message: 'Utils must not import components or contexts',
++  },
++  {
++    from: { element: { type: 'types' } },
++    disallow: { to: { element: { types: { anyOf: ['components', 'utils', 'contexts'] } } } },
++    message: 'Types must not import components, utils, or contexts',
++  },
++  {
++    from: { element: { type: 'contexts' } },
++    disallow: { to: { element: { type: 'components' } } },
++    message: 'Contexts must not import components',
++  },
++  {
++    from: {
++      element: {
++        type: 'components',
++        captured: { subdomain: ['Analytics', 'Tax', 'Dashboard', 'Family', 'Auth', 'Insights'] },
++      },
++    },
++    disallow: {
++      to: {
++        element: {
++          type: 'components',
++          captured: { subdomain: '!{{from.subdomain}}' },
++        },
++      },
++    },
++    message: 'Cross-subdomain imports between components (${from.subdomain} -> ${to.subdomain}) are prohibited',
++  },
++]
++
+ export default defineConfig([
+-  globalIgnores(['dist']),
++  globalIgnores(['dist', 'coverage', 'tests/**']),
+   {
+-    files: ['**/*.{ts,tsx}'],
++    files: ['src/**/*.{ts,tsx}'],
+     extends: [
+       js.configs.recommended,
+       tseslint.configs.recommended,
+       reactHooks.configs.flat.recommended,
+       reactRefresh.configs.vite,
+     ],
++    plugins: {
++      boundaries,
++      'check-file': checkFile,
++    },
+     languageOptions: {
+       globals: globals.browser,
++      parser: tseslint.parser,
++    },
++    settings: {
++      'boundaries/legacy-warnings': false,
++      'import/resolver': {
++        node: {
++          extensions: ['.js', '.jsx', '.ts', '.tsx'],
++        },
++      },
++      'boundaries/elements': [
++        { type: 'components', pattern: 'src/components/(*)', capture: ['subdomain'] },
++        { type: 'components', pattern: 'src/components' },
++        { type: 'utils', pattern: 'src/utils' },
++        { type: 'types', pattern: 'src/types' },
++        { type: 'contexts', pattern: 'src/contexts' },
++      ],
++    },
++    rules: {
++      'boundaries/element-types': [
++        'error',
++        {
++          default: 'allow',
++          rules: boundaryPolicies,
++          policies: boundaryPolicies,
++        },
++      ],
++      'boundaries/dependencies': [
++        'error',
++        {
++          default: 'allow',
++          policies: boundaryPolicies,
++        },
++      ],
++      'check-file/filename-naming-convention': [
++        'error',
++        {
++          'src/components/**/!(index|*.test).tsx': 'PASCAL_CASE',
++          'src/utils/**/!(*.test).ts': 'KEBAB_CASE',
++        },
++        {
++          ignoreMiddleExtensions: true,
++        },
++      ],
++      'react-hooks/rules-of-hooks': 'error',
++      'react-hooks/exhaustive-deps': 'error',
++      'react-hooks/set-state-in-effect': 'off',
++      'react-hooks/static-components': 'off',
++      'react-refresh/only-export-components': 'off',
++      '@typescript-eslint/no-explicit-any': 'off',
++      '@typescript-eslint/no-unused-vars': 'off',
+     },
+   },
+ ])
+diff --git a/frontend/package.json b/frontend/package.json
+index 61d7dac..4c9958b 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -40,6 +40,8 @@
+     "@vitest/ui": "^4.1.6",
+     "cross-env": "^10.1.0",
+     "eslint": "^10.3.0",
++    "eslint-plugin-boundaries": "^7.4.0",
++    "eslint-plugin-check-file": "^3.3.2",
+     "eslint-plugin-react-hooks": "^7.1.1",
+     "eslint-plugin-react-refresh": "^0.5.2",
+     "globals": "^17.6.0",
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+index 5cfa8d0..50f41d7 100644
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -149,9 +149,11 @@ export function Dashboard() {
+     );
+   };
+ 
+-  const fetchSummary = async () => {
++  const hasLoadedOnceRef = React.useRef(false);
++
++  const fetchSummary = React.useCallback(async () => {
+     try {
+-      if (!portfolio) {
++      if (!hasLoadedOnceRef.current) {
+         setLoading(true);
+       } else {
+         setIsRefetching(true);
+@@ -166,6 +168,7 @@ export function Dashboard() {
+         api.get(`${API_ENDPOINTS.FAMILY}/profiles`)
+       ]);
+       
++      hasLoadedOnceRef.current = true;
+       setPortfolio(summaryRes.data);
+       setProfiles(profilesRes.data);
+ 
+@@ -193,7 +196,7 @@ export function Dashboard() {
+       setLoading(false);
+       setIsRefetching(false);
+     }
+-  };
++  }, [selectedFamilyId, selectedProfileId, excludeArbitrage]);
+ 
+   const handleToggleExcludeArbitrage = async (val: boolean) => {
+     setExcludeArbitrage(val);
+@@ -211,7 +214,7 @@ export function Dashboard() {
+ 
+   useEffect(() => {
+     fetchSummary();
+-  }, [selectedFamilyId, selectedProfileId]);
++  }, [fetchSummary]);
+ 
+   const pollJobStatus = async (jobId: string) => {
+     setUploadStatusMsg('Processing portfolio... This may take a few minutes.');
+diff --git a/frontend/src/components/Insights/GoalTracker.tsx b/frontend/src/components/Insights/GoalTracker.tsx
+index 9b46b3a..31eed09 100644
+--- a/frontend/src/components/Insights/GoalTracker.tsx
++++ b/frontend/src/components/Insights/GoalTracker.tsx
+@@ -43,18 +43,18 @@ export const GoalTracker: React.FC<GoalTrackerProps> = ({ portfolioId, activeAss
+   const [editDate, setEditDate] = useState('');
+   const [editSelectedAssetIds, setEditSelectedAssetIds] = useState<string[]>([]);
+ 
+-  const fetchGoals = async () => {
++  const fetchGoals = React.useCallback(async () => {
+     try {
+       const res = await api.get(`${API_ENDPOINTS.HEALTH}/${portfolioId}/goals`);
+       setGoals(res.data);
+     } catch (e) {
+       console.error('Failed to fetch goals', e);
+     }
+-  };
++  }, [portfolioId]);
+ 
+   useEffect(() => {
+     if (portfolioId) fetchGoals();
+-  }, [portfolioId]);
++  }, [portfolioId, fetchGoals]);
+ 
+   const handleAddGoal = async (e: React.FormEvent) => {
+     e.preventDefault();
+diff --git a/frontend/src/components/Tax/SimulationModal.tsx b/frontend/src/components/Tax/SimulationModal.tsx
+index 00cbff0..92401fd 100644
+--- a/frontend/src/components/Tax/SimulationModal.tsx
++++ b/frontend/src/components/Tax/SimulationModal.tsx
+@@ -35,7 +35,7 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
+   const parsedAmount = parseFloat(amount.replace(/,/g, ''));
+   const unitsToSell = (currentPrice > 0 && !isNaN(parsedAmount)) ? (parsedAmount / currentPrice) : 0;
+ 
+-  const handleSimulate = async (overrideUnits?: number): Promise<void> => {
++  const handleSimulate = React.useCallback(async (overrideUnits?: number): Promise<void> => {
+     const units = overrideUnits !== undefined ? overrideUnits : unitsToSell;
+     
+     if (isNaN(units) || units <= 0) {
+@@ -64,14 +64,14 @@ export const SimulationModal: React.FC<SimulationModalProps> = ({ folio, onClose
+     } finally {
+       setLoading(false);
+     }
+-  };
++  }, [unitsToSell, folio.id, taxSlab, currentPrice]);
+ 
+   useEffect(() => {
+     if (initialUnits && currentPrice > 0) {
+       setAmount((initialUnits * currentPrice).toFixed(2));
+       handleSimulate(initialUnits);
+     }
+-  }, [initialUnits, currentPrice]);
++  }, [initialUnits, currentPrice, handleSimulate]);
+ 
+   const formatCurrency = (val: number): string => {
+     return new Intl.NumberFormat('en-IN', {
+diff --git a/frontend/src/components/Tax/TaxView.tsx b/frontend/src/components/Tax/TaxView.tsx
+index 01cd124..3cd1a0d 100644
+--- a/frontend/src/components/Tax/TaxView.tsx
++++ b/frontend/src/components/Tax/TaxView.tsx
+@@ -8,8 +8,8 @@ import {
+   classifySection,
+   AdvanceTaxQuarter,
+   TaxSectionName,
+-} from '../../utils/itrReportGenerator';
+-import type { ITRGainDetail, ITRSummary } from '../../utils/itrReportGenerator';
++} from '../../utils/itr-report-generator';
++import type { ITRGainDetail, ITRSummary } from '../../utils/itr-report-generator';
+ 
+ export interface HarvestingOpportunity {
+   folioId: string;
+diff --git a/frontend/src/utils/consolidation.ts b/frontend/src/utils/consolidation.ts
+index 10c497c..33e9c69 100644
+--- a/frontend/src/utils/consolidation.ts
++++ b/frontend/src/utils/consolidation.ts
+@@ -270,8 +270,8 @@ export function consolidateFoliosIntoSchemes(
+       (accumulated, folio) => accumulated + Math.max(0, folio.metrics?.currentValue ?? 0),
+       0
+     );
+-    let weightedXirr = 0;
+-    let weightedPostTaxXirr = 0;
++    let weightedXirr: number;
++    let weightedPostTaxXirr: number;
+ 
+     if (totalValuationWeight > 0) {
+       weightedXirr = groupFolios.reduce((accumulated, folio) => {
+diff --git a/frontend/src/utils/itrReportGenerator.test.ts b/frontend/src/utils/itr-report-generator.test.ts
+similarity index 99%
+rename from frontend/src/utils/itrReportGenerator.test.ts
+rename to frontend/src/utils/itr-report-generator.test.ts
+index 1acd85c..58bbb74 100644
+--- a/frontend/src/utils/itrReportGenerator.test.ts
++++ b/frontend/src/utils/itr-report-generator.test.ts
+@@ -7,7 +7,7 @@ import {
+   AdvanceTaxQuarter,
+   verifyItrInvariants,
+   type ITRVerificationTarget,
+-} from './itrReportGenerator';
++} from './itr-report-generator';
+ 
+ describe('itrReportGenerator', () => {
+   describe('computeAY', () => {
+diff --git a/frontend/src/utils/itrReportGenerator.ts b/frontend/src/utils/itr-report-generator.ts
+similarity index 99%
+rename from frontend/src/utils/itrReportGenerator.ts
+rename to frontend/src/utils/itr-report-generator.ts
+index 961c226..f5a2044 100644
+--- a/frontend/src/utils/itrReportGenerator.ts
++++ b/frontend/src/utils/itr-report-generator.ts
+@@ -1,6 +1,6 @@
+ /**
+- * @file itrReportGenerator.ts
+- * @module utils/itrReportGenerator
++ * @file itr-report-generator.ts
++ * @module utils/itr-report-generator
+  * @description Generates audit-ready, statutory Capital Gains Tax reports for Indian Income Tax
+  * filings (ITR-2 and ITR-3 Schedule CG) and Advance Tax liability computation (Section 234C Table F).
+  *
+diff --git a/frontend/tests/README.md b/frontend/tests/README.md
+index 88f34c8..cfd84a3 100644
+--- a/frontend/tests/README.md
++++ b/frontend/tests/README.md
+@@ -73,7 +73,7 @@ Located under `frontend/src/`:
+ | :--- | :--- | :--- |
+ | [`src/utils/consolidation.test.ts`](../src/utils/consolidation.test.ts) | Scheme Consolidation Engine | Aggregating multiple folios by ISIN/name, summing invested amounts and current values, filtering zero-balance positions, and closed position extraction. |
+ | [`src/utils/mock-portfolios.test.ts`](../src/utils/mock-portfolios.test.ts) | Synthetic Mock Portfolios | Integrity verification of the 10 reference synthetic portfolios (units conservation, non-negative values, valid mock PANs). |
+-| [`src/utils/itrReportGenerator.test.ts`](../src/utils/itrReportGenerator.test.ts) | ITR Schedule CG Generator | CSV row generation matching official Income Tax Department Schedule CG format, Table F quarterly columns, and statutory rate columns. |
++| [`src/utils/itr-report-generator.test.ts`](../src/utils/itr-report-generator.test.ts) | ITR Schedule CG Generator | CSV row generation matching official Income Tax Department Schedule CG format, Table F quarterly columns, and statutory rate columns. |
+ | [`src/utils/sorting.test.ts`](../src/utils/sorting.test.ts) | Table Sorting Utilities | Multi-column ascending/descending sorting for numbers, currencies, dates, and scheme strings. |
+ | [`src/components/Tax/TaxView.test.tsx`](../src/components/Tax/TaxView.test.tsx) | `TaxView` Component | Rendering tax overview cards, Advance Tax quarterly matrix, CSV export button, and empty gains alert state. |
+ | [`src/components/Tax/SimulationModal.test.tsx`](../src/components/Tax/SimulationModal.test.tsx) | `SimulationModal` Component | Real-time withdrawal calculations, LTCG 12.5% and STCG 20% breakdown, exit load deductions, and net proceeds calculation. |
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 9b1a2aa..18189e3 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -84,6 +84,12 @@ importers:
+       eslint:
+         specifier: ^10.3.0
+         version: 10.14.0(supports-color@8.1.1)
++      eslint-plugin-boundaries:
++        specifier: ^7.4.0
++        version: 7.4.0(@typescript-eslint/parser@8.72.1(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@6.0.3))(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1)
++      eslint-plugin-check-file:
++        specifier: ^3.3.2
++        version: 3.3.2(eslint@10.14.0(supports-color@8.1.1))
+       eslint-plugin-react-hooks:
+         specifier: ^7.1.1
+         version: 7.1.1(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1)
+@@ -210,6 +216,10 @@ packages:
+     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
+     engines: {node: '>=18'}
+ 
++  '@boundaries/elements@3.3.0':
++    resolution: {integrity: sha512-du5tfiKOJBQkN9guCmvfYKMvLIf0WWtToHbupdodxaf0JkA/A8fDop07lrbE48KrTQfE/CBY/kxq19RahhaJFA==}
++    engines: {node: '>=18.18'}
++
+   '@bramus/specificity@2.4.3':
+     resolution: {integrity: sha512-0GEz8qJWokkUVYQYRukmkSHIFNoBH8QTreeHrAFbvz1XFYc3Y+puhMs8PQ5x8GNugiC2l5jvDBXKLbBIByeSBw==}
+     hasBin: true
+@@ -752,6 +762,10 @@ packages:
+     resolution: {integrity: sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==}
+     engines: {node: 20 || >=22}
+ 
++  braces@3.0.3:
++    resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
++    engines: {node: '>=8'}
++
+   browserslist@4.29.5:
+     resolution: {integrity: sha512-khTmKu5NGYTotqcYo8Bew2k4RAE9PuXRSFRXG2lQBrCEQHyeQ/vX6gKMxfokwywBsLiXZMnHsmWMG1pnO8J7uQ==}
+     engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
+@@ -873,6 +887,14 @@ packages:
+     resolution: {integrity: sha512-23XHcCF+coGYevirZceTVD7NdJOqVn+49IHyxgszm+JIiHLoB2TkmPtsYkNWT1pvRSGkc35L6NHs0yHkN2SumA==}
+     engines: {node: ^20.19.0 || ^22.12.0 || >=24.0.0}
+ 
++  debug@3.2.7:
++    resolution: {integrity: sha512-CFjzYYAi4ThfiQvizrFQevTTXHtnCqWfe7x1AhgEscTz6ZbLbfoLRLPugTQyBth6f8ZERVUSyWHFD/7Wu4t1XQ==}
++    peerDependencies:
++      supports-color: '*'
++    peerDependenciesMeta:
++      supports-color:
++        optional: true
++
+   debug@4.4.3:
+     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+     engines: {node: '>=6.0'}
+@@ -953,6 +975,42 @@ packages:
+     resolution: {integrity: sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==}
+     engines: {node: '>=10'}
+ 
++  eslint-import-resolver-node@0.3.9:
++    resolution: {integrity: sha512-WFj2isz22JahUv+B788TlO3N6zL3nNJGU8CcZbPZvVEkBPaJdCV4vy5wyghty5ROFbCRnm132v8BScu5/1BQ8g==}
++
++  eslint-module-utils@2.14.0:
++    resolution: {integrity: sha512-W2WCRZ9Dqntd+2u8jJcVMV2PKulc6RdLgUUoh/yQr3uB6lo/ZOeGx11sv60/8S4QFFKNslAlWhr9u0Ef7ZW6Ig==}
++    engines: {node: '>=4'}
++    peerDependencies:
++      '@typescript-eslint/parser': '*'
++      eslint: '*'
++      eslint-import-resolver-node: '*'
++      eslint-import-resolver-typescript: '*'
++      eslint-import-resolver-webpack: '*'
++    peerDependenciesMeta:
++      '@typescript-eslint/parser':
++        optional: true
++      eslint:
++        optional: true
++      eslint-import-resolver-node:
++        optional: true
++      eslint-import-resolver-typescript:
++        optional: true
++      eslint-import-resolver-webpack:
++        optional: true
++
++  eslint-plugin-boundaries@7.4.0:
++    resolution: {integrity: sha512-G5VPMQXKZM6UQkoI10bd71S1/3sUdIaNF+oNOf18yGVGjxpxsa3dRoPh40WqFFuTSvtK9iu5oe6dwZ6+n/438Q==}
++    engines: {node: '>=18.18'}
++    peerDependencies:
++      eslint: '>=6.0.0'
++
++  eslint-plugin-check-file@3.3.2:
++    resolution: {integrity: sha512-X0yVi4vbV7pSxu00oAJiE8wcwAvIoU2YQKrkvRRLq+88i/cZNooOgAgjk2gOS03lKMsFMVusJLlqHNuAwduX2g==}
++    engines: {node: '>=18'}
++    peerDependencies:
++      eslint: '>=9.0.0'
++
+   eslint-plugin-react-hooks@7.1.1:
+     resolution: {integrity: sha512-f2I7Gw6JbvCexzIInuSbZpfdQ44D7iqdWX01FKLvrPgqxoE7oMj8clOfto8U6vYiz4yd5oKu39rRSVOe1zRu0g==}
+     engines: {node: '>=18'}
+@@ -1040,6 +1098,10 @@ packages:
+   file-entry-cache@11.1.5:
+     resolution: {integrity: sha512-+PFTHITI08JIGhnNpGNI8T8inUpgZfk3GNEqfT9R2zZV2iFXg3CvqzSl/uEhs7TSGujYRELEANyDvS8Fj7+S7Q==}
+ 
++  fill-range@7.1.1:
++    resolution: {integrity: sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg==}
++    engines: {node: '>=8'}
++
+   find-up@5.0.0:
+     resolution: {integrity: sha512-78/PXT1wlLLDgTzDs7sjq9hzz0vXD+zn+7wypEe4fXQxCmdmqfGsEPQxmiCSQI3ajFV91bVSsvNtrJRiW6nGng==}
+     engines: {node: '>=10'}
+@@ -1099,6 +1161,11 @@ packages:
+     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
+     engines: {node: '>= 0.4'}
+ 
++  handlebars@4.7.10:
++    resolution: {integrity: sha512-P5VJMVM7qgBn6vjXMw8WG9uVI+ncf2pi72j4de4yz5ZULLj2RGqLYaKOYGsgyrViQ0tePOVlN1tDCCXXtFqXKg==}
++    engines: {node: '>=0.4.7'}
++    hasBin: true
++
+   has-flag@4.0.0:
+     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
+     engines: {node: '>=8'}
+@@ -1170,6 +1237,10 @@ packages:
+     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
+     engines: {node: '>=12'}
+ 
++  is-core-module@2.17.0:
++    resolution: {integrity: sha512-J/vG0zBCbIKOQFfufSwyXdMrsohyJIUNkrnmo6WZGzoM7tr/lsbfW5b2BvisL6zsyMzK9UxV9L6c7AoFbyXHOA==}
++    engines: {node: '>= 0.4'}
++
+   is-extglob@2.1.1:
+     resolution: {integrity: sha512-SbKbANkN603Vi4jEZv49LeVJMn4yGwsbzZworEoyEiutsN3nJYdbO36zfhGJ6QEDpOZIFkDtnq5JRxmvl3jsoQ==}
+     engines: {node: '>=0.10.0'}
+@@ -1182,6 +1253,10 @@ packages:
+     resolution: {integrity: sha512-xelSayHH36ZgE7ZWhli7pW34hNbNl8Ojv5KVmkJD4hBdD3th8Tfk9vYasLM+mXWOZhFkgZfxhLSnrwRr4elSSg==}
+     engines: {node: '>=0.10.0'}
+ 
++  is-number@7.0.0:
++    resolution: {integrity: sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==}
++    engines: {node: '>=0.12.0'}
++
+   is-potential-custom-element-name@1.0.1:
+     resolution: {integrity: sha512-bCYeRA2rVibKZd+s2625gGnGF/t7DSqDs4dP7CrLA1m7jKWz6pps0LpYLJN8Q64HtmPKJ1hrN3nzPNKFEKOUiQ==}
+ 
+@@ -1353,6 +1428,10 @@ packages:
+   mdn-data@2.27.1:
+     resolution: {integrity: sha512-9Yubnt3e8A0OKwxYSXyhLymGW4sCufcLG6VdiDdUGVkPhpqLxlvP5vl1983gQjJl3tqbrM731mjaZaP68AgosQ==}
+ 
++  micromatch@4.0.8:
++    resolution: {integrity: sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==}
++    engines: {node: '>=8.6'}
++
+   mime-db@1.52.0:
+     resolution: {integrity: sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==}
+     engines: {node: '>= 0.6'}
+@@ -1369,6 +1448,9 @@ packages:
+     resolution: {integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==}
+     engines: {node: 18 || 20 || >=22}
+ 
++  minimist@1.2.8:
++    resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
++
+   mrmime@2.0.1:
+     resolution: {integrity: sha512-Y3wQdFg2Va6etvQ5I82yUhGdsKrcYox6p7FfL1LbK2J4V01F9TGlepTIhnK24t7koZibmg82KGglhA1XK5IsLQ==}
+     engines: {node: '>=10'}
+@@ -1384,6 +1466,9 @@ packages:
+   natural-compare@1.4.0:
+     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
+ 
++  neo-async@2.6.2:
++    resolution: {integrity: sha512-Yd3UES5mWCSqR+qNT93S3UoYUkqAZ9lLg8a7g9rimsWmYGK8cVToA4/sF3RrshdyV3sAGMXVUmpMYOw+dLpOuw==}
++
+   node-releases@2.0.63:
+     resolution: {integrity: sha512-6li2QanLsAXpIH2R6j77MzRyvOyrvdTqlKtO4CgBdHGNvN99ZZfyxszHc5o5+IZBWD5u6Hzwg83JoGXmqZNG9Q==}
+     engines: {node: '>=18'}
+@@ -1415,12 +1500,19 @@ packages:
+     resolution: {integrity: sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==}
+     engines: {node: '>=8'}
+ 
++  path-parse@1.0.7:
++    resolution: {integrity: sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw==}
++
+   pathe@2.0.3:
+     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
+ 
+   picocolors@1.1.1:
+     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
+ 
++  picomatch@2.3.2:
++    resolution: {integrity: sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA==}
++    engines: {node: '>=8.6'}
++
+   picomatch@4.0.7:
+     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
+     engines: {node: '>=12'}
+@@ -1534,6 +1626,11 @@ packages:
+   reselect@5.2.0:
+     resolution: {integrity: sha512-AgZ3UOZm3YndfrJ4OYjgrT7bmCm/1iqkjvEfH/oYjzh6PD2qw4QuT3jjnXIrpdt4MTpMXclMT3lXbmRY+XRakw==}
+ 
++  resolve@1.22.13:
++    resolution: {integrity: sha512-Dj/cW9zBV2aRj6XzCxuGIs3ESZKv02jixne3q6jFZYZ3/Tg09gHHviSMDL4kObh9pqSahdRHEnDoaP2gn8YLhA==}
++    engines: {node: '>= 0.4'}
++    hasBin: true
++
+   rolldown@1.2.16:
+     resolution: {integrity: sha512-bWvlMpFKiTfDKfnK7FC2MPgPeWCf/Kpwsq49ApdW+FQaBZb6O6dZ4MAPbPUjp7hYQrw/RobqCzn64BRrQecGHw==}
+     engines: {node: ^20.19.0 || >=22.12.0}
+@@ -1584,6 +1681,10 @@ packages:
+     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
+     engines: {node: '>=0.10.0'}
+ 
++  source-map@0.6.1:
++    resolution: {integrity: sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g==}
++    engines: {node: '>=0.10.0'}
++
+   stackback@0.0.2:
+     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
+ 
+@@ -1610,6 +1711,10 @@ packages:
+     resolution: {integrity: sha512-MpUEN2OodtUzxvKQl72cUF7RQ5EiHsGvSsVG0ia9c5RbWGL2CI4C7EpPS8UTBIplnlzZiNuV56w+FuNxy3ty2Q==}
+     engines: {node: '>=10'}
+ 
++  supports-preserve-symlinks-flag@1.0.0:
++    resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
++    engines: {node: '>= 0.4'}
++
+   symbol-tree@3.2.4:
+     resolution: {integrity: sha512-9QNk5KwDF+Bvz+PyObkmSYjI5ksVUYtjW7AU22r2NKcfLJcXp96hkDWU3+XndOsUb+AQ9QhfzfCT2O+CNWT5Tw==}
+ 
+@@ -1638,6 +1743,10 @@ packages:
+     resolution: {integrity: sha512-48dH6aSpQnpbzDUc4vIQZ1VjB8tkK+e8c1yx05/SZK+rkssgjEOlxDd/yU8/a4vGYQ9vRgJr9dwMq9TJ0b3X2Q==}
+     hasBin: true
+ 
++  to-regex-range@5.0.1:
++    resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
++    engines: {node: '>=8.0'}
++
+   totalist@3.0.1:
+     resolution: {integrity: sha512-sf4i37nQ2LBx4m3wB74y+ubopq6W/dIzXg0FDGjsYnZHVa1Da8FH853wlL2gtUhg+xJXjfk3kUZS3BRoQeoQBQ==}
+     engines: {node: '>=6'}
+@@ -1679,6 +1788,11 @@ packages:
+     engines: {node: '>=14.17'}
+     hasBin: true
+ 
++  uglify-js@3.19.3:
++    resolution: {integrity: sha512-v3Xu+yuwBXisp6QYTcH4UbH+xYJXqnq2m/LtQVWKWzYc1iehYnLixoQDN9FH6/j9/oybfd6W9Ghwkl8+UMKTKQ==}
++    engines: {node: '>=0.8.0'}
++    hasBin: true
++
+   undici-types@7.24.6:
+     resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
+ 
+@@ -1817,6 +1931,9 @@ packages:
+     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
+     engines: {node: '>=0.10.0'}
+ 
++  wordwrap@1.0.0:
++    resolution: {integrity: sha512-gvVzJFlPycKc5dZN4yPkP8w7Dc37BtP1yczEneOb4uq34pXZcvrtRTmWV8W+Ume+XCxKgbjM+nevkyFPMybd4Q==}
++
+   wrap-ansi@7.0.0:
+     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
+     engines: {node: '>=10'}
+@@ -1989,6 +2106,12 @@ snapshots:
+ 
+   '@bcoe/v8-coverage@1.0.2': {}
+ 
++  '@boundaries/elements@3.3.0':
++    dependencies:
++      handlebars: 4.7.10
++      is-core-module: 2.17.0
++      picomatch: 4.0.7
++
+   '@bramus/specificity@2.4.3':
+     dependencies:
+       css-tree: 3.2.1
+@@ -2495,6 +2618,10 @@ snapshots:
+     dependencies:
+       balanced-match: 4.0.4
+ 
++  braces@3.0.3:
++    dependencies:
++      fill-range: 7.1.1
++
+   browserslist@4.29.5:
+     dependencies:
+       baseline-browser-mapping: 2.11.34
+@@ -2621,6 +2748,12 @@ snapshots:
+     transitivePeerDependencies:
+       - '@noble/hashes'
+ 
++  debug@3.2.7(supports-color@8.1.1):
++    dependencies:
++      ms: 2.1.3
++    optionalDependencies:
++      supports-color: 8.1.1
++
+   debug@4.4.3(supports-color@8.1.1):
+     dependencies:
+       ms: 2.1.3
+@@ -2678,6 +2811,44 @@ snapshots:
+ 
+   escape-string-regexp@4.0.0: {}
+ 
++  eslint-import-resolver-node@0.3.9(supports-color@8.1.1):
++    dependencies:
++      debug: 3.2.7(supports-color@8.1.1)
++      is-core-module: 2.17.0
++      resolve: 1.22.13
++    transitivePeerDependencies:
++      - supports-color
++
++  eslint-module-utils@2.14.0(@typescript-eslint/parser@8.72.1(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@6.0.3))(eslint-import-resolver-node@0.3.9(supports-color@8.1.1))(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1):
++    dependencies:
++      debug: 3.2.7(supports-color@8.1.1)
++    optionalDependencies:
++      '@typescript-eslint/parser': 8.72.1(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@6.0.3)
++      eslint: 10.14.0(supports-color@8.1.1)
++      eslint-import-resolver-node: 0.3.9(supports-color@8.1.1)
++    transitivePeerDependencies:
++      - supports-color
++
++  eslint-plugin-boundaries@7.4.0(@typescript-eslint/parser@8.72.1(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@6.0.3))(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1):
++    dependencies:
++      '@boundaries/elements': 3.3.0
++      chalk: 4.1.2
++      eslint: 10.14.0(supports-color@8.1.1)
++      eslint-import-resolver-node: 0.3.9(supports-color@8.1.1)
++      eslint-module-utils: 2.14.0(@typescript-eslint/parser@8.72.1(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@6.0.3))(eslint-import-resolver-node@0.3.9(supports-color@8.1.1))(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1)
++      handlebars: 4.7.10
++    transitivePeerDependencies:
++      - '@typescript-eslint/parser'
++      - eslint-import-resolver-typescript
++      - eslint-import-resolver-webpack
++      - supports-color
++
++  eslint-plugin-check-file@3.3.2(eslint@10.14.0(supports-color@8.1.1)):
++    dependencies:
++      eslint: 10.14.0(supports-color@8.1.1)
++      is-glob: 4.0.3
++      micromatch: 4.0.8
++
+   eslint-plugin-react-hooks@7.1.1(eslint@10.14.0(supports-color@8.1.1))(supports-color@8.1.1):
+     dependencies:
+       '@babel/core': 7.29.7(supports-color@8.1.1)
+@@ -2781,6 +2952,10 @@ snapshots:
+     dependencies:
+       flat-cache: 6.1.23
+ 
++  fill-range@7.1.1:
++    dependencies:
++      to-regex-range: 5.0.1
++
+   find-up@5.0.0:
+     dependencies:
+       locate-path: 6.0.0
+@@ -2841,6 +3016,15 @@ snapshots:
+ 
+   gopd@1.2.0: {}
+ 
++  handlebars@4.7.10:
++    dependencies:
++      minimist: 1.2.8
++      neo-async: 2.6.2
++      source-map: 0.6.1
++      wordwrap: 1.0.0
++    optionalDependencies:
++      uglify-js: 3.19.3
++
+   has-flag@4.0.0: {}
+ 
+   has-symbols@1.1.0: {}
+@@ -2896,6 +3080,10 @@ snapshots:
+ 
+   internmap@2.0.3: {}
+ 
++  is-core-module@2.17.0:
++    dependencies:
++      hasown: 2.0.4
++
+   is-extglob@2.1.1: {}
+ 
+   is-fullwidth-code-point@3.0.0: {}
+@@ -2904,6 +3092,8 @@ snapshots:
+     dependencies:
+       is-extglob: 2.1.1
+ 
++  is-number@7.0.0: {}
++
+   is-potential-custom-element-name@1.0.1: {}
+ 
+   isexe@2.0.0: {}
+@@ -3053,6 +3243,11 @@ snapshots:
+ 
+   mdn-data@2.27.1: {}
+ 
++  micromatch@4.0.8:
++    dependencies:
++      braces: 3.0.3
++      picomatch: 2.3.2
++
+   mime-db@1.52.0: {}
+ 
+   mime-types@2.1.35:
+@@ -3065,6 +3260,8 @@ snapshots:
+     dependencies:
+       brace-expansion: 5.0.12
+ 
++  minimist@1.2.8: {}
++
+   mrmime@2.0.1: {}
+ 
+   ms@2.1.3: {}
+@@ -3073,6 +3270,8 @@ snapshots:
+ 
+   natural-compare@1.4.0: {}
+ 
++  neo-async@2.6.2: {}
++
+   node-releases@2.0.63: {}
+ 
+   obug@2.2.1: {}
+@@ -3102,10 +3301,14 @@ snapshots:
+ 
+   path-key@3.1.1: {}
+ 
++  path-parse@1.0.7: {}
++
+   pathe@2.0.3: {}
+ 
+   picocolors@1.1.1: {}
+ 
++  picomatch@2.3.2: {}
++
+   picomatch@4.0.7: {}
+ 
+   playwright-core@1.64.1: {}
+@@ -3207,6 +3410,13 @@ snapshots:
+ 
+   reselect@5.2.0: {}
+ 
++  resolve@1.22.13:
++    dependencies:
++      es-errors: 1.3.0
++      is-core-module: 2.17.0
++      path-parse: 1.0.7
++      supports-preserve-symlinks-flag: 1.0.0
++
+   rolldown@1.2.16:
+     dependencies:
+       '@oxc-project/types': 0.156.0
+@@ -3262,6 +3472,8 @@ snapshots:
+ 
+   source-map-js@1.2.2: {}
+ 
++  source-map@0.6.1: {}
++
+   stackback@0.0.2: {}
+ 
+   std-env@4.3.0: {}
+@@ -3288,6 +3500,8 @@ snapshots:
+     dependencies:
+       has-flag: 4.0.0
+ 
++  supports-preserve-symlinks-flag@1.0.0: {}
++
+   symbol-tree@3.2.4: {}
+ 
+   tiny-invariant@1.3.3: {}
+@@ -3309,6 +3523,10 @@ snapshots:
+     dependencies:
+       tldts-core: 7.4.20
+ 
++  to-regex-range@5.0.1:
++    dependencies:
++      is-number: 7.0.0
++
+   totalist@3.0.1: {}
+ 
+   tough-cookie@6.0.2:
+@@ -3344,6 +3562,9 @@ snapshots:
+ 
+   typescript@6.0.3: {}
+ 
++  uglify-js@3.19.3:
++    optional: true
++
+   undici-types@7.24.6: {}
+ 
+   undici@7.30.1: {}
+@@ -3447,6 +3668,8 @@ snapshots:
+ 
+   word-wrap@1.2.5: {}
+ 
++  wordwrap@1.0.0: {}
++
+   wrap-ansi@7.0.0:
+     dependencies:
+       ansi-styles: 4.3.0

@@ -1,0 +1,439 @@
+# Review package: cad8afd417ea5e818ca8b2ab4fd5bdcc20b95384..a61c545cfe4da247a058c33f2b865714d43e27c2
+
+## Commits
+a61c545 fix(mobile): address code review findings for performance mode toggle
+
+## Files changed
+ mobile/src/components/NetWorthCard.tsx        | 15 ++++-
+ mobile/src/services/portfolio-service.test.ts | 79 +++++++++++++++++++++++++++
+ mobile/src/services/portfolio-service.ts      | 27 ++++++---
+ mobile/src/services/settings-service.test.ts  | 30 ++++++++++
+ mobile/src/services/settings-service.ts       | 12 +++-
+ mobile/tests/tabs.test.tsx                    | 22 ++++++++
+ 6 files changed, 174 insertions(+), 11 deletions(-)
+
+## Diff
+diff --git a/mobile/src/components/NetWorthCard.tsx b/mobile/src/components/NetWorthCard.tsx
+index fdd7e3a..3d6c6ed 100644
+--- a/mobile/src/components/NetWorthCard.tsx
++++ b/mobile/src/components/NetWorthCard.tsx
+@@ -84,44 +84,55 @@ const styles = StyleSheet.create({
+     color: '#ef4444',
+   },
+ });
+ 
+ function resolveReturnPct(
+   performanceMode: PerformanceMode | undefined,
+   overallXirr: number | undefined,
+   unrealizedGainPct: number
+ ): number {
+   if (performanceMode === 'XIRR' && overallXirr !== undefined) {
+-    return Math.abs(overallXirr) <= 2 && overallXirr !== 0 ? overallXirr * 100 : overallXirr;
++    return overallXirr * 100;
+   }
+   return unrealizedGainPct;
+ }
+ 
++function resolveReturnLabel(
++  performanceMode: PerformanceMode | undefined,
++  overallXirr: number | undefined
++): string {
++  if (!performanceMode) return 'Total Gain / Loss';
++  if (performanceMode === 'XIRR') {
++    return overallXirr !== undefined ? 'Total Gain (XIRR)' : 'Total Gain (ABS)';
++  }
++  return 'Total Gain (ABS)';
++}
++
+ /**
+  * Overview card showing total portfolio net worth, invested principal, and unrealized returns.
+  *
+  * @param props - Component properties {@link NetWorthCardProps}
+  * @returns React Native element
+  */
+ export function NetWorthCard({
+   totalCurrentValue,
+   totalInvestedCost,
+   unrealizedGain,
+   unrealizedGainPct,
+   performanceMode,
+   overallXirr,
+   onTogglePerformanceMode,
+ }: NetWorthCardProps): React.ReactElement {
+   const isGainPositive = unrealizedGain >= 0;
+   const gainStyle = isGainPositive ? styles.positive : styles.negative;
+   const returnPct = resolveReturnPct(performanceMode, overallXirr, unrealizedGainPct);
+-  const returnLabel = performanceMode ? `Total Gain (${performanceMode})` : 'Total Gain / Loss';
++  const returnLabel = resolveReturnLabel(performanceMode, overallXirr);
+   const gainFormatted = `${formatInr(unrealizedGain)} (${formatPct(returnPct)})`;
+ 
+   return (
+     <View style={styles.card} testID="net-worth-card">
+       <View style={styles.headerRow}>
+         <Text style={styles.label}>Total Net Worth</Text>
+         {performanceMode && onTogglePerformanceMode ? (
+           <PerformanceModeToggle mode={performanceMode} onToggle={onTogglePerformanceMode} />
+         ) : null}
+       </View>
+diff --git a/mobile/src/services/portfolio-service.test.ts b/mobile/src/services/portfolio-service.test.ts
+index b45cd32..8afc383 100644
+--- a/mobile/src/services/portfolio-service.test.ts
++++ b/mobile/src/services/portfolio-service.test.ts
+@@ -39,20 +39,21 @@ import {
+   getEnrichedHoldings,
+   filterHoldings,
+   groupHoldingsByAssetClass,
+   normalizeAssetClass,
+   formatInr,
+   formatPct,
+   checkServerReachable,
+   syncWithServer,
+   syncWithPublicFeed,
+   refreshPortfolio,
++  computeOverallPortfolioXirr,
+ } from './portfolio-service';
+ import type { HoldingEntity } from '../db/schema';
+ 
+ type SqlInput = null | number | bigint | string | Uint8Array;
+ 
+ function extractParams(args: unknown[]): SqlInput[] {
+   if (args.length === 1 && Array.isArray(args[0])) {
+     return args[0] as SqlInput[];
+   }
+   return args as SqlInput[];
+@@ -439,11 +440,89 @@ describe('portfolio-service', () => {
+           ],
+         }),
+       });
+ 
+       const feedResult = await syncWithPublicFeed(db);
+       expect(feedResult.success).toBe(true);
+       expect(feedResult.source).toBe('public_feed');
+       expect(feedResult.dayGain).toBe(1000);
+     });
+   });
++
++  describe('computeOverallPortfolioXirr', () => {
++    it('returns undefined for empty holdings or non-positive valuation', () => {
++      expect(computeOverallPortfolioXirr([])).toBeUndefined();
++
++      const zeroValHolding = {
++        ...sampleHoldings[0]!,
++        current_value: 0,
++        dayChange: 0,
++        dayChangePct: 0,
++        gainLoss: 0,
++        gainLossPct: 0,
++      };
++      expect(computeOverallPortfolioXirr([zeroValHolding])).toBeUndefined();
++    });
++
++    it('computes value-weighted XIRR when all holdings have valid xirr', () => {
++      const h1 = {
++        ...sampleHoldings[0]!,
++        current_value: 60000,
++        xirr: 0.15,
++        dayChange: 0,
++        dayChangePct: 0,
++        gainLoss: 10000,
++        gainLossPct: 20,
++      };
++      const h2 = {
++        ...sampleHoldings[1]!,
++        current_value: 40000,
++        xirr: 0.10,
++        dayChange: 0,
++        dayChangePct: 0,
++        gainLoss: 5000,
++        gainLossPct: 14.28,
++      };
++
++      // (60000 * 0.15 + 40000 * 0.10) / 100000 = (9000 + 4000) / 100000 = 0.13
++      const result = computeOverallPortfolioXirr([h1, h2]);
++      expect(result).toBeCloseTo(0.13, 4);
++    });
++
++    it('falls back to absolute_return or gainLossPct when xirr is absent or zero', () => {
++      const h1 = {
++        ...sampleHoldings[0]!,
++        current_value: 50000,
++        xirr: 0.12,
++        dayChange: 0,
++        dayChangePct: 0,
++        gainLoss: 5000,
++        gainLossPct: 10,
++      };
++      const h2 = {
++        ...sampleHoldings[1]!,
++        current_value: 50000,
++        xirr: 0, // uncomputed XIRR
++        absolute_return: 0.08,
++        dayChange: 0,
++        dayChangePct: 0,
++        gainLoss: 4000,
++        gainLossPct: 8,
++      };
++      const h3 = {
++        ...sampleHoldings[0]!,
++        id: 'h3',
++        current_value: 50000,
++        xirr: undefined,
++        absolute_return: undefined,
++        dayChange: 0,
++        dayChangePct: 0,
++        gainLoss: 3000,
++        gainLossPct: 6, // 6% -> 0.06
++      };
++
++      // (50000 * 0.12 + 50000 * 0.08 + 50000 * 0.06) / 150000 = (6000 + 4000 + 3000) / 150000 = 13000 / 150000 ≈ 0.08667
++      const result = computeOverallPortfolioXirr([h1, h2, h3]);
++      expect(result).toBeCloseTo(0.08667, 4);
++    });
++  });
+ });
+diff --git a/mobile/src/services/portfolio-service.ts b/mobile/src/services/portfolio-service.ts
+index 617b9c9..3878f53 100644
+--- a/mobile/src/services/portfolio-service.ts
++++ b/mobile/src/services/portfolio-service.ts
+@@ -175,40 +175,53 @@ export async function getDashboardSummary(
+   }
+ 
+   const summary = summarizeHoldings(holdings);
+   return {
+     ...summary,
+     overallXirr: computeOverallPortfolioXirr(holdings),
+     isOfflineFallback: false,
+   };
+ }
+ 
++function extractHoldingReturnRate(h: EnrichedHolding): number {
++  if (typeof h.xirr === 'number' && !Number.isNaN(h.xirr) && h.xirr !== 0) {
++    return h.xirr;
++  }
++  if (typeof h.absolute_return === 'number' && !Number.isNaN(h.absolute_return)) {
++    return h.absolute_return;
++  }
++  if (typeof h.gainLossPct === 'number' && !Number.isNaN(h.gainLossPct)) {
++    return h.gainLossPct / 100;
++  }
++  return 0;
++}
++
+ /**
+  * Computes value-weighted overall portfolio annualized XIRR from holdings.
++ * Falls back to absolute return for holdings without computed XIRR to prevent valuation truncation.
+  *
+  * @param holdings - Enriched holdings list
+- * @returns Weighted XIRR or undefined if no holdings have XIRR metrics
++ * @returns Weighted XIRR or undefined if no holdings have valuation
+  */
+ export function computeOverallPortfolioXirr(holdings: readonly EnrichedHolding[]): number | undefined {
++  if (holdings.length === 0) return undefined;
+   let totalValuation = 0;
+-  let weightedXirr = 0;
+-  let hasValidXirr = false;
++  let weightedRateSum = 0;
+ 
+   for (const h of holdings) {
+-    if (typeof h.xirr === 'number' && !Number.isNaN(h.xirr) && h.current_value > 0) {
++    if (h.current_value > 0) {
+       totalValuation += h.current_value;
+-      weightedXirr += h.current_value * h.xirr;
+-      hasValidXirr = true;
++      weightedRateSum += h.current_value * extractHoldingReturnRate(h);
+     }
+   }
+ 
+-  return hasValidXirr && totalValuation > 0 ? weightedXirr / totalValuation : undefined;
++  return totalValuation > 0 ? weightedRateSum / totalValuation : undefined;
+ }
+ 
+ export async function checkServerReachable(
+   serverUrl: string,
+   timeoutMs: number = 3000,
+ ): Promise<boolean> {
+   const trimmed = serverUrl.trim().replace(/\/+$/, '');
+   if (!trimmed) return false;
+   const controller = new AbortController();
+   const timer = setTimeout(() => controller.abort(), timeoutMs);
+diff --git a/mobile/src/services/settings-service.test.ts b/mobile/src/services/settings-service.test.ts
+index bce3c4d..059e50c 100644
+--- a/mobile/src/services/settings-service.test.ts
++++ b/mobile/src/services/settings-service.test.ts
+@@ -127,12 +127,42 @@ describe('settings-service', () => {
+       });
+ 
+       // Update to XIRR
+       setModeFn!('XIRR');
+ 
+       await waitFor(() => {
+         expect(currentMode).toBe('XIRR');
+         expect(mockStorage.get(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE)).toBe('XIRR');
+       });
+     });
++
++    it('synchronizes mode across multiple mounted consumers', async () => {
++      let tab1Mode: PerformanceMode | null = null;
++      let tab2Mode: PerformanceMode | null = null;
++      let tab1SetMode: ((m: PerformanceMode) => void) | null = null;
++
++      function MultiTabContainer(): React.ReactElement {
++        const [m1, setM1] = usePerformanceMode();
++        const [m2] = usePerformanceMode();
++        tab1Mode = m1;
++        tab1SetMode = setM1;
++        tab2Mode = m2;
++        return React.createElement(View, { testID: 'tabs-container' });
++      }
++
++      render(() => React.createElement(MultiTabContainer));
++
++      await waitFor(() => {
++        expect(tab1Mode).toBe('XIRR');
++        expect(tab2Mode).toBe('XIRR');
++      });
++
++      // Update from tab1
++      tab1SetMode!('ABS');
++
++      await waitFor(() => {
++        expect(tab1Mode).toBe('ABS');
++        expect(tab2Mode).toBe('ABS');
++      });
++    });
+   });
+ });
+diff --git a/mobile/src/services/settings-service.ts b/mobile/src/services/settings-service.ts
+index e94fb7d..ca36a61 100644
+--- a/mobile/src/services/settings-service.ts
++++ b/mobile/src/services/settings-service.ts
+@@ -13,25 +13,30 @@ import type { PerformanceMode } from '@portfolio/core-view';
+ export const SETTINGS_STORAGE_KEYS = {
+   PERFORMANCE_MODE: 'portfolio_performance_mode',
+ } as const;
+ 
+ /** Default fallback performance mode */
+ export const DEFAULT_PERFORMANCE_MODE: PerformanceMode = 'XIRR';
+ 
+ /** In-memory cache for synchronous read fallbacks */
+ let inMemoryPerformanceMode: PerformanceMode | null = null;
+ 
++/** Module-level listener registry for synchronizing state across active tab screens */
++type PerformanceModeListener = (mode: PerformanceMode) => void;
++const listeners = new Set<PerformanceModeListener>();
++
+ /**
+- * Resets the in-memory performance mode cache for testing isolation.
++ * Resets the in-memory performance mode cache and listeners for testing isolation.
+  */
+ export function _resetInMemoryPerformanceModeForTesting(): void {
+   inMemoryPerformanceMode = null;
++  listeners.clear();
+ }
+ 
+ /**
+  * Type guard to check if a value is a valid PerformanceMode ('XIRR' | 'ABS').
+  *
+  * @param value - Value to validate
+  * @returns True if value is a valid PerformanceMode
+  */
+ export function isValidPerformanceMode(value: unknown): value is PerformanceMode {
+   return value === 'XIRR' || value === 'ABS';
+@@ -59,46 +64,49 @@ export async function getStoredPerformanceMode(): Promise<PerformanceMode> {
+   return inMemoryPerformanceMode ?? DEFAULT_PERFORMANCE_MODE;
+ }
+ 
+ /**
+  * Persists the specified performance mode into SecureStore and updates in-memory cache.
+  *
+  * @param mode - The performance mode to store ('XIRR' | 'ABS')
+  */
+ export async function setStoredPerformanceMode(mode: PerformanceMode): Promise<void> {
+   inMemoryPerformanceMode = mode;
++  listeners.forEach((listener) => listener(mode));
+   try {
+     await SecureStore.setItemAsync(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE, mode);
+   } catch {
+     // Fallback on secure store access failure
+   }
+ }
+ 
+ /**
+  * Custom React hook for accessing and mutating the persistent performance calculation mode.
++ * Automatically synchronizes mode across all mounted tab screens via listener registry.
+  *
+  * @returns Tuple containing active PerformanceMode and update callback
+  */
+ export function usePerformanceMode(): readonly [PerformanceMode, (mode: PerformanceMode) => void] {
+   const [performanceMode, setPerformanceModeState] = useState<PerformanceMode>(
+     inMemoryPerformanceMode ?? DEFAULT_PERFORMANCE_MODE
+   );
+ 
+   useEffect(() => {
++    listeners.add(setPerformanceModeState);
+     let isMounted = true;
+     void getStoredPerformanceMode().then((mode) => {
+       if (isMounted) {
+         setPerformanceModeState(mode);
+       }
+     });
+     return () => {
+       isMounted = false;
++      listeners.delete(setPerformanceModeState);
+     };
+   }, []);
+ 
+   const setPerformanceMode = useCallback((mode: PerformanceMode) => {
+-    setPerformanceModeState(mode);
+     void setStoredPerformanceMode(mode);
+   }, []);
+ 
+   return [performanceMode, setPerformanceMode] as const;
+ }
+diff --git a/mobile/tests/tabs.test.tsx b/mobile/tests/tabs.test.tsx
+index a7feef7..5e3eb9b 100644
+--- a/mobile/tests/tabs.test.tsx
++++ b/mobile/tests/tabs.test.tsx
+@@ -172,20 +172,42 @@ describe('Tabs Screens & Components', () => {
+         totalCurrentValue: 126000,
+         totalInvestedCost: 110000,
+         unrealizedGain: 16000,
+         unrealizedGainPct: 14.55,
+         performanceMode: 'XIRR',
+         overallXirr: 0.165,
+         onTogglePerformanceMode: onToggle,
+       });
+ 
+       expect(getProps(element)['testID']).toBe('net-worth-card');
++      const children = getProps(element)['children'] as Array<{ props?: Record<string, unknown> }>;
++      const metricsRow = children[2]?.props?.children as Array<{ props?: Record<string, unknown> }>;
++      const gainBlock = metricsRow[1]?.props?.children as Array<{ props?: Record<string, unknown> }>;
++      expect(gainBlock[0]?.props?.children).toBe('Total Gain (XIRR)');
++      expect(gainBlock[1]?.props?.children).toContain('+16.50%');
++    });
++
++    it('falls back to Total Gain (ABS) when overallXirr is undefined in XIRR mode', () => {
++      const element = NetWorthCard({
++        totalCurrentValue: 126000,
++        totalInvestedCost: 110000,
++        unrealizedGain: 16000,
++        unrealizedGainPct: 14.55,
++        performanceMode: 'XIRR',
++        overallXirr: undefined,
++      });
++
++      const children = getProps(element)['children'] as Array<{ props?: Record<string, unknown> }>;
++      const metricsRow = children[2]?.props?.children as Array<{ props?: Record<string, unknown> }>;
++      const gainBlock = metricsRow[1]?.props?.children as Array<{ props?: Record<string, unknown> }>;
++      expect(gainBlock[0]?.props?.children).toBe('Total Gain (ABS)');
++      expect(gainBlock[1]?.props?.children).toContain('+14.55%');
+     });
+ 
+     it('renders DayReturnBanner with positive gain and offline badge', () => {
+       const element = DayReturnBanner({
+         dayGain: 2100,
+         dayGainPct: 1.7,
+         isOfflineFallback: true,
+       });
+ 
+       expect(getProps(element)['testID']).toBe('day-return-banner');

@@ -1,0 +1,905 @@
+# Review package: cef7e4c18b4f0fac5ffe17bd94d11749d92f446d..cf309ef9527df36ac58755fedd4d137a684e6fcf
+
+## Commits
+cf309ef fix(mobile): persist and map day change, returns, and asset category
+
+## Files changed
+ .../components/Holdings/holding-adapters.test.ts   |  68 +++++++++++
+ mobile/src/components/Holdings/holding-adapters.ts |   7 +-
+ mobile/src/db/client.ts                            |  19 +++
+ mobile/src/db/repository.test.ts                   |  37 ++++++
+ mobile/src/db/repository.ts                        |  17 ++-
+ mobile/src/db/schema.ts                            |  12 +-
+ mobile/src/services/portfolio-calculations.test.ts | 128 +++++++++++++++++++++
+ mobile/src/services/portfolio-calculations.ts      | 118 ++++++++++---------
+ mobile/src/services/portfolio-service.test.ts      |  23 ++++
+ mobile/src/services/portfolio-service.ts           |  35 ++++--
+ 10 files changed, 395 insertions(+), 69 deletions(-)
+
+## Diff
+diff --git a/mobile/src/components/Holdings/holding-adapters.test.ts b/mobile/src/components/Holdings/holding-adapters.test.ts
+new file mode 100644
+index 0000000..0038fd3
+--- /dev/null
++++ b/mobile/src/components/Holdings/holding-adapters.test.ts
+@@ -0,0 +1,68 @@
++import { describe, it, expect } from 'vitest';
++import { adaptHoldingToFolioInput, buildFolioEntityMap } from './holding-adapters';
++import type { EnrichedHolding } from '../../services/portfolio-calculations';
++import type { FolioEntity } from '../../services/family-service';
++
++describe('holding-adapters', () => {
++  const mockHolding: EnrichedHolding = {
++    id: 'hold-syn-01',
++    folio_number: 'FOLIO-SYN-101',
++    amfi_code: '120503',
++    scheme_name: 'Synthetic Bluechip Equity Direct Growth',
++    isin: 'INF209K01157',
++    units: 100,
++    invested_cost: 10000,
++    current_nav: 125,
++    current_value: 12500,
++    asset_class: 'EQUITY',
++    nav_date: '2026-03-31',
++    updated_at: '2026-03-31T10:00:00.000Z',
++    day_change: 250.5,
++    day_change_pct: 2.04,
++    xirr: 0.156,
++    absolute_return: 0.25,
++    asset_category: 'Equity Large Cap',
++    dayChange: 250.5,
++    dayChangePct: 2.04,
++    gainLoss: 2500,
++    gainLossPct: 25,
++  };
++
++  const mockFolio: FolioEntity = {
++    folio_number: 'FOLIO-SYN-101',
++    amc_name: 'Synthetic Mutual Fund AMC',
++    pan: 'ABCDE1234F',
++    updated_at: '2026-03-31T10:00:00.000Z',
++  };
++
++  it('adapts holding to FolioInput passing xirr, absoluteReturn, dayChange, and dayChangePercentage', () => {
++    const input = adaptHoldingToFolioInput(mockHolding, mockFolio);
++
++    expect(input.id).toBe('hold-syn-01');
++    expect(input.folioNumber).toBe('FOLIO-SYN-101');
++    expect(input.pan).toBe('ABCDE1234F');
++    expect(input.amcName).toBe('Synthetic Mutual Fund AMC');
++    expect(input.metrics?.dayChange).toBe(250.5);
++    expect(input.metrics?.dayChangePercentage).toBe(2.04);
++    expect(input.metrics?.xirr).toBe(0.156);
++    expect(input.metrics?.absoluteReturn).toBe(0.25);
++  });
++
++  it('falls back to gainLossPct / 100 when absolute_return is not provided', () => {
++    const holdingWithoutAbs: EnrichedHolding = {
++      ...mockHolding,
++      absolute_return: undefined,
++      gainLossPct: 15.5,
++    };
++
++    const input = adaptHoldingToFolioInput(holdingWithoutAbs, mockFolio);
++
++    expect(input.metrics?.absoluteReturn).toBe(0.155);
++  });
++
++  it('builds folio entity map correctly', () => {
++    const map = buildFolioEntityMap([mockFolio]);
++    expect(map.get('FOLIO-SYN-101')).toEqual(mockFolio);
++    expect(map.get('NON_EXISTENT')).toBeUndefined();
++  });
++});
+diff --git a/mobile/src/components/Holdings/holding-adapters.ts b/mobile/src/components/Holdings/holding-adapters.ts
+index cf0e677..b5ab373 100644
+--- a/mobile/src/components/Holdings/holding-adapters.ts
++++ b/mobile/src/components/Holdings/holding-adapters.ts
+@@ -45,21 +45,23 @@ function resolveAmcName(folioMeta?: FolioEntity): string | undefined {
+  * @param holding - Enriched holding entity.
+  * @param folioMeta - Optional folio metadata entity.
+  * @returns FolioInput object.
+  */
+ export function adaptHoldingToFolioInput(
+   holding: EnrichedHolding,
+   folioMeta?: FolioEntity
+ ): FolioInput {
+   const pan = resolvePan(folioMeta);
+   const amcName = resolveAmcName(folioMeta);
+-  const gainPct = holding.gainLossPct !== undefined ? holding.gainLossPct / 100 : undefined;
++  const fallbackAbsReturn = holding.gainLossPct !== undefined ? holding.gainLossPct / 100 : undefined;
++  const absoluteReturn = holding.absolute_return ?? fallbackAbsReturn;
++  const xirr = holding.xirr ?? undefined;
+ 
+   return {
+     id: holding.id,
+     number: holding.folio_number,
+     folioNumber: holding.folio_number,
+     amcName,
+     amc: amcName,
+     units: holding.units,
+     currentNav: holding.current_nav,
+     pan,
+@@ -71,21 +73,22 @@ export function adaptHoldingToFolioInput(
+       amfiCode: holding.amfi_code || undefined,
+       schemeCode: holding.amfi_code || undefined,
+     },
+     metrics: {
+       investedAmount: holding.invested_cost,
+       currentValue: holding.current_value,
+       dayChange: holding.dayChange,
+       dayChangePercentage: holding.dayChangePct,
+       currentPrice: holding.current_nav,
+       totalGain: holding.gainLoss,
+-      absoluteReturn: gainPct,
++      absoluteReturn,
++      xirr,
+     },
+   };
+ }
+ 
+ /**
+  * Converts a list of EnrichedHolding records into an array of FolioInput records.
+  *
+  * @param holdings - Array of enriched holdings.
+  * @param folios - Array of stored folios.
+  * @returns Array of FolioInput items.
+diff --git a/mobile/src/db/client.ts b/mobile/src/db/client.ts
+index 3f3403b..cd950be 100644
+--- a/mobile/src/db/client.ts
++++ b/mobile/src/db/client.ts
+@@ -1,21 +1,40 @@
+ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
+ import { CREATE_TABLES_SQL } from './schema';
+ 
+ export const DEFAULT_DATABASE_NAME = 'portfolio.db';
+ 
++const MIGRATION_ALTERS = [
++  'ALTER TABLE holdings ADD COLUMN day_change REAL DEFAULT 0;',
++  'ALTER TABLE holdings ADD COLUMN day_change_pct REAL DEFAULT 0;',
++  'ALTER TABLE holdings ADD COLUMN xirr REAL DEFAULT 0;',
++  'ALTER TABLE holdings ADD COLUMN absolute_return REAL DEFAULT 0;',
++  'ALTER TABLE holdings ADD COLUMN asset_category TEXT;',
++] as const;
++
+ let databaseInstance: SQLiteDatabase | null = null;
+ 
++async function runSafeMigrations(db: SQLiteDatabase): Promise<void> {
++  for (const alter of MIGRATION_ALTERS) {
++    try {
++      await db.execAsync(alter);
++    } catch {
++      // Safely ignore if column already exists
++    }
++  }
++}
++
+ export async function initDatabase(customDb?: SQLiteDatabase): Promise<SQLiteDatabase> {
+   const db = customDb ?? (await openDatabaseAsync(DEFAULT_DATABASE_NAME));
+   if (db && typeof db.execAsync === 'function') {
+     await db.execAsync(CREATE_TABLES_SQL);
++    await runSafeMigrations(db);
+   }
+   databaseInstance = db;
+   return db;
+ }
+ 
+ export function getDatabaseInstance(): SQLiteDatabase | null {
+   return databaseInstance;
+ }
+ 
+ export function setDatabaseInstance(db: SQLiteDatabase | null): void {
+diff --git a/mobile/src/db/repository.test.ts b/mobile/src/db/repository.test.ts
+index 7a25fb9..4dad370 100644
+--- a/mobile/src/db/repository.test.ts
++++ b/mobile/src/db/repository.test.ts
+@@ -239,20 +239,57 @@ describe('Local Storage Engine & SQLite Database Layer', () => {
+ 
+       const folio101Holdings = await getPortfolioHoldings(db, 'FOLIO-SYN-101');
+       expect(folio101Holdings).toHaveLength(1);
+       expect(folio101Holdings[0]?.amfi_code).toBe('120503');
+ 
+       const folio102Holdings = await getPortfolioHoldings(db, 'FOLIO-SYN-102');
+       expect(folio102Holdings).toHaveLength(1);
+       expect(folio102Holdings[0]?.amfi_code).toBe('118989');
+     });
+ 
++    it('persists and reads day_change, day_change_pct, xirr, absolute_return, asset_category', async () => {
++      const holdingWithMetrics: HoldingEntity = {
++        id: 'hold-metrics-01',
++        folio_number: 'FOLIO-SYN-101',
++        amfi_code: '120503',
++        scheme_name: 'Synthetic Bluechip Equity Direct Growth',
++        isin: 'INF209K01157',
++        units: 100.0,
++        invested_cost: 10000.0,
++        current_nav: 125.0,
++        current_value: 12500.0,
++        asset_class: 'EQUITY',
++        nav_date: '2026-03-31',
++        updated_at: '2026-03-31T10:00:00.000Z',
++        day_change: 250.5,
++        day_change_pct: 2.04,
++        xirr: 0.156,
++        absolute_return: 0.25,
++        asset_category: 'Equity Large Cap',
++      };
++
++      await savePortfolioSnapshot(db, {
++        portfolio: syntheticPortfolio,
++        folios: syntheticFolios,
++        holdings: [holdingWithMetrics],
++      });
++
++      const holdings = await getPortfolioHoldings(db, 'FOLIO-SYN-101');
++      expect(holdings).toHaveLength(1);
++      const saved = holdings[0];
++      expect(saved?.day_change).toBe(250.5);
++      expect(saved?.day_change_pct).toBe(2.04);
++      expect(saved?.xirr).toBe(0.156);
++      expect(saved?.absolute_return).toBe(0.25);
++      expect(saved?.asset_category).toBe('Equity Large Cap');
++    });
++
+     it('upserts existing records on subsequent snapshots without duplication', async () => {
+       await savePortfolioSnapshot(db, {
+         portfolio: syntheticPortfolio,
+         folios: syntheticFolios,
+         holdings: syntheticHoldings,
+       });
+ 
+       const updatedPortfolio: PortfolioEntity = {
+         ...syntheticPortfolio,
+         name: 'Renamed Synthetic Portfolio',
+diff --git a/mobile/src/db/repository.ts b/mobile/src/db/repository.ts
+index 9f5294a..99f406c 100644
+--- a/mobile/src/db/repository.ts
++++ b/mobile/src/db/repository.ts
+@@ -65,48 +65,59 @@ async function upsertFolio(db: SQLiteDatabase, folio: FolioEntity): Promise<void
+        updated_at = excluded.updated_at;`,
+     [folio.folio_number, folio.amc_name, folio.pan, folio.updated_at],
+   );
+ }
+ 
+ async function upsertHolding(db: SQLiteDatabase, holding: HoldingEntity): Promise<void> {
+   await db.runAsync(
+     `INSERT INTO holdings (
+        id, folio_number, amfi_code, scheme_name, isin,
+        units, invested_cost, current_nav, current_value,
+-       asset_class, nav_date, updated_at
++       asset_class, nav_date, updated_at,
++       day_change, day_change_pct, xirr, absolute_return, asset_category
+      )
+-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        folio_number = excluded.folio_number,
+        amfi_code = excluded.amfi_code,
+        scheme_name = excluded.scheme_name,
+        isin = excluded.isin,
+        units = excluded.units,
+        invested_cost = excluded.invested_cost,
+        current_nav = excluded.current_nav,
+        current_value = excluded.current_value,
+        asset_class = excluded.asset_class,
+        nav_date = excluded.nav_date,
+-       updated_at = excluded.updated_at;`,
++       updated_at = excluded.updated_at,
++       day_change = excluded.day_change,
++       day_change_pct = excluded.day_change_pct,
++       xirr = excluded.xirr,
++       absolute_return = excluded.absolute_return,
++       asset_category = excluded.asset_category;`,
+     [
+       holding.id,
+       holding.folio_number,
+       holding.amfi_code,
+       holding.scheme_name,
+       holding.isin,
+       holding.units,
+       holding.invested_cost,
+       holding.current_nav,
+       holding.current_value,
+       holding.asset_class,
+       holding.nav_date,
+       holding.updated_at,
++      holding.day_change ?? 0,
++      holding.day_change_pct ?? 0,
++      holding.xirr ?? 0,
++      holding.absolute_return ?? 0,
++      holding.asset_category ?? null,
+     ],
+   );
+ }
+ 
+ export async function savePortfolioSnapshot(
+   db: SQLiteDatabase,
+   snapshot: PortfolioSnapshotInput,
+ ): Promise<void> {
+   await db.withTransactionAsync(async () => {
+     await upsertPortfolio(db, snapshot.portfolio);
+diff --git a/mobile/src/db/schema.ts b/mobile/src/db/schema.ts
+index a01caa3..b6b58bd 100644
+--- a/mobile/src/db/schema.ts
++++ b/mobile/src/db/schema.ts
+@@ -17,20 +17,25 @@ export interface HoldingEntity {
+   amfi_code: string | null;
+   scheme_name: string;
+   isin: string | null;
+   units: number;
+   invested_cost: number;
+   current_nav: number;
+   current_value: number;
+   asset_class: string;
+   nav_date: string;
+   updated_at: string;
++  day_change?: number | undefined;
++  day_change_pct?: number | undefined;
++  xirr?: number | undefined;
++  absolute_return?: number | undefined;
++  asset_category?: string | null | undefined;
+ }
+ 
+ export interface TransactionEntity {
+   id: string;
+   folio_number: string;
+   date: string;
+   type: string;
+   units: number;
+   nav: number;
+   amount: number;
+@@ -95,21 +100,26 @@ CREATE TABLE IF NOT EXISTS holdings (
+   folio_number TEXT NOT NULL,
+   amfi_code TEXT,
+   scheme_name TEXT NOT NULL,
+   isin TEXT,
+   units REAL NOT NULL,
+   invested_cost REAL NOT NULL,
+   current_nav REAL NOT NULL,
+   current_value REAL NOT NULL,
+   asset_class TEXT NOT NULL,
+   nav_date TEXT NOT NULL,
+-  updated_at TEXT NOT NULL
++  updated_at TEXT NOT NULL,
++  day_change REAL DEFAULT 0,
++  day_change_pct REAL DEFAULT 0,
++  xirr REAL DEFAULT 0,
++  absolute_return REAL DEFAULT 0,
++  asset_category TEXT
+ );
+ `.trim();
+ 
+ export const CREATE_NAV_HISTORY_TABLE = `
+ CREATE TABLE IF NOT EXISTS nav_history (
+   amfi_code TEXT NOT NULL,
+   date TEXT NOT NULL,
+   nav REAL NOT NULL,
+   PRIMARY KEY (amfi_code, date)
+ );
+diff --git a/mobile/src/services/portfolio-calculations.test.ts b/mobile/src/services/portfolio-calculations.test.ts
+new file mode 100644
+index 0000000..59407c0
+--- /dev/null
++++ b/mobile/src/services/portfolio-calculations.test.ts
+@@ -0,0 +1,128 @@
++import { describe, it, expect } from 'vitest';
++import {
++  mapRawFolioToHolding,
++  summarizeHoldings,
++  type ServerFolioData,
++  type EnrichedHolding,
++} from './portfolio-calculations';
++
++describe('portfolio-calculations', () => {
++  describe('mapRawFolioToHolding', () => {
++    it('extracts dayChange, dayChangePercentage, xirr, absoluteReturn, and assetCategory from ServerFolioData', () => {
++      const serverFolio: ServerFolioData = {
++        id: 'folio-synthetic-01',
++        number: 'FOLIO-SYN-101',
++        pan: 'ABCDE1234F',
++        units: 100,
++        assetCategory: 'Equity Large Cap',
++        asset: {
++          amfiCode: '120503',
++          name: 'Synthetic Bluechip Equity Direct Growth',
++          isin: 'INF209K01157',
++          assetType: 'EQUITY',
++        },
++        metrics: {
++          investedAmount: 10000,
++          currentValue: 12500,
++          currentPrice: 125,
++          dayChange: 250.5,
++          dayChangePercentage: 2.04,
++          xirr: 0.156,
++          absoluteReturn: 0.25,
++        },
++      };
++
++      const now = '2026-03-31T10:00:00.000Z';
++      const holding = mapRawFolioToHolding(serverFolio, now);
++
++      expect(holding).not.toBeNull();
++      expect(holding?.day_change).toBe(250.5);
++      expect(holding?.day_change_pct).toBe(2.04);
++      expect(holding?.xirr).toBe(0.156);
++      expect(holding?.absolute_return).toBe(0.25);
++      expect(holding?.asset_category).toBe('Equity Large Cap');
++    });
++
++    it('falls back to defaults when metrics or assetCategory are missing', () => {
++      const serverFolio: ServerFolioData = {
++        id: 'folio-synthetic-02',
++        number: 'FOLIO-SYN-102',
++        units: 50,
++        asset: {
++          name: 'Synthetic Liquid Fund Direct Growth',
++          assetType: 'DEBT',
++        },
++      };
++
++      const now = '2026-03-31T10:00:00.000Z';
++      const holding = mapRawFolioToHolding(serverFolio, now);
++
++      expect(holding).not.toBeNull();
++      expect(holding?.day_change).toBe(0);
++      expect(holding?.day_change_pct).toBe(0);
++      expect(holding?.xirr).toBe(0);
++      expect(holding?.absolute_return).toBe(0);
++      expect(holding?.asset_category).toBe('DEBT');
++    });
++  });
++
++  describe('summarizeHoldings', () => {
++    it('sums non-zero dayChange correctly and computes dayGainPct', () => {
++      const holdings: EnrichedHolding[] = [
++        {
++          id: 'hold-1',
++          folio_number: 'FOLIO-1',
++          amfi_code: '120503',
++          scheme_name: 'Synthetic Equity Fund',
++          isin: 'INF209K01157',
++          units: 100,
++          invested_cost: 10000,
++          current_nav: 110,
++          current_value: 11000,
++          asset_class: 'EQUITY',
++          nav_date: '2026-03-31',
++          updated_at: '2026-03-31T10:00:00.000Z',
++          day_change: 200,
++          day_change_pct: 1.85,
++          xirr: 0.12,
++          absolute_return: 0.1,
++          asset_category: 'Equity Large Cap',
++          dayChange: 200,
++          dayChangePct: 1.85,
++          gainLoss: 1000,
++          gainLossPct: 10,
++        },
++        {
++          id: 'hold-2',
++          folio_number: 'FOLIO-2',
++          amfi_code: '118989',
++          scheme_name: 'Synthetic Debt Fund',
++          isin: 'INF209K01199',
++          units: 50,
++          invested_cost: 5000,
++          current_nav: 104,
++          current_value: 5200,
++          asset_class: 'DEBT',
++          nav_date: '2026-03-31',
++          updated_at: '2026-03-31T10:00:00.000Z',
++          day_change: -50,
++          day_change_pct: -0.95,
++          xirr: 0.07,
++          absolute_return: 0.04,
++          asset_category: 'Debt Short Duration',
++          dayChange: -50,
++          dayChangePct: -0.95,
++          gainLoss: 200,
++          gainLossPct: 4,
++        },
++      ];
++
++      const summary = summarizeHoldings(holdings);
++
++      expect(summary.totalCurrentValue).toBe(16200);
++      expect(summary.totalInvestedCost).toBe(15000);
++      expect(summary.dayGain).toBe(150);
++      expect(summary.dayGainPct).toBe(0.93);
++    });
++  });
++});
+diff --git a/mobile/src/services/portfolio-calculations.ts b/mobile/src/services/portfolio-calculations.ts
+index de5bbb5..ce506b9 100644
+--- a/mobile/src/services/portfolio-calculations.ts
++++ b/mobile/src/services/portfolio-calculations.ts
+@@ -25,56 +25,53 @@ export interface GroupedHoldings {
+ export interface ServerTransactionData {
+   id?: string;
+   type?: string;
+   date?: string;
+   units?: number;
+   nav?: number;
+   amount?: number;
+ }
+ 
+ export interface ServerFolioData {
+-  id?: string;
+-  number?: string;
+-  folioNumber?: string;
+-  amc?: string;
+-  amcName?: string;
+-  pan?: string;
+-  units?: number | string;
++  id?: string | undefined;
++  number?: string | undefined;
++  folioNumber?: string | undefined;
++  amc?: string | undefined;
++  amcName?: string | undefined;
++  pan?: string | undefined;
++  units?: number | string | undefined;
++  assetCategory?: string | undefined;
+   asset?: {
+-    amfiCode?: string | null;
+-    name?: string;
+-    isin?: string | null;
+-    assetType?: string;
+-  };
++    amfiCode?: string | null | undefined;
++    name?: string | undefined;
++    isin?: string | null | undefined;
++    assetType?: string | undefined;
++  } | undefined;
+   metrics?: {
+-    investedAmount?: number;
+-    currentValue?: number;
+-    currentPrice?: number;
+-    xirr?: number;
+-    absoluteReturn?: number;
+-  };
+-  transactions?: ServerTransactionData[];
++    investedAmount?: number | undefined;
++    currentValue?: number | undefined;
++    currentPrice?: number | undefined;
++    dayChange?: number | undefined;
++    dayChangePercentage?: number | undefined;
++    xirr?: number | undefined;
++    absoluteReturn?: number | undefined;
++  } | undefined;
++  transactions?: ServerTransactionData[] | undefined;
+ }
+ 
+ export function normalizeAssetClass(
+   raw: string,
+ ): 'Equity' | 'Debt' | 'Hybrid' | 'Gold/Others' {
+   const upper = (raw || '').toUpperCase().trim();
+-  if (upper.includes('EQ') || upper.includes('EQUITY') || upper.includes('STOCK')) {
+-    return 'Equity';
+-  }
+-  if (upper.includes('DEBT') || upper.includes('BOND') || upper.includes('LIQUID')) {
+-    return 'Debt';
+-  }
+-  if (upper.includes('HYBRID') || upper.includes('BALANCED')) {
+-    return 'Hybrid';
+-  }
++  if (upper.includes('EQ') || upper.includes('EQUITY') || upper.includes('STOCK')) return 'Equity';
++  if (upper.includes('DEBT') || upper.includes('BOND') || upper.includes('LIQUID')) return 'Debt';
++  if (upper.includes('HYBRID') || upper.includes('BALANCED')) return 'Hybrid';
+   return 'Gold/Others';
+ }
+ 
+ export function formatInr(amount: number): string {
+   const isNegative = amount < 0;
+   const abs = Math.abs(amount);
+   const formatted = abs.toLocaleString('en-IN', {
+     maximumFractionDigits: 2,
+     minimumFractionDigits: 2,
+   });
+@@ -99,88 +96,77 @@ export function filterHoldings(
+         h.scheme_name.toLowerCase().includes(q) ||
+         h.folio_number.toLowerCase().includes(q),
+     );
+   }
+   if (assetClass && assetClass.trim().length > 0) {
+     list = list.filter((h) => normalizeAssetClass(h.asset_class) === assetClass);
+   }
+   return list;
+ }
+ 
++const ASSET_CLASSES = ['Equity', 'Debt', 'Hybrid', 'Gold/Others'] as const;
++
++const ALLOCATION_COLORS: Record<string, string> = {
++  Equity: '#3b82f6',
++  Debt: '#10b981',
++  Hybrid: '#8b5cf6',
++  'Gold/Others': '#f59e0b',
++};
++
+ export function groupHoldingsByAssetClass(
+   holdings: EnrichedHolding[],
+ ): GroupedHoldings[] {
+-  const classes: Array<'Equity' | 'Debt' | 'Hybrid' | 'Gold/Others'> = [
+-    'Equity',
+-    'Debt',
+-    'Hybrid',
+-    'Gold/Others',
+-  ];
+   const groups: GroupedHoldings[] = [];
+ 
+-  for (const c of classes) {
++  for (const c of ASSET_CLASSES) {
+     const list = holdings.filter((h) => normalizeAssetClass(h.asset_class) === c);
+     if (list.length > 0) {
+       const val = list.reduce((sum, item) => sum + item.current_value, 0);
+       const inv = list.reduce((sum, item) => sum + item.invested_cost, 0);
+       groups.push({
+         assetClass: c,
+         totalValue: Math.round(val * 100) / 100,
+         totalInvested: Math.round(inv * 100) / 100,
+         holdings: list,
+       });
+     }
+   }
+   return groups;
+ }
+ 
+ export function buildAssetAllocation(
+   holdings: EnrichedHolding[],
+   totalValue: number,
+ ): AssetAllocationItem[] {
+-  const colors: Record<string, string> = {
+-    Equity: '#3b82f6',
+-    Debt: '#10b981',
+-    Hybrid: '#8b5cf6',
+-    'Gold/Others': '#f59e0b',
+-  };
+-  const classes: Array<'Equity' | 'Debt' | 'Hybrid' | 'Gold/Others'> = [
+-    'Equity',
+-    'Debt',
+-    'Hybrid',
+-    'Gold/Others',
+-  ];
+   const items: AssetAllocationItem[] = [];
+ 
+-  for (const c of classes) {
++  for (const c of ASSET_CLASSES) {
+     const sum = holdings
+       .filter((h) => normalizeAssetClass(h.asset_class) === c)
+       .reduce((acc, h) => acc + h.current_value, 0);
+     if (sum > 0) {
+       const percentage = totalValue > 0
+         ? Math.round((sum / totalValue) * 100 * 10) / 10
+         : 0;
+       items.push({
+         name: c,
+         amount: Math.round(sum * 100) / 100,
+         percentage,
+-        color: colors[c] ?? '#94a3b8',
++        color: ALLOCATION_COLORS[c] ?? '#94a3b8',
+       });
+     }
+   }
+   return items;
+ }
+ 
+ function extractFolioNumber(f: ServerFolioData): string {
+-  if (f.number) return f.number;
+-  if (f.folioNumber) return f.folioNumber;
+-  return 'UNKNOWN';
++  return f.number || f.folioNumber || 'UNKNOWN';
+ }
+ 
+ function extractHoldingPrices(
+   f: ServerFolioData,
+   units: number,
+ ): { price: number; val: number } {
+   const metrics = f.metrics;
+   const price = metrics && typeof metrics.currentPrice === 'number' ? metrics.currentPrice : 0;
+   const val = metrics && typeof metrics.currentValue === 'number'
+     ? metrics.currentValue
+@@ -196,44 +182,68 @@ function extractAssetMeta(f: ServerFolioData): {
+ } {
+   const asset = f.asset;
+   return {
+     schemeName: asset?.name || 'Unknown Scheme',
+     amfiCode: asset?.amfiCode || null,
+     isin: asset?.isin || null,
+     assetClass: asset?.assetType || 'EQUITY',
+   };
+ }
+ 
++function extractHoldingMetrics(metrics?: ServerFolioData['metrics']): {
++  investedCost: number;
++  dayChange: number;
++  dayChangePct: number;
++  xirr: number;
++  absoluteReturn: number;
++} {
++  if (!metrics) {
++    return { investedCost: 0, dayChange: 0, dayChangePct: 0, xirr: 0, absoluteReturn: 0 };
++  }
++  return {
++    investedCost: Number(metrics.investedAmount || 0),
++    dayChange: metrics.dayChange ?? 0,
++    dayChangePct: metrics.dayChangePercentage ?? 0,
++    xirr: metrics.xirr ?? 0,
++    absoluteReturn: metrics.absoluteReturn ?? 0,
++  };
++}
++
+ export function mapRawFolioToHolding(
+   f: ServerFolioData,
+   now: string,
+ ): HoldingEntity | null {
+   const units = Number(f.units || 0);
+-
+   const folioNumber = extractFolioNumber(f);
+   const { price, val } = extractHoldingPrices(f, units);
+   const meta = extractAssetMeta(f);
++  const metrics = extractHoldingMetrics(f.metrics);
+   const navDate = now.split('T')[0] || '';
+ 
+   return {
+     id: f.id || generateUuid(),
+     folio_number: folioNumber,
+     amfi_code: meta.amfiCode,
+     scheme_name: meta.schemeName,
+     isin: meta.isin,
+     units,
+-    invested_cost: Number(f.metrics?.investedAmount || 0),
++    invested_cost: metrics.investedCost,
+     current_nav: price,
+     current_value: val,
+     asset_class: meta.assetClass,
+     nav_date: navDate,
+     updated_at: now,
++    day_change: metrics.dayChange,
++    day_change_pct: metrics.dayChangePct,
++    xirr: metrics.xirr,
++    absolute_return: metrics.absoluteReturn,
++    asset_category: f.assetCategory ?? meta.assetClass,
+   };
+ }
+ 
+ /**
+  * Computes dashboard summary metrics from a given list of enriched holdings.
+  *
+  * @param holdings - List of enriched holdings (filtered or consolidated)
+  * @returns Dashboard summary metrics object
+  */
+ export function summarizeHoldings(holdings: EnrichedHolding[]): {
+diff --git a/mobile/src/services/portfolio-service.test.ts b/mobile/src/services/portfolio-service.test.ts
+index 961ead9..e69d267 100644
+--- a/mobile/src/services/portfolio-service.test.ts
++++ b/mobile/src/services/portfolio-service.test.ts
+@@ -226,20 +226,43 @@ describe('portfolio-service', () => {
+ 
+       // Insert previous and latest NAV in nav_history
+       await updateHoldingNav(db, '120503', { nav: 580, navDate: '2026-11-16' });
+       await updateHoldingNav(db, '120503', { nav: 600, navDate: '2026-11-17' });
+ 
+       const summary = await getDashboardSummary(db);
+       // diff is 20 per unit * 100 units = 2000 day gain
+       expect(summary.dayGain).toBe(2000);
+       expect(summary.dayGainPct).toBe(3.45);
+     });
++
++    it('uses server day_change and day_change_pct directly without nav_history', async () => {
++      const holdingWithServerChange: HoldingEntity = {
++        ...sampleHoldings[0]!,
++        day_change: 1500,
++        day_change_pct: 2.5,
++      };
++      const snapshot: PortfolioSnapshotInput = {
++        portfolio: { id: 'p1', name: 'Primary', updated_at: '2026-11-17T10:00:00Z' },
++        folios: [{ folio_number: '12345/A', amc_name: 'HDFC AMC', pan: 'ABCDE1234F', updated_at: '2026-11-17T10:00:00Z' }],
++        holdings: [holdingWithServerChange],
++      };
++      await savePortfolioSnapshot(db, snapshot);
++
++      const enriched = await getEnrichedHoldings(db);
++      expect(enriched).toHaveLength(1);
++      expect(enriched[0]?.dayChange).toBe(1500);
++      expect(enriched[0]?.dayChangePct).toBe(2.5);
++
++      const summary = await getDashboardSummary(db);
++      expect(summary.dayGain).toBe(1500);
++      expect(summary.dayGainPct).toBe(2.56);
++    });
+   });
+ 
+   describe('Holdings Filtering and Grouping', () => {
+     it('filters holdings by scheme name and folio number', async () => {
+       const snapshot: PortfolioSnapshotInput = {
+         portfolio: { id: 'p1', name: 'Primary', updated_at: '2026-11-17T10:00:00Z' },
+         folios: [],
+         holdings: sampleHoldings,
+       };
+       await savePortfolioSnapshot(db, snapshot);
+diff --git a/mobile/src/services/portfolio-service.ts b/mobile/src/services/portfolio-service.ts
+index a584876..f81497e 100644
+--- a/mobile/src/services/portfolio-service.ts
++++ b/mobile/src/services/portfolio-service.ts
+@@ -69,55 +69,72 @@ async function calculateHoldingDayChange(
+         const dayChangePct = Math.round((diff / prev.nav) * 100 * 100) / 100;
+         return { dayChange, dayChangePct };
+       }
+     }
+   } catch {
+     // Retain zero change on read error
+   }
+   return { dayChange: 0, dayChangePct: 0 };
+ }
+ 
++function computeHoldingGainLoss(currentValue: number, investedCost: number): {
++  gainLoss: number;
++  gainLossPct: number;
++} {
++  const gainLoss = Math.round((currentValue - investedCost) * 100) / 100;
++  const gainLossPct = investedCost > 0
++    ? Math.round((gainLoss / investedCost) * 100 * 100) / 100
++    : 0;
++  return { gainLoss, gainLossPct };
++}
++
++async function resolveHoldingDayChange(
++  db: SQLiteDatabase,
++  holding: HoldingEntity,
++): Promise<{ dayChange: number; dayChangePct: number }> {
++  const dayChange = holding.day_change ?? 0;
++  const dayChangePct = holding.day_change_pct ?? 0;
++  if (dayChange !== 0 || dayChangePct !== 0) {
++    return { dayChange, dayChangePct };
++  }
++  return calculateHoldingDayChange(db, holding);
++}
++
+ export async function getEnrichedHoldings(
+   db?: SQLiteDatabase,
+ ): Promise<EnrichedHolding[]> {
+   const targetDb = await resolveDb(db);
+   if (!targetDb || typeof targetDb.getAllAsync !== 'function') {
+     return [];
+   }
+   const rawHoldings = await getPortfolioHoldings(targetDb);
+   const results: EnrichedHolding[] = [];
+ 
+   for (const h of rawHoldings) {
+-    const { dayChange, dayChangePct } = await calculateHoldingDayChange(targetDb, h);
+-    const gainLoss = Math.round((h.current_value - h.invested_cost) * 100) / 100;
+-    const gainLossPct = h.invested_cost > 0
+-      ? Math.round((gainLoss / h.invested_cost) * 100 * 100) / 100
+-      : 0;
++    const { dayChange, dayChangePct } = await resolveHoldingDayChange(targetDb, h);
++    const { gainLoss, gainLossPct } = computeHoldingGainLoss(h.current_value, h.invested_cost);
+     results.push({ ...h, dayChange, dayChangePct, gainLoss, gainLossPct });
+   }
+ 
+   return results;
+ }
+ 
+ export async function getEnrichedClosedHoldings(
+   db?: SQLiteDatabase,
+ ): Promise<EnrichedHolding[]> {
+   const targetDb = await resolveDb(db);
+   if (!targetDb || typeof targetDb.getAllAsync !== 'function') {
+     return [];
+   }
+   const rawClosed = await getClosedHoldings(targetDb);
+   return rawClosed.map((h) => {
+-    const gainLoss = Math.round((h.current_value - h.invested_cost) * 100) / 100;
+-    const gainLossPct = h.invested_cost > 0
+-      ? Math.round((gainLoss / h.invested_cost) * 100 * 100) / 100
+-      : 0;
++    const { gainLoss, gainLossPct } = computeHoldingGainLoss(h.current_value, h.invested_cost);
+     return { ...h, dayChange: 0, dayChangePct: 0, gainLoss, gainLossPct };
+   });
+ }
+ 
+ export async function getTransactionsForFolio(
+   folioNumber: string,
+   db?: SQLiteDatabase,
+ ): Promise<TransactionEntity[]> {
+   const targetDb = await resolveDb(db);
+   if (!targetDb || typeof targetDb.getAllAsync !== 'function') {

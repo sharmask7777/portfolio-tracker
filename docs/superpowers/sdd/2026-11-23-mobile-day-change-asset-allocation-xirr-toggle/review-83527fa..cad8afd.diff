@@ -1,0 +1,1340 @@
+# Review package: 83527fab9256f2c790a537ad7fecc7d02aa96380..cad8afd417ea5e818ca8b2ab4fd5bdcc20b95384
+
+## Commits
+cad8afd feat(mobile): add XIRR/ABS performance mode toggle across dashboard and holdings
+
+## Files changed
+ mobile/app/(tabs)/holdings.tsx                     |  14 ++-
+ mobile/app/(tabs)/index.tsx                        |  27 +++-
+ mobile/app/(tabs)/use-holdings-screen.ts           |   5 +
+ .../Common/PerformanceModeToggle.test.tsx          | 107 ++++++++++++++++
+ .../components/Common/PerformanceModeToggle.tsx    | 107 ++++++++++++++++
+ .../src/components/Holdings/holdings-controls.tsx  |  23 +++-
+ mobile/src/components/NetWorthCard.tsx             |  47 ++++++-
+ mobile/src/components/index.ts                     |   1 +
+ mobile/src/services/index.ts                       |   1 +
+ mobile/src/services/portfolio-service.ts           |  24 ++++
+ mobile/src/services/settings-service.test.ts       | 138 +++++++++++++++++++++
+ mobile/src/services/settings-service.ts            | 104 ++++++++++++++++
+ mobile/tests/holdings-breakdown.test.tsx           |  16 +++
+ mobile/tests/tabs.test.tsx                         |  15 +++
+ 14 files changed, 618 insertions(+), 11 deletions(-)
+
+## Diff
+diff --git a/mobile/app/(tabs)/holdings.tsx b/mobile/app/(tabs)/holdings.tsx
+index 9770d1d..60a9e32 100644
+--- a/mobile/app/(tabs)/holdings.tsx
++++ b/mobile/app/(tabs)/holdings.tsx
+@@ -11,20 +11,21 @@ import {
+   Text,
+   View,
+   ScrollView,
+   RefreshControl,
+   ActivityIndicator,
+ } from 'react-native';
+ import {
+   usePortfolioScope,
+   type SchemeSortField,
+   type ConsolidatedSchemeGroup,
++  type PerformanceMode,
+ } from '@portfolio/core-view';
+ import { type EnrichedHolding } from '../../src/services/portfolio-service';
+ import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
+ import { ScopeSelectorHeader } from '../../src/components/Navigation';
+ import {
+   SchemeGroupCard,
+   HoldingsFilterControls,
+   ClosedPositionsSection,
+   AddAssetModal,
+ } from '../../src/components/Holdings';
+@@ -56,24 +57,25 @@ const styles = StyleSheet.create({
+     backgroundColor: '#09090b',
+   },
+ });
+ 
+ interface HoldingsListProps {
+   isLoading: boolean;
+   schemes: readonly ConsolidatedSchemeGroup[];
+   isExpanded: (id: string) => boolean;
+   onToggleExpand: (id: string) => void;
+   isConsolidatedScope: boolean;
++  performanceMode?: PerformanceMode | undefined;
+ }
+ 
+ function HoldingsList(props: HoldingsListProps): React.ReactElement {
+-  const { isLoading, schemes, isExpanded, onToggleExpand, isConsolidatedScope } = props;
++  const { isLoading, schemes, isExpanded, onToggleExpand, isConsolidatedScope, performanceMode } = props;
+ 
+   if (isLoading && schemes.length === 0) {
+     return (
+       <View style={styles.center} testID="holdings-loading">
+         <ActivityIndicator size="large" color="#3b82f6" />
+       </View>
+     );
+   }
+ 
+   if (schemes.length === 0) {
+@@ -85,52 +87,57 @@ function HoldingsList(props: HoldingsListProps): React.ReactElement {
+   }
+ 
+   return (
+     <>
+       {schemes.map((group) => (
+         <SchemeGroupCard
+           key={group.id}
+           group={group}
+           isExpanded={isExpanded(group.id)}
+           onToggleExpand={onToggleExpand}
++          performanceMode={performanceMode}
+           showPanBadges={isConsolidatedScope}
+         />
+       ))}
+     </>
+   );
+ }
+ 
+ interface HoldingsScreenContentProps {
+   isRefreshing: boolean;
+   handleRefresh: () => Promise<void>;
+   searchQuery: string;
+   setSearchQuery: (q: string) => void;
+   selectedAsset: string;
+   setSelectedAsset: (a: string) => void;
+   selectedSort: SchemeSortField;
+   setSelectedSort: (s: SchemeSortField) => void;
++  performanceMode?: PerformanceMode | undefined;
++  onTogglePerformanceMode?: ((mode: PerformanceMode) => void) | undefined;
+   closedHoldings: readonly EnrichedHolding[];
+   onDeleteClosedFolio: (folioNumber: string) => Promise<void>;
+   onOpenAddAsset: () => void;
+   listProps: HoldingsListProps;
+ }
+ 
+ function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactElement {
+   const {
+     isRefreshing,
+     handleRefresh,
+     searchQuery,
+     setSearchQuery,
+     selectedAsset,
+     setSelectedAsset,
+     selectedSort,
+     setSelectedSort,
++    performanceMode,
++    onTogglePerformanceMode,
+     closedHoldings,
+     onDeleteClosedFolio,
+     onOpenAddAsset,
+     listProps,
+   } = props;
+ 
+   return (
+     <ScrollView
+       contentContainerStyle={styles.content}
+       testID="holdings-scroll"
+@@ -143,20 +150,22 @@ function HoldingsScreenContent(props: HoldingsScreenContentProps): React.ReactEl
+         />
+       }
+     >
+       <HoldingsFilterControls
+         searchQuery={searchQuery}
+         onSearchChange={setSearchQuery}
+         selectedAsset={selectedAsset}
+         onSelectAsset={setSelectedAsset}
+         selectedSort={selectedSort}
+         onSelectSort={setSelectedSort}
++        performanceMode={performanceMode}
++        onTogglePerformanceMode={onTogglePerformanceMode}
+         onOpenAddAsset={onOpenAddAsset}
+       />
+       <HoldingsList {...listProps} />
+       <ClosedPositionsSection
+         closedHoldings={closedHoldings}
+         onDeleteFolio={onDeleteClosedFolio}
+       />
+     </ScrollView>
+   );
+ }
+@@ -172,40 +181,43 @@ export default function HoldingsScreen(): React.ReactElement {
+   const scopeState = usePortfolioScope({ storageAdapter: secureStoreScopeStorageAdapter });
+   const { handleDeleteClosedFolio, handleAddManualAsset } = useManualAssetMutations(loadData, scopeState.scope);
+   const filters = useHoldingsFilters(holdings, folios, scopeState.scope);
+ 
+   const listProps: HoldingsListProps = {
+     isLoading,
+     schemes: filters.sortedSchemes,
+     isExpanded: filters.isExpanded,
+     onToggleExpand: filters.toggleExpanded,
+     isConsolidatedScope: scopeState.scope.type === 'consolidated',
++    performanceMode: filters.performanceMode,
+   };
+ 
+   return (
+     <View style={styles.container}>
+       <ScopeSelectorHeader
+         scope={scopeState.scope}
+         profiles={profiles}
+         onSelectConsolidated={scopeState.setConsolidated}
+         onSelectMember={scopeState.setMemberScope}
+         totalFolios={folios.length}
+       />
+       <HoldingsScreenContent
+         isRefreshing={isRefreshing}
+         handleRefresh={handleRefresh}
+         searchQuery={filters.searchQuery}
+         setSearchQuery={filters.setSearchQuery}
+         selectedAsset={filters.selectedAsset}
+         setSelectedAsset={filters.setSelectedAsset}
+         selectedSort={filters.selectedSort}
+         setSelectedSort={filters.setSelectedSort}
++        performanceMode={filters.performanceMode}
++        onTogglePerformanceMode={filters.setPerformanceMode}
+         closedHoldings={closedHoldings}
+         onDeleteClosedFolio={handleDeleteClosedFolio}
+         onOpenAddAsset={() => setAddAssetModalOpen(true)}
+         listProps={listProps}
+       />
+       <AddAssetModal
+         visible={addAssetModalOpen}
+         onClose={() => setAddAssetModalOpen(false)}
+         onSubmit={handleAddManualAsset}
+       />
+diff --git a/mobile/app/(tabs)/index.tsx b/mobile/app/(tabs)/index.tsx
+index 004e6d0..6e6855f 100644
+--- a/mobile/app/(tabs)/index.tsx
++++ b/mobile/app/(tabs)/index.tsx
+@@ -1,27 +1,29 @@
+ import React, { useEffect, useState, useCallback, useMemo } from 'react';
+ import {
+   StyleSheet,
+   Text,
+   View,
+   ScrollView,
+   RefreshControl,
+   ActivityIndicator,
+ } from 'react-native';
+-import { usePortfolioScope } from '@portfolio/core-view';
++import { usePortfolioScope, type PerformanceMode } from '@portfolio/core-view';
+ import {
+   getEnrichedHoldings,
+   refreshPortfolio,
+   summarizeHoldings,
++  computeOverallPortfolioXirr,
+   type DashboardSummary,
+   type EnrichedHolding,
+ } from '../../src/services/portfolio-service';
++import { usePerformanceMode } from '../../src/services/settings-service';
+ import {
+   getStoredFamilyProfiles,
+   getStoredFolios,
+   filterHoldingsForProfile,
+   type FamilyProfile,
+   type FolioEntity,
+ } from '../../src/services/family-service';
+ import { getCachedPortfolioHistory } from '../../src/services/history-service';
+ import type { HistoryPoint } from '../../src/types/generated';
+ import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
+@@ -166,34 +168,44 @@ function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElemen
+ 
+ interface DashboardCardsProps {
+   data: DashboardSummary;
+   historyPoints: HistoryPoint[];
+   realityCheckMode: boolean;
+   setRealityCheckMode: (m: boolean) => void;
+   assumptions: RealityCheckAssumptions;
+   setAssumptions: (a: RealityCheckAssumptions) => void;
+   isAssumptionsOpen: boolean;
+   setIsAssumptionsOpen: (open: boolean) => void;
++  performanceMode: PerformanceMode;
++  onTogglePerformanceMode: (mode: PerformanceMode) => void;
+ }
+ 
+ function DashboardCards(props: DashboardCardsProps): React.ReactElement {
+-  const { data, historyPoints } = props;
++  const { data, historyPoints, performanceMode, onTogglePerformanceMode } = props;
+   const hasHoldings = data.holdingsCount > 0;
+ 
+   return (
+     <>
+       <View style={styles.header}>
+         <Text style={styles.greeting}>Offline Portfolio</Text>
+         <Text style={styles.title}>Dashboard</Text>
+       </View>
+       <RealityCheckSection {...props} />
+-      <NetWorthCard totalCurrentValue={data.totalCurrentValue} totalInvestedCost={data.totalInvestedCost} unrealizedGain={data.unrealizedGain} unrealizedGainPct={data.unrealizedGainPct} />
++      <NetWorthCard
++        totalCurrentValue={data.totalCurrentValue}
++        totalInvestedCost={data.totalInvestedCost}
++        unrealizedGain={data.unrealizedGain}
++        unrealizedGainPct={data.unrealizedGainPct}
++        performanceMode={performanceMode}
++        overallXirr={data.overallXirr}
++        onTogglePerformanceMode={onTogglePerformanceMode}
++      />
+       <DayReturnBanner dayGain={data.dayGain} dayGainPct={data.dayGainPct} isOfflineFallback={data.isOfflineFallback} />
+       <HistoricalTrendChart
+         currentValue={data.totalCurrentValue}
+         investedCost={data.totalInvestedCost}
+         historyPoints={historyPoints}
+       />
+       {hasHoldings ? <AssetAllocationCard allocation={data.assetAllocation} totalValue={data.totalCurrentValue} /> : renderEmptyState()}
+     </>
+   );
+ }
+@@ -205,36 +217,41 @@ function useFilteredSummary(holdings: EnrichedHolding[], profiles: FamilyProfile
+     return profiles.find((p) => p.id === scopeState.activeProfileId) ?? null;
+   }, [scopeState.activeProfileId, profiles]);
+ 
+   const filteredHoldings = useMemo(
+     () => filterHoldingsForProfile(activeProfile, holdings, folios),
+     [activeProfile, holdings, folios]
+   );
+ 
+   const summary = useMemo(() => {
+     if (filteredHoldings.length === 0) return defaultSummary;
+-    return { ...summarizeHoldings(filteredHoldings), isOfflineFallback: false };
++    return {
++      ...summarizeHoldings(filteredHoldings),
++      overallXirr: computeOverallPortfolioXirr(filteredHoldings),
++      isOfflineFallback: false,
++    };
+   }, [filteredHoldings]);
+ 
+   return { scopeState, summary };
+ }
+ 
+ /**
+  * Main mobile dashboard screen. Displays top-level ScopeSelectorHeader,
+  * net worth, today's returns banner, Reality Check mode toggle & waterfall teardown,
+  * Historical Valuation Trend chart, and asset allocation breakdown.
+  *
+  * @returns React Native dashboard tab element
+  */
+ export default function DashboardScreen(): React.ReactElement {
+   const { holdings, profiles, folios, historyPoints, isLoading, isRefreshing, handleRefresh } = useDashboardData();
+   const { scopeState, summary } = useFilteredSummary(holdings, profiles, folios);
++  const [performanceMode, setPerformanceMode] = usePerformanceMode();
+   const [realityCheckMode, setRealityCheckMode] = useState(false);
+   const [assumptions, setAssumptions] = useState<RealityCheckAssumptions>(DEFAULT_ASSUMPTIONS);
+   const [isAssumptionsOpen, setIsAssumptionsOpen] = useState(false);
+ 
+   if (isLoading && holdings.length === 0) {
+     return (
+       <View style={styles.center} testID="dashboard-loading">
+         <ActivityIndicator size="large" color="#3b82f6" />
+       </View>
+     );
+@@ -256,15 +273,17 @@ export default function DashboardScreen(): React.ReactElement {
+       >
+         <DashboardCards
+           data={summary}
+           historyPoints={historyPoints}
+           realityCheckMode={realityCheckMode}
+           setRealityCheckMode={setRealityCheckMode}
+           assumptions={assumptions}
+           setAssumptions={setAssumptions}
+           isAssumptionsOpen={isAssumptionsOpen}
+           setIsAssumptionsOpen={setIsAssumptionsOpen}
++          performanceMode={performanceMode}
++          onTogglePerformanceMode={setPerformanceMode}
+         />
+       </ScrollView>
+     </View>
+   );
+ }
+diff --git a/mobile/app/(tabs)/use-holdings-screen.ts b/mobile/app/(tabs)/use-holdings-screen.ts
+index ddb0e80..e24782d 100644
+--- a/mobile/app/(tabs)/use-holdings-screen.ts
++++ b/mobile/app/(tabs)/use-holdings-screen.ts
+@@ -16,20 +16,21 @@ import {
+   refreshPortfolio,
+   type EnrichedHolding,
+ } from '../../src/services/portfolio-service';
+ import { addManualAsset, type AddManualAssetPayload } from '../../src/services/manual-asset-service';
+ import {
+   getStoredFamilyProfiles,
+   getStoredFolios,
+   type FamilyProfile,
+   type FolioEntity,
+ } from '../../src/services/family-service';
++import { usePerformanceMode } from '../../src/services/settings-service';
+ import {
+   adaptHoldingsToFolioInputs,
+   type ManualAssetInput,
+ } from '../../src/components/Holdings';
+ 
+ /**
+  * Hook for loading holdings, closed holdings, profiles and folios.
+  *
+  * @returns State and functions for holdings data.
+  */
+@@ -128,36 +129,40 @@ export interface FilteredHoldingsOptions {
+  * @returns Filtered and sorted schemes with expansion state.
+  */
+ export function useHoldingsFilters(
+   holdings: readonly EnrichedHolding[],
+   folios: readonly FolioEntity[],
+   scope: PortfolioScope,
+ ) {
+   const [searchQuery, setSearchQuery] = useState('');
+   const [selectedAsset, setSelectedAsset] = useState('ALL');
+   const [selectedSort, setSelectedSort] = useState<SchemeSortField>('value');
++  const [performanceMode, setPerformanceMode] = usePerformanceMode();
+ 
+   const folioInputs = useMemo(() => {
+     return adaptHoldingsToFolioInputs(holdings, folios);
+   }, [holdings, folios]);
+ 
+   const { sortedSchemes, isExpanded, toggleExpanded } = useConsolidatedHoldings({
+     folios: folioInputs,
+     scope,
+     searchQuery,
+     assetTypeFilter: selectedAsset,
+     sortField: selectedSort,
+     sortDirection: selectedSort === 'name' ? 'asc' : 'desc',
++    performanceMode,
+   });
+ 
+   return {
+     searchQuery,
+     setSearchQuery,
+     selectedAsset,
+     setSelectedAsset,
+     selectedSort,
+     setSelectedSort,
++    performanceMode,
++    setPerformanceMode,
+     sortedSchemes,
+     isExpanded,
+     toggleExpanded,
+   };
+ }
+diff --git a/mobile/src/components/Common/PerformanceModeToggle.test.tsx b/mobile/src/components/Common/PerformanceModeToggle.test.tsx
+new file mode 100644
+index 0000000..1bc832e
+--- /dev/null
++++ b/mobile/src/components/Common/PerformanceModeToggle.test.tsx
+@@ -0,0 +1,107 @@
++/**
++ * @file PerformanceModeToggle.test.tsx
++ * @description Unit tests for PerformanceModeToggle segmented control.
++ */
++
++import { describe, it, expect, vi } from 'vitest';
++import { PerformanceModeToggle } from './PerformanceModeToggle';
++
++interface ElementProps {
++  props: {
++    testID?: string;
++    accessibilityRole?: string;
++    onPress?: () => void;
++    style?: unknown;
++    children?: ElementProps | ElementProps[];
++    [key: string]: unknown;
++  };
++}
++
++function findByTestId(tree: unknown, testId: string): ElementProps | null {
++  if (!tree || typeof tree !== 'object') return null;
++  const node = tree as ElementProps;
++  if (node.props?.testID === testId) return node;
++
++  const children = node.props?.children;
++  if (Array.isArray(children)) {
++    for (const child of children) {
++      const found = findByTestId(child, testId);
++      if (found) return found;
++    }
++  } else if (children) {
++    return findByTestId(children, testId);
++  }
++
++  return null;
++}
++
++describe('PerformanceModeToggle', () => {
++  it('renders root toggle container and both mode buttons', () => {
++    const onToggle = vi.fn();
++    const element = PerformanceModeToggle({ mode: 'XIRR', onToggle });
++
++    const root = findByTestId(element, 'performance-mode-toggle');
++    expect(root).toBeDefined();
++
++    const xirrBtn = findByTestId(element, 'toggle-mode-xirr');
++    expect(xirrBtn).toBeDefined();
++
++    const absBtn = findByTestId(element, 'toggle-mode-abs');
++    expect(absBtn).toBeDefined();
++  });
++
++  it('sets accessibilityRole="button" on both toggle segments', () => {
++    const onToggle = vi.fn();
++    const element = PerformanceModeToggle({ mode: 'XIRR', onToggle });
++
++    const xirrBtn = findByTestId(element, 'toggle-mode-xirr');
++    const absBtn = findByTestId(element, 'toggle-mode-abs');
++
++    expect(xirrBtn?.props.accessibilityRole).toBe('button');
++    expect(absBtn?.props.accessibilityRole).toBe('button');
++  });
++
++  it('triggers onToggle callback when pressing non-active option', () => {
++    const onToggle = vi.fn();
++    const element = PerformanceModeToggle({ mode: 'XIRR', onToggle });
++
++    const absBtn = findByTestId(element, 'toggle-mode-abs');
++    expect(absBtn?.props.onPress).toBeDefined();
++
++    absBtn?.props.onPress?.();
++    expect(onToggle).toHaveBeenCalledTimes(1);
++    expect(onToggle).toHaveBeenCalledWith('ABS');
++  });
++
++  it('triggers onToggle callback when pressing XIRR from ABS mode', () => {
++    const onToggle = vi.fn();
++    const element = PerformanceModeToggle({ mode: 'ABS', onToggle });
++
++    const xirrBtn = findByTestId(element, 'toggle-mode-xirr');
++    xirrBtn?.props.onPress?.();
++    expect(onToggle).toHaveBeenCalledTimes(1);
++    expect(onToggle).toHaveBeenCalledWith('XIRR');
++
++    const absBtn = findByTestId(element, 'toggle-mode-abs');
++    absBtn?.props.onPress?.();
++    expect(onToggle).toHaveBeenCalledTimes(1); // not called again for active
++  });
++
++  it('does not trigger onToggle when pressing already active option', () => {
++    const onToggle = vi.fn();
++    const element = PerformanceModeToggle({ mode: 'XIRR', onToggle });
++
++    const xirrBtn = findByTestId(element, 'toggle-mode-xirr');
++    xirrBtn?.props.onPress?.();
++    expect(onToggle).not.toHaveBeenCalled();
++  });
++
++  it('applies custom style when provided', () => {
++    const onToggle = vi.fn();
++    const customStyle = { margin: 10 };
++    const element = PerformanceModeToggle({ mode: 'XIRR', onToggle, style: customStyle });
++
++    const root = findByTestId(element, 'performance-mode-toggle');
++    expect(root?.props.style).toBeDefined();
++  });
++});
+diff --git a/mobile/src/components/Common/PerformanceModeToggle.tsx b/mobile/src/components/Common/PerformanceModeToggle.tsx
+new file mode 100644
+index 0000000..1411d6f
+--- /dev/null
++++ b/mobile/src/components/Common/PerformanceModeToggle.tsx
+@@ -0,0 +1,107 @@
++/**
++ * @file PerformanceModeToggle.tsx
++ * @description Accessible segmented control for toggling between XIRR and Absolute Return (ABS) calculation modes.
++ */
++
++import React from 'react';
++import { StyleSheet, View, Text, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native';
++import type { PerformanceMode } from '@portfolio/core-view';
++
++/**
++ * Props for {@link PerformanceModeToggle}.
++ */
++export interface PerformanceModeToggleProps {
++  /** Active calculation mode ('XIRR' or 'ABS') */
++  mode: PerformanceMode;
++  /** Callback triggered when a different mode is selected */
++  onToggle: (mode: PerformanceMode) => void;
++  /** Optional container style overrides */
++  style?: StyleProp<ViewStyle> | undefined;
++}
++
++const styles = StyleSheet.create({
++  container: {
++    flexDirection: 'row',
++    backgroundColor: '#18181b',
++    borderRadius: 8,
++    borderWidth: 1,
++    borderColor: '#27272a',
++    padding: 2,
++    alignItems: 'center',
++    alignSelf: 'flex-start',
++  },
++  segment: {
++    minHeight: 44,
++    minWidth: 48,
++    paddingHorizontal: 12,
++    borderRadius: 6,
++    justifyContent: 'center',
++    alignItems: 'center',
++  },
++  segmentActive: {
++    backgroundColor: '#2563eb',
++  },
++  segmentInactive: {
++    backgroundColor: 'transparent',
++  },
++  segmentText: {
++    fontSize: 12,
++    fontWeight: '700',
++    letterSpacing: 0.5,
++  },
++  textActive: {
++    color: '#ffffff',
++  },
++  textInactive: {
++    color: '#a1a1aa',
++  },
++});
++
++/**
++ * Segmented control rendering [ XIRR | ABS ] with WCAG accessible touch targets (>= 44x44pt).
++ *
++ * @param props - Component properties {@link PerformanceModeToggleProps}
++ * @returns React Native element
++ */
++export function PerformanceModeToggle({
++  mode,
++  onToggle,
++  style,
++}: PerformanceModeToggleProps): React.ReactElement {
++  return (
++    <View style={[styles.container, style]} testID="performance-mode-toggle">
++      <TouchableOpacity
++        style={[styles.segment, mode === 'XIRR' ? styles.segmentActive : styles.segmentInactive]}
++        onPress={() => {
++          if (mode !== 'XIRR') onToggle('XIRR');
++        }}
++        accessibilityRole="button"
++        accessibilityState={{ selected: mode === 'XIRR' }}
++        accessibilityLabel="Select XIRR performance mode"
++        testID="toggle-mode-xirr"
++        activeOpacity={0.7}
++        hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
++      >
++        <Text style={[styles.segmentText, mode === 'XIRR' ? styles.textActive : styles.textInactive]}>
++          XIRR
++        </Text>
++      </TouchableOpacity>
++      <TouchableOpacity
++        style={[styles.segment, mode === 'ABS' ? styles.segmentActive : styles.segmentInactive]}
++        onPress={() => {
++          if (mode !== 'ABS') onToggle('ABS');
++        }}
++        accessibilityRole="button"
++        accessibilityState={{ selected: mode === 'ABS' }}
++        accessibilityLabel="Select ABS performance mode"
++        testID="toggle-mode-abs"
++        activeOpacity={0.7}
++        hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
++      >
++        <Text style={[styles.segmentText, mode === 'ABS' ? styles.textActive : styles.textInactive]}>
++          ABS
++        </Text>
++      </TouchableOpacity>
++    </View>
++  );
++}
+diff --git a/mobile/src/components/Holdings/holdings-controls.tsx b/mobile/src/components/Holdings/holdings-controls.tsx
+index 04534d8..3665e66 100644
+--- a/mobile/src/components/Holdings/holdings-controls.tsx
++++ b/mobile/src/components/Holdings/holdings-controls.tsx
+@@ -1,19 +1,20 @@
+ /**
+  * @file holdings-controls.tsx
+  * @description Header search, asset class pills, and sort controls for the mobile Holdings screen.
+  */
+ 
+ import React from 'react';
+ import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+ import { Plus } from 'lucide-react-native';
+-import type { SchemeSortField } from '@portfolio/core-view';
++import type { SchemeSortField, PerformanceMode } from '@portfolio/core-view';
++import { PerformanceModeToggle } from '../Common/PerformanceModeToggle';
+ 
+ /** Available asset class filter options */
+ export const ASSET_TYPES = [
+   { id: 'ALL', label: 'All' },
+   { id: 'EQUITY', label: 'Equity' },
+   { id: 'DEBT', label: 'Debt' },
+   { id: 'HYBRID', label: 'Hybrid' },
+   { id: 'COMMODITY', label: 'Gold' },
+ ] as const;
+ 
+@@ -90,20 +91,27 @@ const styles = StyleSheet.create({
+     color: '#a1a1aa',
+   },
+   pillTextActive: {
+     color: '#ffffff',
+   },
+   sortRow: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     gap: 8,
+   },
++  sortToggleRow: {
++    flexDirection: 'row',
++    justifyContent: 'space-between',
++    alignItems: 'center',
++    gap: 8,
++    flexWrap: 'wrap',
++  },
+   sortLabel: {
+     fontSize: 11,
+     color: '#71717a',
+     fontWeight: '600',
+     textTransform: 'uppercase',
+   },
+   sortChip: {
+     paddingVertical: 4,
+     paddingHorizontal: 10,
+     borderRadius: 6,
+@@ -133,20 +141,24 @@ export interface HoldingsFilterControlsProps {
+   /** Callback on search change */
+   onSearchChange: (q: string) => void;
+   /** Active asset class ID */
+   selectedAsset: string;
+   /** Callback on asset selection */
+   onSelectAsset: (asset: string) => void;
+   /** Active sort field */
+   selectedSort: SchemeSortField;
+   /** Callback on sort field selection */
+   onSelectSort: (sort: SchemeSortField) => void;
++  /** Optional active performance mode: 'XIRR' or 'ABS' */
++  performanceMode?: PerformanceMode | undefined;
++  /** Optional callback on performance mode change */
++  onTogglePerformanceMode?: ((mode: PerformanceMode) => void) | undefined;
+   /** Optional callback to open add asset modal */
+   onOpenAddAsset?: (() => void) | undefined;
+ }
+ 
+ interface AssetPillsProps {
+   selectedAsset: string;
+   onSelectAsset: (asset: string) => void;
+ }
+ 
+ function AssetPills({ selectedAsset, onSelectAsset }: AssetPillsProps): React.ReactElement {
+@@ -207,20 +219,22 @@ function SortChips({ selectedSort, onSelectSort }: SortChipsProps): React.ReactE
+ export function HoldingsFilterControls(
+   props: HoldingsFilterControlsProps
+ ): React.ReactElement {
+   const {
+     searchQuery,
+     onSearchChange,
+     selectedAsset,
+     onSelectAsset,
+     selectedSort,
+     onSelectSort,
++    performanceMode,
++    onTogglePerformanceMode,
+     onOpenAddAsset,
+   } = props;
+ 
+   return (
+     <View style={styles.header}>
+       <View style={styles.titleRow}>
+         <Text style={styles.title}>Holdings</Text>
+         {onOpenAddAsset ? (
+           <TouchableOpacity
+             style={styles.addBtn}
+@@ -235,14 +249,19 @@ export function HoldingsFilterControls(
+       </View>
+       <TextInput
+         style={styles.searchBar}
+         placeholder="Search schemes or folios..."
+         placeholderTextColor="#71717a"
+         value={searchQuery}
+         onChangeText={onSearchChange}
+         testID="holdings-search-input"
+       />
+       <AssetPills selectedAsset={selectedAsset} onSelectAsset={onSelectAsset} />
+-      <SortChips selectedSort={selectedSort} onSelectSort={onSelectSort} />
++      <View style={styles.sortToggleRow}>
++        <SortChips selectedSort={selectedSort} onSelectSort={onSelectSort} />
++        {performanceMode && onTogglePerformanceMode ? (
++          <PerformanceModeToggle mode={performanceMode} onToggle={onTogglePerformanceMode} />
++        ) : null}
++      </View>
+     </View>
+   );
+ }
+diff --git a/mobile/src/components/NetWorthCard.tsx b/mobile/src/components/NetWorthCard.tsx
+index 07cf2c4..fdd7e3a 100644
+--- a/mobile/src/components/NetWorthCard.tsx
++++ b/mobile/src/components/NetWorthCard.tsx
+@@ -1,44 +1,62 @@
++/**
++ * @file NetWorthCard.tsx
++ * @description Overview card showing total portfolio net worth, invested principal, and returns with XIRR/ABS mode toggle.
++ */
++
+ import React from 'react';
+ import { StyleSheet, Text, View } from 'react-native';
++import type { PerformanceMode } from '@portfolio/core-view';
+ import { formatInr, formatPct } from '../services/portfolio-service';
++import { PerformanceModeToggle } from './Common/PerformanceModeToggle';
+ 
+ /**
+  * Props for {@link NetWorthCard}.
+  */
+ export interface NetWorthCardProps {
+   /** Total portfolio current market valuation amount in INR */
+   totalCurrentValue: number;
+   /** Total invested principal cost amount in INR */
+   totalInvestedCost: number;
+   /** Unrealized profit or loss in INR */
+   unrealizedGain: number;
+   /** Unrealized return percentage */
+   unrealizedGainPct: number;
++  /** Optional performance mode toggle state: 'XIRR' or 'ABS' */
++  performanceMode?: PerformanceMode | undefined;
++  /** Optional overall annualized XIRR rate (decimal or percentage) */
++  overallXirr?: number | undefined;
++  /** Optional callback invoked when performance mode toggle is switched */
++  onTogglePerformanceMode?: ((mode: PerformanceMode) => void) | undefined;
+ }
+ 
+ const styles = StyleSheet.create({
+   card: {
+     backgroundColor: '#18181b',
+     borderRadius: 16,
+     padding: 20,
+     borderWidth: 1,
+     borderColor: '#27272a',
+     marginBottom: 16,
+   },
++  headerRow: {
++    flexDirection: 'row',
++    justifyContent: 'space-between',
++    alignItems: 'center',
++    marginBottom: 6,
++  },
+   label: {
+     fontSize: 13,
+     fontWeight: '500',
+     color: '#a1a1aa',
+     textTransform: 'uppercase',
+     letterSpacing: 0.5,
+-    marginBottom: 6,
+   },
+   value: {
+     fontSize: 32,
+     fontWeight: '800',
+     color: '#f4f4f5',
+     marginBottom: 16,
+   },
+   metricsRow: {
+     flexDirection: 'row',
+     justifyContent: 'space-between',
+@@ -60,45 +78,66 @@ const styles = StyleSheet.create({
+     color: '#e4e4e7',
+   },
+   positive: {
+     color: '#22c55e',
+   },
+   negative: {
+     color: '#ef4444',
+   },
+ });
+ 
++function resolveReturnPct(
++  performanceMode: PerformanceMode | undefined,
++  overallXirr: number | undefined,
++  unrealizedGainPct: number
++): number {
++  if (performanceMode === 'XIRR' && overallXirr !== undefined) {
++    return Math.abs(overallXirr) <= 2 && overallXirr !== 0 ? overallXirr * 100 : overallXirr;
++  }
++  return unrealizedGainPct;
++}
++
+ /**
+  * Overview card showing total portfolio net worth, invested principal, and unrealized returns.
+  *
+  * @param props - Component properties {@link NetWorthCardProps}
+  * @returns React Native element
+  */
+ export function NetWorthCard({
+   totalCurrentValue,
+   totalInvestedCost,
+   unrealizedGain,
+   unrealizedGainPct,
++  performanceMode,
++  overallXirr,
++  onTogglePerformanceMode,
+ }: NetWorthCardProps): React.ReactElement {
+   const isGainPositive = unrealizedGain >= 0;
+   const gainStyle = isGainPositive ? styles.positive : styles.negative;
+-  const gainFormatted = `${formatInr(unrealizedGain)} (${formatPct(unrealizedGainPct)})`;
++  const returnPct = resolveReturnPct(performanceMode, overallXirr, unrealizedGainPct);
++  const returnLabel = performanceMode ? `Total Gain (${performanceMode})` : 'Total Gain / Loss';
++  const gainFormatted = `${formatInr(unrealizedGain)} (${formatPct(returnPct)})`;
+ 
+   return (
+     <View style={styles.card} testID="net-worth-card">
+-      <Text style={styles.label}>Total Net Worth</Text>
++      <View style={styles.headerRow}>
++        <Text style={styles.label}>Total Net Worth</Text>
++        {performanceMode && onTogglePerformanceMode ? (
++          <PerformanceModeToggle mode={performanceMode} onToggle={onTogglePerformanceMode} />
++        ) : null}
++      </View>
+       <Text style={styles.value}>{formatInr(totalCurrentValue)}</Text>
+ 
+       <View style={styles.metricsRow}>
+         <View style={styles.metricBlock}>
+           <Text style={styles.metricLabel}>Invested Cost</Text>
+           <Text style={styles.metricValue}>{formatInr(totalInvestedCost)}</Text>
+         </View>
+ 
+         <View style={styles.metricBlock}>
+-          <Text style={styles.metricLabel}>Total Gain / Loss</Text>
++          <Text style={styles.metricLabel}>{returnLabel}</Text>
+           <Text style={[styles.metricValue, gainStyle]}>{gainFormatted}</Text>
+         </View>
+       </View>
+     </View>
+   );
+ }
+diff --git a/mobile/src/components/index.ts b/mobile/src/components/index.ts
+index 8d90a21..6c18c70 100644
+--- a/mobile/src/components/index.ts
++++ b/mobile/src/components/index.ts
+@@ -12,11 +12,12 @@ export * from './AssetAllocationCard';
+ export * from './HoldingCard';
+ export * from './Holdings';
+ export * from './UploadQueueCard';
+ export * from './UploadFormCard';
+ export * from './useCasUpload';
+ export * from './Tax';
+ export * from './Family';
+ export * from './Dashboard';
+ export * from './Insights';
+ export * from './Settings';
++export * from './Common/PerformanceModeToggle';
+ export * from './Auth/CredentialLoginForm';
+diff --git a/mobile/src/services/index.ts b/mobile/src/services/index.ts
+index 30d8113..16c0068 100644
+--- a/mobile/src/services/index.ts
++++ b/mobile/src/services/index.ts
+@@ -10,10 +10,11 @@ export * from './hierarchy-builder';
+ export * from './consolidation';
+ export * from './analytics-service';
+ export * from './family-service';
+ export * from './reality-check-service';
+ export * from './history-service';
+ export * from './goals-service';
+ export * from './scope-storage-adapter';
+ export * from './manual-asset-service';
+ export * from './itr-csv-service';
+ export * from './expense-calculation-service';
++export * from './settings-service';
+diff --git a/mobile/src/services/portfolio-service.ts b/mobile/src/services/portfolio-service.ts
+index f81497e..617b9c9 100644
+--- a/mobile/src/services/portfolio-service.ts
++++ b/mobile/src/services/portfolio-service.ts
+@@ -29,20 +29,21 @@ export interface DashboardSummary {
+   totalCurrentValue: number;
+   totalInvestedCost: number;
+   unrealizedGain: number;
+   unrealizedGainPct: number;
+   dayGain: number;
+   dayGainPct: number;
+   assetAllocation: AssetAllocationItem[];
+   holdingsCount: number;
+   lastUpdated: string | null;
+   isOfflineFallback: boolean;
++  overallXirr?: number | undefined;
+ }
+ 
+ export interface RefreshResult {
+   success: boolean;
+   source: 'server' | 'public_feed' | 'offline_cache';
+   dayGain?: number;
+   dayGainPct?: number;
+   error?: string;
+ }
+ 
+@@ -169,24 +170,47 @@ export async function getDashboardSummary(
+       assetAllocation: [],
+       holdingsCount: 0,
+       lastUpdated: null,
+       isOfflineFallback: false,
+     };
+   }
+ 
+   const summary = summarizeHoldings(holdings);
+   return {
+     ...summary,
++    overallXirr: computeOverallPortfolioXirr(holdings),
+     isOfflineFallback: false,
+   };
+ }
+ 
++/**
++ * Computes value-weighted overall portfolio annualized XIRR from holdings.
++ *
++ * @param holdings - Enriched holdings list
++ * @returns Weighted XIRR or undefined if no holdings have XIRR metrics
++ */
++export function computeOverallPortfolioXirr(holdings: readonly EnrichedHolding[]): number | undefined {
++  let totalValuation = 0;
++  let weightedXirr = 0;
++  let hasValidXirr = false;
++
++  for (const h of holdings) {
++    if (typeof h.xirr === 'number' && !Number.isNaN(h.xirr) && h.current_value > 0) {
++      totalValuation += h.current_value;
++      weightedXirr += h.current_value * h.xirr;
++      hasValidXirr = true;
++    }
++  }
++
++  return hasValidXirr && totalValuation > 0 ? weightedXirr / totalValuation : undefined;
++}
++
+ export async function checkServerReachable(
+   serverUrl: string,
+   timeoutMs: number = 3000,
+ ): Promise<boolean> {
+   const trimmed = serverUrl.trim().replace(/\/+$/, '');
+   if (!trimmed) return false;
+   const controller = new AbortController();
+   const timer = setTimeout(() => controller.abort(), timeoutMs);
+ 
+   try {
+diff --git a/mobile/src/services/settings-service.test.ts b/mobile/src/services/settings-service.test.ts
+new file mode 100644
+index 0000000..bce3c4d
+--- /dev/null
++++ b/mobile/src/services/settings-service.test.ts
+@@ -0,0 +1,138 @@
++/**
++ * @file settings-service.test.ts
++ * @description Unit tests for settings service and performance mode persistence.
++ */
++
++import React from 'react';
++import { describe, it, expect, beforeEach, vi } from 'vitest';
++import { View } from 'react-native';
++import * as SecureStore from 'expo-secure-store';
++import {
++  setupReactHookDispatcher,
++  resetHookState,
++  render,
++  waitFor,
++} from '../e2e/test-harness';
++import {
++  getStoredPerformanceMode,
++  setStoredPerformanceMode,
++  usePerformanceMode,
++  isValidPerformanceMode,
++  _resetInMemoryPerformanceModeForTesting,
++  SETTINGS_STORAGE_KEYS,
++} from './settings-service';
++import type { PerformanceMode } from '@portfolio/core-view';
++
++const { mockStorage } = vi.hoisted(() => ({
++  mockStorage: new Map<string, string>(),
++}));
++
++vi.mock('expo-secure-store', () => ({
++  getItemAsync: vi.fn(async (key: string): Promise<string | null> => {
++    return mockStorage.get(key) ?? null;
++  }),
++  setItemAsync: vi.fn(async (key: string, value: string): Promise<void> => {
++    mockStorage.set(key, value);
++  }),
++  deleteItemAsync: vi.fn(async (key: string): Promise<void> => {
++    mockStorage.delete(key);
++  }),
++}));
++
++describe('settings-service', () => {
++  beforeEach(() => {
++    setupReactHookDispatcher();
++    resetHookState();
++    mockStorage.clear();
++    _resetInMemoryPerformanceModeForTesting();
++    vi.clearAllMocks();
++  });
++
++  describe('isValidPerformanceMode', () => {
++    it('returns true for XIRR and ABS and false for other values', () => {
++      expect(isValidPerformanceMode('XIRR')).toBe(true);
++      expect(isValidPerformanceMode('ABS')).toBe(true);
++      expect(isValidPerformanceMode('OTHER')).toBe(false);
++      expect(isValidPerformanceMode(null)).toBe(false);
++      expect(isValidPerformanceMode(undefined)).toBe(false);
++    });
++  });
++
++  describe('getStoredPerformanceMode', () => {
++    it('returns default XIRR when storage is empty', async () => {
++      const mode = await getStoredPerformanceMode();
++      expect(mode).toBe('XIRR');
++    });
++
++    it('returns stored ABS mode', async () => {
++      mockStorage.set(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE, 'ABS');
++      const mode = await getStoredPerformanceMode();
++      expect(mode).toBe('ABS');
++    });
++
++    it('returns default XIRR when stored value is invalid', async () => {
++      mockStorage.set(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE, 'INVALID_MODE');
++      const mode = await getStoredPerformanceMode();
++      expect(mode).toBe('XIRR');
++    });
++
++    it('handles SecureStore read errors gracefully', async () => {
++      vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error('Hardware failure'));
++      const mode = await getStoredPerformanceMode();
++      expect(mode).toBe('XIRR');
++    });
++  });
++
++  describe('setStoredPerformanceMode', () => {
++    it('persists performance mode into storage', async () => {
++      await setStoredPerformanceMode('ABS');
++      expect(mockStorage.get(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE)).toBe('ABS');
++
++      const mode = await getStoredPerformanceMode();
++      expect(mode).toBe('ABS');
++    });
++
++    it('persists XIRR mode into storage', async () => {
++      await setStoredPerformanceMode('ABS');
++      await setStoredPerformanceMode('XIRR');
++      expect(mockStorage.get(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE)).toBe('XIRR');
++    });
++
++    it('handles SecureStore write errors gracefully and retains in-memory value', async () => {
++      vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error('Write failure'));
++      await setStoredPerformanceMode('ABS');
++      const mode = await getStoredPerformanceMode();
++      expect(mode).toBe('ABS');
++    });
++  });
++
++  describe('usePerformanceMode', () => {
++    it('initializes with stored value and updates state and storage on change', async () => {
++      mockStorage.set(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE, 'ABS');
++
++      let currentMode: PerformanceMode | null = null;
++      let setModeFn: ((m: PerformanceMode) => void) | null = null;
++
++      function HookConsumer(): React.ReactElement {
++        const [mode, setMode] = usePerformanceMode();
++        currentMode = mode;
++        setModeFn = setMode;
++        return React.createElement(View, { testID: 'hook-consumer' });
++      }
++
++      render(() => React.createElement(HookConsumer));
++
++      await waitFor(() => {
++        expect(currentMode).toBe('ABS');
++      });
++
++      // Update to XIRR
++      setModeFn!('XIRR');
++
++      await waitFor(() => {
++        expect(currentMode).toBe('XIRR');
++        expect(mockStorage.get(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE)).toBe('XIRR');
++      });
++    });
++  });
++});
+diff --git a/mobile/src/services/settings-service.ts b/mobile/src/services/settings-service.ts
+new file mode 100644
+index 0000000..e94fb7d
+--- /dev/null
++++ b/mobile/src/services/settings-service.ts
+@@ -0,0 +1,104 @@
++/**
++ * @file settings-service.ts
++ * @description SecureStore persistence service and React hook for portfolio performance calculation mode (XIRR vs ABS).
++ */
++
++import { useState, useEffect, useCallback } from 'react';
++import * as SecureStore from 'expo-secure-store';
++import type { PerformanceMode } from '@portfolio/core-view';
++
++/**
++ * Storage key constants for user settings.
++ */
++export const SETTINGS_STORAGE_KEYS = {
++  PERFORMANCE_MODE: 'portfolio_performance_mode',
++} as const;
++
++/** Default fallback performance mode */
++export const DEFAULT_PERFORMANCE_MODE: PerformanceMode = 'XIRR';
++
++/** In-memory cache for synchronous read fallbacks */
++let inMemoryPerformanceMode: PerformanceMode | null = null;
++
++/**
++ * Resets the in-memory performance mode cache for testing isolation.
++ */
++export function _resetInMemoryPerformanceModeForTesting(): void {
++  inMemoryPerformanceMode = null;
++}
++
++/**
++ * Type guard to check if a value is a valid PerformanceMode ('XIRR' | 'ABS').
++ *
++ * @param value - Value to validate
++ * @returns True if value is a valid PerformanceMode
++ */
++export function isValidPerformanceMode(value: unknown): value is PerformanceMode {
++  return value === 'XIRR' || value === 'ABS';
++}
++
++/**
++ * Retrieves the persisted performance mode from SecureStore, falling back to in-memory or default.
++ *
++ * @returns Promise resolving to active PerformanceMode ('XIRR' | 'ABS')
++ */
++export async function getStoredPerformanceMode(): Promise<PerformanceMode> {
++  try {
++    const stored = await SecureStore.getItemAsync(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE);
++    if (stored !== null) {
++      if (isValidPerformanceMode(stored)) {
++        inMemoryPerformanceMode = stored;
++        return stored;
++      }
++      inMemoryPerformanceMode = DEFAULT_PERFORMANCE_MODE;
++      return DEFAULT_PERFORMANCE_MODE;
++    }
++  } catch {
++    // Fallback on secure store access failure
++  }
++  return inMemoryPerformanceMode ?? DEFAULT_PERFORMANCE_MODE;
++}
++
++/**
++ * Persists the specified performance mode into SecureStore and updates in-memory cache.
++ *
++ * @param mode - The performance mode to store ('XIRR' | 'ABS')
++ */
++export async function setStoredPerformanceMode(mode: PerformanceMode): Promise<void> {
++  inMemoryPerformanceMode = mode;
++  try {
++    await SecureStore.setItemAsync(SETTINGS_STORAGE_KEYS.PERFORMANCE_MODE, mode);
++  } catch {
++    // Fallback on secure store access failure
++  }
++}
++
++/**
++ * Custom React hook for accessing and mutating the persistent performance calculation mode.
++ *
++ * @returns Tuple containing active PerformanceMode and update callback
++ */
++export function usePerformanceMode(): readonly [PerformanceMode, (mode: PerformanceMode) => void] {
++  const [performanceMode, setPerformanceModeState] = useState<PerformanceMode>(
++    inMemoryPerformanceMode ?? DEFAULT_PERFORMANCE_MODE
++  );
++
++  useEffect(() => {
++    let isMounted = true;
++    void getStoredPerformanceMode().then((mode) => {
++      if (isMounted) {
++        setPerformanceModeState(mode);
++      }
++    });
++    return () => {
++      isMounted = false;
++    };
++  }, []);
++
++  const setPerformanceMode = useCallback((mode: PerformanceMode) => {
++    setPerformanceModeState(mode);
++    void setStoredPerformanceMode(mode);
++  }, []);
++
++  return [performanceMode, setPerformanceMode] as const;
++}
+diff --git a/mobile/tests/holdings-breakdown.test.tsx b/mobile/tests/holdings-breakdown.test.tsx
+index c99383c..7469718 100644
+--- a/mobile/tests/holdings-breakdown.test.tsx
++++ b/mobile/tests/holdings-breakdown.test.tsx
+@@ -242,20 +242,36 @@ describe('Mobile Holdings Breakdown Components', () => {
+         selectedAsset: 'ALL',
+         onSelectAsset: vi.fn(),
+         selectedSort: 'value',
+         onSelectSort: vi.fn(),
+       });
+ 
+       expect(element).toBeDefined();
+       expect(ASSET_TYPES.length).toBeGreaterThan(0);
+       expect(SORT_OPTIONS.length).toBeGreaterThan(0);
+     });
++
++    it('renders PerformanceModeToggle when performanceMode and onTogglePerformanceMode are provided', () => {
++      const onToggle = vi.fn();
++      const element = HoldingsFilterControls({
++        searchQuery: '',
++        onSearchChange: vi.fn(),
++        selectedAsset: 'ALL',
++        onSelectAsset: vi.fn(),
++        selectedSort: 'value',
++        onSelectSort: vi.fn(),
++        performanceMode: 'XIRR',
++        onTogglePerformanceMode: onToggle,
++      });
++
++      expect(element).toBeDefined();
++    });
+   });
+ 
+   describe('holding-adapters', () => {
+     const mockEnriched: EnrichedHolding = {
+       id: 'h1',
+       folio_number: '12345/A',
+       amfi_code: '120503',
+       scheme_name: 'HDFC Top 100 Fund - Growth',
+       isin: 'INF179K01BE2',
+       units: 100,
+diff --git a/mobile/tests/tabs.test.tsx b/mobile/tests/tabs.test.tsx
+index e2c8c06..a7feef7 100644
+--- a/mobile/tests/tabs.test.tsx
++++ b/mobile/tests/tabs.test.tsx
+@@ -159,20 +159,35 @@ describe('Tabs Screens & Components', () => {
+         totalCurrentValue: 126000,
+         totalInvestedCost: 110000,
+         unrealizedGain: 16000,
+         unrealizedGainPct: 14.55,
+       });
+ 
+       expect(getProps(element)['testID']).toBe('net-worth-card');
+       expect(getProps(element)['children']).toBeDefined();
+     });
+ 
++    it('renders NetWorthCard with XIRR toggle and overallXirr metric', () => {
++      const onToggle = vi.fn();
++      const element = NetWorthCard({
++        totalCurrentValue: 126000,
++        totalInvestedCost: 110000,
++        unrealizedGain: 16000,
++        unrealizedGainPct: 14.55,
++        performanceMode: 'XIRR',
++        overallXirr: 0.165,
++        onTogglePerformanceMode: onToggle,
++      });
++
++      expect(getProps(element)['testID']).toBe('net-worth-card');
++    });
++
+     it('renders DayReturnBanner with positive gain and offline badge', () => {
+       const element = DayReturnBanner({
+         dayGain: 2100,
+         dayGainPct: 1.7,
+         isOfflineFallback: true,
+       });
+ 
+       expect(getProps(element)['testID']).toBe('day-return-banner');
+       expect(getProps(element)['children']).toBeDefined();
+     });
