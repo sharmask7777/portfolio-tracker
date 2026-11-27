@@ -106,3 +106,10 @@ A predictive tax and exit load calculation for redeeming units from a specific f
 
 Under Withdrawal Simulation, the client uses backend calculation as the single source of truth (`POST /api/tax/simulate-sell`) to guarantee cross-platform numerical parity, with transparent offline fallback to local calculations when unreachable.
 
+### Interactive Mobile Charting & Gesture Responder Loop
+An interaction architecture for touch-driven financial charts on mobile combining a 4-state PanResponder state machine (`IDLE`, `SCRUBBING`, `PINCHING`, `COOLDOWN`) with dynamic time-domain data downsampling, parent ScrollView gesture locking (`onPanResponderTerminationRequest: () => false`), and pinned inspection HUDs with off-screen directional clamping.
+*Avoid: Static pixel scaling, trailing finger scrub jumping, simulated web mobile testing*
+
+Under the Interactive Mobile Charting & Gesture Responder Loop, single-finger drags glide a vertical hairline with $O(\log N)$ binary search snapping while two-finger horizontal pinches scale timestamps (down to a 7-day floor), and pinned historical metrics are guaranteed never to drift when zoomed or panned out of view.
+
+
