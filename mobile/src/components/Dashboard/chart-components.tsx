@@ -1,5 +1,10 @@
 import React from 'react';
-import { Text, View, TouchableOpacity } from 'react-native';
+import {
+  Text,
+  View,
+  TouchableOpacity,
+  type GestureResponderHandlers,
+} from 'react-native';
 import Svg, { Path, Circle, Defs, LinearGradient, Stop, Line } from 'react-native-svg';
 import { TrendingUp, TrendingDown } from 'lucide-react-native';
 import type {
@@ -50,6 +55,7 @@ export function ChartHeader({
           <TouchableOpacity
             style={chartStyles.resetZoomBtn}
             onPress={onResetZoom}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityRole="button"
             testID="reset-zoom-button"
           >
@@ -125,6 +131,7 @@ export function ChartEmptyState(): React.ReactElement {
 export interface CheckpointTooltipProps {
   cp: HistoricalCheckpoint;
   isPinned?: boolean | undefined;
+  offScreenIndicator?: '(Off-screen ◀)' | '(Off-screen ▶)' | null | undefined;
   onResetProbe?: (() => void) | undefined;
 }
 
@@ -137,6 +144,7 @@ export interface CheckpointTooltipProps {
 export function CheckpointTooltip({
   cp,
   isPinned,
+  offScreenIndicator,
   onResetProbe,
 }: CheckpointTooltipProps): React.ReactElement {
   const isGainPositive = cp.unrealizedGain >= 0;
@@ -145,12 +153,18 @@ export function CheckpointTooltip({
       <View style={chartStyles.tooltipDateRow}>
         <View style={chartStyles.tooltipDateLeft}>
           <Text style={chartStyles.tooltipDate}>{formatDate(cp.date)}</Text>
+          {offScreenIndicator ? (
+            <Text style={chartStyles.tooltipOffScreen} testID="tooltip-off-screen-indicator">
+              {offScreenIndicator}
+            </Text>
+          ) : null}
           {cp.isAth ? <TrendingUp size={14} color="#10b981" /> : <TrendingDown size={14} color="#ef4444" />}
         </View>
         {isPinned ? (
           <TouchableOpacity
             style={chartStyles.resetProbeBtn}
             onPress={onResetProbe}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityRole="button"
             testID="reset-probe-button"
           >
@@ -188,8 +202,7 @@ export interface ChartSvgCanvasProps {
   selectedIdx: number | null;
   scrubX?: number | null | undefined;
   onSelectIdx: (idx: number) => void;
-  panResponderHandlers?: Record<string, unknown> | undefined;
-  onGestureActive?: ((active: boolean) => void) | undefined;
+  panResponderHandlers?: GestureResponderHandlers | undefined;
 }
 
 /**

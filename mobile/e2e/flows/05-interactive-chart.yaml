@@ -14,24 +14,29 @@ appId: com.portfolio.mobile
 - assertVisible:
     id: "historical-trend-chart"
 
+- scrollUntilVisible:
+    element:
+      id: "chart-svg-canvas"
+    direction: DOWN
+
 - tapOn:
     id: "range-button-1Y"
 
 # Perform swipe/scrub across chart canvas
 - swipe:
-    from:
+    direction: LEFT
+    element:
       id: "chart-svg-canvas"
-      x: 20
-      y: 50
-    to:
-      id: "chart-svg-canvas"
-      x: 80
-      y: 50
     duration: 600
 
 # Assert pinned inspection card is visible
 - assertVisible:
     id: "checkpoint-tooltip-card"
+
+# Assert inspection card metrics
+- assertVisible: "Valuation"
+- assertVisible: "Invested"
+- assertVisible: "Gain / ATH"
 
 # Tap Reset to Latest
 - tapOn:

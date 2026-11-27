@@ -7,6 +7,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MOBILE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+export PATH="/opt/homebrew/bin:${PATH}"
+
 TARGET="${1:-simulator}" # "simulator" or "device"
 
 echo "==> Building iOS (${TARGET}) in ${MOBILE_DIR}..."

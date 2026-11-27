@@ -8,6 +8,12 @@ import type {
   HistoricalCheckpoint,
 } from '../../services/reality-check-service';
 
+/** Horizontal canvas padding for data points and hairline clipping. */
+export const CHART_PAD_H = 16;
+
+/** Vertical canvas padding for top and bottom bounds. */
+export const CHART_PAD_V = 20;
+
 /**
  * Coordinate geometry data containing calculated paths and points for chart rendering.
  */
@@ -73,8 +79,8 @@ function computeBounds(
   width: number,
   height: number,
 ): ChartBounds {
-  const padH = 16;
-  const padV = 20;
+  const padH = CHART_PAD_H;
+  const padV = CHART_PAD_V;
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
 
@@ -158,17 +164,13 @@ function buildPath(points: Array<{ x: number; y: number }>): string {
  * @param items Filtered historical checkpoints
  * @param width Canvas width in pixels
  * @param height Canvas height in pixels
- * @param visibleRange Optional visible timestamp range [start, end]
  * @returns Coordinate paths and mapped points
  */
-// eslint-disable-next-line max-params
 export function computeChartGeometry(
   items: HistoricalCheckpoint[],
   width: number,
   height: number,
-  visibleRange?: [number, number],
 ): Coordinates {
-  void visibleRange;
   const bounds = computeBounds(items, width, height);
   const { valPoints, costPoints } = mapChartPoints(items, bounds);
 
@@ -186,21 +188,23 @@ export function computeChartGeometry(
 }
 
 /**
+ * Options for snapping touch coordinate X to nearest checkpoint index.
+ */
+export interface FindNearestCheckpointOptions {
+  touchX: number;
+  points: Array<{ x: number }>;
+  padH: number;
+  width: number;
+}
+
+/**
  * Snaps a touch coordinate X to the nearest checkpoint index via binary search.
  *
- * @param touchX Raw X position of the touch gesture
- * @param points Rendered chart points with X positions
- * @param padH Horizontal padding in pixels
- * @param width Total chart width in pixels
+ * @param opts Options including touchX, points, padH, and width
  * @returns Index of the closest point in the array
  */
-// eslint-disable-next-line max-params
-export function findNearestCheckpointIndex(
-  touchX: number,
-  points: Array<{ x: number }>,
-  padH: number,
-  width: number,
-): number {
+export function findNearestCheckpointIndex(opts: FindNearestCheckpointOptions): number {
+  const { touchX, points, padH, width } = opts;
   if (points.length <= 1) return 0;
   const clampedX = Math.max(padH, Math.min(touchX, width - padH));
 
@@ -227,28 +231,78 @@ export function findNearestCheckpointIndex(
   return Math.abs(pLow.x - clampedX) < Math.abs(pHigh.x - clampedX) ? low : high;
 }
 
+interface BracketOptions {
+  items: HistoricalCheckpoint[];
+  inRange: HistoricalCheckpoint[];
+  startTime: number;
+  endTime: number;
+}
+
+function resolveBracketForSingle(items: HistoricalCheckpoint[], single: HistoricalCheckpoint): HistoricalCheckpoint[] {
+  const idx = items.findIndex((cp) => cp.date === single.date);
+  if (idx > 0 && idx < items.length - 1) {
+    return [items[idx - 1]!, single, items[idx + 1]!];
+  }
+  return idx === 0 ? [single, items[1]!] : [items[items.length - 2]!, single];
+}
+
+function resolveBracketForEmpty(items: HistoricalCheckpoint[], startTime: number, endTime: number): HistoricalCheckpoint[] {
+  let lastBeforeIdx = -1;
+  let firstAfterIdx = -1;
+  for (let i = 0; i < items.length; i++) {
+    const t = new Date(items[i]!.date).getTime();
+    if (t < startTime) {
+      lastBeforeIdx = i;
+    } else if (t > endTime && firstAfterIdx === -1) {
+      firstAfterIdx = i;
+    }
+  }
+  if (lastBeforeIdx >= 0 && firstAfterIdx >= 0) {
+    return [items[lastBeforeIdx]!, items[firstAfterIdx]!];
+  }
+  return lastBeforeIdx >= 1 ? items.slice(-2) : items.slice(0, 2);
+}
+
+function bracketCheckpoints(opts: BracketOptions): HistoricalCheckpoint[] {
+  const { items, inRange, startTime, endTime } = opts;
+  const first = inRange[0];
+  if (inRange.length === 1 && first) {
+    return resolveBracketForSingle(items, first);
+  }
+  return resolveBracketForEmpty(items, startTime, endTime);
+}
+
+/**
+ * Options for slicing checkpoints by time range.
+ */
+export interface TimeRangeSliceOptions {
+  items: HistoricalCheckpoint[];
+  startTime: number;
+  endTime: number;
+  maxPoints?: number | undefined;
+}
+
 /**
  * Slices checkpoints by time window without losing boundaries, then downsamples.
+ * When fewer than 2 checkpoints fall in the window but items has at least 2 points,
+ * includes bracketing neighbor checkpoints to prevent chart collapse.
  *
- * @param items Array of historical checkpoints
- * @param startTime Start timestamp in milliseconds
- * @param endTime End timestamp in milliseconds
- * @param maxPoints Maximum target points (defaults to 300)
+ * @param opts Options containing items, startTime, endTime, and optional maxPoints
  * @returns Filtered and sampled checkpoints
  */
-// eslint-disable-next-line max-params
-export function sliceCheckpointsByTimeRange(
-  items: HistoricalCheckpoint[],
-  startTime: number,
-  endTime: number,
-  maxPoints: number = 300,
-): HistoricalCheckpoint[] {
+export function sliceCheckpointsByTimeRange(opts: TimeRangeSliceOptions): HistoricalCheckpoint[] {
+  const { items, startTime, endTime, maxPoints = 300 } = opts;
+  if (items.length < 2) return items;
+
   const inRange = items.filter((cp) => {
     const t = new Date(cp.date).getTime();
     return t >= startTime && t <= endTime;
   });
 
-  if (inRange.length === 0) return items.slice(-1);
+  if (inRange.length < 2) {
+    return bracketCheckpoints({ items, inRange, startTime, endTime });
+  }
+
   if (inRange.length <= maxPoints) return inRange;
 
   const interval = Math.ceil(inRange.length / maxPoints);

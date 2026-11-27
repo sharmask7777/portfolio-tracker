@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
   PanResponder,
   type GestureResponderEvent,
@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import type { HistoricalCheckpoint } from '../../services/reality-check-service';
 import {
+  CHART_PAD_H,
   findNearestCheckpointIndex,
   sliceCheckpointsByTimeRange,
   type Coordinates,
@@ -41,6 +42,7 @@ export interface GestureRefs {
   baseZoom: React.MutableRefObject<number>;
   lastMidX: React.MutableRefObject<number | null>;
   cooldown: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  provisionalProbe: React.MutableRefObject<boolean>;
 }
 
 /**
@@ -59,8 +61,12 @@ export function sampleCheckpoints(
   return data.filter((_, idx) => idx % interval === 0 || idx === data.length - 1);
 }
 
+/** Minimum zoom window duration (7 days in milliseconds). */
+const MIN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * Slices range checkpoints based on zoom scale factor and pan offset ratio.
+ * Enforces a minimum 7-day window to prevent over-zooming.
  *
  * @param items Filtered range checkpoints
  * @param zoomLevel Current zoom scale factor >= 1
@@ -82,12 +88,22 @@ export function sliceForZoomAndPan(
   const duration = endMs - startMs;
   if (duration <= 0) return sampleCheckpoints(items);
 
-  const visibleDuration = duration / zoomLevel;
-  const maxOffset = duration - visibleDuration;
+  const visibleDuration = Math.max(Math.min(duration, MIN_WINDOW_MS), duration / zoomLevel);
+  const maxOffset = Math.max(0, duration - visibleDuration);
   const clampedPan = Math.max(0, Math.min(1, panOffset));
   const visibleStart = startMs + maxOffset * clampedPan;
   const visibleEnd = visibleStart + visibleDuration;
-  return sliceCheckpointsByTimeRange(items, visibleStart, visibleEnd);
+  return sliceCheckpointsByTimeRange({ items, startTime: visibleStart, endTime: visibleEnd });
+}
+
+function extractTouchLocationX(event: GestureResponderEvent): number {
+  const native = event.nativeEvent;
+  if (!native) return 0;
+  const touches = native.touches;
+  if (touches && touches.length > 0 && touches[0]) {
+    return touches[0].locationX;
+  }
+  return native.locationX ?? 0;
 }
 
 /**
@@ -102,9 +118,13 @@ export function handleSingleTouch(
   ctx: ScrubContext,
   callbacks: GestureCallbacks,
 ): void {
-  const touches = event.nativeEvent.touches;
-  const touchX = touches[0]?.locationX ?? event.nativeEvent.locationX;
-  const nearestIdx = findNearestCheckpointIndex(touchX, ctx.geometry.valPoints, 16, ctx.width);
+  const touchX = extractTouchLocationX(event);
+  const nearestIdx = findNearestCheckpointIndex({
+    touchX,
+    points: ctx.geometry.valPoints,
+    padH: CHART_PAD_H,
+    width: ctx.width,
+  });
   const targetCp = ctx.filtered[nearestIdx];
   if (targetCp) {
     callbacks.setProbedDate(targetCp.date);
@@ -144,17 +164,23 @@ export function computeTouchMidpointX(event: GestureResponderEvent): number {
 }
 
 /**
- * Processes two-finger pinch zoom and pan midpoint movement.
- *
- * @param event Native touch event
- * @param refs Gesture tracking references
- * @param callbacks State updater callbacks
+ * Options for pinch and pan movement handler.
  */
-export function handlePinchAndPanMove(
-  event: GestureResponderEvent,
-  refs: GestureRefs,
-  callbacks: GestureCallbacks,
-): void {
+export interface PinchAndPanOptions {
+  event: GestureResponderEvent;
+  refs: GestureRefs;
+  callbacks: GestureCallbacks;
+  width: number;
+  zoom: number;
+}
+
+/**
+ * Processes two-finger pinch zoom and scaled pan midpoint movement.
+ *
+ * @param opts Options including event, refs, callbacks, width, and zoom
+ */
+export function handlePinchAndPanMove(opts: PinchAndPanOptions): void {
+  const { event, refs, callbacks, width, zoom } = opts;
   if (refs.cooldown.current) clearTimeout(refs.cooldown.current);
   refs.state.current = 'PINCHING';
 
@@ -169,7 +195,9 @@ export function handlePinchAndPanMove(
   const midX = computeTouchMidpointX(event);
   if (refs.lastMidX.current !== null) {
     const dx = midX - refs.lastMidX.current;
-    const deltaRatio = -dx / 300;
+    const chartW = width > 0 ? width : 300;
+    const zoomScale = Math.max(0.1, zoom - 1);
+    const deltaRatio = -dx / (chartW * zoomScale);
     callbacks.setPanOffset((prev) => Math.max(0, Math.min(1, prev + deltaRatio)));
   }
   refs.lastMidX.current = midX;
@@ -209,6 +237,33 @@ interface TouchMoveOptions {
   zoom: number;
 }
 
+function startCooldown(refs: GestureRefs): void {
+  refs.state.current = 'COOLDOWN';
+  refs.dist.current = null;
+  refs.lastMidX.current = null;
+  if (refs.cooldown.current) clearTimeout(refs.cooldown.current);
+  refs.cooldown.current = setTimeout(() => {
+    refs.state.current = 'IDLE';
+    refs.cooldown.current = null;
+  }, 150);
+}
+
+function handleMultiTouch(
+  event: GestureResponderEvent,
+  opts: TouchMoveOptions,
+): void {
+  const { refs, ctx, callbacks, zoom } = opts;
+  if (refs.provisionalProbe.current) {
+    refs.provisionalProbe.current = false;
+    callbacks.setProbedDate(null);
+    callbacks.setSelectedIdx(null);
+  }
+  if (refs.dist.current === null) {
+    refs.baseZoom.current = zoom;
+  }
+  handlePinchAndPanMove({ event, refs, callbacks, width: ctx.width, zoom });
+}
+
 /**
  * Handles touch movement: routes to pinch/pan for 2 touches or scrub for 1 touch with cooldown guard.
  */
@@ -216,25 +271,17 @@ function handleTouchMove(
   event: GestureResponderEvent,
   opts: TouchMoveOptions,
 ): void {
-  const { refs, ctx, callbacks, zoom } = opts;
-  const touchCount = event.nativeEvent.touches.length;
+  const { refs, ctx, callbacks } = opts;
+  const touches = event.nativeEvent ? event.nativeEvent.touches : null;
+  const touchCount = touches ? touches.length : 0;
   if (touchCount >= 2) {
-    if (refs.dist.current === null) {
-      refs.baseZoom.current = zoom;
-    }
-    handlePinchAndPanMove(event, refs, callbacks);
+    handleMultiTouch(event, opts);
     return;
   }
   if (touchCount === 1) {
+    refs.provisionalProbe.current = false;
     if (refs.state.current === 'PINCHING') {
-      refs.state.current = 'COOLDOWN';
-      refs.dist.current = null;
-      refs.lastMidX.current = null;
-      if (refs.cooldown.current) clearTimeout(refs.cooldown.current);
-      refs.cooldown.current = setTimeout(() => {
-        refs.state.current = 'IDLE';
-        refs.cooldown.current = null;
-      }, 150);
+      startCooldown(refs);
       return;
     }
     if (refs.state.current !== 'COOLDOWN') {
@@ -242,6 +289,46 @@ function handleTouchMove(
       handleSingleTouch(event, ctx, callbacks);
     }
   }
+}
+
+interface PanHandlerOptions {
+  refs: GestureRefs;
+  ctxRef: React.MutableRefObject<ScrubContext>;
+  callbacksRef: React.MutableRefObject<GestureCallbacks>;
+  zoomRef: React.MutableRefObject<number>;
+}
+
+function createPanHandlers(opts: PanHandlerOptions) {
+  const { refs, ctxRef, callbacksRef, zoomRef } = opts;
+  return {
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onShouldBlockNativeResponder: () => true,
+    onPanResponderGrant: (evt?: GestureResponderEvent) => {
+      const touches = evt && evt.nativeEvent ? evt.nativeEvent.touches : null;
+      const count = touches ? touches.length : 1;
+      if (count <= 1 && refs.state.current !== 'COOLDOWN') {
+        refs.state.current = 'SCRUBBING';
+        refs.provisionalProbe.current = true;
+        if (evt) handleSingleTouch(evt, ctxRef.current, callbacksRef.current);
+      }
+    },
+    onPanResponderMove: (evt?: GestureResponderEvent) => {
+      if (evt) handleTouchMove(evt, { refs, ctx: ctxRef.current, callbacks: callbacksRef.current, zoom: zoomRef.current });
+    },
+    onPanResponderRelease: (evt?: GestureResponderEvent) => {
+      refs.provisionalProbe.current = false;
+      if (evt && evt.nativeEvent && refs.state.current === 'SCRUBBING') {
+        handleSingleTouch(evt, ctxRef.current, callbacksRef.current);
+      }
+      handleTouchRelease(refs, callbacksRef.current.onGestureActive);
+    },
+    onPanResponderTerminate: () => {
+      refs.provisionalProbe.current = false;
+      handleTouchRelease(refs, callbacksRef.current.onGestureActive);
+    },
+  };
 }
 
 /**
@@ -263,6 +350,7 @@ export function useChartPanResponder(
     baseZoom: useRef<number>(1),
     lastMidX: useRef<number | null>(null),
     cooldown: useRef<ReturnType<typeof setTimeout> | null>(null),
+    provisionalProbe: useRef<boolean>(false),
   };
   const ctxRef = useRef(ctx);
   const callbacksRef = useRef(callbacks);
@@ -271,24 +359,21 @@ export function useChartPanResponder(
   callbacksRef.current = callbacks;
   zoomRef.current = zoomLevel;
 
-  return useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (evt) => {
-          if (evt.nativeEvent.touches.length <= 1 && refs.state.current !== 'COOLDOWN') {
-            refs.state.current = 'SCRUBBING';
-            handleSingleTouch(evt, ctxRef.current, callbacksRef.current);
-          }
-        },
-        onPanResponderMove: (evt) => {
-          handleTouchMove(evt, { refs, ctx: ctxRef.current, callbacks: callbacksRef.current, zoom: zoomRef.current });
-        },
-        onPanResponderRelease: () => handleTouchRelease(refs, callbacksRef.current.onGestureActive),
-        onPanResponderTerminate: () => handleTouchRelease(refs, callbacksRef.current.onGestureActive),
-      }),
+  const onGestureActive = callbacks.onGestureActive;
+  useEffect(() => {
+    return () => {
+      if (refs.cooldown.current) {
+        clearTimeout(refs.cooldown.current);
+        refs.cooldown.current = null;
+      }
+      if (refs.state.current !== 'IDLE') {
+        refs.state.current = 'IDLE';
+        onGestureActive?.(false);
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => PanResponder.create(createPanHandlers({ refs, ctxRef, callbacksRef, zoomRef })), []);
 }

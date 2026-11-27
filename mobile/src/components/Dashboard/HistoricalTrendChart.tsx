@@ -7,7 +7,11 @@ import {
   type HistoryRangePreset,
 } from '../../services/reality-check-service';
 import type { HistoryPoint } from '../../types/generated';
-import { computeChartGeometry, type Coordinates } from './chart-geometry';
+import {
+  computeChartGeometry,
+  CHART_PAD_H,
+  type Coordinates,
+} from './chart-geometry';
 import {
   chartStyles,
   ChartHeader,
@@ -44,20 +48,57 @@ function resolveCheckpoints(
   return [];
 }
 
-function resolveActiveCheckpoint(
-  items: HistoricalCheckpoint[],
-  probedDate: string | null,
-  idx: number | null,
-): HistoricalCheckpoint | undefined {
+interface ResolveActiveOptions {
+  rangePoints: HistoricalCheckpoint[];
+  filtered: HistoricalCheckpoint[];
+  probedDate: string | null;
+  selectedIdx: number | null;
+}
+
+function resolveActiveCheckpoint(opts: ResolveActiveOptions): HistoricalCheckpoint | undefined {
+  const { rangePoints, filtered, probedDate, selectedIdx } = opts;
   if (probedDate !== null) {
-    const probed = items.find((cp) => cp.date === probedDate);
+    const probed = rangePoints.find((cp) => cp.date === probedDate);
     if (probed) return probed;
   }
-  if (idx !== null) {
-    const selected = items[idx];
+  if (selectedIdx !== null) {
+    const selected = filtered[selectedIdx];
     if (selected) return selected;
   }
-  return items[items.length - 1];
+  return filtered[filtered.length - 1];
+}
+
+interface ResolveProbeOptions {
+  probedDate: string;
+  filtered: HistoricalCheckpoint[];
+  geometry: Coordinates;
+  width: number;
+  scrubX: number | null;
+}
+
+interface ProbeDisplay {
+  canvasSelectedIdx: number | null;
+  canvasScrubX: number | null;
+  offScreenIndicator: '(Off-screen ◀)' | '(Off-screen ▶)' | null;
+}
+
+function resolveProbeDisplay(opts: ResolveProbeOptions): ProbeDisplay {
+  const { probedDate, filtered, geometry, width, scrubX } = opts;
+  const idx = filtered.findIndex((cp) => cp.date === probedDate);
+  if (idx >= 0) {
+    return {
+      canvasSelectedIdx: idx,
+      canvasScrubX: geometry.valPoints[idx]?.x ?? scrubX,
+      offScreenIndicator: null,
+    };
+  }
+  const firstDate = filtered[0]?.date ?? '';
+  const isEarlier = probedDate < firstDate;
+  return {
+    canvasSelectedIdx: null,
+    canvasScrubX: isEarlier ? CHART_PAD_H : width - CHART_PAD_H,
+    offScreenIndicator: isEarlier ? '(Off-screen ◀)' : '(Off-screen ▶)',
+  };
 }
 
 function getAthMetrics(cp: HistoricalCheckpoint | undefined): { isAth: boolean; drawdown: number } {
@@ -74,12 +115,35 @@ interface HistoricalChartState {
   panResponder: PanResponderInstance;
   canvasSelectedIdx: number | null;
   canvasScrubX: number | null;
+  offScreenIndicator: '(Off-screen ◀)' | '(Off-screen ▶)' | null;
   isPinned: boolean;
   hasData: boolean;
   resetZoom: () => void;
   resetProbe: () => void;
   selectRange: (r: HistoryRangePreset) => void;
   selectPoint: (idx: number) => void;
+}
+
+interface ProbeDisplayOptions {
+  probedDate: string | null;
+  selectedIdx: number | null;
+  filtered: HistoricalCheckpoint[];
+  geometry: Coordinates;
+  width: number;
+  scrubX: number | null;
+}
+
+function getProbeDisplay(opts: ProbeDisplayOptions): ProbeDisplay {
+  const { probedDate, selectedIdx, filtered, geometry, width, scrubX } = opts;
+  if (probedDate !== null) {
+    return resolveProbeDisplay({ probedDate, filtered, geometry, width, scrubX });
+  }
+  const isValid = selectedIdx !== null && selectedIdx >= 0 && selectedIdx < filtered.length;
+  return {
+    canvasSelectedIdx: isValid ? selectedIdx : null,
+    canvasScrubX: scrubX !== null && Number.isFinite(scrubX) ? scrubX : null,
+    offScreenIndicator: null,
+  };
 }
 
 function useHistoricalChartState(
@@ -97,23 +161,23 @@ function useHistoricalChartState(
   const all = useMemo(() => resolveCheckpoints(props.checkpoints, props.historyPoints), [props.checkpoints, props.historyPoints]);
   const rangePoints = useMemo(() => filterCheckpointsByRange(all, selectedRange), [all, selectedRange]);
   const filtered = useMemo(() => sliceForZoomAndPan(rangePoints, zoomLevel, panOffset), [rangePoints, zoomLevel, panOffset]);
-  const activeCheckpoint = resolveActiveCheckpoint(filtered, probedDate, selectedIdx);
+  const activeCheckpoint = resolveActiveCheckpoint({ rangePoints, filtered, probedDate, selectedIdx });
   const geometry = useMemo(() => computeChartGeometry(filtered, width, height), [filtered, width, height]);
 
   const scrubCallbacks = useMemo(
     () => ({ setProbedDate, setSelectedIdx, setScrubX, setZoomLevel, setPanOffset, onGestureActive: props.onGestureActive }),
     [props.onGestureActive],
   );
-  const scrubCtx = useMemo(() => ({ geometry, filtered, width }), [geometry, filtered, width]);
-  const panResponder = useChartPanResponder(scrubCtx, scrubCallbacks, zoomLevel);
-
-  const activeIdx = activeCheckpoint ? filtered.findIndex((cp) => cp.date === activeCheckpoint.date) : -1;
-  const canvasSelectedIdx = activeIdx >= 0 ? activeIdx : selectedIdx;
-  const canvasScrubX = scrubX !== null && Number.isFinite(scrubX) ? scrubX : null;
+  const panResponder = useChartPanResponder(useMemo(() => ({ geometry, filtered, width }), [geometry, filtered, width]), scrubCallbacks, zoomLevel);
+  const probeDisplay = getProbeDisplay({ probedDate, selectedIdx, filtered, geometry, width, scrubX });
 
   return {
     selectedRange, zoomLevel, filtered, activeCheckpoint, geometry, panResponder,
-    canvasSelectedIdx, canvasScrubX, isPinned: probedDate !== null, hasData: filtered.length > 0,
+    canvasSelectedIdx: probeDisplay.canvasSelectedIdx,
+    canvasScrubX: probeDisplay.canvasScrubX,
+    offScreenIndicator: probeDisplay.offScreenIndicator,
+    isPinned: probedDate !== null,
+    hasData: filtered.length > 0,
     resetZoom: useCallback(() => { setZoomLevel(1); setPanOffset(1); }, []),
     resetProbe: useCallback(() => { setProbedDate(null); setScrubX(null); setSelectedIdx(null); }, []),
     selectRange: useCallback((r: HistoryRangePreset) => {
@@ -138,7 +202,12 @@ function ChartContent({
   return (
     <>
       {state.activeCheckpoint ? (
-        <CheckpointTooltip cp={state.activeCheckpoint} isPinned={state.isPinned} onResetProbe={state.resetProbe} />
+        <CheckpointTooltip
+          cp={state.activeCheckpoint}
+          isPinned={state.isPinned}
+          offScreenIndicator={state.offScreenIndicator}
+          onResetProbe={state.resetProbe}
+        />
       ) : null}
       <ChartSvgCanvas
         width={width}

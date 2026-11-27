@@ -9,7 +9,7 @@ MOBILE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${MOBILE_DIR}/.." && pwd)"
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-export PATH="${HOME}/.maestro/bin:${PATH}"
+export PATH="/opt/homebrew/bin:${HOME}/.maestro/bin:${PATH}"
 
 echo "🍎 ======================================================================"
 echo "   Portfolio Tracker - Interactive Local iOS Emulation"

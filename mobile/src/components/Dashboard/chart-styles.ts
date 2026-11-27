@@ -16,6 +16,8 @@ export const chartStyles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
     marginBottom: 12,
   },
   headerActions: {
@@ -27,6 +29,7 @@ export const chartStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#f4f4f5',
+    flexShrink: 1,
   },
   resetZoomBtn: {
     paddingVertical: 3,
@@ -116,6 +119,11 @@ export const chartStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#a1a1aa',
+  },
+  tooltipOffScreen: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#f59e0b',
   },
   resetProbeBtn: {
     paddingVertical: 2,

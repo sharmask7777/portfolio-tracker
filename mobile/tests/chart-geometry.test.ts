@@ -59,40 +59,49 @@ describe('chart-geometry interactive extensions', () => {
   describe('findNearestCheckpointIndex', () => {
     it('snaps touchX to the nearest checkpoint index via binary search', () => {
       const points = [{ x: 16 }, { x: 165 }, { x: 314 }];
-      expect(findNearestCheckpointIndex(10, points, 16, 330)).toBe(0);
-      expect(findNearestCheckpointIndex(160, points, 16, 330)).toBe(1);
-      expect(findNearestCheckpointIndex(165, points, 16, 330)).toBe(1);
-      expect(findNearestCheckpointIndex(300, points, 16, 330)).toBe(2);
+      expect(findNearestCheckpointIndex({ touchX: 10, points, padH: 16, width: 330 })).toBe(0);
+      expect(findNearestCheckpointIndex({ touchX: 160, points, padH: 16, width: 330 })).toBe(1);
+      expect(findNearestCheckpointIndex({ touchX: 165, points, padH: 16, width: 330 })).toBe(1);
+      expect(findNearestCheckpointIndex({ touchX: 300, points, padH: 16, width: 330 })).toBe(2);
     });
 
     it('handles single-point or empty point arrays', () => {
-      expect(findNearestCheckpointIndex(100, [], 16, 330)).toBe(0);
-      expect(findNearestCheckpointIndex(100, [{ x: 50 }], 16, 330)).toBe(0);
+      expect(findNearestCheckpointIndex({ touchX: 100, points: [], padH: 16, width: 330 })).toBe(0);
+      expect(findNearestCheckpointIndex({ touchX: 100, points: [{ x: 50 }], padH: 16, width: 330 })).toBe(0);
     });
 
     it('clamps touchX within padH and width - padH boundaries', () => {
       const points = [{ x: 16 }, { x: 100 }, { x: 314 }];
-      expect(findNearestCheckpointIndex(0, points, 16, 330)).toBe(0);
-      expect(findNearestCheckpointIndex(400, points, 16, 330)).toBe(2);
+      expect(findNearestCheckpointIndex({ touchX: 0, points, padH: 16, width: 330 })).toBe(0);
+      expect(findNearestCheckpointIndex({ touchX: 400, points, padH: 16, width: 330 })).toBe(2);
     });
   });
 
   describe('sliceCheckpointsByTimeRange', () => {
     it('slices checkpoints dynamically by time window without losing boundaries', () => {
-      const tStart = new Date('2026-01-10').getTime();
-      const tEnd = new Date('2026-02-05').getTime();
-      const sliced = sliceCheckpointsByTimeRange(mockCheckpoints, tStart, tEnd);
+      const startTime = new Date('2026-01-10').getTime();
+      const endTime = new Date('2026-02-05').getTime();
+      const sliced = sliceCheckpointsByTimeRange({ items: mockCheckpoints, startTime, endTime });
       expect(sliced.length).toBe(2);
       expect(sliced[0]?.date).toBe('2026-01-15');
       expect(sliced[1]?.date).toBe('2026-02-01');
     });
 
-    it('returns the last checkpoint when no checkpoints fall in range', () => {
-      const tStart = new Date('2025-01-01').getTime();
-      const tEnd = new Date('2025-01-05').getTime();
-      const sliced = sliceCheckpointsByTimeRange(mockCheckpoints, tStart, tEnd);
-      expect(sliced.length).toBe(1);
-      expect(sliced[0]?.date).toBe('2026-02-01');
+    it('includes bracketing neighbors when fewer than 2 checkpoints fall in window to prevent collapse', () => {
+      // Narrow window that only contains 2026-01-15 (length 1)
+      const startTime = new Date('2026-01-14').getTime();
+      const endTime = new Date('2026-01-16').getTime();
+      const sliced = sliceCheckpointsByTimeRange({ items: mockCheckpoints, startTime, endTime });
+      expect(sliced.length).toBeGreaterThanOrEqual(2);
+      expect(sliced.some((cp) => cp.date === '2026-01-15')).toBe(true);
+    });
+
+    it('returns bracketing boundaries when no checkpoints fall in range', () => {
+      const startTime = new Date('2025-01-01').getTime();
+      const endTime = new Date('2025-01-05').getTime();
+      const sliced = sliceCheckpointsByTimeRange({ items: mockCheckpoints, startTime, endTime });
+      expect(sliced.length).toBe(2);
+      expect(sliced[0]?.date).toBe('2026-01-01');
     });
 
     it('downsamples dense checkpoints exceeding maxPoints while preserving last item', () => {
@@ -107,9 +116,9 @@ describe('chart-geometry interactive extensions', () => {
         drawdownPct: 0,
       }));
 
-      const tStart = new Date('2026-01-01').getTime();
-      const tEnd = new Date('2026-02-28').getTime();
-      const sliced = sliceCheckpointsByTimeRange(manyCheckpoints, tStart, tEnd, 10);
+      const startTime = new Date('2026-01-01').getTime();
+      const endTime = new Date('2026-02-28').getTime();
+      const sliced = sliceCheckpointsByTimeRange({ items: manyCheckpoints, startTime, endTime, maxPoints: 10 });
       expect(sliced.length).toBeLessThanOrEqual(11);
       expect(sliced[sliced.length - 1]?.value).toBe(manyCheckpoints[manyCheckpoints.length - 1]?.value);
     });
@@ -134,10 +143,8 @@ describe('chart-geometry interactive extensions', () => {
       expect(Number.isFinite(geom.valPoints[0]?.y)).toBe(true);
     });
 
-    it('computes geometry with visibleRange specified', () => {
-      const tStart = new Date('2026-01-01').getTime();
-      const tEnd = new Date('2026-02-01').getTime();
-      const geom = computeChartGeometry(mockCheckpoints, 330, 200, [tStart, tEnd]);
+    it('computes geometry correctly mapped to width and height', () => {
+      const geom = computeChartGeometry(mockCheckpoints, 330, 200);
       expect(geom.valPoints.length).toBe(3);
       expect(geom.valPoints[0]?.x).toBe(16);
       expect(geom.valPoints[2]?.x).toBe(314);

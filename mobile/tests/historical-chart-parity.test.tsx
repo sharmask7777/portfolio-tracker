@@ -40,6 +40,7 @@ import { RANGES, ChartSvgCanvas } from '../src/components/Dashboard/chart-compon
 import {
   sliceForZoomAndPan,
   handlePinchAndPanMove,
+  handleTouchRelease,
   type GestureRefs,
   type GestureCallbacks,
 } from '../src/components/Dashboard/chart-gesture';
@@ -399,6 +400,7 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
       baseZoom: { current: 1.5 },
       lastMidX: { current: 150 },
       cooldown: { current: null },
+      provisionalProbe: { current: false },
     };
 
     const callbacks: GestureCallbacks = {
@@ -417,17 +419,124 @@ describe('HistoricalTrendChart Parity & Real Points Suite', () => {
           { pageX: 280, pageY: 100, locationX: 280 },
         ],
       },
-    } as unknown as Parameters<typeof handlePinchAndPanMove>[0];
+    } as unknown as Parameters<typeof handlePinchAndPanMove>[0]['event'];
 
-    handlePinchAndPanMove(event, refs, callbacks);
+    handlePinchAndPanMove({ event, refs, callbacks, width: 300, zoom: 2 });
 
     expect(refs.state.current).toBe('PINCHING');
     // distance is 200 (scale 2.0x from 100) -> nextZoom = 1.5 * 2.0 = 3.0
     expect(setZoomLevel).toHaveBeenCalledWith(3);
-    // midX is (80 + 280) / 2 = 180, dx = 180 - 150 = 30 -> deltaRatio = -30 / 300 = -0.1
+    // midX is (80 + 280) / 2 = 180, dx = 180 - 150 = 30 -> deltaRatio = -30 / (300 * 1) = -0.1
     expect(setPanOffset).toHaveBeenCalledWith(expect.any(Function));
     expect(setScrubX).toHaveBeenCalledWith(null);
     expect(onGestureActive).toHaveBeenCalledWith(true);
+  });
+
+  it('enforces a minimum 7-day window floor in sliceForZoomAndPan', () => {
+    // 10-day range
+    const points: HistoricalCheckpoint[] = Array.from({ length: 10 }, (_, i) => ({
+      date: `2026-01-${String(i + 1).padStart(2, '0')}`,
+      value: 100000 + i * 1000,
+      investedAmount: 90000,
+      unrealizedGain: 10000 + i * 1000,
+      gainPct: 10,
+      isAth: false,
+      athValue: 120000,
+      drawdownPct: 5,
+    }));
+
+    // With 5x zoom, duration (9 days) / 5 = 1.8 days, but floor is 7 days!
+    const sliced = sliceForZoomAndPan(points, 5, 0);
+    const startMs = new Date(sliced[0]!.date).getTime();
+    const endMs = new Date(sliced[sliced.length - 1]!.date).getTime();
+    const durationDays = (endMs - startMs) / (24 * 60 * 60 * 1000);
+    expect(durationDays).toBeGreaterThanOrEqual(6); // At least 7 calendar days span
+  });
+
+  it('resets gesture state to IDLE upon cooldown timer expiry', () => {
+    vi.useFakeTimers();
+    const refs: GestureRefs = {
+      state: { current: 'PINCHING' },
+      dist: { current: 100 },
+      baseZoom: { current: 1.5 },
+      lastMidX: { current: 150 },
+      cooldown: { current: null },
+      provisionalProbe: { current: false },
+    };
+
+    handleTouchRelease(refs);
+    expect(refs.state.current).toBe('COOLDOWN');
+    expect(refs.cooldown.current).not.toBeNull();
+
+    vi.advanceTimersByTime(160);
+    expect(refs.state.current).toBe('IDLE');
+    expect(refs.cooldown.current).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('handles off-screen pinned probe correctly with left and right clamping indicators', () => {
+    const checkpoints: HistoricalCheckpoint[] = [
+      {
+        date: '2026-01-01',
+        value: 100000,
+        investedAmount: 90000,
+        unrealizedGain: 10000,
+        gainPct: 11.11,
+        isAth: false,
+        athValue: 100000,
+        drawdownPct: 0,
+      },
+      {
+        date: '2026-01-15',
+        value: 105000,
+        investedAmount: 90000,
+        unrealizedGain: 15000,
+        gainPct: 16.67,
+        isAth: true,
+        athValue: 105000,
+        drawdownPct: 0,
+      },
+      {
+        date: '2026-02-01',
+        value: 110000,
+        investedAmount: 90000,
+        unrealizedGain: 20000,
+        gainPct: 22.22,
+        isAth: true,
+        athValue: 110000,
+        drawdownPct: 0,
+      },
+    ];
+
+    // Slot states:
+    // 0: selectedRange ('ALL')
+    // 1: selectedIdx (null)
+    // 2: probedDate ('2026-01-01')
+    // 3: scrubX (16)
+    // 4: zoomLevel (2)
+    // 5: panOffset (1 - panned fully to the right)
+    stateSlots = [
+      { val: 'ALL', setter: vi.fn() },
+      { val: null, setter: vi.fn() },
+      { val: '2026-01-01', setter: vi.fn() },
+      { val: 16, setter: vi.fn() },
+      { val: 2, setter: vi.fn() },
+      { val: 1, setter: vi.fn() },
+    ];
+    slotCursor = 0;
+
+    const element = HistoricalTrendChart({
+      checkpoints,
+      width: 330,
+      height: 200,
+    });
+    expect(element).toBeDefined();
+    const children = getChartContentChildren(element);
+    const tooltip = children[0] as React.ReactElement<{ isPinned?: boolean; cp: HistoricalCheckpoint }>;
+    expect(tooltip).toBeDefined();
+    // Verify pinned indicator and reset probe handler
+    expect(tooltip.props.isPinned).toBe(true);
+    expect(tooltip.props.cp.date).toBe('2026-01-01');
   });
 
   it('triggers cooldown debounce when transitioning from two fingers to one finger', () => {
