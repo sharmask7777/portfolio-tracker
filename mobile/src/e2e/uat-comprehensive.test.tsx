@@ -198,6 +198,7 @@ vi.mock('react-native', () => ({
   ActivityIndicator: (props: Record<string, unknown>) => ({ type: 'ActivityIndicator', props }),
   RefreshControl: (props: Record<string, unknown>) => ({ type: 'RefreshControl', props }),
   Modal: (props: Record<string, unknown>) => ({ type: 'Modal', props }),
+  PanResponder: { create: (c: Record<string, unknown>) => ({ panHandlers: c }) },
   Switch: (props: Record<string, unknown>) => ({ type: 'Switch', props }),
   StatusBar: { currentHeight: 24 },
   Alert: { alert: vi.fn() },

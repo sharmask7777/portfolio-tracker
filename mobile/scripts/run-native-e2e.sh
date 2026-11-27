@@ -100,6 +100,12 @@ maestro test "${MOBILE_DIR}/e2e/flows/04-analytics-tax-ssot.yaml"
 adb exec-out screencap -p > "${SCREENSHOTS_DIR}/mobile-analytics-ssot.png"
 adb exec-out screencap -p > "${SCREENSHOTS_DIR}/mobile-tax-dropdown.png"
 
+echo "==> Executing Flow 05: Interactive Historical Chart & Checkpoints..."
+maestro test "${MOBILE_DIR}/e2e/flows/05-interactive-chart.yaml"
+
+# Capture Mobile Interactive Chart Screenshot
+adb exec-out screencap -p > "${SCREENSHOTS_DIR}/mobile-interactive-chart.png"
+
 echo "=========================================================================="
 echo "🎉 Native Maestro UI Tests PASSED on live Android Emulator!"
 echo "   Screenshots captured in: ${SCREENSHOTS_DIR}"

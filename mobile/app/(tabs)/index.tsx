@@ -1,12 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  ScrollView,
-  RefreshControl,
-  ActivityIndicator,
-} from 'react-native';
+import { StyleSheet, Text, View, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { usePortfolioScope, type PerformanceMode } from '@portfolio/core-view';
 import {
   getEnrichedHoldings,
@@ -31,10 +24,7 @@ import {
 import { getCachedPortfolioHistory } from '../../src/services/history-service';
 import { secureStoreScopeStorageAdapter } from '../../src/services/scope-storage-adapter';
 import { ScopeSelectorHeader } from '../../src/components/Navigation';
-import {
-  DEFAULT_ASSUMPTIONS,
-  type RealityCheckAssumptions,
-} from '../../src/services/reality-check-service';
+import { DEFAULT_ASSUMPTIONS, type RealityCheckAssumptions } from '../../src/services/reality-check-service';
 import { NetWorthCard } from '../../src/components/NetWorthCard';
 import { DayReturnBanner } from '../../src/components/DayReturnBanner';
 import { AssetAllocationCard } from '../../src/components/AssetAllocationCard';
@@ -52,14 +42,8 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 13, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   title: { fontSize: 26, fontWeight: '800', color: '#f4f4f5' },
   emptyCard: {
-    backgroundColor: '#18181b',
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 20,
+    backgroundColor: '#18181b', borderRadius: 16, padding: 24, borderWidth: 1,
+    borderColor: '#27272a', alignItems: 'center', marginTop: 10, marginBottom: 20,
   },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#f4f4f5', marginBottom: 8 },
   emptySubtitle: { fontSize: 14, color: '#a1a1aa', textAlign: 'center', lineHeight: 20 },
@@ -67,15 +51,14 @@ const styles = StyleSheet.create({
 });
 
 async function fetchDashboardSnapshot(historyId: string, scopeId: string) {
-  const [enriched, storedProfiles, storedFolios, cachedHistory, scopedBundle, baseBundle] =
-    await Promise.all([
-      getEnrichedHoldings(),
-      getStoredFamilyProfiles(),
-      getStoredFolios(),
-      getCachedPortfolioHistory(undefined, historyId),
-      getStoredDashboardBundle(undefined, scopeId),
-      getStoredDashboardBundle(undefined, 'consolidated'),
-    ]);
+  const [enriched, storedProfiles, storedFolios, cachedHistory, scopedBundle, baseBundle] = await Promise.all([
+    getEnrichedHoldings(),
+    getStoredFamilyProfiles(),
+    getStoredFolios(),
+    getCachedPortfolioHistory(undefined, historyId),
+    getStoredDashboardBundle(undefined, scopeId),
+    getStoredDashboardBundle(undefined, 'consolidated'),
+  ]);
   return { enriched, storedProfiles, storedFolios, cachedHistory, scopedBundle, baseBundle };
 }
 
@@ -131,16 +114,8 @@ function useDashboardData(activeProfileId: string | null) {
 }
 
 const defaultSummary: DashboardSummary = {
-  totalCurrentValue: 0,
-  totalInvestedCost: 0,
-  unrealizedGain: 0,
-  unrealizedGainPct: 0,
-  dayGain: 0,
-  dayGainPct: 0,
-  assetAllocation: [],
-  holdingsCount: 0,
-  lastUpdated: null,
-  isOfflineFallback: false,
+  totalCurrentValue: 0, totalInvestedCost: 0, unrealizedGain: 0, unrealizedGainPct: 0,
+  dayGain: 0, dayGainPct: 0, assetAllocation: [], holdingsCount: 0, lastUpdated: null, isOfflineFallback: false,
 };
 
 function renderEmptyState(): React.ReactElement {
@@ -166,8 +141,6 @@ interface RealityCheckSectionProps {
 
 function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElement {
   const { realityCheckMode, setRealityCheckMode, assumptions, setAssumptions, isAssumptionsOpen, setIsAssumptionsOpen, data } = props;
-  const nominalReturnPct = data.overallXirr ?? 0;
-
   return (
     <>
       <RealityCheckModeToggle realityCheckMode={realityCheckMode} onToggle={setRealityCheckMode} onOpenAssumptions={() => setIsAssumptionsOpen(true)} />
@@ -176,7 +149,7 @@ function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElemen
         <RealityCheckBanner
           nominalValue={data.totalCurrentValue}
           investedCost={data.totalInvestedCost}
-          nominalReturnPct={nominalReturnPct}
+          nominalReturnPct={data.overallXirr ?? 0}
           drags={data.drags}
           assumptions={assumptions}
           onOpenAssumptions={() => setIsAssumptionsOpen(true)}
@@ -186,21 +159,15 @@ function RealityCheckSection(props: RealityCheckSectionProps): React.ReactElemen
   );
 }
 
-interface DashboardCardsProps {
-  data: DashboardSummary;
+interface DashboardCardsProps extends RealityCheckSectionProps {
   historyPoints: HistoryPoint[];
-  realityCheckMode: boolean;
-  setRealityCheckMode: (m: boolean) => void;
-  assumptions: RealityCheckAssumptions;
-  setAssumptions: (a: RealityCheckAssumptions) => void;
-  isAssumptionsOpen: boolean;
-  setIsAssumptionsOpen: (open: boolean) => void;
   performanceMode: PerformanceMode;
   onTogglePerformanceMode: (mode: PerformanceMode) => void;
+  onGestureActive?: ((active: boolean) => void) | undefined;
 }
 
 function DashboardCards(props: DashboardCardsProps): React.ReactElement {
-  const { data, historyPoints, performanceMode, onTogglePerformanceMode } = props;
+  const { data, historyPoints, performanceMode, onTogglePerformanceMode, onGestureActive } = props;
   const hasHoldings = data.holdingsCount > 0;
 
   return (
@@ -211,25 +178,18 @@ function DashboardCards(props: DashboardCardsProps): React.ReactElement {
       </View>
       <RealityCheckSection {...props} />
       <NetWorthCard
-        totalCurrentValue={data.totalCurrentValue}
-        totalInvestedCost={data.totalInvestedCost}
-        unrealizedGain={data.unrealizedGain}
-        unrealizedGainPct={data.unrealizedGainPct}
-        performanceMode={performanceMode}
-        overallXirr={data.overallXirr}
-        onTogglePerformanceMode={onTogglePerformanceMode}
-        realityCheckMode={props.realityCheckMode}
-        netRealizableValue={data.netRealizableValue}
-        estimatedTax={data.estimatedTax}
-        realPostTaxXirr={data.realPostTaxXirr}
-        postTaxTotalValue={data.postTaxTotalValue}
+        totalCurrentValue={data.totalCurrentValue} totalInvestedCost={data.totalInvestedCost}
+        unrealizedGain={data.unrealizedGain} unrealizedGainPct={data.unrealizedGainPct}
+        performanceMode={performanceMode} overallXirr={data.overallXirr}
+        onTogglePerformanceMode={onTogglePerformanceMode} realityCheckMode={props.realityCheckMode}
+        netRealizableValue={data.netRealizableValue} estimatedTax={data.estimatedTax}
+        realPostTaxXirr={data.realPostTaxXirr} postTaxTotalValue={data.postTaxTotalValue}
         postTaxXirr={data.postTaxXirr}
       />
       <DayReturnBanner dayGain={data.dayGain} dayGainPct={data.dayGainPct} isOfflineFallback={data.isOfflineFallback} />
       <HistoricalTrendChart
-        currentValue={data.totalCurrentValue}
-        investedCost={data.totalInvestedCost}
-        historyPoints={historyPoints}
+        currentValue={data.totalCurrentValue} investedCost={data.totalInvestedCost}
+        historyPoints={historyPoints} onGestureActive={onGestureActive}
       />
       {hasHoldings ? <AssetAllocationCard allocation={data.assetAllocation} totalValue={data.totalCurrentValue} /> : renderEmptyState()}
     </>
@@ -246,13 +206,12 @@ interface FilteredSummaryInput {
 
 function useFilteredSummary({ activeProfileId, holdings, profiles, folios, serverBundle }: FilteredSummaryInput) {
   const activeProfile = useMemo(() => {
-    if (!activeProfileId) return null;
-    return profiles.find((p) => p.id === activeProfileId) ?? null;
+    return activeProfileId ? profiles.find((p) => p.id === activeProfileId) ?? null : null;
   }, [activeProfileId, profiles]);
 
   const filteredHoldings = useMemo(
     () => filterHoldingsForProfile(activeProfile, holdings, folios),
-    [activeProfile, holdings, folios]
+    [activeProfile, holdings, folios],
   );
 
   return useMemo<DashboardSummary>(() => {
@@ -286,6 +245,7 @@ export default function DashboardScreen(): React.ReactElement {
   });
   const [performanceMode, setPerformanceMode] = usePerformanceMode();
   const [realityCheckMode, setRealityCheckMode] = useState(false);
+  const [chartGestureActive, setChartGestureActive] = useState(false);
   const [assumptions, setAssumptions] = useState<RealityCheckAssumptions>(DEFAULT_ASSUMPTIONS);
   const [isAssumptionsOpen, setIsAssumptionsOpen] = useState(false);
   const handleSaveAssumptions = useCallback((next: RealityCheckAssumptions) => {
@@ -309,7 +269,9 @@ export default function DashboardScreen(): React.ReactElement {
         onSelectMember={scopeState.setMemberScope} totalFolios={dash.folios.length}
       />
       <ScrollView
-        contentContainerStyle={styles.content} testID="dashboard-scroll"
+        contentContainerStyle={styles.content}
+        testID="dashboard-scroll"
+        scrollEnabled={!chartGestureActive}
         refreshControl={<RefreshControl refreshing={dash.isRefreshing} onRefresh={() => void dash.handleRefresh(assumptions)} tintColor="#3b82f6" colors={['#3b82f6']} />}
       >
         <DashboardCards
@@ -318,6 +280,7 @@ export default function DashboardScreen(): React.ReactElement {
           assumptions={assumptions} setAssumptions={handleSaveAssumptions}
           isAssumptionsOpen={isAssumptionsOpen} setIsAssumptionsOpen={setIsAssumptionsOpen}
           performanceMode={performanceMode} onTogglePerformanceMode={setPerformanceMode}
+          onGestureActive={setChartGestureActive}
         />
       </ScrollView>
     </View>

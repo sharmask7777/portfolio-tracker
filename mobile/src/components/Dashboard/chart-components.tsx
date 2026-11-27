@@ -1,6 +1,11 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
-import Svg, { Path, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import {
+  Text,
+  View,
+  TouchableOpacity,
+  type GestureResponderHandlers,
+} from 'react-native';
+import Svg, { Path, Circle, Defs, LinearGradient, Stop, Line } from 'react-native-svg';
 import { TrendingUp, TrendingDown } from 'lucide-react-native';
 import type {
   HistoricalCheckpoint,
@@ -11,160 +16,9 @@ import {
   formatDate,
   type Coordinates,
 } from './chart-geometry';
+import { chartStyles } from './chart-styles';
 
-/**
- * Style definitions for historical trend chart components.
- */
-export const chartStyles = StyleSheet.create({
-  card: {
-    backgroundColor: '#18181b',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    padding: 16,
-    marginBottom: 20,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#f4f4f5',
-  },
-  athBadge: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  athBadgeActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
-  athBadgeDrawdown: {
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  athBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  athBadgeTextActive: {
-    color: '#10b981',
-  },
-  athBadgeTextDrawdown: {
-    color: '#ef4444',
-  },
-  rangeBar: {
-    flexDirection: 'row',
-    backgroundColor: '#09090b',
-    borderRadius: 8,
-    padding: 3,
-    marginBottom: 14,
-  },
-  rangeBtn: {
-    flex: 1,
-    paddingVertical: 6,
-    alignItems: 'center',
-    borderRadius: 6,
-  },
-  rangeBtnActive: {
-    backgroundColor: '#27272a',
-  },
-  rangeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#71717a',
-  },
-  rangeTextActive: {
-    color: '#3b82f6',
-    fontWeight: '700',
-  },
-  tooltipCard: {
-    backgroundColor: '#09090b',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    padding: 12,
-    marginBottom: 14,
-  },
-  tooltipDateRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#18181b',
-    paddingBottom: 6,
-  },
-  tooltipDate: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#a1a1aa',
-  },
-  tooltipMetricsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  tooltipMetric: {
-    flex: 1,
-  },
-  tooltipMetricLabel: {
-    fontSize: 10,
-    color: '#71717a',
-    marginBottom: 2,
-  },
-  tooltipMetricValue: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#f4f4f5',
-  },
-  chartContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 4,
-  },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 10,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  legendLineVal: {
-    width: 14,
-    height: 3,
-    backgroundColor: '#3b82f6',
-    borderRadius: 2,
-    marginRight: 6,
-  },
-  legendLineCost: {
-    width: 14,
-    height: 2,
-    backgroundColor: '#71717a',
-    marginRight: 6,
-  },
-  legendText: {
-    fontSize: 11,
-    color: '#a1a1aa',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 32,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: '#71717a',
-  },
-});
+export { chartStyles } from './chart-styles';
 
 /**
  * Historical range preset buttons.
@@ -172,7 +26,17 @@ export const chartStyles = StyleSheet.create({
 export const RANGES: HistoryRangePreset[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y', 'ALL'];
 
 /**
- * Renders the chart header with title and ATH badge.
+ * Properties for {@link ChartHeader}.
+ */
+export interface ChartHeaderProps {
+  isAth: boolean;
+  drawdown: number;
+  isZoomed?: boolean | undefined;
+  onResetZoom?: (() => void) | undefined;
+}
+
+/**
+ * Renders the chart header with title, optional Reset Zoom button, and ATH badge.
  *
  * @param props Header props
  * @returns React Native element
@@ -180,23 +44,43 @@ export const RANGES: HistoryRangePreset[] = ['1M', '3M', '6M', '1Y', '3Y', '5Y',
 export function ChartHeader({
   isAth,
   drawdown,
-}: {
-  isAth: boolean;
-  drawdown: number;
-}): React.ReactElement {
+  isZoomed,
+  onResetZoom,
+}: ChartHeaderProps): React.ReactElement {
   return (
     <View style={chartStyles.header}>
       <Text style={chartStyles.title}>Valuation Trend & Checkpoints</Text>
-      <View
-        style={[chartStyles.athBadge, isAth ? chartStyles.athBadgeActive : chartStyles.athBadgeDrawdown]}
-        testID="ath-badge"
-      >
-        <Text style={[chartStyles.athBadgeText, isAth ? chartStyles.athBadgeTextActive : chartStyles.athBadgeTextDrawdown]}>
-          {isAth ? 'All-Time High' : `${drawdown.toFixed(1)}% Drawdown`}
-        </Text>
+      <View style={chartStyles.headerActions}>
+        {isZoomed ? (
+          <TouchableOpacity
+            style={chartStyles.resetZoomBtn}
+            onPress={onResetZoom}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            testID="reset-zoom-button"
+          >
+            <Text style={chartStyles.resetZoomText}>Reset Zoom</Text>
+          </TouchableOpacity>
+        ) : null}
+        <View
+          style={[chartStyles.athBadge, isAth ? chartStyles.athBadgeActive : chartStyles.athBadgeDrawdown]}
+          testID="ath-badge"
+        >
+          <Text style={[chartStyles.athBadgeText, isAth ? chartStyles.athBadgeTextActive : chartStyles.athBadgeTextDrawdown]}>
+            {isAth ? 'All-Time High' : `${drawdown.toFixed(1)}% Drawdown`}
+          </Text>
+        </View>
       </View>
     </View>
   );
+}
+
+/**
+ * Properties for {@link RangeBar}.
+ */
+export interface RangeBarProps {
+  selectedRange: HistoryRangePreset;
+  onSelectRange: (r: HistoryRangePreset) => void;
 }
 
 /**
@@ -208,10 +92,7 @@ export function ChartHeader({
 export function RangeBar({
   selectedRange,
   onSelectRange,
-}: {
-  selectedRange: HistoryRangePreset;
-  onSelectRange: (r: HistoryRangePreset) => void;
-}): React.ReactElement {
+}: RangeBarProps): React.ReactElement {
   return (
     <View style={chartStyles.rangeBar} testID="history-range-bar">
       {RANGES.map((r) => (
@@ -245,18 +126,51 @@ export function ChartEmptyState(): React.ReactElement {
 }
 
 /**
+ * Properties for {@link CheckpointTooltip}.
+ */
+export interface CheckpointTooltipProps {
+  cp: HistoricalCheckpoint;
+  isPinned?: boolean | undefined;
+  offScreenIndicator?: '(Off-screen ◀)' | '(Off-screen ▶)' | null | undefined;
+  onResetProbe?: (() => void) | undefined;
+}
+
+/**
  * Renders the inspection tooltip card for the selected checkpoint point.
  *
- * @param props Selected checkpoint
+ * @param props Checkpoint and optional pinned probe handlers
  * @returns React Native element
  */
-export function CheckpointTooltip({ cp }: { cp: HistoricalCheckpoint }): React.ReactElement {
+export function CheckpointTooltip({
+  cp,
+  isPinned,
+  offScreenIndicator,
+  onResetProbe,
+}: CheckpointTooltipProps): React.ReactElement {
   const isGainPositive = cp.unrealizedGain >= 0;
   return (
     <View style={chartStyles.tooltipCard} testID="checkpoint-tooltip-card">
       <View style={chartStyles.tooltipDateRow}>
-        <Text style={chartStyles.tooltipDate}>{formatDate(cp.date)}</Text>
-        {cp.isAth ? <TrendingUp size={14} color="#10b981" /> : <TrendingDown size={14} color="#ef4444" />}
+        <View style={chartStyles.tooltipDateLeft}>
+          <Text style={chartStyles.tooltipDate}>{formatDate(cp.date)}</Text>
+          {offScreenIndicator ? (
+            <Text style={chartStyles.tooltipOffScreen} testID="tooltip-off-screen-indicator">
+              {offScreenIndicator}
+            </Text>
+          ) : null}
+          {cp.isAth ? <TrendingUp size={14} color="#10b981" /> : <TrendingDown size={14} color="#ef4444" />}
+        </View>
+        {isPinned ? (
+          <TouchableOpacity
+            style={chartStyles.resetProbeBtn}
+            onPress={onResetProbe}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            testID="reset-probe-button"
+          >
+            <Text style={chartStyles.resetProbeText}>Reset to Latest</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
       <View style={chartStyles.tooltipMetricsGrid}>
         <View style={chartStyles.tooltipMetric}>
@@ -279,9 +193,44 @@ export function CheckpointTooltip({ cp }: { cp: HistoricalCheckpoint }): React.R
 }
 
 /**
- * Renders the SVG curves and interactive checkpoint circles.
+ * Properties for {@link ChartSvgCanvas}.
+ */
+export interface ChartSvgCanvasProps {
+  width: number;
+  height: number;
+  geometry: Coordinates;
+  selectedIdx: number | null;
+  scrubX?: number | null | undefined;
+  onSelectIdx: (idx: number) => void;
+  panResponderHandlers?: GestureResponderHandlers | undefined;
+}
+
+/**
+ * Renders the checkpoint circle data points on the SVG canvas.
+ */
+function renderDataPoints(
+  points: Coordinates['valPoints'],
+  selectedIdx: number | null,
+  onSelectIdx: (idx: number) => void,
+): React.ReactElement[] {
+  return points.map((p, idx) => (
+    <Circle
+      key={p.cp.date}
+      cx={p.x}
+      cy={p.y}
+      r={selectedIdx === idx ? 6 : 4}
+      fill={selectedIdx === idx ? '#f59e0b' : p.cp.isAth ? '#10b981' : '#3b82f6'}
+      stroke="#18181b"
+      strokeWidth={1.5}
+      onPress={() => onSelectIdx(idx)}
+    />
+  ));
+}
+
+/**
+ * Renders the SVG curves, vertical scrub hairline, and interactive checkpoint circles.
  *
- * @param props SVG dimensions, geometry, selected index, and select callback
+ * @param props SVG dimensions, geometry, scrub hairline position, and handlers
  * @returns React Native element
  */
 export function ChartSvgCanvas({
@@ -289,16 +238,17 @@ export function ChartSvgCanvas({
   height,
   geometry,
   selectedIdx,
+  scrubX,
   onSelectIdx,
-}: {
-  width: number;
-  height: number;
-  geometry: Coordinates;
-  selectedIdx: number | null;
-  onSelectIdx: (idx: number) => void;
-}): React.ReactElement {
+  panResponderHandlers,
+}: ChartSvgCanvasProps): React.ReactElement {
+  const hasScrub = scrubX !== null && scrubX !== undefined && Number.isFinite(scrubX);
   return (
-    <View style={chartStyles.chartContainer}>
+    <View
+      style={chartStyles.chartContainer}
+      testID="chart-svg-canvas"
+      {...(panResponderHandlers ?? {})}
+    >
       <Svg width={width} height={height}>
         <Defs>
           <LinearGradient id="valGrad" x1="0" y1="0" x2="0" y2="1">
@@ -309,18 +259,19 @@ export function ChartSvgCanvas({
         {geometry.areaPath ? <Path d={geometry.areaPath} fill="url(#valGrad)" /> : null}
         {geometry.costPath ? <Path d={geometry.costPath} stroke="#71717a" strokeWidth={1.5} strokeDasharray="4 4" fill="none" /> : null}
         {geometry.valPath ? <Path d={geometry.valPath} stroke="#3b82f6" strokeWidth={2.5} fill="none" /> : null}
-        {geometry.valPoints.map((p, idx) => (
-          <Circle
-            key={p.cp.date}
-            cx={p.x}
-            cy={p.y}
-            r={selectedIdx === idx ? 6 : 4}
-            fill={selectedIdx === idx ? '#f59e0b' : p.cp.isAth ? '#10b981' : '#3b82f6'}
-            stroke="#18181b"
+        {hasScrub ? (
+          <Line
+            x1={scrubX}
+            y1={0}
+            x2={scrubX}
+            y2={height}
+            stroke="#f59e0b"
             strokeWidth={1.5}
-            onPress={() => onSelectIdx(idx)}
+            strokeDasharray="4 4"
+            testID="scrub-hairline"
           />
-        ))}
+        ) : null}
+        {renderDataPoints(geometry.valPoints, selectedIdx, onSelectIdx)}
       </Svg>
     </View>
   );

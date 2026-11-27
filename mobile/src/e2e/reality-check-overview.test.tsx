@@ -9,6 +9,7 @@ import {
   waitFor,
 } from './test-harness';
 import type { DashboardSummary } from '../services/portfolio-service';
+import type { HistoryPoint } from '../types/generated';
 import {
   calculateRealityCheckMetrics,
   DEFAULT_ASSUMPTIONS,
@@ -76,6 +77,9 @@ vi.mock('react-native-svg', () => {
     Defs: (props: Record<string, unknown>) => ({ type: 'Defs', props }),
     Pattern: (props: Record<string, unknown>) => ({ type: 'Pattern', props }),
     Line: (props: Record<string, unknown>) => ({ type: 'Line', props }),
+    Circle: (props: Record<string, unknown>) => ({ type: 'Circle', props }),
+    LinearGradient: (props: Record<string, unknown>) => ({ type: 'LinearGradient', props }),
+    Stop: (props: Record<string, unknown>) => ({ type: 'Stop', props }),
   };
 });
 
@@ -110,6 +114,7 @@ vi.mock('react-native', () => ({
   ActivityIndicator: (props: Record<string, unknown>) => ({ type: 'ActivityIndicator', props }),
   RefreshControl: (props: Record<string, unknown>) => ({ type: 'RefreshControl', props }),
   Modal: (props: Record<string, unknown>) => ({ type: 'Modal', props }),
+  PanResponder: { create: (c: Record<string, unknown>) => ({ panHandlers: c }) },
   Alert: { alert: vi.fn() },
   Platform: { OS: 'ios', select: (s: Record<string, unknown>) => s['ios'] },
 }));
@@ -129,6 +134,44 @@ const mockSyntheticDashboardSummary: DashboardSummary = {
   lastUpdated: '2026-11-20',
   isOfflineFallback: false,
 };
+
+const mockSyntheticHistoryPoints: HistoryPoint[] = [
+  {
+    date: '2026-01-01',
+    value: 1000000,
+    investedAmount: 900000,
+    unrealizedGain: 100000,
+    gainPercentage: 11.11,
+    isAth: false,
+    athValue: 1000000,
+    drawdownPercentage: 0,
+  },
+  {
+    date: '2026-06-01',
+    value: 1100000,
+    investedAmount: 950000,
+    unrealizedGain: 150000,
+    gainPercentage: 15.79,
+    isAth: false,
+    athValue: 1100000,
+    drawdownPercentage: 0,
+  },
+  {
+    date: '2026-11-20',
+    value: 1200000,
+    investedAmount: 1000000,
+    unrealizedGain: 200000,
+    gainPercentage: 20,
+    isAth: true,
+    athValue: 1200000,
+    drawdownPercentage: 0,
+  },
+];
+
+vi.mock('../../src/services/history-service', () => ({
+  getCachedPortfolioHistory: vi.fn(async () => mockSyntheticHistoryPoints),
+  syncPortfolioHistoryFromServer: vi.fn(async () => undefined),
+}));
 
 vi.mock('../../src/services/portfolio-service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/services/portfolio-service')>();
@@ -209,6 +252,72 @@ describe('Maestro Flow 07: Reality Check & Historical Valuation Simulation', () 
 
     const rangeAll = screen.getByTestId('range-button-ALL');
     fireEvent.press(rangeAll);
+  });
+
+  it('validates interactive chart scrubbing, scrub hairline, pinned tooltip card with exact values, and reset probe action', async () => {
+    render(() => <DashboardScreen />);
+
+    // 1. Initial render shows chart, tooltip with latest values, and no hairline/reset button
+    await waitFor(() => {
+      expect(screen.getByTestId('historical-trend-chart')).toBeDefined();
+      expect(screen.getByTestId('chart-svg-canvas')).toBeDefined();
+      expect(screen.getByTestId('checkpoint-tooltip-card')).toBeDefined();
+      expect(screen.queryByTestId('scrub-hairline')).toBeNull();
+      expect(screen.queryByTestId('reset-probe-button')).toBeNull();
+    });
+
+    // 2. Simulate scrub gesture (onPanResponderGrant) on chart canvas
+    const canvas = screen.getByTestId('chart-svg-canvas');
+    const onGrant = canvas.props['onPanResponderGrant'] as (e: unknown) => void;
+    expect(typeof onGrant).toBe('function');
+
+    onGrant({
+      nativeEvent: {
+        locationX: 25,
+        touches: [{ pageX: 25, pageY: 50, locationX: 25 }],
+      },
+    });
+
+    // 3. Assert scrub hairline is rendered, pinned tooltip card is visible with exact values for probed checkpoint
+    await waitFor(() => {
+      expect(screen.getByTestId('scrub-hairline')).toBeDefined();
+      expect(screen.getByTestId('reset-probe-button')).toBeDefined();
+      expect(screen.getByText('Valuation')).toBeDefined();
+      expect(screen.getByText('₹10,00,000')).toBeDefined();
+      expect(screen.getByText('Invested')).toBeDefined();
+      expect(screen.getByText('₹9,00,000')).toBeDefined();
+      expect(screen.getByText('+11.1%')).toBeDefined();
+    });
+
+    // 4. Scrub/move across canvas to next checkpoint
+    const onMove = canvas.props['onPanResponderMove'] as (e: unknown) => void;
+    expect(typeof onMove).toBe('function');
+
+    onMove({
+      nativeEvent: {
+        locationX: 165,
+        touches: [{ pageX: 165, pageY: 50, locationX: 165 }],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('₹11,00,000')).toBeDefined();
+      expect(screen.getByText('₹9,50,000')).toBeDefined();
+      expect(screen.getByText('+15.8%')).toBeDefined();
+    });
+
+    // 5. Tap Reset to Latest button
+    const resetBtn = screen.getByTestId('reset-probe-button');
+    fireEvent.press(resetBtn);
+
+    // 6. Assert hairline is removed, probe unpinned, and values return to latest ATH checkpoint
+    await waitFor(() => {
+      expect(screen.queryByTestId('scrub-hairline')).toBeNull();
+      expect(screen.queryByTestId('reset-probe-button')).toBeNull();
+      expect(screen.getByText('₹12,00,000')).toBeDefined();
+      expect(screen.getByTestId('ath-badge')).toBeDefined();
+      expect(screen.getByText('All-Time High')).toBeDefined();
+    });
   });
 
   it('validates mathematical Fisher equation invariant: Real <= Post-Tax <= Nominal', () => {

@@ -101,9 +101,35 @@ Comprehensive documentation of all backend and frontend test suites, financial i
   4. **Backend Invariant Differential Parity**: 100% numerical parity verification across all 10 synthetic test scenarios (`portfolio-parity`).
 - All non-trivial PR descriptions must include evidence of this UAT suite passing.
 
+### 12. Mandatory Dual-Platform Native Mobile Testing & Gesture Invariant Gate
+- **Strict Anti-Web-Mock Mandate for Mobile Development**:
+  - Agents are STRICTLY FORBIDDEN from verifying mobile application features by opening a mobile web browser (e.g. Safari or Chrome on simulator loading `http://localhost:8082`). Web view verification misses React Native PanResponder gesture arbitration, native safe areas, hardware back buttons, and Dark Mode theme rendering.
+  - All mobile application changes MUST be compiled and verified against genuine native binaries running on both platforms:
+    - **Android**: Native release APK (`./gradlew assembleRelease --no-daemon`) compiled and installed on local Android Emulator (`Medium_Phone_API_37.0`) via `bash mobile/scripts/emulate-android.sh`.
+    - **iOS**: Native iOS application bundle compiled via CocoaPods & `xcodebuild -workspace PortfolioTracker.xcworkspace -scheme PortfolioTracker -configuration Debug -sdk iphonesimulator` and installed on local iOS Simulator (`iPhone 17 Pro`) via `bash mobile/scripts/emulate-ios.sh`.
+- **Mandatory Maestro Automated E2E Flow Registration**:
+  - Every user-facing interactive component, gesture flow, or screen enhancement in `mobile/` MUST have a corresponding Maestro automated flow under `mobile/e2e/flows/` with valid syntax (`direction: LEFT`/`RIGHT`, `start`/`end` percentages, `scrollUntilVisible`, `tapOn`, `assertVisible`).
+  - All Maestro flows must be registered in and verified by `mobile/scripts/run-native-e2e.sh`.
+- **Gesture Responder & Parent Scroll Coordination Invariants**:
+  - Any interactive touch handler (such as `PanResponder` or custom touch canvases) nested inside a vertical `<ScrollView>` MUST:
+    1. Set `onPanResponderTerminationRequest: () => false` and `onShouldBlockNativeResponder: () => true` to guarantee touch exclusivity and stop the parent ScrollView from hijacking active gestures.
+    2. Coordinate parent scroll locking via `onGestureActive?: (active: boolean) => void` bound to `scrollEnabled={!chartGestureActive}` on `<ScrollView testID="dashboard-scroll">`.
+    3. Implement multi-touch disambiguation with a 150ms cooldown debounce to prevent trailing fingers from causing accidental single-touch scrub jumps upon pinch release.
+    4. Defer permanent inspection state locking until single-finger movement or release (`provisionalProbe`) so initial two-finger touches do not accidentally lock a single-point probe.
+- **Time-Domain Window & Off-Screen Pinning Invariants**:
+  - Dynamic time-domain zooming must enforce a minimum 7-day window floor (`MIN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000`) and bracketing neighbor checkpoints to prevent SVG curve collapse on sparse datasets.
+  - Pinned inspection HUD cards must resolve metrics from the full range dataset, not only the zoomed slice. When the pinned point moves off-screen, pinned metrics are preserved, coordinates are clamped to canvas boundaries, and directional indicators (`(Off-screen ◀)` or `(Off-screen ▶)`) are displayed.
+- **Strict Martin Fowler Maintainability Compliance**:
+  - Zero `eslint-disable max-params` comments permitted in `mobile/`. All multi-parameter routines must use strongly-typed options interfaces.
+  - All mobile source files strictly adhere to: file lines $\le 300$, function lines $\le 50$, parameters $\le 3$, cyclomatic complexity $\le 10$, Zero `any`.
+
+
 ## Mandatory Testing Requirement
 
-For any new functionalities or bug fixes, you MUST mandatorily update and run both hermetic tests (backend/frontend unit tests) and Playwright E2E tests to cover the new code paths. These test updates must be committed as part of the primary change itself.
+- **Hermetic Unit & Integration Tests**: For any new functionalities or bug fixes across backend (`backend-rs`), web (`frontend`), or mobile (`mobile`), you MUST mandatorily update and run hermetic unit tests (`cargo test`, `pnpm --filter frontend test:unit`, `pnpm --filter mobile test`) to cover the new code paths.
+- **Web E2E Tests**: All web frontend changes MUST update and pass Playwright E2E tests (`pnpm --filter frontend test:e2e`).
+- **Mobile Native E2E & Maestro Tests**: All mobile changes MUST update and pass mobile simulation tests (`pnpm --filter mobile test:e2e`), register/verify Maestro E2E flows (`mobile/e2e/flows/`), and verify on native Android and iOS emulators per Section 12.
+These test updates must be committed as part of the primary change itself.
 
 ## Mandatory Data Anonymization & Privacy Protection
 
